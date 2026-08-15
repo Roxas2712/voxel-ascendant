@@ -5,7 +5,7 @@ diorama and can stage battles in 3D using the game's own Gen 1 battle
 pictures. It is a standalone graphics mod: Kanto Ascendant is supported as
 an optional companion, but is not required.
 
-This release candidate is built only from the MIT-licensed
+This maintenance release is built only from the MIT-licensed
 DramaticShapeVoxelMod v1.6.1 source tag (`790c34efff4975c91883f7f918a875530706ee12`)
 plus the changes documented in this repository. No Battle Art code or assets,
 Gen 2 sprite packs, Pokemon Stadium data, ROM tooling, VR binaries, or other
@@ -37,10 +37,16 @@ useful for recovery or advanced configuration.
 | **BACK SPRITES** | OFF, ON | Keeps the player's classic back sprite in its normal battle slot. |
 | **AA** | OFF, 2X, 4X | Supersamples the 3D pass. |
 
-The RC intentionally does not include first-/third-person free movement,
+The release intentionally does not include first-/third-person free movement,
 global relative-mouse hooks, VR, Horde mode, Pokemon Stadium models, ROM
 import, or a disk cache. This keeps input, saves, and the filesystem entirely
 inside Gen1Recomp's public/sandboxed paths.
+
+Voxel Ascendant is maintained as a focused compatibility alternative while
+older voxel renderers catch up with current Gen1Recomp releases. Its scope is
+deliberately stable: renderer compatibility and serious regressions may be
+fixed, but it will not grow a bundled Pokemon/trainer art collection. Battles
+always use art already provided by the game or another compatible content mod.
 
 ## Compatibility
 

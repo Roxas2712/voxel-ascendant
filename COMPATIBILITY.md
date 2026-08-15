@@ -7,13 +7,13 @@ local handle = mod.find("VOXEL_ASCENDANT")
 local exports = handle and handle.exports
 ```
 
-For `0.1.0-rc.1`, the stable fields are:
+For `0.1.1`, the stable fields are:
 
 ```lua
-exports.version == "0.1.0-rc.1"
+exports.version == "0.1.1"
 exports.apiVersion == 1
 exports.renderer.id == "VOXEL_ASCENDANT"
-exports.renderer.version == "0.1.0-rc.1"
+exports.renderer.version == "0.1.1"
 exports.renderer.pipeline == "voxel"
 exports.renderer.cameraProfile == "orbit-only"
 exports.capabilities.voxelWorld == true
@@ -32,7 +32,7 @@ exports.lib.require(name)          -- compatibility module resolver
 an allowlisted compatibility module and returns `nil` for every other name; it
 never delegates an unknown name to Voxel Ascendant's private loader.
 
-The stable resolver names are `Voxel3D` and `WallDecals`. The RC also exposes
+The stable resolver names are `Voxel3D` and `WallDecals`. The release also exposes
 the following best-effort compatibility names for Kanto Ascendant and similar
 feature-detecting companions: `AntiAlias`, `BattleArena`, `BattleCam`,
 `OverworldBattle`, `VoxelScene`, and `VoxelState`. These extra modules may gain

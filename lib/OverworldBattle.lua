@@ -587,21 +587,11 @@ function OverworldBattle.update(dt)
     -- so a panel over a blurred far field is frosted from what is actually
     -- behind it
     pcall(BattleHud.build, shot.canvas)
-    -- and then the HUDs go ON that backdrop, snapped out to the window's own
-    -- edges (snapHUDs). Here rather than in the battle's draw for the same
-    -- reason the scene is: it binds a canvas of its own. After the frost, so
-    -- the glass is frosted from the world alone and never from the glyphs
-    -- about to sit on it.
-    local okHud, up = false, false
-    okHud, up = pcall(OverworldBattle.snapHUDs, session.battle, shot)
-    session.snapped = (okHud and up) and true or false
-    -- once per battle, not once per frame: a driver that cannot do this cannot
-    -- do it sixty times a second either, and the fallback is silent and fine
-    if not okHud and not session.hudWarned then
-      session.hudWarned = true
-      V.mod.log:warn("overworld battle HUD snap failed: %s -- the HUDs draw "
-                     .. "in the battle frame this battle", tostring(up))
-    end
+    -- Keep both HUDs in the engine's own battle frame. Moving them to the
+    -- physical window edges made each block enormous on large/HiDPI windows,
+    -- clipped enemy names and separated the status panels from the command
+    -- box. The engine now owns one consistently scaled battle UI again.
+    session.snapped = false
   end
   session.shot = shot
 end

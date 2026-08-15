@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.0-rc.1")
+        self.assertEqual(manifest["version"], "0.1.1")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -115,6 +115,17 @@ class ContractTests(unittest.TestCase):
         names = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*=", match.group(1), re.M))
         self.assertEqual(names, EXPECTED_PUBLIC)
         self.assertIn("mod.exports.lib = PublicFacade.new(publicModules)", source)
+
+    def test_battle_huds_stay_in_centered_engine_frame(self) -> None:
+        source = (ROOT / "lib" / "OverworldBattle.lua").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("function OverworldBattle.update(dt)")
+        end = source.index("function OverworldBattle.shot()", start)
+        update = source[start:end]
+        self.assertNotIn("OverworldBattle.snapHUDs", update)
+        self.assertIn("session.snapped = false", update)
+        self.assertIn("return innerHUDs(self, slide, ...)", source)
 
     def test_export_facade_adversarial(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")

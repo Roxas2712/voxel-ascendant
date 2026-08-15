@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 — 2026-08-15
+
+- Keep both battle HUDs in the centered engine frame so status panels and
+  command menus share one scale on large and HiDPI displays.
+- Confirm the permanent package boundary: no bundled Pokemon/trainer art and
+  no sprite-pack menu; use the game or a separate compatible content mod.
+- Move the project into focused compatibility-maintenance mode.
+
 ## 0.1.0-rc.1 — 2026-08-15
 
 - Established the standalone `VOXEL_ASCENDANT` identity for Gen1Recomp
