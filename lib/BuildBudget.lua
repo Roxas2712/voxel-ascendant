@@ -16,7 +16,12 @@
 
 local B = { n = 0 }
 
-local clock = (love and love.timer and love.timer.getTime) or os.clock
+local function clock()
+  if love and love.timer and type(love.timer.getTime) == "function" then
+    return love.timer.getTime()
+  end
+  return 0
+end
 
 local deadline = math.huge
 local buildCo = nil

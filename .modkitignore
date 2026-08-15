@@ -1,35 +1,4 @@
-# Files that stay in the repo and out of the distributed package.
-# Exact relative paths, one per line -- modkit matches literally, no globs.
-
-# The SDK suite and the probes it grew out of. A shipped test that requires
-# an engine module reads as a private require against the archive
-# (CONTRIBUTING-mods.md "What the PR must contain", 2).
-tests/arena_config.lua
-tests/arena_editor.lua
-tests/arena_pick.lua
-tests/battle_shots.lua
-tests/dramatic_shape_test.lua
-tests/voxel_anim_probe.lua
-tests/voxel_door_probe.lua
-tests/voxel_mem_probe.lua
-tests/voxel_perf_probe.lua
-tests/voxel_pipeline_probe.lua
-tests/voxel_seam_shots.lua
-tests/voxel_shadow_probe.lua
-tests/voxel_survey.lua
-tests/voxel_void_probe.lua
-
-# Authoring tools. These run by hand on a machine that has imported its own
-# ROM, read the local cache, and emit assets/voxels/*.lua; the carved models
-# are what a player installs, the carving is not.
-tools/build_voxels.py
-tools/contact_sheets.py
-tools/building_images.py
-tools/building_voxels.py
-tools/voxel-survey.md
-assets/docs/buidling_to_voxel/sprite_extract.py
-assets/docs/buidling_to_voxel/voxel_build_verify.py
-
-# assets/docs/**.md stays in: data/voxel_heights.lua points a modder at the
-# building catalogue, and the methodology is where the geometry's provenance
-# is written down.
+# Repository-only QA/build files (exact relative paths).
+scripts/build_release.py
+tests/public_facade_test.lua
+tests/test_contract.py

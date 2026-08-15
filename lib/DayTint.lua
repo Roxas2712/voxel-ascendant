@@ -57,6 +57,10 @@ local V = ...
 local DayNight = V.require("DayNight")
 
 local DayTint = {}
+local unpackValues = table.unpack or unpack
+local function packValues(...)
+  return { n = select("#", ...), ... }
+end
 
 -- Below this the tint is close enough to white that the rectangle would not
 -- change a pixel, and the frame is left exactly as it was.
@@ -69,11 +73,16 @@ local function outdoorNow()
   local map = ow and ow.map
   if not map then return false end
   local okMap, Map = pcall(require, "src.world.Map")
-  if not okMap then return false end
-  local outdoor = map.def and Map.isOutdoor(map.def) or false
+  if not okMap or type(Map.isOutdoor) ~= "function" then return false end
+  local okOutdoor, outdoor = pcall(Map.isOutdoor, map.def)
+  outdoor = okOutdoor and outdoor and true or false
   -- a canopy floor takes the hour's colour and nothing else of it, exactly as
   -- it does in the 3D pass (BattleScene, VoxelScene)
-  return outdoor or DayNight.isCanopy(map)
+  local okCanopy, canopy = false, false
+  if type(DayNight.isCanopy) == "function" then
+    okCanopy, canopy = pcall(DayNight.isCanopy, map)
+  end
+  return outdoor or (okCanopy and canopy and true or false)
 end
 
 -- The colour this frame's world should be multiplied by, or nil to leave the
@@ -134,12 +143,13 @@ end
 
 function DayTint.install()
   local Renderer = require("src.render.Renderer")
-  if Renderer.dramaticShapeTintHook then return end
+  if Renderer.voxelAscendantTintHook then return end
   local inner = Renderer.endFrame
+  if type(inner) ~= "function" then return false end
 
-  function Renderer:endFrame(zones, worldZones)
-    local r, g, b = DayTint.forFrame(self)
-    if not r then return inner(self, zones, worldZones) end
+  function Renderer:endFrame(zones, worldZones, ...)
+    local okTint, r, g, b = pcall(DayTint.forFrame, self)
+    if not okTint or not r then return inner(self, zones, worldZones, ...) end
 
     local gfx = love.graphics
     local draw = gfx.draw
@@ -158,12 +168,14 @@ function DayTint.install()
       return draw(tex, ...)
     end
 
-    local ok, err = pcall(inner, self, zones, worldZones)
+    local results = packValues(pcall(inner, self, zones, worldZones, ...))
     gfx.draw = draw
-    if not ok then error(err, 0) end
+    if not results[1] then error(results[2], 0) end
+    return unpackValues(results, 2, results.n)
   end
 
-  Renderer.dramaticShapeTintHook = true
+  Renderer.voxelAscendantTintHook = true
+  return true
 end
 
 return DayTint

@@ -39,7 +39,7 @@
 -- already rests on; the caller passes its answer in (applyRig/tint).
 --
 -- Persistence: the running cycle's clock is written into the mod's own
--- save-file bucket (save.modData.DRAMATIC_SHAPE, via mod.save) on the
+-- save-file bucket (save.modData.VOXEL_ASCENDANT, via mod.save) on the
 -- engine's save.writing event, and read back on save.loaded/created. A save
 -- with no clock in it starts at noon.
 
@@ -63,14 +63,11 @@ DayNight.T = { dawn = 0, day = 300, dusk = 600, night = 900 }
 DayNight.KEY = "daytime"
 DayNight.LABEL = "DAYTIME"
 
--- "sync" first: an unset or unreadable value follows the machine's own
--- clock, per the row's contract (ModSetting values[1] is the default) --
--- and forceSync below reaches for it by the same position.
+-- DAY first: an unset, unreadable, or legacy SYNC value fails closed to the
+-- deterministic daytime pin. No wall-clock or process API is consulted.
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
-                                  { "sync", "day", "night", "dusk",
-                                    "dawn", "cycle" },
-                                  { "SYNC", "DAY", "NIGHT", "DUSK",
-                                    "DAWN", "CYCLE" })
+                                  { "day", "night", "dusk", "dawn", "cycle" },
+                                  { "DAY", "NIGHT", "DUSK", "DAWN", "CYCLE" })
 
 -- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
 -- row is off the menu with the rest of the rows the preset owns, and the
@@ -78,8 +75,8 @@ DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
 -- on the wall, whatever was chosen before. Called from every path that can
 -- arrive at or act under FULL (main.lua: the preset itself, the rows hook,
 -- the manager's options_changed), mirroring OverworldBattle.forceOG.
-function DayNight.forceSync(game)
-  if DayNight.setting:get() ~= "sync" then
+function DayNight.forceDay(game)
+  if DayNight.setting:get() ~= "day" then
     DayNight.setting:setIndex(1, game)
   end
 end
@@ -326,28 +323,10 @@ local function mode()
   return DayNight.setting:get() or "day"
 end
 
--- Where SYNC reads the real clock: local hours, 0..24 with the minutes as
--- fraction. A named seam rather than a bare os.date call, so the suite can
--- hand it a fixed hour.
-function DayNight.hours()
-  local d = os.date("*t")
-  return d.hour + d.min / 60 + d.sec / 3600
-end
-
--- SYNC: the machine's own time of day laid onto the dial. Local noon is
--- the DAY pin, midnight the NIGHT pin, six and eighteen the twilights --
--- an hour of the real day is fifty seconds of dial, and Kanto's evening
--- falls when the player's does.
-function DayNight.syncTime()
-  return ((DayNight.hours() - 6) * (DayNight.CYCLE / 24)) % DayNight.CYCLE
-end
-
--- The effective time: the pin, the running clock under CYCLE, or the wall
--- clock under SYNC.
+-- The effective time: a deterministic pin or the save-local running clock.
 function DayNight.time()
   local m = mode()
   if m == "cycle" then return DayNight.clock end
-  if m == "sync" then return DayNight.syncTime() end
   return DayNight.T[m] or DayNight.T.day
 end
 
@@ -360,10 +339,7 @@ function DayNight.update(dt)
   local m = mode()
   if m ~= lastMode then
     if m == "cycle" then
-      -- from a pin, its time; from SYNC, wherever the real sky already was
-      DayNight.clock = DayNight.T[lastMode]
-                       or (lastMode == "sync" and DayNight.syncTime())
-                       or DayNight.clock
+      DayNight.clock = DayNight.T[lastMode] or DayNight.clock
     end
     lastMode = m
   end

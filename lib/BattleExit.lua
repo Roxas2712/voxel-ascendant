@@ -36,6 +36,10 @@ local V = ...
 
 local BattleExit = {}
 BattleExit.__index = BattleExit
+local unpackValues = table.unpack or unpack
+local function packValues(...)
+  return { n = select("#", ...), ... }
+end
 
 -- The battle underneath keeps drawing while this is up -- what fades is its own
 -- last live frame, camera drift, HUD and all. Only the top state UPDATES, so
@@ -134,7 +138,7 @@ function BattleExit:update()
   -- over the top of it. The flag goes back too, so a second finish() that does
   -- leave gets its own fade.
   live = nil
-  if self.battle then self.battle.dramaticShapeLeaving = nil end
+  if self.battle then self.battle.voxelAscendantLeaving = nil end
 end
 
 -- "Voxel mode is on", as the ENGINE answers it: switched on, not retired by a
@@ -142,7 +146,10 @@ end
 -- inline call so a driver or a headless test can pin it -- the test harness has
 -- no depth buffer, where the honest answer is no on every rung.
 function BattleExit.modeOn()
-  return require("src.render.Pipelines").eligible("voxel") and true or false
+  local okModule, Pipelines = pcall(require, "src.render.Pipelines")
+  if not okModule or type(Pipelines.eligible) ~= "function" then return false end
+  local okEligible, eligible = pcall(Pipelines.eligible, "voxel")
+  return okEligible and eligible and true or false
 end
 
 -- Whether this ending gets the fade.
@@ -162,28 +169,38 @@ end
 -- Two wraps, each idempotent so a hot reload cannot stack them.
 function BattleExit.install()
   local BattleState = require("src.battle.BattleState")
-  if not BattleState.dramaticShapeExitHook then
+  local Renderer = require("src.render.Renderer")
+  if type(BattleState.finish) ~= "function"
+     or type(Renderer.endFrame) ~= "function" then
+    return false
+  end
+
+  if not BattleState.voxelAscendantExitHook then
     local inner = BattleState.finish
     -- The one place a battle ends. Wrapped rather than listened for: the
     -- battle.ended event is emitted AFTER the pop, and by then the battle
     -- screen is gone and there is nothing left to fade out.
-    function BattleState:finish()
-      if self.dramaticShapeLeaving or not BattleExit.wanted(self) then
-        return inner(self)
+    function BattleState:finish(...)
+      if self.voxelAscendantLeaving or not BattleExit.wanted(self) then
+        return inner(self, ...)
       end
-      self.dramaticShapeLeaving = true
-      BattleExit.start(self, function() inner(self) end)
+      self.voxelAscendantLeaving = true
+      local args = packValues(...)
+      return BattleExit.start(self, function()
+        return inner(self, unpackValues(args, 1, args.n))
+      end)
     end
-    BattleState.dramaticShapeExitHook = true
+    BattleState.voxelAscendantExitHook = true
   end
 
-  local Renderer = require("src.render.Renderer")
-  if not Renderer.dramaticShapeExitHook then
+  if not Renderer.voxelAscendantExitHook then
     local inner = Renderer.endFrame
-    function Renderer:endFrame(zones, worldZones)
-      inner(self, zones, worldZones)
+    function Renderer:endFrame(zones, worldZones, ...)
+      local results = packValues(inner(self, zones, worldZones, ...))
       local a = BattleExit.veil()
-      if not a or a <= 0 then return end
+      if not a or a <= 0 then
+        return unpackValues(results, 1, results.n)
+      end
       -- The composite is on the screen by now, in LOVE units, so one rect over
       -- the window darkens the world, the letterbox bars, the text box and
       -- anything a present pass put on top, all by the same amount. Left to
@@ -193,9 +210,11 @@ function BattleExit.install()
       love.graphics.setColor(0, 0, 0, a)
       love.graphics.rectangle("fill", 0, 0, w, h)
       love.graphics.setColor(1, 1, 1, 1)
+      return unpackValues(results, 1, results.n)
     end
-    Renderer.dramaticShapeExitHook = true
+    Renderer.voxelAscendantExitHook = true
   end
+  return true
 end
 
 return BattleExit

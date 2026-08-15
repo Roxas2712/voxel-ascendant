@@ -221,9 +221,6 @@ end
 -- where the canvas cannot be made -- VoxelScene then keeps the flat decal
 -- shadows, which need nothing but a quad.
 function ShadowMap.available()
-  if love.system and love.system.getOS and love.system.getOS() == "iOS" then
-    return false
-  end
   if not (love.graphics and love.graphics.newCanvas
           and love.graphics.setDepthMode) then
     return false

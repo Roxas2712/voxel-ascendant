@@ -56,12 +56,6 @@ local TileShape = V.require("TileShape")
 local Voxel3D = V.require("Voxel3D")
 local Budget = V.require("BuildBudget")
 
-local ffi = nil
-do
-  local ok, mod = pcall(require, "ffi")
-  if ok then ffi = mod end
-end
-
 local ChunkMesher = {}
 
 -- Ring of border blocks meshed around the body, matching the width
@@ -138,69 +132,7 @@ local function newTableSink()
   }
 end
 
-local TRI_ORDER = { 1, 2, 3, 1, 3, 4 }
-
-local function newFfiSink()
-  local cap = 4096 * 6
-  local buf = ffi.new("float[?]", cap * 6)
-  local n = 0
-  local sink
-  sink = {
-    push = function(c, uv, shade)
-      if n + 6 > cap then
-        local grown = ffi.new("float[?]", cap * 2 * 6)
-        ffi.copy(grown, buf, n * 6 * 4)
-        buf, cap = grown, cap * 2
-      end
-      local flat = type(shade) ~= "table"
-      local base = n * 6
-      for k = 1, 6 do
-        local i = TRI_ORDER[k]
-        local cc, t = c[i], uv[i]
-        buf[base] = cc[1]
-        buf[base + 1] = cc[2]
-        buf[base + 2] = cc[3]
-        buf[base + 3] = t[1]
-        buf[base + 4] = t[2]
-        buf[base + 5] = flat and shade or shade[i]
-        base = base + 6
-      end
-      n = n + 6
-    end,
-    finish = function()
-      if n == 0 then return nil end
-      -- upload in slices with budget ticks between: a route-sized mesh
-      -- is ~10-20MB and one atomic setVertices was the last remaining
-      -- frame spike. The mesh is not cached (so never drawn) until the
-      -- whole upload lands, and LuaJIT yields fine across pcall.
-      local ok, mesh = pcall(function()
-        local m = love.graphics.newMesh(Voxel3D.FORMAT, n,
-                                        "triangles", "static")
-        local CHUNK = 65536              -- vertices per slice (~1.5MB)
-        local i = 0
-        while i < n do
-          local count = math.min(CHUNK, n - i)
-          local bytes = count * 6 * 4
-          local data = love.data.newByteData(bytes)
-          ffi.copy(data:getFFIPointer(), buf + i * 6, bytes)
-          m:setVertices(data, i + 1)
-          data:release()
-          i = i + count
-          Budget.check()
-        end
-        return m
-      end)
-      return ok and mesh or nil
-    end,
-  }
-  return sink
-end
-
 local function newSink()
-  if ffi and love and love.data and love.data.newByteData
-     and love.graphics and love.graphics.newMesh then
-    return newFfiSink()
-  end
   return newTableSink()
 end
 
@@ -927,7 +859,12 @@ end
 local jobs = {}       -- FIFO of pending jobs
 local jobIndex = {}   -- "id:slot" -> job
 
-local clock = (love and love.timer and love.timer.getTime) or os.clock
+local function clock()
+  if love and love.timer and type(love.timer.getTime) == "function" then
+    return love.timer.getTime()
+  end
+  return 0
+end
 
 local function jobKey(id, slot)
   return id .. ":" .. slot

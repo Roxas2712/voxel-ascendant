@@ -1,5 +1,7 @@
--- Dramatic Shape Voxel Mod: a full 3D diorama overworld, shipped as a
--- rendering pipeline mod.
+-- Voxel Ascendant: a standalone Gen1Recomp voxel-world renderer.
+--
+-- This fork starts at the MIT-licensed DramaticShapeVoxelMod v1.6.1 tag.
+-- VR, Stadium ROM/model support and Horde mode are intentionally absent.
 --
 -- The engine's render_pipelines registry (src/mods/Schemas.lua) lets a mod
 -- own part of the frame.  This mod registers two:
@@ -24,18 +26,15 @@
 -- below.  This file declares; lib/ draws.
 --
 -- Voxel mode is presentational: it changes what the world LOOKS like and
--- nothing about what it IS.  TWO rungs are the deliberate exception. 1ST
--- (the camera in the player's own eyes) and 3RD (the same rig, boomed back
--- behind their shoulder) replace the grid WALK with a free,
--- camera-relative one while either is selected (lib/FreeMove.lua), because
--- a camera you can steer with a mouse demands feet that go where it looks.
--- Even there the game is untouched: the walk asks the engine's own
--- collision the same questions a grid step asks, keeps the player's
--- logical cell synced, and fires the engine's own landing pipeline per
--- cell crossed -- warps, encounters, ledges, gates and scripts all run
--- exactly as themselves. Step off the rung and the grid walk is back.
+-- nothing about what it IS. The RC deliberately keeps the engine's normal
+-- grid movement and input handling at every camera angle.
 
 local mod = ...
+
+local unpackValues = table.unpack or unpack
+local function packValues(...)
+  return { n = select("#", ...), ... }
+end
 
 -- ------- the mod namespace
 --
@@ -49,11 +48,11 @@ local V = { mod = mod, path = mod.path }
 local function chunkFor(rel)
   local source = mod:read(rel)
   if not source then
-    error(("DRAMATIC_SHAPE: %s is missing -- reinstall the mod"):format(rel), 0)
+    error(("VOXEL_ASCENDANT: %s is missing -- reinstall the mod"):format(rel), 0)
   end
   local chunk, err = load(source, "@" .. mod.path .. "/" .. rel)
   if not chunk then
-    error(("DRAMATIC_SHAPE: %s did not compile: %s"):format(rel, tostring(err)), 0)
+    error(("VOXEL_ASCENDANT: %s did not compile: %s"):format(rel, tostring(err)), 0)
   end
   return chunk
 end
@@ -91,17 +90,8 @@ local DayNight = V.require("DayNight")
 local DayTint = V.require("DayTint")
 local Water = V.require("Water")
 local AntiAlias = V.require("AntiAlias")
-local FirstPerson = V.require("FirstPerson")
-local FreeMove = V.require("FreeMove")
-local CamControl = V.require("CamControl")
-local VR = V.require("VR")
--- HORDE MODE: the konami code's minigame. Horde owns the state machine and
--- every hook; the other four are the gun, the crowd, the readout and the
--- chip-synthesized sounds it fires. See lib/Horde.lua for the whole design.
-local Horde = V.require("Horde")
-local HordeGun = V.require("HordeGun")
-local HordeHud = V.require("HordeHud")
-local HordeSfx = V.require("HordeSfx")
+local WallDecals = V.require("WallDecals")
+local PublicFacade = V.require("PublicFacade")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -181,11 +171,6 @@ mod.content.render_pipelines:register("voxel", {
     -- would fight anyone who changed one deliberately.
     applyFull(level)
     Voxel.update(dt, level)
-    -- the first-person head, on the same tick: its blend in and out of the
-    -- orbit, the mouse capture lifecycle, and the frame's stick-rate look.
-    -- Unconditional like Voxel.update, because the blend has to keep easing
-    -- OUT after the rung is left
-    FirstPerson.update(dt)
     -- the day/night clock, on the same always-running tick: Pipelines.update
     -- runs whatever the level, so time passes with the mode off, through
     -- battles and menus, and a CYCLE evening falls mid-fight exactly as it
@@ -200,25 +185,6 @@ mod.content.render_pipelines:register("voxel", {
     -- and the whole battle. Ahead of the active() gate below, because a 3D
     -- battle does not require the free-roam mode to be switched on.
     OverworldBattle.update(dt)
-    -- The one-time build of the Pokemon Stadium battle models out of the
-    -- player's own ROM, if there is one to build from and it has not been
-    -- done (see StadiumInstall). Rides this hook for the same reason the
-    -- battle does -- it is the tick that runs whatever is on the stack -- and
-    -- asks exactly once, on the first frame the player is actually in the
-    -- world, so it is never fighting the engine's own launcher for the
-    -- screen.
-    pcall(function() V.require("StadiumScreen").maybePush() end)
-    -- and a ROM the system file picker dropped in the save directory while
-    -- we were not the top activity (Android; see StadiumRomPick.poll)
-    pcall(function()
-      V.require("StadiumRomPick").poll(require("src.core.Game"))
-    end)
-    -- The horde, on the same always-running tick and for the same reason:
-    -- it owns no pass of the frame, it is a MODE over the overworld, and
-    -- it has to keep thinking while a warp's wipe covers the screen (the
-    -- crowd follows the player through the door) and under the GAME OVER
-    -- card, which is a pushed state that stops everything below it.
-    Horde.update(dt)
     -- VOID FILL picks the block the border ring is made of, and in this
     -- mode that ring is BAKED INTO THE MESH rather than drawn each frame.
     -- So the option has to reach the cache or nothing happens on screen
@@ -229,13 +195,6 @@ mod.content.render_pipelines:register("voxel", {
     -- them announces it. Ahead of the active() gate, so switching it
     -- while voxel mode is OFF still invalidates what is cached.
     voidFill.check()
-    -- The whole VR frame -- session lifecycle, xrWaitFrame's pacing, both
-    -- eye renders, the layer submit -- rides this hook, because it is the
-    -- one tick that runs through menus, dialogs and battles, which is
-    -- what a headset needs the world (or at least the UI panel) to do.
-    -- Ahead of the active() gate: with the mode off, the headset still
-    -- shows the flat screen on the floating panel.
-    VR.update(dt)
     if not Voxel.active() then return end
     local Game = require("src.core.Game")
     local ow = Game and Game.overworld
@@ -247,19 +206,6 @@ mod.content.render_pipelines:register("voxel", {
   end,
 
   drawWorld = function(ctx)
-    -- the palette closure, stashed for the VR frame: it renders from the
-    -- update hook, where no ctx exists to carry one
-    VR.paletteFor = ctx.paletteFor
-    -- With a headset running, the window's world pass becomes the MIRROR
-    -- -- the left eye, fitted to the window -- rather than a third full
-    -- render of the scene. Everything else about the frame (the UI the
-    -- engine composites over this) is unchanged, which is exactly what
-    -- the headset's floating panel photographs.
-    if VR.active() then
-      local sw, sh = sceneSize(ctx)
-      local m = VR.mirror(sw, sh)
-      if m then return m end
-    end
     -- Terrain and characters are geometry; the field FX stay ordinary 2D
     -- draws composited on top, anchored through the same camera the 3D
     -- pass used (ctx.drawFx below).  The scene renders at the window's
@@ -284,12 +230,6 @@ mod.content.render_pipelines:register("voxel", {
       -- pixels, so only the scale needs saying.
       ctx.drawFx(function(wx, wy) return Voxel3D.project(wx, 0, wy) end,
                  ctx.scale * AntiAlias.factor())
-      -- the horde's readout rides the same overlay, over the FX: health,
-      -- ammunition, the crosshair and the banners, sized in the same
-      -- supersampled canvas pixels everything else here is drawn in. A
-      -- headset never reaches this line (drawWorld returns the mirror
-      -- above) -- lib/VR draws the same HUD onto each eye instead.
-      HordeHud.drawFlat(rw, rh, ctx.scale * AntiAlias.factor())
       Voxel3D.endOverlay()
     end
     -- and back to the window's own size, which is what the engine composites
@@ -302,7 +242,6 @@ mod.content.render_pipelines:register("voxel", {
     OverworldBattle.invalidate()
     AntiAlias.invalidate()
     ChunkMesher.invalidate()   -- no map id = every cached mesh
-    VR.invalidate()            -- the mirror, and FBO ids of dead canvases
   end,
 })
 
@@ -389,11 +328,11 @@ applyFull = function(level)
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
   -- fights on, so the layout follows them.
   OverworldBattle.forceOG(Game)
-  -- and the sky on the clock on the wall: FULL pins DAYTIME to SYNC. Unlike
+  -- and a deterministic noon sky: FULL pins DAYTIME to DAY. Unlike
   -- the rest of the preset this one IS held, not just set -- the row is off
   -- the menu while FULL owns it (the rows hook below), so a value changed
   -- under it could never be seen or changed back.
-  DayNight.forceSync(Game)
+  DayNight.forceDay(Game)
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
 end
 
@@ -429,24 +368,11 @@ local SETTINGS = {
     .. "fraction of the cost." },
   -- `full` marks a row FULL does not take away. FULL owns the diorama's own
   -- knobs; what a battle is drawn over, and how it is framed, are not that.
-  -- Off the OPTIONS menu while VR is on: the headset REQUIRES staged
-  -- battles (OverworldBattle.enabled answers true regardless of this row)
-  -- and forbids back sprites (backPinned answers false), so both rows
-  -- decide nothing there and a dead switch on the menu reads as broken.
   { OverworldBattle.setting,
-    "Fight in three dimensions, shot over the shoulder with a slow parallax "
-    .. "drift. 2D-3D stands the game's own battle pics up as cards; STADIUM "
-    .. "replaces them with the Pokemon Stadium battle models, animated, "
-    .. "playing the animation the move being used actually calls for. A "
-    .. "stages the fight on the MAP -- the nearest clear ground, in that "
-    .. "place's own weather and light; B stands it on two discs against the "
-    .. "sky instead, which works everywhere, including the caves and shop "
-    .. "floors that have nowhere to stage a fight. The STADIUM rungs only "
-    .. "appear once the models have been built, and building them needs a "
-    .. "Pokemon Stadium (US) 1.0 ROM of your own -- import it from the "
-    .. "STADIUM ROM row, or drop it in the baseroms folder and restart. No "
-    .. "other version works: the reader is keyed to that one cartridge.",
-    when = function() return not VR.enabled() end, full = true },
+    "Fight in three dimensions using the game's native Gen 1 pictures as "
+    .. "camera-facing cards. MAP stages the fight on nearby voxel terrain; "
+    .. "DISCS uses a portable procedural stage where the map has no room.",
+    full = true },
   -- Only offered while a fight can actually be staged on the map: with 3D-BTL
   -- off the engine draws the classic screen, which is this row's ON already,
   -- and a row that no longer decides anything is worse than no row.
@@ -454,13 +380,12 @@ local SETTINGS = {
     "Keep your own Pokemon on the battle menu, seen from behind in its "
     .. "original slot, instead of standing it on the map facing the foe. "
     .. "The foe is still out there on its own tile.",
-    when = function() return stagedBattles() and not VR.enabled() end,
+    when = stagedBattles,
     full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
     .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
-    .. "shadows, the sky and the light following -- or SYNC it to the "
-    .. "clock on the wall, so Kanto's evening falls when yours does." },
+    .. "shadows, the sky and the light following." },
   -- Marked `full` for the opposite reason the battle rows are: this is not a
   -- knob on the look at all, it is what the look COSTS. FULL is a preset for
   -- the diorama, not a licence to spend four times the fill rate on the
@@ -476,40 +401,11 @@ local SETTINGS = {
     .. "pixels in each direction and 4X twice, which makes this the most "
     .. "expensive row in the mod.",
     full = true },
-  -- `full` for the same reason as AA: not a knob on the look, a question
-  -- about the hardware on the desk.
-  { VR.setting,
-    "PCVR through OpenXR (SteamVR, Oculus, WMR). The diorama becomes a "
-    .. "tabletop model your head moves around; the 1ST rung stands you "
-    .. "inside the world at life size, looking where the headset looks. "
-    .. "Menus and dialogs float on a panel. Needs a Windows OpenXR runtime "
-    .. "and the mod running from a real folder; without them the row stays "
-    .. "and the game stays flat, with the reason on the console.",
-    -- on Windows the row stays even when a runtime is missing (the console
-    -- says why); off Windows -- mobile above all -- there is no VR to have
-    -- and the row does not exist
-    when = function() return VR.supported() end, full = true },
-  -- Under the VR row and only while it is ON: a comfort setting for a
-  -- device that is not plugged in decides nothing, and this one is read
-  -- exclusively by the headset's right stick.
-  { VR.smoothTurn,
-    "Turn smoothly with the right stick instead of snapping 45 degrees a "
-    .. "flick. OFF by default, and deliberately: a software turn moves the "
-    .. "world past a head that did not move, which is the most reliable way "
-    .. "to make somebody ill in a headset. Turn it on if you have your sea "
-    .. "legs and want the continuity.",
-    when = function() return VR.enabled() end, full = true },
 }
 
 local schema = {}
 for _, entry in ipairs(SETTINGS) do
-  -- the VR rows are absent from the mod manager's page too where the
-  -- platform cannot do VR at all -- the OPTIONS menu's `when` gates are
-  -- situational (a row hidden for now), this one is existential
-  local vrOnly = entry[1] == VR.setting or entry[1] == VR.smoothTurn
-  if not vrOnly or VR.supported() then
-    schema[#schema + 1] = entry[1]:schema(entry[2])
-  end
+  schema[#schema + 1] = entry[1]:schema(entry[2])
 end
 mod.options:define(schema)
 
@@ -562,11 +458,6 @@ local HOTKEYS = {
 -- the key has always delegated (see the wrap below for why).
 local function cycleVoxel(game)
   local Pipelines = require("src.render.Pipelines")
-  -- HORDE MODE holds the rung at 1ST for as long as it runs. Refused HERE
-  -- rather than at each caller because this one function IS every way a
-  -- player can step the ladder: the "3" key, the pad's SELECT, and the VR
-  -- left-stick click all come through it.
-  if Horde.viewLocked() then return false end
   local top = game.stack and game.stack:top()
   if not Pipelines.canToggle("voxel", top, game.overworld) then return false end
   Pipelines.setLevel("voxel", Voxel.nextHotkeyLevel(Pipelines.level("voxel")))
@@ -584,77 +475,50 @@ local function cycleVoxel(game)
   return true
 end
 
--- The VR stick click makes this same step (VR.stepView): the function is
--- a local of this file, so the handoff is explicit rather than a
--- reimplementation drifting out of date in lib/VR.lua.
-VR.cycleVoxel = cycleVoxel
-
 do
   local Game = require("src.core.Game")
   local Pipelines = require("src.render.Pipelines")
+  local Tilt = require("src.render.Tilt")
+  local GBCFX = require("src.render.GBCFX")
   local inner = Game.keypressed
+  local pipelineShape = type(Pipelines.canToggle) == "function"
+                        and type(Pipelines.hotkey) == "function"
+                        and type(Pipelines.syncOptions) == "function"
+                        and type(Pipelines.setLevel) == "function"
+                        and type(Pipelines.level) == "function"
+                        and type(Tilt.setLevel) == "function"
+                        and type(GBCFX.setLevel) == "function"
 
-  function Game:keypressed(key)
-    -- HORDE MODE owns the keyboard's spare keys while it runs: R reloads,
-    -- and the mode keys are swallowed rather than left to change the rung
-    -- or the post-processing out from under a locked camera.
-    if Horde.active then
-      if key == "r" then
-        HordeGun.reload()
-        return
-      end
-      if HOTKEYS[key] then return end
-    end
-    local claim = HOTKEYS[key]
-    local top = self.stack and self.stack:top()
-    -- Q and E work whichever camera is in front of the player -- the
-    -- battle's lens, the third-person boom, or the engine's own survey
-    -- zoom on an orbit rung. CamControl answers which, and answers "none"
-    -- for 1ST and for every screen with no camera of ours behind it, in
-    -- which case the key falls through untouched. Ahead of the hotkey
-    -- table because unlike those it is NOT free-roam only: a staged battle
-    -- is exactly where the zoom is most wanted.
-    if (key == "q" or key == "e")
-       and not (top and top.onKeyPressed) then
-      if CamControl.zoomBy(key == "q" and 1 or -1) then return end
-    end
-    -- A screen with its own key handler gets the key first, exactly as the
-    -- engine's first branch does: typing a nickname must not toggle a
-    -- render mode. Only free-roam presses are ours to take.
-    if claim and not (top and top.onKeyPressed) then
-      if claim == "pipeline" then
-        -- 3 walks the ANGLE rungs and steps over FULL (Voxel.HOTKEY_ORDER),
-        -- so the registry's plain "advance one and wrap" is not what it
-        -- wants; 6 still is. The gate is the registry's own either way.
-        -- The whole of 3's step lives in cycleVoxel, because the pad's
-        -- SELECT button makes the same step (see the handleInput wrap).
-        if key == "3" then
-          if cycleVoxel(self) then return end
-        elseif Pipelines.hotkey(key, top, self.overworld) then
-          Pipelines.syncOptions(self.save.options)
-          require("src.render.Tilt").setLevel(self.save.options.tilt or 0)
-          self:writeOptions()
+  if pipelineShape and type(inner) == "function"
+     and not Game.voxelAscendantKeyHook then
+    function Game:keypressed(key, ...)
+      local claim = HOTKEYS[key]
+      local top = self.stack and self.stack:top()
+      -- A screen with its own key handler gets the key first, exactly as the
+      -- engine's first branch does: typing a nickname must not toggle a
+      -- render mode. Only free-roam presses are ours to take.
+      if claim and not (top and top.onKeyPressed) then
+        if claim == "pipeline" then
+          -- 3 walks the ANGLE rungs and steps over FULL (Voxel.HOTKEY_ORDER),
+          -- so the registry's plain "advance one and wrap" is not what it
+          -- wants; 6 still is. The gate is the registry's own either way.
+          if key == "3" then
+            if cycleVoxel(self) then return end
+          elseif Pipelines.hotkey(key, top, self.overworld) then
+            Pipelines.syncOptions(self.save.options)
+            require("src.render.Tilt").setLevel(self.save.options.tilt or 0)
+            self:writeOptions()
+            return
+          end
+        elseif Pipelines.canToggle("voxel", top, self.overworld) then
+          claim:cycle(self)
+          if stagedBattles() then OverworldBattle.forceOG(self) end
           return
         end
-      elseif Pipelines.canToggle("voxel", top, self.overworld) then
-        -- All four answer to the voxel pass's own free-roam gate --
-        -- borrowed from the registry rather than restated, so a press
-        -- mid-warp or mid-cutscene is refused for the wireframe exactly when
-        -- it would be for the mode itself. Three of them parameterise that
-        -- pass; the fourth (3D-BTL) decides what a battle is drawn over, and
-        -- wants the same gate for a different reason: the answer is read
-        -- when the fight starts, so flipping it from inside one would be a
-        -- switch that appeared to do nothing.
-        claim:cycle(self)
-        -- 8 is one of the two ways staged battles get switched on, and they
-        -- pin BATTLE LAYOUT to OG (see the rows hook). The other keys
-        -- parameterise the pass and leave the layout alone; the guard answers
-        -- for all of them, so nothing here has to know which key it was.
-        if stagedBattles() then OverworldBattle.forceOG(self) end
-        return
       end
+      return inner(self, key, ...)
     end
-    return inner(self, key)
+    Game.voxelAscendantKeyHook = true
   end
 end
 
@@ -780,8 +644,8 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   if full then
     -- FULL owns the rows that PARAMETERISE the diorama -- the wireframe, the
     -- horizon bend, the blur, the hour -- so those come off the menu and
-    -- DAYTIME is held at SYNC while its row is unreachable.
-    DayNight.forceSync(game)
+    -- DAYTIME is held at DAY while its row is unreachable.
+    DayNight.forceDay(game)
     dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
@@ -802,19 +666,6 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
                     and (not entry.when or entry.when())
     if offered then extra[#extra + 1] = entry[1]:row() end
   end
-  -- and the ROM import, which is an ACTION and not a setting: there is no
-  -- rung to store, nothing for the mod manager's page to persist and nothing
-  -- to restore on the next boot, so it is appended here rather than living in
-  -- SETTINGS. nil on a platform with no file dialog, which takes it off the
-  -- menu rather than offering a button that cannot do anything.
-  -- On EVERY platform. Where there is no file dialog it says WHERE? and
-  -- shows the folder to put the cartridge in, which is the one thing a
-  -- player on a phone could not otherwise find out -- the row used to vanish
-  -- there, which reads as the feature being missing rather than manual.
-  local okPick, importRow = pcall(function()
-    return V.require("StadiumRomPick").row()
-  end)
-  if okPick and importRow then extra[#extra + 1] = importRow end
   return insertGrouped(out, extra)
 end)
 
@@ -830,10 +681,10 @@ mod.events:on("mod.options_changed", function(payload)
   -- that has to follow it.
   if stagedBattles() then OverworldBattle.forceOG() end
   -- and DAYTIME changed from the manager's page while FULL owns it snaps
-  -- straight back to SYNC -- the OPTIONS row is hidden, but the manager's is
+  -- straight back to DAY -- the OPTIONS row is hidden, but the manager's is
   -- not, and FULL's pin must hold against both
   local Pipelines = require("src.render.Pipelines")
-  if Voxel.isFull(Pipelines.level("voxel")) then DayNight.forceSync() end
+  if Voxel.isFull(Pipelines.level("voxel")) then DayNight.forceDay() end
 end)
 
 -- ------- keeping the geometry in step with the world
@@ -880,16 +731,19 @@ end)
 -- is not a change and must not throw the mesh away.
 do
   local Map = require("src.world.Map")
-  if not Map.dramaticShapeBlockHook then
+  if not Map.voxelAscendantBlockHook
+     and type(Map.setBlock) == "function"
+     and type(Map.blockAt) == "function" then
     local setBlock = Map.setBlock
-    Map.setBlock = function(self, bx, by, block)
+    Map.setBlock = function(self, bx, by, block, ...)
       local before = self:blockAt(bx, by)
-      setBlock(self, bx, by, block)
+      local results = packValues(setBlock(self, bx, by, block, ...))
       if self.id and self:blockAt(bx, by) ~= before then
         ChunkMesher.refresh(self.id)
       end
+      return unpackValues(results, 1, results.n)
     end
-    Map.dramaticShapeBlockHook = true
+    Map.voxelAscendantBlockHook = true
   end
 end
 
@@ -932,8 +786,11 @@ end)
 -- instead of jumping to the top when the list below it shortens.
 do
   local OptionsMenu = require("src.ui.OptionsMenu")
-  if not OptionsMenu.dramaticShapeFullHook then
-    local Pipelines = require("src.render.Pipelines")
+  local Pipelines = require("src.render.Pipelines")
+  if not OptionsMenu.voxelAscendantFullHook
+     and type(OptionsMenu.update) == "function"
+     and type(OptionsMenu.new) == "function"
+     and type(Pipelines.level) == "function" then
     local inner = OptionsMenu.update
 
     local function idAt(menu, index)
@@ -941,19 +798,15 @@ do
       return type(row) == "table" and row.id or nil
     end
 
-    function OptionsMenu:update(dt)
+    function OptionsMenu:update(dt, ...)
       local before = Pipelines.level("voxel")
       local hadBattles = OverworldBattle.enabled()
-      -- the VR row hides the two battle rows while it is on, so stepping
-      -- it changes the LIST exactly the way 3D-BTL does
-      local hadVR = VR.enabled()
       local wasOn = idAt(self, self.index)
-      inner(self, dt)
+      local results = packValues(inner(self, dt, ...))
       local after = Pipelines.level("voxel")
       local crossedFull = after ~= before
                           and (Voxel.isFull(before) or Voxel.isFull(after))
-      if crossedFull or OverworldBattle.enabled() ~= hadBattles
-         or VR.enabled() ~= hadVR then
+      if crossedFull or OverworldBattle.enabled() ~= hadBattles then
         local rebuilt = OptionsMenu.new(self.game)
         self.rows = rebuilt.rows
         -- Follow the row the cursor was ON rather than the slot it was in:
@@ -965,9 +818,10 @@ do
         local cancel = #self.rows + 1
         if (self.index or 1) > cancel then self.index = cancel end
       end
+      return unpackValues(results, 1, results.n)
     end
 
-    OptionsMenu.dramaticShapeFullHook = true
+    OptionsMenu.voxelAscendantFullHook = true
   end
 end
 
@@ -978,111 +832,6 @@ end
 -- where the reasoning for each one is written down. Installed once, here,
 -- so this file keeps naming every engine seam the mod touches.
 OverworldBattle.install()
-
--- ------- the free-roam rungs' inputs and their walk
---
--- 1ST and 3RD need two things no other rung does, and each is a named seam.
--- Both rungs are one rig -- the boom behind the shoulder is a number inside
--- it (lib/ThirdPerson.lua) -- so both are installed by the same two calls:
---
--- FirstPerson.install claims the LOOK inputs the engine ignores: the right
--- stick's axes (Game:gamepadaxis passes them to Input, which returns early
--- on anything but the left pair), relative mouse motion (love.mousemoved --
--- there is no Game handler to wrap; the engine's own callback only feeds
--- the mouse-as-touch debug path, which stays untouched), the mouse buttons
--- while the cursor is captured (A and B -- there is no cursor to click UI
--- with), and any touch that lands off the overlay's controls (a drag on
--- open screen is the look; the d-pad and buttons still go to
--- TouchControls, whose own d-pad finger is also read back analog as the
--- move vector). Every wrap forwards whatever it does not claim, and claims
--- only while one of the two rungs is actually driving.
---
--- FreeMove.install wraps OverworldState:handleInput -- the one choke point
--- where the grid walk reads the pad, and the same seam the engine's own
--- Cycling Road pull lives behind. While either drives, the walk is continuous
--- and camera-relative; the player's logical cell stays synced and every
--- per-cell consequence still runs through the engine's own machinery
--- (onStepComplete, checkEdgeExit, checkLedgeHop, checkBoulderPush). The
--- file argues the whole arrangement.
-FirstPerson.install()
-FreeMove.install()
-
--- ------- the zooms, and the battle camera the player can steer
---
--- CamControl claims the wheel, Q/E, the mouse and the touch screen for
--- whichever camera is actually in front of the player -- the staged
--- battle's, the third-person boom, or the engine's own survey zoom -- and
--- forwards everything else. Installed AFTER the two above deliberately: a
--- wrap installed later is the OUTER one, so a fight gets first refusal on
--- the mouse and the fingers, which is right, because while one is staged
--- the free-roam look is not driving.
-CamControl.install()
-
--- ------- SELECT walks the angle ladder
---
--- The same step the "3" key makes, on the pad's own button: a phone (and
--- a controller) has no number row, and SELECT has no overworld job in
--- Gen 1 -- its work is all in-menu, which this wrap never sees. The seam
--- is OverworldState:handleInput, the same choke point the free walk
--- replaced: every gate above it -- menus, dialogs, scripted moves,
--- transitions -- already decided the overworld owns the buttons, so a
--- SELECT here is free-roam by construction, exactly like the key. When
--- the step is refused (mid-warp, no 3D pass) the press falls through to
--- the engine's own handling, which is a no-op, as ever.
---
--- Installed AFTER FreeMove.install, deliberately: its wrap must sit
--- OUTSIDE the free walk's, or first person -- where FreeMove.tick takes
--- the frame and never calls further in -- would eat the button, and the
--- one rung SELECT could not step off of would be 1ST itself.
-do
-  local OverworldState = require("src.world.OverworldController")
-  if not OverworldState.dramaticShapeSelectHook then
-    local inner = OverworldState.handleInput
-    function OverworldState:handleInput(...)
-      local Game = require("src.core.Game")
-      local input = Game.input
-      if input and input.wasPressed and input:wasPressed("select") then
-        if cycleVoxel(Game) then return end
-      end
-      return inner(self, ...)
-    end
-    OverworldState.dramaticShapeSelectHook = true
-  end
-end
-
--- ------- the konami code, and everything it turns on
---
--- Installed last of the input seams so its handleInput reasoning sits
--- outside FreeMove's and SELECT's. The detector itself does not live on
--- handleInput at all -- it reads the fixed step's own press queue, which
--- is where keyboard, pad, touch and the VR controllers have all already
--- become the same eight buttons. See lib/Horde.lua.
-Horde.install()
-
--- ------- edge-anchored menus stay in the GB frame while a headset is live
---
--- The engine's zoom-aware anchoring (Renderer:setUIAnchor) docks the START
--- menu to the WINDOW's top-right edge. Both VR screens -- the floating
--- panel and the Pokedex -- crop the window to the GB frame, so a menu at
--- the window's edge is cropped away with the border it docked to. The
--- engine's own answer to "a state composes its screen, keep every element
--- inside it" is uiAnchorHold, computed per frame from this predicate; a
--- live headset is exactly that situation for the WHOLE window, so the
--- predicate answers yes for as long as one is. Held menus blit where they
--- were drawn in the 160x144 canvas -- the START menu's 9,0 x 11 slot is
--- already flush with the frame's right edge, which is the right edge of
--- what the headset sees. Off-headset frames fall through untouched.
-do
-  local Game = require("src.core.Game")
-  if not Game.dramaticShapeAnchorHold then
-    local inner = Game.uiAnchorsHeldInStack
-    function Game.uiAnchorsHeldInStack(stack)
-      if VR.active() then return true end
-      return inner(stack)
-    end
-    Game.dramaticShapeAnchorHold = true
-  end
-end
 
 -- The overworld's own pushBattle is the choke point for a wild encounter or
 -- a trainer, and it is wrapped. A battle that arrives some other way -- a
@@ -1185,7 +934,36 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "1.5.5"
--- exposed so a companion mod can pin its own tiles' shapes or read the
--- camera without reaching into this mod's file layout
-mod.exports.lib = V
+mod.exports.version = "0.1.0-rc.1"
+mod.exports.apiVersion = 1
+mod.exports.renderer = {
+  id = "VOXEL_ASCENDANT",
+  version = "0.1.0-rc.1",
+  pipeline = "voxel",
+  cameraProfile = "orbit-only",
+}
+mod.exports.capabilities = {
+  voxelWorld = true,
+  battleCards = { "MAP", "DISCS" },
+  wallDecals = WallDecals.API_VERSION,
+  diskCache = false,
+  stadium = false,
+  vr = false,
+}
+mod.exports.Voxel3D = Voxel3D
+mod.exports.WallDecals = WallDecals
+
+-- Compatibility modules are selected eagerly into a closed table. Unknown
+-- names never reach the private owner-scoped loader, and the facade exposes
+-- neither the mod handle nor its path/data/module caches.
+local publicModules = {
+  AntiAlias = AntiAlias,
+  BattleArena = V.require("BattleArena"),
+  BattleCam = V.require("BattleCam"),
+  OverworldBattle = OverworldBattle,
+  Voxel3D = Voxel3D,
+  VoxelScene = VoxelScene,
+  VoxelState = Voxel,
+  WallDecals = WallDecals,
+}
+mod.exports.lib = PublicFacade.new(publicModules)

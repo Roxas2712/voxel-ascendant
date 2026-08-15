@@ -326,9 +326,8 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
   -- below this is a map that is not in the shot.
   if arena.discs then
     pcall(function()
-      V.require("StadiumStage").cast(ShadowMap, arena, groundY or 0)
+      V.require("VoxelBattleStage").cast(ShadowMap, arena, groundY or 0)
     end)
-    pcall(function() V.require("Stadium").cast(ShadowMap) end)
     ShadowMap.finish(sig)
     return
   end
@@ -366,14 +365,6 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
                    ShadowMap.snug(card.model))
   end
   ShadowMap.sprites(false)
-  -- and the STADIUM models, when that rung is the one running. NOT marked
-  -- as sprites: that flag exists so a flat card's cut-out is kept off the
-  -- water (see ShadowMap.sprites), and these are real geometry standing in
-  -- the world -- a Gyarados at the water's edge should put a Gyarados on
-  -- the water. Un-snugged for the same reason: snug is a bias for a card
-  -- rooted to the ground plane, and a model has thickness of its own.
-  pcall(function() V.require("Stadium").cast(ShadowMap) end)
-
   ShadowMap.finish(sig)
 end
 
@@ -584,7 +575,7 @@ function BattleScene.render(state, arena, textures, token)
       -- neighbouring maps, no water, no grass and no flowers -- see the
       -- matching skips further down. What is behind them is the sky the
       -- clear painted.
-      V.require("StadiumStage").draw(arena, groundY)
+      V.require("VoxelBattleStage").draw(arena, groundY)
     else
     Voxel3D.draw(terrain, atlasFor(host), nil)
     for i, nb in ipairs(neighbors) do
@@ -638,15 +629,6 @@ function BattleScene.render(state, arena, textures, token)
     end
     Voxel3D.glass(true)
     Voxel3D.seams(true)
-    -- and the STADIUM models, inside the same flash window and with the
-    -- same camera-ward pull, so a Pokemon standing on its tile still wins
-    -- the depth test against the tile. They manage the wireframe and the
-    -- glass mask around their own draws (StadiumRig), which is why this
-    -- sits outside the pair above rather than inside it.
-    local okStadium, stadiumErr = pcall(function()
-      V.require("Stadium").draw(BattleBillboard.PULL)
-    end)
-    if not okStadium then V.require("Stadium").report(stadiumErr) end
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the

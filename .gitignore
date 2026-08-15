@@ -1,46 +1,12 @@
-# Bytecode from the authoring tools in tools/ and
-# assets/docs/buidling_to_voxel/ -- generated on whatever machine ran them.
+# Local build and editor output. No ROM, model or binary asset is part of this
+# repository or release.
+dist/
 __pycache__/
 *.py[cod]
-
-# agent worktrees and local scratch
+.DS_Store
 .claude/
-
-# ------- Pokemon Stadium data
-#
-# NONE OF THIS SHIPS, and none of it is in the repository. The battle models
-# are Pokemon Stadium's own data: what the mod carries is the READER for them
-# (lib/StadiumRom, StadiumFragment, StadiumFx, StadiumBuild) and the player
-# supplies the cartridge, exactly as this engine already asks them to supply
-# the Game Boy ROM it is a recompilation of.
-#
-# So the ROM itself, everything model_extract/pipeline extracts out of it, and
-# the packs tools/stadium_pack.py builds from those are all ignored. What IS
-# tracked is the pipeline, the notes, and the two READMEs that say where to
-# put a ROM.
-#
-# At runtime the packs are built on the player's own machine, on first run,
-# into the save directory -- never into the mod folder (see StadiumInstall).
-
-# the cartridge, wherever it is dropped, and the checksum note that comes
-# with one. The Zone.Identifier pattern has no colon in it on purpose: it is
-# an NTFS alternate data stream, and the separator reaches git as U+F03A
-# rather than as ':' -- so matching on the suffix alone is what actually works
+*.gb
+*.gbc
 *.z64
 *.n64
 *.v64
-*Zone.Identifier
-model_extract/baseroms/**/checksum.md5
-
-# everything the pipeline extracts from it
-model_extract/glb/
-model_extract/js/
-model_extract/textures/
-model_extract/manifest.json
-model_extract/moves.json
-model_extract/viewer.html
-
-# and the packed models built from those -- the local oracle the Lua
-# extractor is diffed against (tests/stadium_extract_test.lua), rebuilt with
-# tools/stadium_pack.py whenever it is wanted
-assets/stadium/
