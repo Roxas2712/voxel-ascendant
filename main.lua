@@ -91,6 +91,7 @@ local DayTint = V.require("DayTint")
 local Water = V.require("Water")
 local AntiAlias = V.require("AntiAlias")
 local WallDecals = V.require("WallDecals")
+local CrystalArt = V.require("CrystalArt")
 local PublicFacade = V.require("PublicFacade")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
@@ -381,6 +382,17 @@ local SETTINGS = {
     .. "original slot, instead of standing it on the map facing the foe. "
     .. "The foe is still out there on its own tile.",
     when = stagedBattles,
+    full = true },
+  { CrystalArt.setting,
+    "Choose this standalone mod's own Gen-I battle picture pack. CRYSTAL "
+    .. "uses the bundled front animations, rear cards and trainer portraits; "
+    .. "GEN I leaves every picture to the game. Kanto Ascendant and a "
+    .. "dedicated Crystal provider keep priority automatically.",
+    full = true },
+  { CrystalArt.motionSetting,
+    "Animate the bundled Crystal Pokemon fronts. Rear cards remain static, "
+    .. "matching the supplied source art.",
+    when = function() return CrystalArt.setting:get() == "crystal" end,
     full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
@@ -832,6 +844,7 @@ end
 -- where the reasoning for each one is written down. Installed once, here,
 -- so this file keeps naming every engine seam the mod touches.
 OverworldBattle.install()
+CrystalArt.install()
 
 -- The overworld's own pushBattle is the choke point for a wild encounter or
 -- a trainer, and it is wrapped. A battle that arrives some other way -- a
@@ -855,13 +868,16 @@ end)
 -- the last word on WHICH art is used; this only changes which SIDE is asked
 -- for.
 mod.hooks:wrap("pokemon.sprite", function(next, path, ctx)
-  local out = next(path, ctx)
   if not (ctx and ctx.kind == "battle" and ctx.side == "back") then
-    return out
+    return next(path, ctx)
   end
-  if not OverworldBattle.wantsFront() then return out end
+  if not OverworldBattle.wantsFront() then return next(path, ctx) end
   local def = ctx.data and ctx.data.pokemon and ctx.data.pokemon[ctx.species]
-  return (def and def.spriteFront) or out
+  if not (def and def.spriteFront) then return next(path, ctx) end
+  local front = {}
+  for key, value in pairs(ctx) do front[key] = value end
+  front.side = "front"
+  return next(def.spriteFront, front)
 end)
 
 -- Every ending path emits this, including a battle skipped before it drew,
@@ -934,11 +950,11 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "0.1.0-rc.1"
+mod.exports.version = "0.1.0"
 mod.exports.apiVersion = 1
 mod.exports.renderer = {
   id = "VOXEL_ASCENDANT",
-  version = "0.1.0-rc.1",
+  version = "0.1.0",
   pipeline = "voxel",
   cameraProfile = "orbit-only",
 }

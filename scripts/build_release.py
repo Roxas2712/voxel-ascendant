@@ -32,6 +32,8 @@ def release_files() -> list[Path]:
     files = [ROOT / name for name in ROOT_FILES]
     files.extend(sorted((ROOT / "lib").glob("*.lua")))
     files.extend(sorted((ROOT / "data").glob("*.lua")))
+    files.extend(sorted(path for path in (ROOT / "assets" / "crystal_gen1").rglob("*")
+                        if path.is_file()))
     missing = [path for path in files if not path.is_file()]
     if missing:
         raise SystemExit("missing release file(s): " + ", ".join(map(str, missing)))

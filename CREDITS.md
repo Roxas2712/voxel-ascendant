@@ -9,5 +9,8 @@
 - **Voxel Ascendant contributors** — sandbox hardening, standalone identity,
   feature reduction, compatibility contract, testing, and packaging.
 
-No external Pokemon sprite pack, Pokemon Stadium asset, ROM content, Battle
-Art asset, OpenXR binary, or proprietary artwork is distributed in this mod.
+The optional bundled Gen-I Crystal battle-art selection comes from the
+PokeAPI sprite mirror and Crystal Animated Sprites with Shiny Visuals v1.5;
+see `THIRD_PARTY_NOTICES.md` and `assets/crystal_gen1/SOURCE.md` for the exact
+scope and provenance. No Pokemon Stadium asset, ROM content, Battle Art asset,
+or OpenXR binary is distributed in this mod.

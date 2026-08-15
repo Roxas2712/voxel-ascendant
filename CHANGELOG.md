@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0 — 2026-08-15
+
+- Keep battle HUDs in the centered engine battle frame so status panels and
+  command menus share one scale on large and HiDPI displays.
+- Prevent the left-edge crop of long enemy names caused by window-edge HUD
+  snapping.
+- Add an independent Gen-I Crystal battle-art pack, animation controller and
+  VASC-owned BATTLE ART / CRYSTAL MOTION menu rows. KASC remains untouched and
+  wins sprite selection when both mods are active.
+
 ## 0.1.0-rc.1 — 2026-08-15
 
 - Established the standalone `VOXEL_ASCENDANT` identity for Gen1Recomp

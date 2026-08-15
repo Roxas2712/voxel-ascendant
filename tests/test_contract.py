@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.0-rc.1")
+        self.assertEqual(manifest["version"], "0.1.0")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -102,10 +102,34 @@ class ContractTests(unittest.TestCase):
         for name in REMOVED_NAMES:
             self.assertFalse(any(name in path for path in release_paths),
                              f"removed module still present: {name}")
-        denied_suffixes = {".dll", ".so", ".dylib", ".png", ".jpg", ".bin",
+        denied_suffixes = {".dll", ".so", ".dylib", ".jpg", ".bin",
                            ".gb", ".gbc", ".z64", ".n64", ".v64"}
         self.assertFalse(any(Path(path).suffix.lower() in denied_suffixes
                              for path in release_paths))
+        pngs = [path for path in release_paths if path.endswith(".png")]
+        self.assertTrue(pngs)
+        self.assertTrue(all(path.startswith("assets/crystal_gen1/")
+                            for path in pngs))
+
+    def test_crystal_pack_is_complete_and_kasc_independent(self) -> None:
+        root = ROOT / "assets" / "crystal_gen1"
+        expected = {
+            "front/normal": 2323,
+            "front/shiny": 2323,
+            "back/normal": 151,
+            "back/shiny": 151,
+            "trainers/normal": 47,
+        }
+        for relative, count in expected.items():
+            self.assertEqual(len(list((root / relative).rglob("*.png"))), count)
+        source = (ROOT / "lib" / "CrystalArt.lua").read_text(encoding="utf-8")
+        self.assertIn('loaded("kanto_ascendant")', source)
+        self.assertIn(
+            'loaded("crystal_animated_sprites_with_shiny_visuals")', source
+        )
+        self.assertNotIn("kanto_ascendant/", source)
+        self.assertIn('"battle_art", "BATTLE ART"', source)
+        self.assertIn('"crystal_motion", "CRYSTAL MOTION"', source)
 
     def test_export_facade_source_is_exact_allowlist(self) -> None:
         source = (ROOT / "main.lua").read_text(encoding="utf-8")
@@ -126,6 +150,38 @@ class ContractTests(unittest.TestCase):
             self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
         subprocess.run([str(lua), "tests/public_facade_test.lua"], cwd=ROOT,
                        check=True, text=True, capture_output=True)
+
+    def test_crystal_art_runtime_contract(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        run = subprocess.run(
+            [str(lua), "tests/crystal_art_test.lua"], cwd=ROOT,
+            check=True, text=True, capture_output=True,
+        )
+        self.assertIn("PASS crystal_art_test", run.stdout)
+
+    def test_battle_huds_stay_in_centered_engine_frame(self) -> None:
+        source = (ROOT / "lib" / "OverworldBattle.lua").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("function OverworldBattle.update(dt)")
+        end = source.index("function OverworldBattle.shot()", start)
+        update = source[start:end]
+        self.assertNotIn("OverworldBattle.snapHUDs", update)
+        self.assertIn("session.snapped = false", update)
+        self.assertIn(
+            "return innerHUDs(self, slide, ...)",
+            source,
+            "the engine must retain ownership of the centered HUD draw",
+        )
+        crystal = (ROOT / "lib" / "CrystalArt.lua").read_text(encoding="utf-8")
+        self.assertEqual(crystal.count("inner(battle, dt, ...)"), 1,
+                         "the BattleState update must not execute twice")
 
     def test_deterministic_direct_install_zip(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -148,6 +204,9 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(len(names), len(set(names)))
                 manifest = json.loads(archive.read("manifest.json"))
                 self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
+                self.assertIn("assets/crystal_gen1/front/normal/1/001.png", names)
+                self.assertIn("assets/crystal_gen1/back/shiny/151/001.png", names)
+                self.assertIn("assets/crystal_gen1/trainers/normal/red.png", names)
                 for info in archive.infolist():
                     self.assertEqual(info.date_time, (1980, 1, 1, 0, 0, 0))
 

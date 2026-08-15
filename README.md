@@ -7,9 +7,11 @@ an optional companion, but is not required.
 
 This release candidate is built only from the MIT-licensed
 DramaticShapeVoxelMod v1.6.1 source tag (`790c34efff4975c91883f7f918a875530706ee12`)
-plus the changes documented in this repository. No Battle Art code or assets,
-Gen 2 sprite packs, Pokemon Stadium data, ROM tooling, VR binaries, or other
-third-party art are included.
+plus the changes documented in this repository. No code or art from the
+unlicensed Battle Art voxel fork, no Gen 2 sprite pack, Pokemon Stadium data,
+ROM tooling, or VR binaries are included. Voxel Ascendant does include a
+separately documented Gen-I Crystal battle-art subset; see the provenance
+section below.
 
 ## Requirements and installation
 
@@ -35,6 +37,8 @@ useful for recovery or advanced configuration.
 | **DAYTIME** | DAY, NIGHT, DUSK, DAWN, CYCLE | Deterministic outdoor lighting; CYCLE is saved per journey. |
 | **3D-BTL** / `8` | MAP, DISCS, OFF | Native Gen 1 battle cards on nearby voxel terrain or a procedural disc stage. |
 | **BACK SPRITES** | OFF, ON | Keeps the player's classic back sprite in its normal battle slot. |
+| **BATTLE ART** | CRYSTAL, GEN I | Uses VASC's own bundled Gen-I Crystal Pokémon/trainer pack or the game's native art. KASC keeps priority when present. |
+| **CRYSTAL MOTION** | ON, OFF | Animates supplied Crystal front cards; rear cards remain static. |
 | **AA** | OFF, 2X, 4X | Supersamples the 3D pass. |
 
 The RC intentionally does not include first-/third-person free movement,
@@ -60,6 +64,11 @@ end
 ```
 
 The stable export contract is documented in [COMPATIBILITY.md](COMPATIBILITY.md).
+
+Kanto Ascendant and Voxel Ascendant do not exchange or move files at runtime.
+Each package retains its own art. If both are loaded, VASC deliberately yields
+Pokémon and trainer selection to KASC, while it continues to provide the voxel
+world, battle stage and effects.
 
 ## License and provenance
 
