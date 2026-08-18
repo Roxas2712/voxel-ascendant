@@ -14,6 +14,9 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+KASC_656_RENDERER_BATTLE_HUD_SHA256 = (
+    "73a235adb1d8e259906b0200a5ce650ac183d8e69ccc7d045cf9c9dd50dc5479"
+)
 EXPECTED_PUBLIC = {
     "AntiAlias",
     "BattleArena",
@@ -59,12 +62,94 @@ def code_without_comments(text: str) -> str:
     return "\n".join(line.split("--", 1)[0] for line in text.splitlines())
 
 
+def exact_kasc_656_renderer_battle_hud() -> bytes:
+    """Load the byte-exact public KASC 6.5.6 bridge used by production.
+
+    This deliberately does not fall back to a reduced fixture. Release QA can
+    point KASC_656_RENDERER_BATTLE_HUD at an extracted public package; the
+    local release workspace also keeps the exact public ZIP for offline QA.
+    """
+    explicit = os.environ.get("KASC_656_RENDERER_BATTLE_HUD")
+    candidates = [Path(explicit)] if explicit else []
+    candidates.extend([
+        Path("/private/tmp/kasc656.QtZSjW/renderer_battle_hud.lua"),
+        ROOT.parent / "qa" / "kanto-ascendant-6.5.6-public-release-20260817"
+        / "renderer_battle_hud.lua",
+    ])
+    archives = [
+        ROOT.parent / "qa" / "kanto-ascendant-6.5.6-public-release-20260817"
+        / "kanto_ascendant-6.5.6.zip",
+        ROOT.parent / "qa"
+        / ".kanto-ascendant-6.5.6-public-release-20260818-replacement-8eee89a9.pending"
+        / "kanto_ascendant-6.5.6.zip",
+    ]
+
+    found: list[tuple[str, bytes]] = []
+    for path in candidates:
+        if path.is_file():
+            found.append((str(path), path.read_bytes()))
+    for archive in archives:
+        if archive.is_file():
+            with zipfile.ZipFile(archive) as package:
+                try:
+                    found.append((
+                        f"{archive}!renderer_battle_hud.lua",
+                        package.read("renderer_battle_hud.lua"),
+                    ))
+                except KeyError:
+                    pass
+
+    mismatches: list[str] = []
+    for source, payload in found:
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest == KASC_656_RENDERER_BATTLE_HUD_SHA256:
+            return payload
+        mismatches.append(f"{source}={digest}")
+    detail = "; ".join(mismatches) if mismatches else "no candidate found"
+    raise AssertionError(
+        "byte-exact public KASC 6.5.6 renderer_battle_hud.lua unavailable: "
+        + detail
+    )
+
+
+def exact_gen1recomp_0190_root() -> Path:
+    explicit = os.environ.get("GEN1RECOMP_0190_ROOT")
+    candidates = [Path(explicit)] if explicit else []
+    candidates.extend([
+        ROOT.parent / "qa"
+        / "gen1recomp-0.1.90-clientfix-rc-20260815-2c645aef"
+        / "build-A" / "stage",
+        ROOT.parent / "gen1recomp",
+    ])
+    required = {
+        Path("src/battle/BattleState.lua"):
+            "3a443b2c95c967722c33896775ed46f09bfb0ad8488c094d53ada2ebdd9a355a",
+        Path("src/render/PaletteFX.lua"):
+            "0c2433022b75f46ec354298326cc211e65a8c9a55653ca6f3b1d7e1c1a48e8b6",
+        Path("data/palettes_gbc.lua"):
+            "e194c72de82a0a520aced960b04d95325735b4ee63e9b071ad3e96bcf6615b0c",
+        Path("data/palettes_yellow.lua"):
+            "d6e74d475b919d795c51cc837b1f815a9a35fafd30f8e277212da108abc69124",
+    }
+    for candidate in candidates:
+        if all(
+            (candidate / path).is_file()
+            and hashlib.sha256((candidate / path).read_bytes()).hexdigest()
+            == digest
+            for path, digest in required.items()
+        ):
+            return candidate
+    raise AssertionError(
+        "exact Gen1Recomp 0.1.90 source unavailable; set GEN1RECOMP_0190_ROOT"
+    )
+
+
 class ContractTests(unittest.TestCase):
     def test_manifest_contract(self) -> None:
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.4")
+        self.assertEqual(manifest["version"], "0.1.5")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -127,7 +212,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("session.snapped = false", update)
         self.assertIn("return innerHUDs(self, slide, ...)", source)
 
-    def test_ios_battle_hud_guard_and_kasc_fallback(self) -> None:
+    def test_ios_battle_hud_capability_isolation(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
         lua = Path(candidate) if candidate else None
         if not lua or not lua.is_file():
@@ -135,8 +220,29 @@ class ContractTests(unittest.TestCase):
             lua = Path(found) if found else None
         if not lua:
             self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
-        subprocess.run([str(lua), "tests/ios_battle_hud_test.lua"], cwd=ROOT,
-                       check=True, text=True, capture_output=True)
+        source = exact_kasc_656_renderer_battle_hud()
+        with tempfile.TemporaryDirectory() as temp:
+            exact_module = Path(temp) / "renderer_battle_hud.lua"
+            exact_module.write_bytes(source)
+            subprocess.run(
+                [str(lua), "tests/ios_battle_hud_test.lua", str(exact_module)],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+
+    def test_ios_battle_hud_zone_pixel_acceptance(self) -> None:
+        engine = exact_gen1recomp_0190_root()
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "ios-hud-bad-vs-fixed.png"
+            subprocess.run(
+                [
+                    "python3", "tests/render_ios_hud_acceptance.py",
+                    "--engine-root", str(engine),
+                    "--output", str(output),
+                ],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+            self.assertTrue(output.is_file())
+            self.assertGreater(output.stat().st_size, 1_000)
 
     def test_export_facade_adversarial(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")

@@ -7,13 +7,13 @@ local handle = mod.find("VOXEL_ASCENDANT")
 local exports = handle and handle.exports
 ```
 
-For `0.1.4`, the stable fields are:
+For `0.1.5`, the stable fields are:
 
 ```lua
-exports.version == "0.1.4"
+exports.version == "0.1.5"
 exports.apiVersion == 1
 exports.renderer.id == "VOXEL_ASCENDANT"
-exports.renderer.version == "0.1.4"
+exports.renderer.version == "0.1.5"
 exports.renderer.pipeline == "voxel"
 exports.renderer.cameraProfile == "orbit-only"
 exports.capabilities.voxelWorld == true
@@ -37,16 +37,20 @@ the following best-effort compatibility names for Kanto Ascendant and similar
 feature-detecting companions: `AntiAlias`, `BattleArena`, `BattleCam`,
 `OverworldBattle`, `VoxelScene`, and `VoxelState`. These extra modules may gain
 new versions behind a future capability receipt; consumers must not assume
-private fields or mutate them.
+private fields. Reviewed cooperative companions may wrap the documented
+`OverworldBattle` seams (`sideTexture`, `hudTexture`, `drawHudPanels`, and
+`snapHUDs` when present) while preserving their inputs, return values, and
+owner-table identity. Other module mutation is unsupported.
 
 `OverworldBattle.snapHUDs(battle, shot)` is a best-effort legacy compositor.
-Consumers must treat a false return as a clean decline and draw the regular
-engine HUD. It deliberately returns false on iOS because the platform's final
-world-canvas transform would invert HUD pixels composited into that surface.
+It is present only after an explicitly detected non-iOS platform. On iOS the
+platform's final world-canvas transform inverts HUD pixels composited into that
+surface; an unavailable platform receipt also fails closed. Consumers must
+feature-detect the function and keep the regular engine HUD when it is absent.
 
 Consumers must feature-detect fields and versions. They must not create alias
-entries in `game.mods.exports`, mutate the renderer, inspect private module
-storage, or assume a removed capability.
+entries in `game.mods.exports`, mutate renderer fields outside the cooperative
+seams above, inspect private module storage, or assume a removed capability.
 
 ## Wall-decals API version 1
 

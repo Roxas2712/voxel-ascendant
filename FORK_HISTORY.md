@@ -10,8 +10,12 @@ Voxel Ascendant has one publication source line:
    the centered battle-HUD repair and an explicit no-external-art boundary.
 4. **Voxel Ascendant 0.1.3** — recovery release restoring the proven 0.1.1
    runtime after withdrawing the broken 0.1.2 rendering experiment.
-5. **Voxel Ascendant 0.1.4** — iOS compatibility hotfix that makes the legacy
-   companion edge-HUD seam decline safely into the centered engine HUD.
+5. **Voxel Ascendant 0.1.4** — incomplete iOS compatibility attempt: declining
+   the legacy edge-HUD seam removed its vertical flip, but still let a
+   companion restore frost panels into the grayscale battle canvas.
+6. **Voxel Ascendant 0.1.5** — complete iOS HUD isolation: companion feature
+   detection selects the native HUD before any cross-canvas panel bridge is
+   installed, and intro-panel visibility matches the engine.
 
 The upstream mirror remains configured as the local `upstream` Git remote.
 Publication is performed only after the release QA gate passes.

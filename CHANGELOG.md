@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 — 2026-08-18
+
+- Stop advertising the legacy wide/edge-HUD capability to companion mods on
+  iOS. This makes Kanto Ascendant select its renderer-native HUD profile before
+  installing the panel bridge that produced a bright green HUD-sized block.
+- Match Gen1Recomp's status-HUD visibility guards, including the wild-battle
+  party-ball intro where no enemy status panel exists yet.
+- Fail closed when the platform cannot be identified, so companion HUD bridges
+  are enabled only after a non-iOS platform is positively detected.
+- Keep the owner renderer and desktop companion integration unchanged.
+- Supersede 0.1.4, whose early snap decline removed the vertical flip but still
+  allowed Kanto Ascendant to restore a colored frost panel into the grayscale
+  battle canvas.
+
 ## 0.1.4 — 2026-08-18
 
 - Decline the optional legacy edge-HUD compositor on iOS, where Gen1Recomp's

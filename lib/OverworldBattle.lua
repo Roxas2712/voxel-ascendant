@@ -62,18 +62,47 @@ local DEBUG = false
 -- Gen1Recomp presents the world canvas with a negative Y scale on iOS.  A
 -- battle HUD that has already been rendered upright into that canvas would
 -- therefore be flipped a second time.  Voxel Ascendant no longer calls the
--- legacy edge-HUD compositor itself, but companions may still feature-detect
--- and call the public snapHUDs seam.  Declining that seam lets their existing
--- fallback keep the engine HUD in its upright, centered UI canvas.
-local function isIOS()
+-- legacy edge-HUD compositor itself.  It must be absent from the public module
+-- on iOS, because advertising it is enough for a companion to install
+-- cross-canvas panel wrappers before the function ever runs.  An unavailable
+-- platform receipt also fails closed: losing the optional edge layout is safer
+-- than exposing it before iOS has been ruled out.
+local function detectedOS()
   local ok, Platform = pcall(require, "src.core.Platform")
   if not ok or type(Platform) ~= "table"
       or type(Platform.detect) ~= "function" then
-    return false
+    return nil
   end
   local detected, info = pcall(Platform.detect)
-  return detected and type(info) == "table" and info.os == "iOS"
+  if not detected or type(info) ~= "table" or type(info.os) ~= "string" then
+    return nil
+  end
+  return info.os
 end
+
+local PLATFORM_OS = detectedOS()
+local LEGACY_SNAP_OS = {
+  ["OS X"] = true,
+  Windows = true,
+  Linux = true,
+  Android = true,
+  NX = true,
+  UWP = true,
+}
+local function legacySnapIsSafe()
+  return LEGACY_SNAP_OS[PLATFORM_OS] == true
+end
+
+-- Kanto Ascendant and other companions feature-detect the historical
+-- window-edge HUD compositor through the public OverworldBattle module.  On
+-- iOS that compositor cannot be offered safely: even a clean false return
+-- makes KASC restore the compact panels while the engine's grayscale battle
+-- canvas is bound, so the later zone pass recolors the frost as an HP bar.
+--
+-- The function is therefore attached to the real owner module only off iOS
+-- (below its implementation).  Keeping the original table matters: companion
+-- hooks for side textures and overlays must still reach Voxel Ascendant rather
+-- than mutate a detached proxy.
 
 OverworldBattle.KEY = "battles"
 OverworldBattle.LABEL = "3D-BTL"
@@ -1214,11 +1243,14 @@ end
 -- the worst a future engine change can do is show an empty one for a frame,
 -- never break a battle.
 function OverworldBattle.hudLive(battle, slide)
-  local enemy = battle.enemy and not battle.showEnemyTrainer
+  local showStatus = type(battle.statusHUDVisible) ~= "function"
+                     or battle:statusHUDVisible()
+  local enemy = showStatus and battle.enemy and not battle.showEnemyTrainer
                 and not battle.enemySendingOut
                 and not battle:growInScale(battle.enemy) and slide == 0
-                and not battle.enemy.fainted
-  local player = battle.player and not (battle.safari or battle.demo)
+                and not battle.introBalls and not battle.enemy.fainted
+  local player = showStatus and battle.player
+                 and not (battle.safari or battle.demo)
                  and not battle.showPlayerBack and slide == 0
   return enemy and true or false, player and true or false
 end
@@ -1258,8 +1290,8 @@ end
 -- faint, and the safari ball count, all draw in these rows and belong at the
 -- same edge as the block they share it with. The panels are the ones that
 -- follow hudLive -- frosted glass under nothing is a slab floating in the arena.
-function OverworldBattle.snapHUDs(battle, shot)
-  if isIOS() then return false end
+local function snapHUDs(battle, shot)
+  if not legacySnapIsSafe() then return false end
   if not (battle and shot and shot.canvas and (shot.scale or 0) > 0) then
     return false
   end
@@ -1299,6 +1331,8 @@ function OverworldBattle.snapHUDs(battle, shot)
   if not ok then error(err, 0) end
   return true
 end
+
+if legacySnapIsSafe() then OverworldBattle.snapHUDs = snapHUDs end
 
 -- Lay the frosted glass down under whichever HUD and box are about to draw,
 -- and record which way the glyphs have to flip.

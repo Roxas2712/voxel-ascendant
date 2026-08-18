@@ -1,8 +1,12 @@
--- Regression: Gen1Recomp 0.1.90 presents a render pipeline's worldOverride
--- with a negative Y scale on iOS/LÖVE 12.  A status HUD composited into that
--- canvas is therefore upside down even though the normal UI canvas remains
--- upright.  Kanto Ascendant calls the public snapHUDs helper, so the helper
--- itself (not only Voxel Ascendant's own update loop) must decline on iOS.
+-- Cross-mod regression for VASC + KASC 6.5.6 + Gen1Recomp 0.1.90 on iOS.
+--
+-- Merely returning false from public snapHUDs is too late.  KASC sees the
+-- function during capability negotiation, installs its compact-panel bridge,
+-- and restores those panels from inside Gen1's colorized drawHUDs pass while
+-- bgCanvas is bound.  During the wild-intro ball row, VASC's old hudLive
+-- mirror then produced an empty 80x32 enemy panel which the zone shader turned
+-- GREENBAR green.  The iOS companion view must hide the unsafe capability so
+-- KASC declines before installing either wrapper.
 
 local function check(value, message)
   if not value then error("FAIL " .. message, 2) end
@@ -24,9 +28,14 @@ local function fixture(osName)
     draw = 0,
     innerHUD = 0,
     hudTargets = {},
+    engineEnemy = {},
+    enginePlayer = {},
+    panelRects = {},
+    panelTargets = {},
   }
 
   local screenCanvas = { name = "ui" }
+  local bgCanvas = { name = "battle-bg" }
   local worldCanvas = { name = "world" }
   local hudLayer = {
     name = "hud-layer",
@@ -70,8 +79,10 @@ local function fixture(osName)
     love.graphics.setCanvas(previous)
     return hudLayer
   end
-  function BattleHud.panel()
+  function BattleHud.panel(rect)
     calls.panel = calls.panel + 1
+    calls.panelRects[#calls.panelRects + 1] = rect
+    calls.panelTargets[#calls.panelTargets + 1] = currentCanvas
     return true
   end
 
@@ -116,9 +127,22 @@ local function fixture(osName)
     drawTextArea = function() end,
     drawAnimLayer = function() end,
     drawZonePass = function() end,
-    drawHUDs = function()
+    statusHUDVisible = function() return true end,
+    drawHUDs = function(self, slide)
       calls.innerHUD = calls.innerHUD + 1
       calls.hudTargets[#calls.hudTargets + 1] = currentCanvas
+      -- Exact Gen1Recomp 0.1.90 status gates relevant to the photographed
+      -- wild-intro frame.  The party balls are live, but both HP/status HUDs
+      -- intentionally remain absent until the send-out text is dismissed.
+      local showStatus = self:statusHUDVisible()
+      calls.engineEnemy[#calls.engineEnemy + 1] = showStatus
+        and self.enemy and not self.showEnemyTrainer
+        and not self.enemySendingOut and not self:growInScale(self.enemy)
+        and slide == 0 and not self.introBalls and not self.enemy.fainted
+        and true or false
+      calls.enginePlayer[#calls.enginePlayer + 1] = showStatus
+        and self.player and not (self.safari or self.demo)
+        and not self.showPlayerBack and slide == 0 and true or false
     end,
     fxHidden = function() return false end,
     growInScale = function() return false end,
@@ -138,19 +162,18 @@ local function fixture(osName)
   local PublicFacade = assert(loadfile("lib/PublicFacade.lua"))()
   local publicLib = PublicFacade.new({ OverworldBattle = OverworldBattle })
   local exportedOverworldBattle = publicLib.require("OverworldBattle")
-  eq(exportedOverworldBattle, OverworldBattle,
-     "public compatibility facade returns the guarded battle module")
 
   local battle = setmetatable({
     enemy = { fainted = false },
     player = {},
     showEnemyTrainer = false,
     enemySendingOut = false,
-    showPlayerBack = false,
     safari = false,
     demo = false,
     introSlide = 0,
-    phase = "command",
+    introBalls = true,
+    phase = "messages",
+    showPlayerBack = true,
   }, { __index = BattleState })
   local shot = {
     canvas = worldCanvas,
@@ -164,74 +187,258 @@ local function fixture(osName)
   return {
     calls = calls,
     screenCanvas = screenCanvas,
+    bgCanvas = bgCanvas,
     worldCanvas = worldCanvas,
     BattleState = BattleState,
     battle = battle,
     shot = shot,
+    ownerOverworldBattle = OverworldBattle,
     OverworldBattle = exportedOverworldBattle,
+    bindCanvas = function(value) currentCanvas = value end,
   }
 end
 
--- iOS must return before producing/copying a HUD texture or binding the
--- world canvas.  These are deliberately zero-work assertions: returning
--- false after touching the canvas would still risk a corrupt partial frame.
+-- This path must point at the byte-exact public Kanto Ascendant 6.5.6
+-- renderer_battle_hud.lua.  tests/test_contract.py verifies its release hash
+-- before invoking this harness; keeping it outside this repository prevents a
+-- hand-maintained miniature from silently drifting away from production.
+local kascSource = arg and arg[1]
+check(type(kascSource) == "string" and kascSource ~= "",
+  "pass the public KASC 6.5.6 renderer_battle_hud.lua as argv[1]")
+local kascFactory = assert(loadfile(kascSource))()
+
+local function installExactKasc(fx)
+  local once, listeners = {}, {}
+  local events = {}
+  function events:once(name, callback)
+    once[name] = once[name] or {}
+    once[name][#once[name] + 1] = callback
+  end
+  function events:on(name, callback)
+    listeners[name] = listeners[name] or {}
+    listeners[name][#listeners[name] + 1] = callback
+  end
+
+  local mod = { events = events }
+  local resolver = {}
+  function resolver.module(_, name)
+    eq(name, "OverworldBattle", "KASC resolves only the reviewed VASC module")
+    return fx.OverworldBattle, "VOXEL_ASCENDANT", nil,
+      { rendererVersion = "0.1.5" }
+  end
+  local service = kascFactory(mod, { voxelRenderer = resolver })
+
+  local function emit(name, payload)
+    local oneShot = once[name] or {}
+    once[name] = nil
+    for _, callback in ipairs(oneShot) do callback(payload) end
+    for _, callback in ipairs(listeners[name] or {}) do callback(payload) end
+  end
+
+  emit("mods.loaded", { game = {} })
+  return service, emit
+end
+
+local function hasPanel(calls, canvas, expected, first)
+  for index = first or 1, #calls.panelTargets do
+    local target = calls.panelTargets[index]
+    local rect = calls.panelRects[index]
+    if target == canvas and rect
+        and rect[1] == expected[1] and rect[2] == expected[2]
+        and rect[3] == expected[3] and rect[4] == expected[4] then
+      return true
+    end
+  end
+  return false
+end
+
+-- The historical helper is attached only on platforms where it is safe, so
+-- companions on iOS never see it.  That makes the real KASC 6.5.6 capability
+-- check fail before it can install panel suppression/recovery.
 local ios = fixture("iOS")
-eq(ios.OverworldBattle.snapHUDs(ios.battle, ios.shot), false,
-   "iOS declines the world-canvas HUD composite")
-eq(ios.calls.layerTexture, 0, "iOS creates no HUD layer")
-eq(ios.calls.panel, 0, "iOS draws no frosted panel into the world")
-eq(ios.calls.setCanvas, 0, "iOS never binds an offscreen/world canvas")
-eq(ios.calls.newQuad, 0, "iOS creates no HUD-band quad")
-eq(ios.calls.draw, 0, "iOS performs no world-canvas HUD draw")
-eq(ios.calls.innerHUD, 0, "iOS does not pre-render the engine HUD")
+eq(ios.OverworldBattle, ios.ownerOverworldBattle,
+  "iOS public facade retains the owner module identity")
+eq(type(ios.OverworldBattle.snapHUDs), "nil",
+  "iOS module does not advertise snapHUDs")
+local originalSideTexture = ios.ownerOverworldBattle.sideTexture
+local originalHudTexture = ios.ownerOverworldBattle.hudTexture
+local sideReplacement = function() return "companion-side" end
+local hudReplacement = function() return "companion-hud" end
+ios.OverworldBattle.sideTexture = sideReplacement
+ios.OverworldBattle.hudTexture = hudReplacement
+eq(ios.ownerOverworldBattle.sideTexture, sideReplacement,
+  "public sideTexture mutations reach the owner module")
+eq(ios.ownerOverworldBattle.hudTexture, hudReplacement,
+  "public hudTexture mutations reach the owner module")
+ios.ownerOverworldBattle.sideTexture = originalSideTexture
+ios.ownerOverworldBattle.hudTexture = originalHudTexture
+local iosPanels = ios.OverworldBattle.drawHudPanels
+local iosHUDs = ios.BattleState.drawHUDs
+local iosKasc, emitIOS = installExactKasc(ios)
+local iosInspection = iosKasc.inspect()
+eq(iosInspection.profile, "RENDERER_NATIVE",
+  "KASC 6.5.6 selects renderer-native HUD on iOS")
+eq(iosInspection.lastError, "wide-hud-capability-missing",
+  "KASC declines the incomplete wide-HUD capability")
+eq(rawget(ios.OverworldBattle, "__kascRendererBattleHudSnapHook"), nil,
+  "KASC installs no snap receipt wrapper on iOS")
+eq(rawget(ios.OverworldBattle, "__kascWideBattleHudPanelState"), nil,
+  "KASC installs no compact-panel bridge on iOS")
+eq(rawget(ios.BattleState, "__kascWideBattleHudState"), nil,
+  "KASC installs no drawHUDs owner on iOS")
+eq(ios.OverworldBattle.drawHudPanels, iosPanels,
+  "iOS public panel function remains unwrapped")
+eq(ios.BattleState.drawHUDs, iosHUDs,
+  "iOS BattleState HUD chain remains VASC plus engine only")
+emitIOS("game.ready", { game = {} })
+iosInspection = iosKasc.inspect()
+eq(iosInspection.profile, "RENDERER_NATIVE",
+  "KASC game.ready refresh keeps the native iOS profile")
+eq(ios.OverworldBattle.drawHudPanels, iosPanels,
+  "KASC refresh still leaves the iOS panel function untouched")
+eq(ios.BattleState.drawHUDs, iosHUDs,
+  "KASC refresh still leaves the iOS HUD chain untouched")
 
--- KASC 6.5.6 receipt contract: its compatibility wrapper records whether the
--- exported seam really snapped this battle.  False makes KASC discard the
--- world-space overlay context; its separately tested panel bridge then falls
--- back to drawHUDs.  The installed VASC wrapper must let that normal draw
--- through on the upright UI canvas.
-local KASC_SNAP_STATE = "__kascRendererBattleHudSnapReceipt"
-local KASC_SNAP_SCHEMA = "ka-renderer-battle-hud-snap/v1"
-local function kascSnap(overworldBattle, battle, ...)
-  local shot = select(1, ...)
-  if battle then
-    battle[KASC_SNAP_STATE] = {
-      schema = KASC_SNAP_SCHEMA,
-      rendererId = "VOXEL_ASCENDANT",
-      shot = shot,
-      snapped = false,
-      reason = "snap-pending",
-    }
-  end
-  local snapped = overworldBattle.snapHUDs(battle, ...)
-  if battle then
-    battle[KASC_SNAP_STATE].snapped = snapped == true
-    battle[KASC_SNAP_STATE].reason = snapped == true
-      and nil or "snap-declined"
-  end
-  return snapped
-end
-local snapped = kascSnap(ios.OverworldBattle, ios.battle, ios.shot)
-local receipt = rawget(ios.battle, KASC_SNAP_STATE)
-eq(receipt.schema, KASC_SNAP_SCHEMA, "KASC receives its versioned receipt")
-eq(receipt.shot, ios.shot, "KASC receipt is scoped to the current shot")
-eq(receipt.snapped, false,
-   "KASC records that the iOS HUD was not snapped")
-eq(receipt.reason, "snap-declined", "KASC records a clean snap decline")
-if not snapped then
-  ios.battle.voxelAscendantShot = ios.shot
-  ios.BattleState.drawHUDs(ios.battle, 0)
-end
-eq(ios.calls.innerHUD, 1, "declined KASC snap falls back to the engine HUD")
-eq(ios.calls.hudTargets[1], ios.screenCanvas,
-   "fallback HUD stays on the upright UI canvas")
-eq(ios.calls.setCanvas, 0,
-   "fallback never visits the vertically flipped world canvas")
+-- Reproduce the screenshot state: wild mon visible, trainer back still up,
+-- intro party balls active.  VASC lays panels on the UI before Gen1 binds its
+-- grayscale bgCanvas.  No KASC fallback is now available to inject a panel
+-- into bgCanvas, and the corrected visibility mirror rejects the empty enemy
+-- panel outright.
+ios.battle.voxelAscendantShot = ios.shot
+ios.bindCanvas(ios.screenCanvas)
+ios.ownerOverworldBattle.drawHudPanels(ios.battle)
+ios.bindCanvas(ios.bgCanvas)
+ios.BattleState.drawHUDs(ios.battle, 0)
+eq(ios.calls.innerHUD, 1, "intro frame still delegates to Gen1 drawHUDs")
+eq(ios.calls.engineEnemy[1], false,
+  "Gen1 intentionally hides enemy HP during the intro-ball row")
+eq(ios.calls.enginePlayer[1], false,
+  "Gen1 intentionally hides player HP behind the trainer back")
+eq(ios.ownerOverworldBattle.hudLive(ios.battle, 0), false,
+  "VASC visibility mirror agrees that enemy status is not live")
+check(not hasPanel(ios.calls, ios.bgCanvas, { 8, 0, 80, 32 }),
+  "no empty enemy panel reaches the colorized bgCanvas")
+check(not hasPanel(ios.calls, ios.screenCanvas, { 8, 0, 80, 32 }),
+  "wild intro has no phantom enemy panel on the UI canvas")
 
--- The guard is deliberately iOS-only.  On desktop the exported compatibility
--- helper still performs the existing edge composite for callers that request
--- it, proving the test cannot pass through an unconditional early return.
+-- Once the intro is over, both compact HP panels belong in VASC's normal UI
+-- panel pass.  Gen1's glyphs are first baked into bgCanvas and then brought
+-- upright through its zone pass; the KASC restore path must remain absent.
+local steadyFirstPanel = #ios.calls.panelRects + 1
+ios.battle.introBalls = false
+ios.battle.showPlayerBack = false
+ios.bindCanvas(ios.screenCanvas)
+ios.ownerOverworldBattle.drawHudPanels(ios.battle)
+ios.bindCanvas(ios.bgCanvas)
+ios.BattleState.drawHUDs(ios.battle, 0)
+eq(ios.calls.innerHUD, 2, "steady battle still delegates to Gen1 drawHUDs")
+eq(ios.calls.engineEnemy[2], true,
+  "enemy status glyphs become live after the intro")
+eq(ios.calls.enginePlayer[2], true,
+  "player status glyphs become live after the trainer back leaves")
+check(hasPanel(ios.calls, ios.screenCanvas, { 8, 0, 80, 32 },
+    steadyFirstPanel),
+  "steady enemy panel is drawn on the upright UI canvas")
+check(hasPanel(ios.calls, ios.screenCanvas, { 72, 56, 88, 40 },
+    steadyFirstPanel),
+  "steady player panel is drawn on the upright UI canvas")
+check(not hasPanel(ios.calls, ios.bgCanvas, { 8, 0, 80, 32 },
+    steadyFirstPanel),
+  "steady enemy panel never enters colorized bgCanvas")
+check(not hasPanel(ios.calls, ios.bgCanvas, { 72, 56, 88, 40 },
+    steadyFirstPanel),
+  "steady player panel never enters colorized bgCanvas")
+
+-- A companion may suppress the native status HUD through Gen1's public
+-- visibility hook.  VASC must mirror that verdict for both panel sides while
+-- still allowing unrelated text glass to draw.
+local hiddenFirstPanel = #ios.calls.panelRects + 1
+ios.battle.statusHUDVisible = function() return false end
+local hiddenEnemy, hiddenPlayer =
+  ios.ownerOverworldBattle.hudLive(ios.battle, 0)
+eq(hiddenEnemy, false, "hidden status suppresses enemy panel visibility")
+eq(hiddenPlayer, false, "hidden status suppresses player panel visibility")
+ios.bindCanvas(ios.screenCanvas)
+ios.ownerOverworldBattle.drawHudPanels(ios.battle)
+ios.bindCanvas(ios.bgCanvas)
+ios.BattleState.drawHUDs(ios.battle, 0)
+eq(ios.calls.engineEnemy[3], false,
+  "Gen1 hidden-status verdict suppresses enemy glyphs")
+eq(ios.calls.enginePlayer[3], false,
+  "Gen1 hidden-status verdict suppresses player glyphs")
+check(not hasPanel(ios.calls, ios.screenCanvas, { 8, 0, 80, 32 },
+    hiddenFirstPanel),
+  "hidden status draws no enemy panel")
+check(not hasPanel(ios.calls, ios.screenCanvas, { 72, 56, 88, 40 },
+    hiddenFirstPanel),
+  "hidden status draws no player panel")
+check(not hasPanel(ios.calls, ios.bgCanvas, { 8, 0, 80, 32 },
+    hiddenFirstPanel),
+  "hidden enemy panel cannot leak into bgCanvas")
+check(not hasPanel(ios.calls, ios.bgCanvas, { 72, 56, 88, 40 },
+    hiddenFirstPanel),
+  "hidden player panel cannot leak into bgCanvas")
+
+-- A missing or malformed platform receipt must fail closed as well.  Module
+-- initialization happens before companions negotiate capabilities, so a
+-- temporary detection failure must never be mistaken for a safe desktop.
+local missingPlatform = fixture(nil)
+eq(type(missingPlatform.OverworldBattle.snapHUDs), "nil",
+  "missing platform receipt does not advertise the legacy snap seam")
+local missingPanels = missingPlatform.OverworldBattle.drawHudPanels
+local missingHUDs = missingPlatform.BattleState.drawHUDs
+local missingKasc = installExactKasc(missingPlatform)
+eq(missingKasc.inspect().profile, "RENDERER_NATIVE",
+  "KASC keeps the native HUD when platform detection is unavailable")
+eq(missingPlatform.OverworldBattle.drawHudPanels, missingPanels,
+  "missing platform receipt leaves the panel seam unwrapped")
+eq(missingPlatform.BattleState.drawHUDs, missingHUDs,
+  "missing platform receipt leaves the engine HUD seam unwrapped")
+
+local unknownPlatform = fixture("Unknown")
+eq(type(unknownPlatform.OverworldBattle.snapHUDs), "nil",
+  "Gen1's Unknown sentinel does not advertise the legacy snap seam")
+local unknownPanels = unknownPlatform.OverworldBattle.drawHudPanels
+local unknownHUDs = unknownPlatform.BattleState.drawHUDs
+local unknownKasc = installExactKasc(unknownPlatform)
+eq(unknownKasc.inspect().profile, "RENDERER_NATIVE",
+  "KASC keeps the native HUD for Gen1's Unknown platform sentinel")
+eq(unknownPlatform.OverworldBattle.drawHudPanels, unknownPanels,
+  "Unknown sentinel leaves the panel seam unwrapped")
+eq(unknownPlatform.BattleState.drawHUDs, unknownHUDs,
+  "Unknown sentinel leaves the engine HUD seam unwrapped")
+
+-- On an explicitly detected desktop the exported compatibility module remains
+-- the owner table and KASC can still select and install its established
+-- cooperative wide-HUD path.
 local desktop = fixture("OS X")
+eq(desktop.OverworldBattle, desktop.ownerOverworldBattle,
+  "desktop public facade retains the owner module identity")
+eq(type(desktop.OverworldBattle.snapHUDs), "function",
+  "desktop still advertises the cooperative snap seam")
+desktop.ownerOverworldBattle.shot = function() return desktop.shot end
+local desktopPanels = desktop.OverworldBattle.drawHudPanels
+local desktopHUDs = desktop.BattleState.drawHUDs
+local desktopSnap = desktop.OverworldBattle.snapHUDs
+local desktopKasc = installExactKasc(desktop)
+local desktopInspection = desktopKasc.inspect()
+eq(desktopInspection.profile, "KASC_VASC_WIDE",
+  "desktop KASC retains the wide VASC profile")
+check(type(rawget(desktop.OverworldBattle,
+    "__kascRendererBattleHudSnapHook")) == "table",
+  "desktop KASC retains its snap receipt wrapper")
+check(type(rawget(desktop.OverworldBattle,
+    "__kascWideBattleHudPanelState")) == "table",
+  "desktop KASC retains compact-panel suppression/recovery")
+check(type(rawget(desktop.BattleState,
+    "__kascWideBattleHudState")) == "table",
+  "desktop KASC retains cooperative drawHUDs ownership")
+check(desktop.OverworldBattle.snapHUDs ~= desktopSnap,
+  "desktop snap seam is wrapped by exact KASC")
+check(desktop.OverworldBattle.drawHudPanels ~= desktopPanels,
+  "desktop panel seam is wrapped")
+check(desktop.BattleState.drawHUDs ~= desktopHUDs,
+  "desktop HUD seam is wrapped")
 eq(desktop.OverworldBattle.snapHUDs(desktop.battle, desktop.shot), true,
    "desktop compatibility snap remains available")
 eq(desktop.calls.layerTexture, 1, "desktop builds one HUD layer")
@@ -239,4 +446,4 @@ check(desktop.calls.panel > 0, "desktop draws HUD/text panels")
 check(desktop.calls.draw > 0, "desktop composites HUD bands")
 check(desktop.calls.setCanvas > 0, "desktop visits its offscreen/world canvases")
 
-print("ok iOS HUD snap guard and KASC fallback")
+print("ok iOS companion capability gate and KASC 6.5.6 HUD isolation")
