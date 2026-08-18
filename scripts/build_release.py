@@ -68,7 +68,7 @@ def write_zip(output: Path) -> str:
 def main() -> int:
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     default = ROOT / "dist" / (
-        f"voxel-ascendant-{manifest['version']}-direct-install.zip"
+        f"{manifest['id']}-{manifest['version']}.zip"
     )
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output", type=Path, default=default)

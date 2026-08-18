@@ -16,8 +16,10 @@ third-party art are included.
 - Gen1Recomp `0.1.90` or newer.
 - A graphics driver with shader and depth-canvas support. Unsupported features
   fail closed to the game's normal 2D renderer.
-- Install the direct-install ZIP through the mod manager. `manifest.json` is
-  at the ZIP root; do not unpack or re-wrap it.
+- For an installed copy, use **Check for updates** in the launcher. Manual
+  import intentionally does not overwrite a mod with the same ID.
+- For a first install, select `VOXEL_ASCENDANT-0.1.3.zip` in the mod manager.
+  `manifest.json` is at the ZIP root; do not unpack or re-wrap it.
 
 Use the game's regular **OPTIONS** menu for the concise in-game controls. The
 mod manager's per-mod options page exposes every stored setting and is mainly

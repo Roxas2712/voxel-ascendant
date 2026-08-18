@@ -934,11 +934,11 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "0.1.1"
+mod.exports.version = "0.1.3"
 mod.exports.apiVersion = 1
 mod.exports.renderer = {
   id = "VOXEL_ASCENDANT",
-  version = "0.1.1",
+  version = "0.1.3",
   pipeline = "voxel",
   cameraProfile = "orbit-only",
 }

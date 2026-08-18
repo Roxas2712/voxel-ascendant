@@ -8,6 +8,8 @@ Voxel Ascendant has one publication source line:
    and scope reduction on branch `codex/voxel-ascendant-v0190`.
 3. **Voxel Ascendant 0.1.1** — focused compatibility-maintenance release with
    the centered battle-HUD repair and an explicit no-external-art boundary.
+4. **Voxel Ascendant 0.1.3** — recovery release restoring the proven 0.1.1
+   runtime after withdrawing the broken 0.1.2 rendering experiment.
 
 The upstream mirror remains configured as the local `upstream` Git remote.
 Publication is performed only after the release QA gate passes.

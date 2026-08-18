@@ -1,7 +1,12 @@
-# Voxel Ascendant 0.1.1
+# Voxel Ascendant 0.1.3
 
 This maintenance release keeps Voxel Ascendant a narrow compatibility
 alternative for Gen1Recomp 0.1.90 and newer.
+
+This recovery release restores the exact 0.1.1 rendering implementation. The
+experimental mobile DPI, shader, Android-water and transparent-HUD changes
+from 0.1.2 have been removed because affected clients could no longer render
+the voxel world reliably.
 
 The enemy and player status panels now remain inside Gen1Recomp's centered
 battle frame. They share one scale with the command and move menus, avoiding

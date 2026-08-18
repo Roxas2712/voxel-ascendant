@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 — 2026-08-18
+
+- Restore the exact proven 0.1.1 renderer and battle-HUD implementation after
+  the 0.1.2 mobile experiment caused Voxel Ascendant to stop rendering on
+  affected clients.
+- Keep only the release/API version bump; no experimental DPI, shader, water
+  or HUD-backing behavior remains in this recovery release.
+- Name the release archive directly from the case-sensitive manifest ID as
+  `VOXEL_ASCENDANT-0.1.3.zip`, matching the launcher's canonical update rule.
+
 ## 0.1.1 — 2026-08-15
 
 - Keep both battle HUDs in the centered engine frame so status panels and
