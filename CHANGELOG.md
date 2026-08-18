@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.2 — 2026-08-18
+
+- Size the voxel framebuffer from the engine's per-axis DPI metrics when they
+  are available. This keeps the world aligned on Android devices whose
+  forced-rotation drawable reports different horizontal and vertical ratios.
+- Keep the staged-battle HUD scratch layers, readable depth target and water
+  reflection copy at `dpiscale = 1`. Retina iOS no longer mixes oversized
+  DPI-inherited attachments with framebuffer-pixel scene canvases.
+- Add `HUD BACKING: TRANSPARENT / FROST`. Fresh installs default to transparent
+  enemy/player status blocks; text and command boxes retain their readable
+  panel, and FROST restores the previous status backing.
+- Guard zero-length camera rays and invalid shadow depth values in the GLES
+  shaders, preventing stretched screen-spanning cards and all-black shadows
+  on affected mobile GPUs.
+- Fall back to flat animated water on Android, where the reflective pass can
+  produce hard Mali-driver stripes, and hide the inactive WATER row.
+- Keep rotation and the touch HUD under Gen1Recomp ownership; VASC does not
+  apply a second orientation transform to engine UI.
+
 ## 0.1.1 — 2026-08-15
 
 - Keep both battle HUDs in the centered engine frame so status panels and

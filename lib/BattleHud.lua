@@ -27,7 +27,23 @@
 -- the mod namespace (see main.lua): V.require loads a sibling module
 local V = ...
 
+local ModSetting = V.require("ModSetting")
+local PixelCanvas = V.require("PixelCanvas")
+
 local BattleHud = {}
+
+-- Status HUDs can sit directly over the staged world or retain the frosted
+-- glass backing. Transparent is intentionally first: ModSetting uses the
+-- first rung as both the fresh-install default and malformed-value fallback.
+-- Text and command boxes keep their own frost for legibility; this switch is
+-- only for the enemy/player name, level and HP blocks.
+BattleHud.backingSetting = ModSetting.new(
+  "hudBacking", "HUD BACKING",
+  { "transparent", "frost" }, { "TRANSPARENT", "FROST" })
+
+function BattleHud.transparent()
+  return BattleHud.backingSetting:get() == "transparent"
+end
 
 -- How solid the frost is over the world behind it, and how far the tint
 -- pushes it toward the far end from the text.
@@ -70,8 +86,12 @@ local function getShader()
 end
 
 local function canvasOf(w, h, filter)
-  local ok, c = pcall(love.graphics.newCanvas, w, h)
-  if not ok then return nil end
+  -- The battle scene is measured in framebuffer pixels. On Retina iOS a
+  -- default canvas inherits the display DPI, making this supposedly w x h
+  -- layer several times larger in physical pixels than the scene it samples.
+  -- Keep every HUD scratch target at one canvas pixel per requested pixel.
+  local ok, c = PixelCanvas.new(w, h)
+  if not (ok and c) then return nil end
   c:setFilter(filter or "linear", filter or "linear")
   return c
 end
@@ -188,6 +208,14 @@ function BattleHud.panel(rect, box, world)
     love.graphics.setColor(1, 1, 1, 1)
   end)
   return ok
+end
+
+-- Status-only wrapper. Returning true for TRANSPARENT means the requested
+-- presentation succeeded without drawing a backing; callers still render the
+-- engine-owned HUD glyphs and HP bars in their normal pass.
+function BattleHud.statusPanel(rect, box, world)
+  if BattleHud.transparent() then return true end
+  return BattleHud.panel(rect, box, world)
 end
 
 -- ------- the whole HUD layer as a texture

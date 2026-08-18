@@ -125,11 +125,18 @@ local SHADER = [[
     vec4 c = lightVP * (model * vertex_position);
     // the projection is orthographic, so w is 1 and clip z IS the depth,
     // linear in world units along the sun line
-    vDepth = c.z * 0.5 + 0.5;
+    // A degenerate fit must not poison the packed map with NaN. Mali-family
+    // drivers can otherwise interpret the complete scene as shadowed.
+    vDepth = (c.z == c.z) ? (c.z * 0.5 + 0.5) : 1.0;
     return c;
   }
 #endif
 #ifdef PIXEL
+#ifdef GL_ES
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+  precision highp float;
+#endif
+#endif
   uniform float sprite;   // 1 while the CAST is being drawn; see ShadowMap.sprites
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // the same alpha discard the main pass uses: a sprite card casts its
