@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4 — 2026-08-18
+
+- Decline the optional legacy edge-HUD compositor on iOS, where Gen1Recomp's
+  final world-canvas presentation would otherwise flip those already-rendered
+  status panels vertically.
+- Preserve the established companion fallback contract: Kanto Ascendant and
+  other feature-detecting consumers receive `false` and keep the original,
+  upright HUD inside the centered engine frame.
+- Leave the voxel renderer, desktop compositor and all gameplay state
+  unchanged.
+
 ## 0.1.3 — 2026-08-18
 
 - Restore the exact proven 0.1.1 renderer and battle-HUD implementation after

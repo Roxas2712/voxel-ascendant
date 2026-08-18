@@ -59,6 +59,22 @@ end
 -- module never reaches through the mod sandbox for process environment data.
 local DEBUG = false
 
+-- Gen1Recomp presents the world canvas with a negative Y scale on iOS.  A
+-- battle HUD that has already been rendered upright into that canvas would
+-- therefore be flipped a second time.  Voxel Ascendant no longer calls the
+-- legacy edge-HUD compositor itself, but companions may still feature-detect
+-- and call the public snapHUDs seam.  Declining that seam lets their existing
+-- fallback keep the engine HUD in its upright, centered UI canvas.
+local function isIOS()
+  local ok, Platform = pcall(require, "src.core.Platform")
+  if not ok or type(Platform) ~= "table"
+      or type(Platform.detect) ~= "function" then
+    return false
+  end
+  local detected, info = pcall(Platform.detect)
+  return detected and type(info) == "table" and info.os == "iOS"
+end
+
 OverworldBattle.KEY = "battles"
 OverworldBattle.LABEL = "3D-BTL"
 
@@ -1243,6 +1259,7 @@ end
 -- same edge as the block they share it with. The panels are the ones that
 -- follow hudLive -- frosted glass under nothing is a slab floating in the arena.
 function OverworldBattle.snapHUDs(battle, shot)
+  if isIOS() then return false end
   if not (battle and shot and shot.canvas and (shot.scale or 0) > 0) then
     return false
   end

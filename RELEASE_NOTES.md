@@ -1,16 +1,23 @@
-# Voxel Ascendant 0.1.3
+# Voxel Ascendant 0.1.4
 
 This maintenance release keeps Voxel Ascendant a narrow compatibility
 alternative for Gen1Recomp 0.1.90 and newer.
 
-This recovery release restores the exact 0.1.1 rendering implementation. The
-experimental mobile DPI, shader, Android-water and transparent-HUD changes
-from 0.1.2 have been removed because affected clients could no longer render
-the voxel world reliably.
+This hotfix keeps the recovered 0.1.3 renderer unchanged and repairs one
+optional companion path on iOS. Kanto Ascendant 6.5.6 can feature-detect and
+call Voxel Ascendant's legacy edge-HUD compositor. Gen1Recomp presents the
+world canvas with a vertical flip on iOS, so status panels already baked into
+that canvas were flipped and exchanged top-to-bottom even though the voxel
+world, text box and touch controls were correct.
 
-The enemy and player status panels now remain inside Gen1Recomp's centered
-battle frame. They share one scale with the command and move menus, avoiding
-the oversized, clipped HUD seen on large and HiDPI windows.
+Voxel Ascendant now declines that legacy compositor on iOS. Kanto Ascendant's
+existing fallback then draws the original battle HUD upright inside the
+centered engine frame. The 3D renderer, desktop HUD behavior, settings and
+gameplay state are unchanged.
+
+On iOS, the enemy and player status panels now remain inside Gen1Recomp's
+centered battle frame. They share one scale with the command and move menus,
+avoiding the flipped and displaced HUD shown by the legacy edge compositor.
 
 Voxel Ascendant includes no Pokemon or trainer sprite pack and offers no
 sprite-pack menu. Battles use the game's existing art, or art selected by a

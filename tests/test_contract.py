@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.3")
+        self.assertEqual(manifest["version"], "0.1.4")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -126,6 +126,17 @@ class ContractTests(unittest.TestCase):
         self.assertNotIn("OverworldBattle.snapHUDs", update)
         self.assertIn("session.snapped = false", update)
         self.assertIn("return innerHUDs(self, slide, ...)", source)
+
+    def test_ios_battle_hud_guard_and_kasc_fallback(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run([str(lua), "tests/ios_battle_hud_test.lua"], cwd=ROOT,
+                       check=True, text=True, capture_output=True)
 
     def test_export_facade_adversarial(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")

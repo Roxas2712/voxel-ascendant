@@ -7,13 +7,13 @@ local handle = mod.find("VOXEL_ASCENDANT")
 local exports = handle and handle.exports
 ```
 
-For `0.1.3`, the stable fields are:
+For `0.1.4`, the stable fields are:
 
 ```lua
-exports.version == "0.1.3"
+exports.version == "0.1.4"
 exports.apiVersion == 1
 exports.renderer.id == "VOXEL_ASCENDANT"
-exports.renderer.version == "0.1.3"
+exports.renderer.version == "0.1.4"
 exports.renderer.pipeline == "voxel"
 exports.renderer.cameraProfile == "orbit-only"
 exports.capabilities.voxelWorld == true
@@ -38,6 +38,11 @@ feature-detecting companions: `AntiAlias`, `BattleArena`, `BattleCam`,
 `OverworldBattle`, `VoxelScene`, and `VoxelState`. These extra modules may gain
 new versions behind a future capability receipt; consumers must not assume
 private fields or mutate them.
+
+`OverworldBattle.snapHUDs(battle, shot)` is a best-effort legacy compositor.
+Consumers must treat a false return as a clean decline and draw the regular
+engine HUD. It deliberately returns false on iOS because the platform's final
+world-canvas transform would invert HUD pixels composited into that surface.
 
 Consumers must feature-detect fields and versions. They must not create alias
 entries in `game.mods.exports`, mutate the renderer, inspect private module
