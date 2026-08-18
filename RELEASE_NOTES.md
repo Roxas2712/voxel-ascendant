@@ -1,22 +1,7 @@
-# Voxel Ascendant 0.1.2
+# Voxel Ascendant 0.1.1
 
 This maintenance release keeps Voxel Ascendant a narrow compatibility
 alternative for Gen1Recomp 0.1.90 and newer.
-
-Mobile rendering now uses the engine's separate horizontal and vertical DPI
-metrics, while the battle HUD, scene-depth and reflection targets stay at one
-canvas pixel per framebuffer pixel. This avoids mixed-size render attachments
-on Retina iPhone and iPad displays and improves alignment on rotated Android
-surfaces.
-
-The new `HUD BACKING` setting defaults to `TRANSPARENT` for the enemy and
-player status blocks. Text and command boxes keep their readable panel;
-`FROST` restores the previous translucent status backing.
-
-The mobile GLES shaders now guard zero-length camera rays and invalid shadow
-depth values. Android uses flat animated water instead of the problematic
-reflection pass. Screen orientation, safe areas and touch controls remain
-owned by Gen1Recomp and are not rotated a second time by this mod.
 
 The enemy and player status panels now remain inside Gen1Recomp's centered
 battle frame. They share one scale with the command and move menus, avoiding

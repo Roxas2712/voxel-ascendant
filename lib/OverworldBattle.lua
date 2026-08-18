@@ -1267,13 +1267,7 @@ function OverworldBattle.snapHUDs(battle, shot)
   local ok, err = pcall(function()
     g.setCanvas(shot.canvas)
     g.setBlendMode("alpha")
-    for key, rect in pairs(live) do
-      if key == "enemy" or key == "player" then
-        BattleHud.statusPanel(rect, shot, true)
-      else
-        BattleHud.panel(rect, shot, true)
-      end
-    end
+    for _, rect in pairs(live) do BattleHud.panel(rect, shot, true) end
     g.setColor(1, 1, 1, 1)
     for side, band in pairs(OverworldBattle.HUD_BAND) do
       local quad = g.newQuad(band[1], band[2], band[3], band[4],
@@ -1310,13 +1304,7 @@ function OverworldBattle.drawHudPanels(battle)
   if player then live.player = rect.player end
   for key, r in pairs(OverworldBattle.textRects(battle)) do live[key] = r end
   if not next(live) then return end
-  for key, r in pairs(live) do
-    if key == "enemy" or key == "player" then
-      BattleHud.statusPanel(r, shot)
-    else
-      BattleHud.panel(r, shot)
-    end
-  end
+  for _, r in pairs(live) do BattleHud.panel(r, shot) end
 end
 
 return OverworldBattle

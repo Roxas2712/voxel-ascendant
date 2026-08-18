@@ -126,23 +126,12 @@ local SHADER = [[
     // which preserved only the screen centre and made off-centre sprites
     // and grass swim against the ground while the camera scrolled.)
     if (pull > 0.0) {
-      // A contact blob can sit directly below the eye on a short mobile
-      // viewport. normalize(vec3(0)) yields NaNs on some GLES drivers and
-      // turns the tiny card into a triangle stretched across the display.
-      float rayLen = length(eye - w.xyz);
-      if (rayLen > 1e-4) {
-        w.xyz += (eye - w.xyz) / rayLen * pull;
-      }
+      w.xyz += normalize(eye - w.xyz) * pull;
     }
     return vp * w;
   }
 #endif
 #ifdef PIXEL
-#ifdef GL_ES
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-#endif
-#endif
   uniform Image sunMap;
   uniform float sunDark;      // how far into black a shadow goes; 0 = off
   uniform float sunBias;
@@ -321,7 +310,7 @@ local function newDepth(w, h)
   local c = nil
   for _, format in ipairs(DEPTH_FORMATS) do
     local ok, made = pcall(love.graphics.newCanvas, w, h,
-                           { format = format, readable = true, dpiscale = 1 })
+                           { format = format, readable = true })
     if ok and made then c = made break end
   end
   if not c then return nil end
@@ -1084,10 +1073,7 @@ end
 function Voxel3D.beginWater(paint)
   if not (active and canvas and held and held.depth) then return nil end
   if not held.mirror then
-    -- Match the scene color/depth targets exactly on Retina iOS. A default
-    -- canvas inherits the surface DPI and cannot safely participate in this
-    -- framebuffer-pixel pass.
-    local ok, c = PixelCanvas.new(held.w, held.h)
+    local ok, c = pcall(love.graphics.newCanvas, held.w, held.h)
     if not (ok and c) then return nil end
     pcall(c.setFilter, c, "nearest", "nearest")
     pcall(c.setWrap, c, "clamp", "clamp")

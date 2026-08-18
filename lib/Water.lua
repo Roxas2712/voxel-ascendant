@@ -98,30 +98,7 @@ Water.setting = ModSetting.new(Water.KEY, Water.LABEL,
                                { "full", "sky", "off" },
                                { "FULL", "SKY", "OFF" })
 
--- The reflective pass currently produces hard horizontal bands on a number
--- of Android/Mali renderers. Until that shader path is reliable, use the
--- ordinary flat animated water which the scene already has as its fail-open
--- path. The OS answer comes from the engine so this mod never reaches a
--- sandbox-denied system API itself.
-local androidChecked = false
-local android = false
-
-function Water.onAndroid()
-  if Water._androidOverride ~= nil then return Water._androidOverride end
-  if not androidChecked then
-    androidChecked = true
-    local ok, Platform = pcall(require, "src.core.Platform")
-    if ok and type(Platform) == "table" then
-      local okDetect, info = pcall(Platform.detect)
-      android = okDetect and type(info) == "table"
-                and tostring(info.os or "") == "Android"
-    end
-  end
-  return android
-end
-
 function Water.level()
-  if Water.onAndroid() then return 0 end
   local v = Water.setting:get()
   if v == "off" then return 0 end
   if v == "sky" then return 1 end
