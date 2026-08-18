@@ -85,6 +85,7 @@ local ChunkMesher = V.require("ChunkMesher")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
+local BattleHud = V.require("BattleHud")
 local BattleExit = V.require("BattleExit")
 local DayNight = V.require("DayNight")
 local DayTint = V.require("DayTint")
@@ -121,6 +122,17 @@ local applyFull
 -- which measures the drawable), so the closures ctx.drawFx runs were being
 -- scaled for a canvas 2.6x bigger than the one they drew into.
 local function sceneSize(ctx)
+  -- Newer engines hand the pipeline the per-axis LOVE-unit -> framebuffer
+  -- ratios they used for this exact frame. Prefer those when available: on
+  -- forced-rotation / dual-screen Android devices dpiX and dpiY can differ,
+  -- and a single DPI value stretches or effectively transposes the world.
+  if ctx and tonumber(ctx.width) and tonumber(ctx.height)
+     and tonumber(ctx.dpiX) and tonumber(ctx.dpiY)
+     and ctx.width > 0 and ctx.height > 0
+     and ctx.dpiX > 0 and ctx.dpiY > 0 then
+    return math.max(1, math.floor(ctx.width * ctx.dpiX + 0.5)),
+           math.max(1, math.floor(ctx.height * ctx.dpiY + 0.5))
+  end
   if love.graphics and love.graphics.getPixelDimensions then
     local pw, ph = love.graphics.getPixelDimensions()
     if pw and ph and pw > 0 and ph > 0 then return pw, ph end
@@ -366,7 +378,11 @@ local SETTINGS = {
     "Reflections on water. FULL adds screen-space reflections of the "
     .. "shoreline, the trees and the buildings behind it; SKY is the sky, "
     .. "the sun and the moon alone, which is most of the look for a "
-    .. "fraction of the cost." },
+    .. "fraction of the cost.",
+    -- Mali-class Android drivers still show hard stripes in the reflective
+    -- pass. Water.enabled() already forces the flat fallback there; hiding
+    -- the inactive row avoids offering a switch which cannot safely work.
+    when = function() return not Water.onAndroid() end },
   -- `full` marks a row FULL does not take away. FULL owns the diorama's own
   -- knobs; what a battle is drawn over, and how it is framed, are not that.
   { OverworldBattle.setting,
@@ -381,6 +397,12 @@ local SETTINGS = {
     "Keep your own Pokemon on the battle menu, seen from behind in its "
     .. "original slot, instead of standing it on the map facing the foe. "
     .. "The foe is still out there on its own tile.",
+    when = stagedBattles,
+    full = true },
+  { BattleHud.backingSetting,
+    "Choose whether the enemy/player name, level and HP blocks sit directly "
+    .. "over the staged world or retain their frosted-glass backing. Text "
+    .. "and command boxes keep their readable panel in both modes.",
     when = stagedBattles,
     full = true },
   { CrystalArt.setting,

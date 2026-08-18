@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.1.1")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -182,6 +182,67 @@ class ContractTests(unittest.TestCase):
         crystal = (ROOT / "lib" / "CrystalArt.lua").read_text(encoding="utf-8")
         self.assertEqual(crystal.count("inner(battle, dt, ...)"), 1,
                          "the BattleState update must not execute twice")
+
+    def test_mobile_renderer_guards(self) -> None:
+        main = (ROOT / "main.lua").read_text(encoding="utf-8")
+        self.assertIn("ctx.width * ctx.dpiX", main)
+        self.assertIn("ctx.height * ctx.dpiY", main)
+        self.assertIn("when = function() return not Water.onAndroid() end", main)
+
+        voxel = (ROOT / "lib" / "Voxel3D.lua").read_text(encoding="utf-8")
+        self.assertIn("float rayLen = length(eye - w.xyz);", voxel)
+        self.assertIn("if (rayLen > 1e-4)", voxel)
+        self.assertIn("precision highp float;", voxel)
+
+        shadow = (ROOT / "lib" / "ShadowMap.lua").read_text(encoding="utf-8")
+        self.assertIn("(c.z == c.z) ?", shadow)
+        self.assertIn("precision highp float;", shadow)
+
+        water = (ROOT / "lib" / "Water.lua").read_text(encoding="utf-8")
+        self.assertIn('pcall(require, "src.core.Platform")', water)
+        self.assertIn("if Water.onAndroid() then return 0 end", water)
+
+        battle_hud = (ROOT / "lib" / "BattleHud.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"hudBacking", "HUD BACKING"', battle_hud)
+        self.assertIn('{ "transparent", "frost" }', battle_hud)
+        self.assertIn("function BattleHud.statusPanel", battle_hud)
+        self.assertIn('local PixelCanvas = V.require("PixelCanvas")', battle_hud)
+        self.assertIn("local ok, c = PixelCanvas.new(w, h)", battle_hud)
+
+        self.assertRegex(
+            voxel,
+            r'format = format, readable = true, dpiscale = 1',
+        )
+        self.assertIn("PixelCanvas.new(held.w, held.h)", voxel)
+
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        run = subprocess.run(
+            [str(lua), "tests/mobile_guards_test.lua"], cwd=ROOT,
+            check=True, text=True, capture_output=True,
+        )
+        self.assertIn("PASS mobile_guards_test", run.stdout)
+
+    def test_transparent_hud_default(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        run = subprocess.run(
+            [str(lua), "tests/battle_hud_setting_test.lua"], cwd=ROOT,
+            check=True, text=True, capture_output=True,
+        )
+        self.assertIn("PASS battle_hud_setting_test", run.stdout)
 
     def test_deterministic_direct_install_zip(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

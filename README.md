@@ -33,10 +33,11 @@ useful for recovery or advanced configuration.
 | **T-SHIFT** / `6` | OFF, 1, 2, 3 | Miniature tilt-shift blur. |
 | **V-GRID** / `5` | OFF, ON | One-pixel voxel seams. |
 | **V-CURVE** / `7` | OFF, 1, 2, 3 | Curves the distant world toward the horizon. |
-| **WATER** / `9` | FULL, SKY, OFF | Voxel water and reflections, with safe fallbacks. |
+| **WATER** / `9` | FULL, SKY, OFF | Voxel water and reflections, with safe fallbacks. Android currently uses flat animated water. |
 | **DAYTIME** | DAY, NIGHT, DUSK, DAWN, CYCLE | Deterministic outdoor lighting; CYCLE is saved per journey. |
 | **3D-BTL** / `8` | MAP, DISCS, OFF | Native Gen 1 battle cards on nearby voxel terrain or a procedural disc stage. |
 | **BACK SPRITES** | OFF, ON | Keeps the player's classic back sprite in its normal battle slot. |
+| **HUD BACKING** | TRANSPARENT, FROST | Enemy/player status blocks have no backing by default; FROST restores the translucent glass panel. |
 | **BATTLE ART** | CRYSTAL, GEN I | Uses VASC's own bundled Gen-I Crystal Pokémon/trainer pack or the game's native art. KASC keeps priority when present. |
 | **CRYSTAL MOTION** | ON, OFF | Animates supplied Crystal front cards; rear cards remain static. |
 | **AA** | OFF, 2X, 4X | Supersamples the 3D pass. |
@@ -45,6 +46,22 @@ The RC intentionally does not include first-/third-person free movement,
 global relative-mouse hooks, VR, Horde mode, Pokemon Stadium models, ROM
 import, or a disk cache. This keeps input, saves, and the filesystem entirely
 inside Gen1Recomp's public/sandboxed paths.
+
+### Mobile display notes
+
+Voxel Ascendant renders from the framebuffer dimensions and honours the
+engine's separate horizontal and vertical DPI ratios. Screen orientation,
+safe areas and the touch-control HUD remain owned by Gen1Recomp; the mod does
+not rotate or reposition those controls itself. On Android, choose `AUTO` or
+the desired landscape mode under the game's `ORIENTATION` option and use an
+engine build containing the current rotation/safe-area fixes. If the touch
+HUD itself remains rotated while Voxel Ascendant is disabled, that is an
+engine/device issue rather than a VASC camera setting.
+
+All VASC battle-HUD, scene-depth and reflection scratch targets explicitly use
+one canvas pixel per framebuffer pixel. This matters on Retina iPhone/iPad
+displays, where LÖVE otherwise inherits the surface DPI for a new canvas and
+creates an attachment with different physical dimensions.
 
 ## Compatibility
 
