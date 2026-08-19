@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.6 — 2026-08-19
+
+- Add a persistent **BTL GRID** option so 3D battles no longer force voxel
+  seams on against the player's preference.
+- Add a persistent **SHADOWS** option for both the overworld and staged
+  battles. OFF skips the shadow-map pass and its fallback decals, including on
+  iPhone, while keeping the existing ON default for upgrades.
+- Anchor each battle shadow to the combatant/opponent axis instead of the
+  camera-facing billboard, so a stationary Pokemon's shadow no longer rotates
+  or slides when the presentation camera drifts.
+- Make cold map transitions progressive: queue the drawable body before the
+  full border-ring mesh and expose terrain before grass, flowers and authored
+  figures finish building.
+- Queue a battle arena before its transition begins, allowing the first
+  covered frame to contribute to loading instead of discovering the job one
+  frame late.
+
 ## 0.1.5 — 2026-08-18
 
 - Stop advertising the legacy wide/edge-HUD capability to companion mods on

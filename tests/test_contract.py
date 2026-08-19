@@ -149,7 +149,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.5")
+        self.assertEqual(manifest["version"], "0.1.6")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -211,6 +211,58 @@ class ContractTests(unittest.TestCase):
         self.assertNotIn("OverworldBattle.snapHUDs", update)
         self.assertIn("session.snapped = false", update)
         self.assertIn("return innerHUDs(self, slide, ...)", source)
+
+    def test_battle_grid_and_shadows_are_player_controls(self) -> None:
+        main = (ROOT / "main.lua").read_text(encoding="utf-8")
+        grid = (ROOT / "lib" / "VoxelGrid.lua").read_text(encoding="utf-8")
+        battle = (ROOT / "lib" / "BattleScene.lua").read_text(
+            encoding="utf-8"
+        )
+        shadows = (ROOT / "lib" / "Shadows.lua").read_text(encoding="utf-8")
+        scene = (ROOT / "lib" / "VoxelScene.lua").read_text(encoding="utf-8")
+        voxel = (ROOT / "lib" / "Voxel3D.lua").read_text(encoding="utf-8")
+
+        self.assertIn("VoxelGrid.battleSetting", main)
+        self.assertIn("Shadows.setting", main)
+        self.assertIn('VoxelGrid.BATTLE_KEY = "battleGrid"', grid)
+        self.assertIn("VoxelGrid.battleEnabled()", battle)
+        self.assertNotIn("VoxelGrid.override = true", battle)
+        self.assertIn("shadowModel = monMatrix", battle)
+        self.assertIn("ShadowMap.snug(card.shadowModel)", battle)
+        self.assertNotIn("ShadowMap.snug(card.model)", battle)
+        self.assertIn('Shadows.KEY = "shadows"', shadows)
+        self.assertIn("if not Shadows.enabled() then return end", scene)
+        self.assertIn("Shadows.enabled() and ShadowMap.active()", voxel)
+
+    def test_render_controls_runtime(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run([str(lua), "tests/render_controls_test.lua"], cwd=ROOT,
+                       check=True, text=True, capture_output=True)
+
+    def test_cold_map_build_exposes_terrain_progressively(self) -> None:
+        scene = (ROOT / "lib" / "VoxelScene.lua").read_text(encoding="utf-8")
+        mesher = (ROOT / "lib" / "ChunkMesher.lua").read_text(
+            encoding="utf-8"
+        )
+        body_request = "ChunkMesher.request(state.map, true, nil, true)"
+        full_request = "ChunkMesher.request(state.map, false, masks, true)"
+        self.assertLess(scene.index(body_request), scene.index(full_request))
+
+        run_job_start = mesher.index("local function runJob(job)")
+        run_job = mesher[
+            run_job_start:
+            mesher.index("function ChunkMesher.request", run_job_start)
+        ]
+        self.assertLess(run_job.index("runGeometry("),
+                        run_job.index("buildGrassMesh"))
+        self.assertLess(run_job.index('swapSlot(c, job.slot'),
+                        run_job.index("buildGrassMesh"))
 
     def test_ios_battle_hud_capability_isolation(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")

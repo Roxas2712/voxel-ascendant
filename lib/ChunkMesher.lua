@@ -894,6 +894,30 @@ end
 local function runJob(job)
   local map = job.map
   local c = entry(job.id)
+  -- Land the terrain first. Grass, flowers and authored figures are useful
+  -- finishing passes, but none of them should hold a cold map on the flat 2D
+  -- fallback while their meshes are prepared. The job may yield below after
+  -- this swap; request()/pair() can already draw the completed ground on the
+  -- next frame while the same coroutine continues the decoration work.
+  local sink = newSink()
+  local waterSink = newSink()
+  runGeometry(map, job.slot == "body", job.masks, sink, waterSink)
+  local mesh = sink.finish()
+  local water = waterSink.finish()
+  if (gen[job.id] or 0) ~= job.gen then
+    if mesh and mesh.release then pcall(mesh.release, mesh) end
+    if water and water.release then pcall(water.release, water) end
+    return
+  end
+  swapSlot(c, job.slot, mesh or false)
+  swapSlot(c, waterSlot(job.slot), water or false)
+  if c.stale then
+    c.stale[job.slot] = nil
+  end
+
+  -- Decorations can now finish without delaying the first visible voxel
+  -- frame. They still share the terrain job so there is no extra queue type
+  -- or duplicate work when both body and full variants were requested.
   if c.grass == nil or c.flowers == nil or c.figures == nil
      or (c.stale and c.stale.aux) then
     local okG, grass = pcall(buildGrassMesh, map)
@@ -913,20 +937,7 @@ local function runJob(job)
     c.figures = (okX and figures) or false
     if c.stale then c.stale.aux = nil end
   end
-  local sink = newSink()
-  local waterSink = newSink()
-  runGeometry(map, job.slot == "body", job.masks, sink, waterSink)
-  local mesh = sink.finish()
-  local water = waterSink.finish()
-  if (gen[job.id] or 0) ~= job.gen then
-    if mesh and mesh.release then pcall(mesh.release, mesh) end
-    if water and water.release then pcall(water.release, water) end
-    return
-  end
-  swapSlot(c, job.slot, mesh or false)
-  swapSlot(c, waterSlot(job.slot), water or false)
   if c.stale then
-    c.stale[job.slot] = nil
     if not (c.stale.full or c.stale.body or c.stale.aux) then
       c.stale = nil
     end

@@ -18,7 +18,7 @@ third-party art are included.
   fail closed to the game's normal 2D renderer.
 - For an installed copy, use **Check for updates** in the launcher. Manual
   import intentionally does not overwrite a mod with the same ID.
-- For a first install, select `VOXEL_ASCENDANT-0.1.5.zip` in the mod manager.
+- For a first install, select `VOXEL_ASCENDANT-0.1.6.zip` in the mod manager.
   `manifest.json` is at the ZIP root; do not unpack or re-wrap it.
 
 Use the game's regular **OPTIONS** menu for the concise in-game controls. The
@@ -32,6 +32,8 @@ useful for recovery or advanced configuration.
 | **VOXEL** / `3` | OFF, FULL, 15, 35, 50, 75 | Voxel diorama and orbit-camera angle. FULL is the curated preset. |
 | **T-SHIFT** / `6` | OFF, 1, 2, 3 | Miniature tilt-shift blur. |
 | **V-GRID** / `5` | OFF, ON | One-pixel voxel seams. |
+| **BTL GRID** | ON, OFF | Voxel seams in 3D battles, independent of V-GRID. |
+| **SHADOWS** | ON, OFF | Cast shadows in the overworld and 3D battles; OFF is the mobile-safe path. |
 | **V-CURVE** / `7` | OFF, 1, 2, 3 | Curves the distant world toward the horizon. |
 | **WATER** / `9` | FULL, SKY, OFF | Voxel water and reflections, with safe fallbacks. |
 | **DAYTIME** | DAY, NIGHT, DUSK, DAWN, CYCLE | Deterministic outdoor lighting; CYCLE is saved per journey. |

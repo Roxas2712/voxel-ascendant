@@ -1257,7 +1257,10 @@ function Water.begin(ctx)
   -- the sun's pass, sent the same way and for the same reason the scene
   -- shader sends it: the sampler is declared either way, and leaving one
   -- unbound is a driver-dependent crash rather than a fallback
-  local map = ShadowMap.active()
+  -- Keep the water pass in step with the main scene's SHADOWS row.  A cached
+  -- light map may remain valid while the option is off, but it must not shade
+  -- the lake until the player turns the pass back on.
+  local map = V.require("Shadows").enabled() and ShadowMap.active()
   send("sunVP", "row", map and ShadowMap.uvVP or Mat4.identity())
   local tex = ShadowMap.texture()
   if tex then send("sunMap", tex) end

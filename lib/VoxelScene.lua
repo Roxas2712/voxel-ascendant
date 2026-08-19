@@ -15,6 +15,7 @@ local V = ...
 local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
 local ShadowMap = V.require("ShadowMap")
+local Shadows = V.require("Shadows")
 local ChunkMesher = V.require("ChunkMesher")
 local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
@@ -453,6 +454,16 @@ function VoxelScene.prefetch(state)
   -- cut out of that build's own geometry (ChunkMesher.pair), so the two
   -- always come from the same slot and a lake is never drawn twice or left
   -- as a hole.
+  -- Queue a body-only version first. On a cold map this is the smallest
+  -- complete scene the player can walk on; the border-ring version upgrades
+  -- it in place afterwards. Previously only the full build was requested, so
+  -- a new map stayed on the flat fallback until even its off-screen border
+  -- had finished meshing.
+  local cachedFull = ChunkMesher.peek(state.map, false)
+  local cachedBody = ChunkMesher.peek(state.map, true)
+  if not cachedFull and not cachedBody then
+    ChunkMesher.request(state.map, true, nil, true)
+  end
   ChunkMesher.request(state.map, false, masks, true)
   local terrain, water = ChunkMesher.pair(state.map, false)
   if not terrain then
@@ -766,6 +777,7 @@ end
 -- than the pixels it lands on, at the cost of the mesh being drawn twice.
 local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
                            atlasFor, water, nbWater)
+  if not Shadows.enabled() then return end
   if not ShadowMap.available() then return end
   local sig = shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
   if not ShadowMap.stale(sig) then return end
@@ -899,7 +911,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- against the terrain just drawn (a shadow behind a building stays
   -- hidden) but never depth-writing, so the grass pass at the end of the
   -- frame still wins its feet-overdraw fights.
-  if not Voxel3D.shadowsActive() then
+  if Shadows.enabled() and not Voxel3D.shadowsActive() then
     Voxel3D.beginShadows()
     for _, p in ipairs(posed) do
       drawShadow(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
