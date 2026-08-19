@@ -25,6 +25,7 @@ local Sky = V.require("Sky")
 local Water = V.require("Water")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
+local FirstPerson = V.require("FirstPerson")
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
 
@@ -230,6 +231,12 @@ end
 -- against the compass point instead flicks the card to a profile for a
 -- frame or two when the camera is spun fast (see playerFacing).
 local function viewFacing(p)
+  if FirstPerson.cardBlend() > 0.5 then
+    if p.isPlayer then
+      return FirstPerson.playerFacing(p.facing, p.px + 8, p.py + 8)
+    end
+    return FirstPerson.apparentFacing(p.facing, p.px + 8, p.py + 8)
+  end
   return p.facing
 end
 
@@ -277,8 +284,12 @@ local function leanAngle()
 end
 
 local function billboardMatrix(px, py, y, mirror)
+  local b = FirstPerson.cardBlend()
   local m = Mat4.translate(px + 8, y, py + 8)
-  m = Mat4.mul(m, Mat4.rotateX(leanAngle() - math.pi / 2))
+  if b > 0 then
+    m = Mat4.mul(m, Mat4.rotateY(FirstPerson.cardYaw(px + 8, py + 8) * b))
+  end
+  m = Mat4.mul(m, Mat4.rotateX((leanAngle() - math.pi / 2) * (1 - b)))
   if mirror then m = Mat4.mul(m, Mat4.scale(-1, 1, 1)) end
   return Mat4.mul(m, Mat4.translate(-8, 0, 0))
 end
@@ -303,9 +314,17 @@ end
 -- his edge would swing him off his seat. The width rode in on the record
 -- for exactly this (ChunkMesher.buildFigureMeshes).
 local function figureMatrix(f, offX, offZ)
+  local b = FirstPerson.cardBlend()
   local wx, wz = f.wx + (offX or 0), f.wz + (offZ or 0)
   local m = Mat4.translate(wx, f.y, wz)
-  return Mat4.mul(m, Mat4.rotateX(leanAngle() - math.pi / 2))
+  if b > 0 and f.w and f.w > 0 then
+    local half = f.w / 2
+    m = Mat4.mul(m, Mat4.translate(half, 0, 0))
+    m = Mat4.mul(m, Mat4.rotateY(FirstPerson.cardYaw(wx + half, wz) * b))
+    m = Mat4.mul(m, Mat4.translate(-half, 0, 0))
+  end
+  return Mat4.mul(m,
+                  Mat4.rotateX((leanAngle() - math.pi / 2) * (1 - b)))
 end
 
 -- What the sun sees: the same card UNLEANED and flattened, exactly as
@@ -595,9 +614,12 @@ local function drawCast(state, posed, atlasFor)
   -- pose SHOWS this eye (viewFacing) rather than the one it shows the
   -- south. Both run through here, so the water's reflection copy -- drawn
   -- by this same function -- agrees with the frame to the pixel.
+  local hideMe = FirstPerson.hidePlayer()
   for _, p in ipairs(posed) do
-    drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
-               p.colors, p.lift)
+    if not (p.isPlayer and hideMe) then
+      drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
+                 p.colors, p.lift)
+    end
   end
   -- back on for everything textured from the atlas again -- figures, grass
   -- and flowers all sample it, where the mask's coordinates are honest
@@ -753,6 +775,7 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
   -- few times a minute rather than every frame.
   put(math.floor(ShadowMap.KX * 128))
   put(math.floor(ShadowMap.KZ * 128))
+  put(FirstPerson.signature())
   put(tostring(terrain))
   for i = 1, #nbMesh do put(tostring(nbMesh[i])) end
   for _, p in ipairs(posed) do
@@ -889,7 +912,14 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
 
   local posed, me = posesOf(state, spriteColors)
 
-  castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh, atlasFor,
+  -- Place the free-roam rig before either the shadow or eye pass. The scene
+  -- centre follows the player during the blend so curve, depth and lighting
+  -- stay centred on the camera actually drawing the frame.
+  local fpRig, fpCx, fpCy = FirstPerson.frame(me, cx, cy, vw, vh)
+  if fpRig then cx, cy = fpCx, fpCy end
+
+  local shCx, shCy = FirstPerson.shadowCenter(cx, cy, vh)
+  castShadows(state, terrain, nbMesh, posed, shCx, shCy, vw, vh, atlasFor,
               water, nbWater)
 
   -- Everything between beginScene and endScene, as one function: the flat
@@ -964,7 +994,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- Not in first person: the card it silhouettes is the one the camera is
   -- standing inside, and "the world is in front of the player" is every
   -- wall the player faces.
-  if me then
+  if me and not FirstPerson.hidePlayer() then
     Voxel3D.beginGhost()
     drawGhost(me)
     Voxel3D.endGhost()

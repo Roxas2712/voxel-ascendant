@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.7 — 2026-08-19
+
+- Split the former **BACK SPRITES** control into independent **TRAINER BACK**
+  and **PKMN BACK** settings. Existing `battleBack` saves retain their Pokemon
+  choice; the new trainer control defaults to front art in the 3D scene.
+- Route `TRAINER BACK = OFF` through the engine's live `player.sprite` seam so
+  vanilla and companion-selected trainer front art both render as a correctly
+  mirrored player-side card.
+- Restore the MIT-origin **1ST** and **3RD** VOXEL rungs with mouse, right-stick
+  and touch look, camera-relative movement, collision-aware third-person boom,
+  camera zoom and controller/touch-friendly SELECT cycling.
+- Keep the restored camera code independent of the removed VR, Horde, Stadium,
+  ROM and external-art features.
+
 ## 0.1.6 — 2026-08-19
 
 - Add a persistent **BTL GRID** option so 3D battles no longer force voxel

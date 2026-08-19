@@ -16,6 +16,11 @@ Voxel Ascendant has one publication source line:
 6. **Voxel Ascendant 0.1.5** — complete iOS HUD isolation: companion feature
    detection selects the native HUD before any cross-canvas panel bridge is
    installed, and intro-panel visibility matches the engine.
+7. **Voxel Ascendant 0.1.6** — mobile-safe grid/shadow controls, stable battle
+   shadows, and progressive cold-map mesh loading.
+8. **Voxel Ascendant 0.1.7** — independent trainer/Pokemon battle-back controls
+   and the first-/third-person camera modules restored from the same licensed
+   v1.6.1 source line without the removed VR/Horde feature families.
 
 The upstream mirror remains configured as the local `upstream` Git remote.
 Publication is performed only after the release QA gate passes.

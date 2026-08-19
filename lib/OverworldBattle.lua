@@ -139,50 +139,78 @@ function OverworldBattle.stadium()
   return false
 end
 
--- ------- BACK SPRITES: the player's own mon stays on the menu
+-- ------- independent player-side back sprites
 --
 -- The staged shot stands BOTH mons on the map, which is the mode's whole
 -- claim -- but it costs the one piece of framing Gen 1 is most recognisable
 -- by: your own Pokemon, seen from behind, sitting on top of the battle menu
 -- with its feet on the box. That silhouette is the series' shot.
 --
--- So BACK SPRITES is offered as a middle setting rather than a compromise
--- imposed on everyone. With it on the foe is still geometry standing on its
--- tile at the far end of the arena, and the player's side goes back to being
--- the GB's own flat back pic in the GB's own slot: same art, same 2x, same
--- feet on row 96.
+-- Separate TRAINER BACK and PKMN BACK rows make that composition a choice for
+-- each phase rather than one compromise imposed on both. With either on, the
+-- foe remains geometry at the far end while the selected player-side picture
+-- returns to the GB's own slot.
 -- Nothing else about the shot moves -- the arena, the camera and the drift are
 -- solved exactly as they were, so the foe stands where it always stood and the
 -- player's cell is simply empty ground in the foreground.
 --
 -- OFF by default: what the mode advertises is the pair of them out there.
-OverworldBattle.BACK_KEY = "battleBack"
-OverworldBattle.BACK_LABEL = "BACK SPRITES"
+-- Keep the historical battleBack key for Pokemon so existing saves preserve
+-- the player's choice. Trainer presentation gets a new independent key.
+OverworldBattle.POKEMON_BACK_KEY = "battleBack"
+OverworldBattle.POKEMON_BACK_LABEL = "PKMN BACK"
+OverworldBattle.TRAINER_BACK_KEY = "trainerBack"
+OverworldBattle.TRAINER_BACK_LABEL = "TRAINER BACK"
 
-OverworldBattle.backSetting = ModSetting.new(OverworldBattle.BACK_KEY,
-                                             OverworldBattle.BACK_LABEL,
-                                             { false, true }, { "OFF", "ON" })
+OverworldBattle.pokemonBackSetting =
+  ModSetting.new(OverworldBattle.POKEMON_BACK_KEY,
+                 OverworldBattle.POKEMON_BACK_LABEL,
+                 { false, true }, { "OFF", "ON" })
+OverworldBattle.trainerBackSetting =
+  ModSetting.new(OverworldBattle.TRAINER_BACK_KEY,
+                 OverworldBattle.TRAINER_BACK_LABEL,
+                 { false, true }, { "OFF", "ON" })
+
+-- Compatibility for companions that still feature-detect the old field.
+OverworldBattle.BACK_KEY = OverworldBattle.POKEMON_BACK_KEY
+OverworldBattle.BACK_LABEL = OverworldBattle.POKEMON_BACK_LABEL
+OverworldBattle.backSetting = OverworldBattle.pokemonBackSetting
 
 -- Gated on 3D-BTL rather than read alone: with staged battles off there is no
--- staged shot for a back pic to be pinned in FRONT of, and the engine's own
--- battle screen already draws exactly this. And held OFF under VR: the
--- headset stands both mons on the world -- a flat back pic pinned to the
--- 2D frame would keep your own mon off the arena the battle seat looks at.
-function OverworldBattle.backPinned()
+-- staged shot for a back pic to be pinned in front of, and the engine's own
+-- battle screen already draws exactly this.
+function OverworldBattle.pokemonBackPinned()
   if not OverworldBattle.enabled() then return false end
-  return OverworldBattle.backSetting:get() and true or false
+  return OverworldBattle.pokemonBackSetting:get() and true or false
+end
+
+function OverworldBattle.trainerBackPinned()
+  if not OverworldBattle.enabled() then return false end
+  return OverworldBattle.trainerBackSetting:get() and true or false
+end
+
+-- Historical API: BACK SPRITES meant the Pokemon once the trainer intro had
+-- ended, so retain that answer for older companions.
+function OverworldBattle.backPinned()
+  return OverworldBattle.pokemonBackPinned()
+end
+
+-- Which of the two independent switches owns the player-side picture that is
+-- visible right now.
+function OverworldBattle.playerBackPinned(battle)
+  if battle and battle.showPlayerBack and battle.playerBackPic then
+    return OverworldBattle.trainerBackPinned()
+  end
+  return OverworldBattle.pokemonBackPinned()
 end
 
 -- Whether a pic is the one drawn in the GB's own slot with its feet on the
 -- text box, rather than geometry standing out on the map.
 --
--- Exactly the player's side under BACK SPRITES -- its mon, or the trainer back
--- that holds the slot until "Go!" -- because that is the only pic this mod
--- ever leaves flat (see drawPicsLayer below). The foe is a billboard on its
--- tile whichever mode is on, and with the mode off the player's side is one
--- too, so both of those keep the open bottom that lets the arena through a
--- stride. What the answer buys is in BattlePics: a pic on the box has nothing
--- behind its lowest row, so its bottom edge seals.
+-- Exactly the player-side picture whose own switch currently pins it: the
+-- trainer during the intro or the Pokemon after "Go!". The foe is always a
+-- billboard on its tile. What the answer buys is in BattlePics: a picture on
+-- the box has nothing behind its lowest row, so its bottom edge seals.
 -- Read by TRUTHINESS rather than against nil, because sideTexture blanks the
 -- side it is not rendering by setting the field to FALSE (see OFF) and holds
 -- it that way for the whole render -- during which the pic layer runs, and
@@ -192,10 +220,12 @@ end
 -- simply is not there.
 function OverworldBattle.pinnedPic(battle, img)
   if not (battle and img) then return false end
-  if not OverworldBattle.backPinned() then return false end
-  if img == battle.playerBackPic then return true end
+  if img == battle.playerBackPic then
+    return OverworldBattle.trainerBackPinned()
+  end
   local player = battle.player
-  return (player and img == player.sprite) and true or false
+  return (player and img == player.sprite
+          and OverworldBattle.pokemonBackPinned()) and true or false
 end
 
 -- ------- both mons face you
@@ -207,7 +237,7 @@ end
 -- through the engine's own pokemon.sprite hook -- the seam that exists for
 -- exactly this, so no battle code has to be touched to get it.
 --
--- Unless BACK SPRITES is on, the setting that asks for the back pic back:
+-- Unless PKMN BACK is on, the setting that asks for the back pic back:
 -- that mon is drawn in its own slot on the menu, seen from behind, and the
 -- front art would be it turned round to face the player it belongs to.
 --
@@ -219,9 +249,8 @@ end
 -- the whole grid and this runs once per battler.
 local staged = { mapId = nil, ok = false }
 
-function OverworldBattle.wantsFront()
+local function canStageFront()
   if not OverworldBattle.enabled() then return false end
-  if OverworldBattle.backPinned() then return false end
   if not Voxel3D.available() then return false end
   -- required here rather than through the file's own helper: this runs
   -- while a battler is being built, which is before that helper is defined
@@ -238,6 +267,44 @@ function OverworldBattle.wantsFront()
     staged = { mapId = ow.map.id, ok = (ok and arena) and true or false }
   end
   return staged.ok
+end
+
+function OverworldBattle.wantsFront()
+  return not OverworldBattle.pokemonBackPinned() and canStageFront()
+end
+
+function OverworldBattle.wantsTrainerFront()
+  return not OverworldBattle.trainerBackPinned() and canStageFront()
+end
+
+function OverworldBattle.wantsTrainerBack()
+  return OverworldBattle.trainerBackPinned() and canStageFront()
+end
+
+-- Route the engine's player.sprite request for the trainer intro. Kept as a
+-- named, pure seam so companion ordering can be regression-tested without
+-- constructing a live BattleState.
+function OverworldBattle.routeTrainerSprite(next, path, ctx,
+                                             wantsBack, wantsFront)
+  if not (ctx and ctx.kind == "battle" and ctx.side == "back") then
+    return next(path, ctx)
+  end
+
+  if wantsBack then
+    local routed = {}
+    for key, value in pairs(ctx) do routed[key] = value end
+    routed.kind = "battle_back"
+    routed.voxelTrainerBack = true
+    local out = next(path, routed)
+    if routed.trueColor ~= nil then ctx.trueColor = routed.trueColor end
+    return out
+  end
+
+  local out = next(path, ctx)
+  if not wantsFront or out ~= path then return out end
+  local ok, FieldDefaults = pcall(require, "src.world.FieldDefaults")
+  if not (ok and FieldDefaults and FieldDefaults.fieldValue) then return out end
+  return FieldDefaults.fieldValue(ctx.data, "playerPics", "front") or out
 end
 
 -- ------- where the engine's own pics stand
@@ -583,18 +650,19 @@ function OverworldBattle.update(dt)
     return
   end
 
-  -- Whether the shot is the player's to steer at all. BACK SPRITES pins
-  -- their own mon to the GB's slot on the menu while the foe stands out on
+  -- Whether the shot is the player's to steer at all. Either active player
+  -- back setting pins that picture to the GB slot while the foe stands out on
   -- the map, and there is no angle that half-framed, half-solid
   -- composition survives -- so under it the camera holds the shot the rig
   -- was solved for (the slow drift aside, which was always there). Polled
   -- per frame rather than latched at battle start: the row is reachable
   -- from the mod manager's page mid-session.
-  BattleCam.steerable = not OverworldBattle.backPinned()
-  BattleCam.update(dt)
   -- the battle only exists once it has been pushed; a session opened at
   -- pushBattle time has it, one opened from battle.started was handed it
   session.battle = session.battle or (top ~= ow and top or nil)
+  BattleCam.steerable = not OverworldBattle.playerBackPinned(session.battle)
+  pcall(V.require("CamControl").tick, dt)
+  BattleCam.update(dt)
   -- the world pass is hidden behind the battle, so mesh builds get the wide
   -- slice: nothing visible can hitch on them
   ChunkMesher.pump(true)
@@ -902,7 +970,9 @@ function OverworldBattle.sideTexture(battle, side)
   if side == "enemy" and battle.showEnemyTrainer and battle.trainerPic then
     ax, ay, trainer = TRAINER_AX, TRAINER_AY, true
   elseif side == "player" and battle.showPlayerBack and battle.playerBackPic then
-    trainer = true
+    -- TRAINER BACK = OFF means the back-slot image is deliberately front art
+    -- standing in the scene, so it follows the regular player-card mirror.
+    trainer = OverworldBattle.trainerBackPinned()
   end
   return { canvas = canvas, ax = ax, ay = ay, trainer = trainer }
 end
@@ -921,7 +991,7 @@ end
 
 -- Both sides, or nil when neither has anything to show.
 --
--- One side under BACK SPRITES: the player's mon is not standing on the map at all
+-- One side under PKMN BACK: the player's mon is not standing on the map at all
 -- there, it is on the menu, so it has no card to be a texture for -- and
 -- nothing downstream has to know that. No billboard, and no shadow on the
 -- ground under a mon that is not on it.
@@ -930,7 +1000,7 @@ function OverworldBattle.textures(battle)
   local out = {}
   local okE, enemy = pcall(OverworldBattle.sideTexture, battle, "enemy")
   local okP, player = true, nil
-  if not OverworldBattle.backPinned() then
+  if not OverworldBattle.playerBackPinned(battle) then
     okP, player = pcall(OverworldBattle.sideTexture, battle, "player")
   end
   out.enemy = okE and enemy or nil
@@ -1096,7 +1166,8 @@ function OverworldBattle.install()
   -- nothing left to do here. Skipped rather than left to draw underneath, or
   -- every Pokemon would appear twice: once on its tile and once in its slot.
   --
-  -- Except under BACK SPRITES, where the player's side never became geometry and this
+  -- Except when the visible player-side back setting is ON, where that side
+  -- never became geometry and this
   -- layer is the only thing that draws it. The engine's own onlySide argument
   -- does the whole job: one call, the player's branches alone, in the slot and
   -- at the scale the GB always put them -- feet on the box, 2x, back view.
@@ -1106,7 +1177,7 @@ function OverworldBattle.install()
     if not shot then
       return innerPics(self, slide, sx, sy, onlySide, skipMenuClip, ...)
     end
-    if OverworldBattle.backPinned() and onlySide ~= "enemy" then
+    if OverworldBattle.playerBackPinned(self) and onlySide ~= "enemy" then
       -- under the hour's own light, like everything else in the frame -- see
       -- withTint, and the tint BattleScene hands over with the shot.
       --
@@ -1156,11 +1227,13 @@ function OverworldBattle.install()
     -- midpoint keeps every authored offset the same fraction of the gap it
     -- was authored as.
     local a = OverworldBattle.ANCHOR
-    -- BACK SPRITES leaves the player's mon exactly where the GB put it, so that side
+    -- A pinned player-side picture stays exactly where the GB put it, so that side
     -- contributes no movement at all and the pair's centre has gone half as
     -- far as the foe's mark did.
     local px, py = shot.player[1], shot.player[2]
-    if OverworldBattle.backPinned() then px, py = a.player[1], a.player[2] end
+    if OverworldBattle.playerBackPinned(self) then
+      px, py = a.player[1], a.player[2]
+    end
     local cx, cy = (shot.enemy[1] + px) / 2, (shot.enemy[2] + py) / 2
     local ax = (a.enemy[1] + a.player[1]) / 2
     local ay = (a.enemy[2] + a.player[2]) / 2
