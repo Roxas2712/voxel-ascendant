@@ -28,10 +28,6 @@ EXPECTED_PUBLIC = {
     "WallDecals",
 }
 REMOVED_NAMES = (
-    "FirstPerson",
-    "ThirdPerson",
-    "FreeMove",
-    "CamControl",
     "Horde",
     "Stadium",
     "VRGL",
@@ -45,10 +41,6 @@ DENIED_CODE = (
     re.compile(r"\b(?:io|os|package)\s*\."),
     re.compile(r"\bffi\b"),
     re.compile(r"\bdebug\s*\.\s*getupvalue\b"),
-    re.compile(
-        r"\blove\.(?:mousemoved|mousepressed|mousereleased|keypressed|"
-        r"keyreleased|wheelmoved)\s*="
-    ),
 )
 
 
@@ -149,7 +141,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "0.1.6")
+        self.assertEqual(manifest["version"], "0.1.7")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -244,6 +236,40 @@ class ContractTests(unittest.TestCase):
             self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
         subprocess.run([str(lua), "tests/render_controls_test.lua"], cwd=ROOT,
                        check=True, text=True, capture_output=True)
+
+    def test_player_camera_modes_runtime(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run([str(lua), "tests/camera_modes_test.lua"], cwd=ROOT,
+                       check=True, text=True, capture_output=True)
+
+    def test_battle_sprite_modes_runtime(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run([str(lua), "tests/battle_sprite_modes_test.lua"],
+                       cwd=ROOT, check=True, text=True, capture_output=True)
+
+    def test_battle_back_sprites_are_independent(self) -> None:
+        main = (ROOT / "main.lua").read_text(encoding="utf-8")
+        battle = (ROOT / "lib" / "OverworldBattle.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('POKEMON_BACK_KEY = "battleBack"', battle)
+        self.assertIn('TRAINER_BACK_KEY = "trainerBack"', battle)
+        self.assertIn("OverworldBattle.trainerBackSetting", main)
+        self.assertIn("OverworldBattle.pokemonBackSetting", main)
+        self.assertIn("OverworldBattle.wantsTrainerFront()", main)
+        self.assertIn("trainer = OverworldBattle.trainerBackPinned()", battle)
 
     def test_cold_map_build_exposes_terrain_progressively(self) -> None:
         scene = (ROOT / "lib" / "VoxelScene.lua").read_text(encoding="utf-8")

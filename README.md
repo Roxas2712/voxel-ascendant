@@ -18,7 +18,7 @@ third-party art are included.
   fail closed to the game's normal 2D renderer.
 - For an installed copy, use **Check for updates** in the launcher. Manual
   import intentionally does not overwrite a mod with the same ID.
-- For a first install, select `VOXEL_ASCENDANT-0.1.6.zip` in the mod manager.
+- For a first install, select `VOXEL_ASCENDANT-0.1.7.zip` in the mod manager.
   `manifest.json` is at the ZIP root; do not unpack or re-wrap it.
 
 Use the game's regular **OPTIONS** menu for the concise in-game controls. The
@@ -29,7 +29,7 @@ useful for recovery or advanced configuration.
 
 | option | values | effect |
 | --- | --- | --- |
-| **VOXEL** / `3` | OFF, FULL, 15, 35, 50, 75 | Voxel diorama and orbit-camera angle. FULL is the curated preset. |
+| **VOXEL** / `3` | OFF, FULL, 15, 35, 50, 75, 1ST, 3RD | Voxel diorama, orbit angles, first person, or a collision-aware third-person boom. FULL is the curated preset. |
 | **T-SHIFT** / `6` | OFF, 1, 2, 3 | Miniature tilt-shift blur. |
 | **V-GRID** / `5` | OFF, ON | One-pixel voxel seams. |
 | **BTL GRID** | ON, OFF | Voxel seams in 3D battles, independent of V-GRID. |
@@ -38,13 +38,15 @@ useful for recovery or advanced configuration.
 | **WATER** / `9` | FULL, SKY, OFF | Voxel water and reflections, with safe fallbacks. |
 | **DAYTIME** | DAY, NIGHT, DUSK, DAWN, CYCLE | Deterministic outdoor lighting; CYCLE is saved per journey. |
 | **3D-BTL** / `8` | MAP, DISCS, OFF | Native Gen 1 battle cards on nearby voxel terrain or a procedural disc stage. |
-| **BACK SPRITES** | OFF, ON | Keeps the player's classic back sprite in its normal battle slot. |
+| **TRAINER BACK** | OFF, ON | OFF stands the trainer's front art in the 3D intro; ON keeps the trainer back in its classic slot. |
+| **PKMN BACK** | OFF, ON | Independently keeps the player's Pokemon back sprite in its classic battle slot. |
 | **AA** | OFF, 2X, 4X | Supersamples the 3D pass. |
 
-The release intentionally does not include first-/third-person free movement,
-global relative-mouse hooks, VR, Horde mode, Pokemon Stadium models, ROM
-import, or a disk cache. This keeps input, saves, and the filesystem entirely
-inside Gen1Recomp's public/sandboxed paths.
+The 1ST and 3RD rungs use camera-relative movement with the engine's own cell
+collision, warp, encounter, ledge, boulder and step-completion paths. Mouse,
+right-stick and open-screen touch drags steer the view; SELECT or the `3` key
+cycles back out. The release still excludes VR, Horde mode, Pokemon Stadium
+models, ROM import, external art and disk caching.
 
 Voxel Ascendant is maintained as a focused compatibility alternative while
 older voxel renderers catch up with current Gen1Recomp releases. Its scope is

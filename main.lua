@@ -25,9 +25,9 @@
 -- the engine's TILT mode -- is engine plumbing driven by the records
 -- below.  This file declares; lib/ draws.
 --
--- Voxel mode is presentational: it changes what the world LOOKS like and
--- nothing about what it IS. The RC deliberately keeps the engine's normal
--- grid movement and input handling at every camera angle.
+-- Orbit rungs remain purely presentational. 1ST and 3RD attach the camera to
+-- the player and use camera-relative free movement while reusing the engine's
+-- own collision, cell-arrival, encounter, warp and scripted-move paths.
 
 local mod = ...
 
@@ -93,6 +93,9 @@ local Water = V.require("Water")
 local AntiAlias = V.require("AntiAlias")
 local WallDecals = V.require("WallDecals")
 local PublicFacade = V.require("PublicFacade")
+local FirstPerson = V.require("FirstPerson")
+local FreeMove = V.require("FreeMove")
+local CamControl = V.require("CamControl")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -172,6 +175,9 @@ mod.content.render_pipelines:register("voxel", {
     -- would fight anyone who changed one deliberately.
     applyFull(level)
     Voxel.update(dt, level)
+    -- The player-attached rig must keep easing both into and out of its
+    -- rungs, so it ticks even after 1ST/3RD has just been left.
+    FirstPerson.update(dt)
     -- the day/night clock, on the same always-running tick: Pipelines.update
     -- runs whatever the level, so time passes with the mode off, through
     -- battles and menus, and a CYCLE evening falls mid-fight exactly as it
@@ -320,10 +326,10 @@ applyFull = function(level)
   -- battle rows stay on the menu under FULL (see the rows hook), so this is
   -- where the preset puts them and not where they are held.
   OverworldBattle.setting:setIndex(1, Game)
-  -- with both mons out there on it: BACK SPRITES keeps the player's own on the
-  -- menu, which is the one part of the old screen FULL is least about. Set the
-  -- same way, and changed back on the same row a keypress later.
-  OverworldBattle.backSetting:setIndex(1, Game)
+  -- Keep both player-side cards in the 3D scene when the FULL preset is first
+  -- selected. Each remains independently changeable afterwards.
+  OverworldBattle.pokemonBackSetting:setIndex(1, Game)
+  OverworldBattle.trainerBackSetting:setIndex(1, Game)
   -- and the battle screen the staged fight is composed for. WIDE re-lays that
   -- screen out on a 304x144 surface, which moves every anchor the arena camera
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
@@ -393,7 +399,12 @@ local SETTINGS = {
   -- Only offered while a fight can actually be staged on the map: with 3D-BTL
   -- off the engine draws the classic screen, which is this row's ON already,
   -- and a row that no longer decides anything is worse than no row.
-  { OverworldBattle.backSetting,
+  { OverworldBattle.trainerBackSetting,
+    "Keep the trainer's classic rear-view throw sprite in the original intro "
+    .. "slot. OFF uses the trainer's standing front art in the 3D scene.",
+    when = stagedBattles,
+    full = true },
+  { OverworldBattle.pokemonBackSetting,
     "Keep your own Pokemon on the battle menu, seen from behind in its "
     .. "original slot, instead of standing it on the map facing the foe. "
     .. "The foe is still out there on its own tile.",
@@ -511,6 +522,12 @@ do
     function Game:keypressed(key, ...)
       local claim = HOTKEYS[key]
       local top = self.stack and self.stack:top()
+      -- Q/E control whichever camera is currently in front: the staged
+      -- battle lens, the third-person boom, or the regular survey zoom.
+      if (key == "q" or key == "e")
+         and not (top and top.onKeyPressed) then
+        if CamControl.zoomBy(key == "q" and 1 or -1) then return end
+      end
       -- A screen with its own key handler gets the key first, exactly as the
       -- engine's first branch does: typing a nickname must not toggle a
       -- render mode. Only free-roam presses are ours to take.
@@ -671,13 +688,13 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     --
     -- FULL: a preset that owns the look, so the rows that describe the look go
     -- with it. The BATTLE rows are not that -- 3D-BTL decides what a fight is
-    -- drawn OVER and BACK SPRITES how it is framed, and neither is a knob on
+    -- drawn over and TRAINER/PKMN BACK how it is framed; neither is a knob on
     -- the diorama FULL is a preset for. FULL still SETS them on arrival (see
     -- applyFull); it does not hold them, so leaving them on the menu is the
     -- difference between a preset and a lock.
     --
-    -- And a row whose own switch is off the table this frame (BACK SPRITES,
-    -- which needs a staged fight to be about) is left off with it. The mod
+    -- And a row whose own switch is off the table this frame (the two BACK
+    -- rows need a staged fight to be about) is left off with it. The mod
     -- manager's page carries every one of them either way.
     local offered = (entry.full or not full)
                     and (not entry.when or entry.when())
@@ -850,6 +867,29 @@ end
 -- so this file keeps naming every engine seam the mod touches.
 OverworldBattle.install()
 
+-- 1ST and 3RD share one player-attached camera and one camera-relative
+-- movement path. These installers only claim input while either rung is
+-- active and the overworld is actually on top of the state stack.
+FirstPerson.install()
+FreeMove.install()
+CamControl.install()
+
+-- SELECT cycles the same VOXEL camera ladder as the 3 key. This makes the
+-- two player-attached modes reachable and escapable on controllers and on
+-- touch devices without a number row.
+do
+  local OverworldState = require("src.world.OverworldController")
+  if not OverworldState.voxelAscendantSelectHook then
+    local inner = OverworldState.handleInput
+    function OverworldState:handleInput(...)
+      local Game = require("src.core.Game")
+      if Game.input:wasPressed("select") and cycleVoxel(Game) then return end
+      return inner(self, ...)
+    end
+    OverworldState.voxelAscendantSelectHook = true
+  end
+end
+
 -- The overworld's own pushBattle is the choke point for a wild encounter or
 -- a trainer, and it is wrapped. A battle that arrives some other way -- a
 -- link battle, a script pushing a BattleState directly -- reaches this
@@ -880,6 +920,22 @@ mod.hooks:wrap("pokemon.sprite", function(next, path, ctx)
   local def = ctx.data and ctx.data.pokemon and ctx.data.pokemon[ctx.species]
   return (def and def.spriteFront) or out
 end)
+
+-- Trainer presentation is independent of the Pokemon card. Gen1 loads the
+-- trainer through the battle-back slot until the throw completes; in a staged
+-- fight TRAINER BACK = OFF replaces that slot with standing front art.
+--
+-- The high hook priority also lets the ON path ask character companions for
+-- their actual battle-back visual. Older Kanto Ascendant builds selected a
+-- voxel front solely from ctx.kind == "battle"; the compatibility kind below
+-- preserves every other context field while routing that one request to the
+-- companion's normal back-art branch.
+mod.hooks:wrap("player.sprite", function(next, path, ctx)
+  return OverworldBattle.routeTrainerSprite(
+    next, path, ctx,
+    OverworldBattle.wantsTrainerBack(),
+    OverworldBattle.wantsTrainerFront())
+end, 100)
 
 -- Every ending path emits this, including a battle skipped before it drew,
 -- so this is where the map's cast comes back.
@@ -951,18 +1007,20 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "0.1.5"
+mod.exports.version = "0.1.7"
 mod.exports.apiVersion = 1
 mod.exports.renderer = {
   id = "VOXEL_ASCENDANT",
-  version = "0.1.5",
+  version = "0.1.7",
   pipeline = "voxel",
-  cameraProfile = "orbit-only",
+  cameraProfile = "orbit-first-third",
 }
 mod.exports.capabilities = {
   voxelWorld = true,
   battleCards = { "MAP", "DISCS" },
   wallDecals = WallDecals.API_VERSION,
+  cameraModes = { "ORBIT", "FIRST_PERSON", "THIRD_PERSON" },
+  freeMovement = true,
   diskCache = false,
   stadium = false,
   vr = false,

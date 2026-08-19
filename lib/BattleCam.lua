@@ -188,9 +188,9 @@ BattleCam.pitchGoal = 0
 BattleCam.zoom = 1
 BattleCam.zoomGoal = 1
 
--- Whether the player may steer at all. BACK SPRITES clears it: that
--- setting pins the player's own mon to the GB's own slot on the menu
--- (OverworldBattle.backPinned) instead of standing it out on the map, so
+-- Whether the player may steer at all. The active player-side BACK setting
+-- clears it: that setting pins the trainer or Pokemon to the GB slot instead
+-- of standing it out on the map, so
 -- half the picture is nailed to the frame and half of it is geometry. Swing
 -- the camera under that and the two halves come apart -- the foe walks
 -- around an arena its opponent is not standing in, and the move animations
@@ -198,7 +198,7 @@ BattleCam.zoomGoal = 1
 -- composition survives, so the answer is not to allow one.
 --
 -- Only the STEER is withheld: the slow drift stays, because it was always
--- there under BACK SPRITES and two degrees is not a composition problem.
+-- there under a pinned back sprite and two degrees is not a composition problem.
 BattleCam.steerable = true
 
 -- Hold the rig perfectly still (VR sets this while a session runs). The
@@ -244,7 +244,7 @@ end
 -- the side-on stop. Returning whether the goal actually moved lets a
 -- caller tell "steered" from "already against the stop".
 
--- Both axes go through here, so the "nothing while BACK SPRITES holds the
+-- Both axes go through here, so the "nothing while a BACK row holds the
 -- composition" rule and the two stops live in one place each.
 local function setAxis(key, goal)
   if not BattleCam.steerable then return false end
@@ -360,7 +360,7 @@ end
 -- How much world the frame holds right now: the rig's own reach at the
 -- player's zoom and at whatever the orbit has done to the pair's spacing,
 -- or the rig's own alone whenever both are being withheld (VR's fixed
--- seat, BACK SPRITES' pinned composition). The sun's box is fitted to this
+-- seat, a BACK row's pinned composition). The sun's box is fitted to this
 -- too, so a zoomed shot lights exactly the ground it shows -- which is why
 -- BattleScene asks this rather than multiplying for itself.
 function BattleCam.frameH(arena)
@@ -421,7 +421,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local mx, mz = arena.mid[1], arena.mid[2]
   -- VR asks for the same stillness for its own reason (see BattleCam.still)
   local fixed = BattleCam.still or canonical
-  -- and the steer is withheld a second way, on its own: BACK SPRITES holds
+  -- and the steer is withheld a second way, on its own: a BACK row holds
   -- the composition and the DRIFT still runs under it (see steerable)
   local steered = (not fixed) and BattleCam.steerable
 

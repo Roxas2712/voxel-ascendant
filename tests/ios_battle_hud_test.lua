@@ -44,7 +44,11 @@ local function fixture(osName)
   }
   local currentCanvas = screenCanvas
 
+  -- Preserve the headless runner's event module; the fixture replaces only
+  -- graphics, and the runner still needs love.event.quit after this file ends.
+  local runnerEvent = love and love.event
   _G.love = {
+    event = runnerEvent,
     graphics = {
       getCanvas = function() return currentCanvas end,
       setCanvas = function(canvas)
