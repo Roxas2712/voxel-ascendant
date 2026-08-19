@@ -35,6 +35,7 @@ local V = ...
 local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
 local ShadowMap = V.require("ShadowMap")
+local Shadows = V.require("Shadows")
 local ChunkMesher = V.require("ChunkMesher")
 local TerrainAtlas = V.require("TerrainAtlas")
 local VoxelScene = V.require("VoxelScene")
@@ -142,10 +143,24 @@ local function prefetchArena(state, host)
   for _, nb in ipairs(state.neighbors or {}) do live[nb.map.id] = true end
   ChunkMesher.setLive(live)
   TerrainAtlas.setLive(live)
+  if not ChunkMesher.peek(host, false) and not ChunkMesher.peek(host, true) then
+    ChunkMesher.request(host, true, nil, true)
+  end
   ChunkMesher.request(host, false, nil, true)
   local terrain, water = ChunkMesher.pair(host, false)
   if not terrain then terrain, water = ChunkMesher.pair(host, true) end
   return terrain, {}, water, {}
+end
+
+-- Queue the arena before the transition starts drawing. BattleScene.render
+-- also calls the same path every frame, but the first covered update pumps
+-- before that first render. Preparing from OverworldBattle.begin lets that
+-- otherwise-unused slice work on the destination immediately.
+function BattleScene.prepare(state, arena)
+  if not (state and state.map and arena) then return false end
+  if arena.discs then return true end
+  prefetchArena(state, arena.map or state.map)
+  return true
 end
 
 -- ------- the sun
@@ -178,20 +193,28 @@ end
 -- one is a BACK view -- the player seen from behind, already turned to face
 -- up the field -- so it arrives pointing the right way and mirroring it would
 -- turn it around to face the camera it is standing in front of.
-local function monMatrix(tex, x, groundY, z, mirror)
+local function monMatrix(tex, x, groundY, z, mirror, yaw)
   local k = BattleBillboard.FULL_W / BattleBillboard.FULL_PIC
   local w = BattleScene.GB_W * k
   local h = BattleScene.GB_H * k
   local ox = -((tex.ax / BattleScene.GB_W) - 0.5) * w
   local oy = -((BattleScene.GB_H - tex.ay) / BattleScene.GB_H) * h
-  local yaw = BattleBillboard.yawToward(x, z, Voxel3D.eye)
+  -- The visible card follows the camera. A caller may instead supply the
+  -- object's own stable bearing for the sun pass; this keeps a shadow rooted
+  -- to the combatant while the presentation camera drifts around it.
+  yaw = yaw or BattleBillboard.yawToward(x, z, Voxel3D.eye)
   local card = Mat4.mul(Mat4.translate(ox, oy, 0), Mat4.scale(w, h, 1))
   if mirror then card = Mat4.mul(Mat4.scale(-1, 1, 1), card) end
   return Mat4.mul(Mat4.mul(Mat4.translate(x, groundY, z), Mat4.rotateY(yaw)),
                   card)
 end
 
--- Every mon that has something to show this frame, as (texture, matrix).
+-- Every mon that has something to show this frame. `model` is the
+-- camera-facing presentation card; `shadowModel` is the same silhouette
+-- standing on the same feet but facing its opponent. Keeping those separate
+-- matters because camera drift is a property of the shot, not movement by the
+-- Pokemon: using `model` for the sun made the shadow rotate and slide while
+-- its owner stood still.
 local function monCards(arena, groundY, textures)
   local out = {}
   if not textures then return out end
@@ -200,9 +223,16 @@ local function monCards(arena, groundY, textures)
     local cell = (side == "player") and arena.player or arena.enemy
     if tex and tex.canvas and cell then
       local mirror = (side == "player") and not tex.trainer
+      local other = (side == "player") and arena.enemy or arena.player
+      local objectYaw = other
+                        and BattleBillboard.yawToward(
+                              cell[1], cell[2], { other[1], 0, other[2] })
+                        or 0
       out[#out + 1] = { tex = tex.canvas,
                         model = monMatrix(tex, cell[1], groundY, cell[2],
-                                          mirror) }
+                                          mirror),
+                        shadowModel = monMatrix(tex, cell[1], groundY,
+                                                cell[2], mirror, objectYaw) }
     end
   end
   return out
@@ -316,6 +346,7 @@ end
 local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
                            atlasFor, cards, token, host, neighbors,
                            water, nbWater, groundY)
+  if not Shadows.enabled() then return end
   if not ShadowMap.available() then return end
   local sig = shadowSignature(state, arena, terrain, nbMesh, token)
   if not ShadowMap.stale(sig) then return end
@@ -353,16 +384,17 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
                    ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
   end
 
-  -- the mons themselves, as the same cards the camera will see. Their alpha
-  -- is the silhouette, so what lands on the ground is the shape of the
-  -- Pokemon rather than a blob standing in for one.
+  -- the mons themselves, with the same texture/silhouette the camera sees
+  -- but on the stable opponent-facing transform monCards prepared. The
+  -- camera-facing presentation card is allowed to drift; its owner and the
+  -- shadow on the floor are not.
   -- marked as the CAST, so a fight staged at the water's edge does not lay a
   -- cut-out of a Pokemon across the lake (see ShadowMap.sprites); the arena's
   -- own floor still takes them, which is the shadow that matters here
   ShadowMap.sprites(true)
   for _, card in ipairs(cards or {}) do
     ShadowMap.draw(BattleBillboard.mesh(), card.tex,
-                   ShadowMap.snug(card.model))
+                   ShadowMap.snug(card.shadowModel))
   end
   ShadowMap.sprites(false)
   ShadowMap.finish(sig)
@@ -547,12 +579,10 @@ function BattleScene.render(state, arena, textures, token)
   local sunWas = Voxel3D.SHADOW_ALPHA
   Voxel3D.SHADOW_ALPHA = BattleScene.SHADOW_ALPHA
                          * DayNight.shadowScale(outdoor)
-  -- and the wireframe is ON for a battle whatever the V-GRID row says. The
-  -- arena is a staged shot rather than the world being walked through, and
-  -- the seams are what make it read as built rather than photographed. Forced
-  -- through the override so the player's own row is never written to.
+  -- The battle has its own BTL GRID row. Apply it through the temporary
+  -- override so the free-roam V-GRID choice is never rewritten.
   local gridWas = VoxelGrid.override
-  VoxelGrid.override = true
+  VoxelGrid.override = VoxelGrid.battleEnabled()
   local out = nil
   local ok, err = pcall(function()
     -- its own canvas slot: this renders at the window's pixel size and the
@@ -622,10 +652,11 @@ function BattleScene.render(state, arena, textures, token)
     -- tileset atlas, so the mask's coordinates mean nothing on them
     Voxel3D.glass(false)
     for _, card in ipairs(monCards(arena, groundY, textures)) do
-      -- the sun stored this card snugged (castShadows), so its own shadow
-      -- lookup must read the same snugged transform -- see ShadowMap.snug
+      -- The visible billboard faces the camera, but the sun stored the stable
+      -- opponent-facing caster. Read that same transform for the shadow
+      -- lookup, so camera drift cannot drag the silhouette across the floor.
       Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
-                   BattleBillboard.PULL, ShadowMap.snug(card.model))
+                   BattleBillboard.PULL, ShadowMap.snug(card.shadowModel))
     end
     Voxel3D.glass(true)
     Voxel3D.seams(true)

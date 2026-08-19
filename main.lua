@@ -83,6 +83,7 @@ local VoxelScene = V.require("VoxelScene")
 local TiltShift = V.require("TiltShift")
 local ChunkMesher = V.require("ChunkMesher")
 local VoxelGrid = V.require("VoxelGrid")
+local Shadows = V.require("Shadows")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
 local BattleExit = V.require("BattleExit")
@@ -359,6 +360,22 @@ end
 
 local SETTINGS = {
   { VoxelGrid.setting, "One-pixel wireframe along every voxel edge." },
+  -- The staged fight used to force this on even when V-GRID said OFF. It is
+  -- deliberately independent: battle framing should not rewrite the look the
+  -- player chose for free-roam.
+  { VoxelGrid.battleSetting,
+    "Draw voxel seams in 3D battles. Independent of V-GRID, which controls "
+    .. "the overworld.",
+    full = true },
+  -- A quality/performance switch rather than a FULL-preset knob. Keep it on
+  -- the menu under FULL so mobile players can disable the shadow-map pass
+  -- without leaving the curated camera preset.
+  { Shadows.setting,
+    "Turn object-anchored world and character shadows ON or OFF in voxel "
+    .. "scenes and 3D battles. Turn "
+    .. "this off on mobile devices where the shadow pass is slow or renders "
+    .. "poorly.",
+    full = true },
   { WorldCurve.setting,
     "Bend the world down over the horizon, Animal Crossing style." },
   { Water.setting,

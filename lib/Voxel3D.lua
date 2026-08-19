@@ -28,6 +28,7 @@ local V = ...
 local Mat4 = V.require("Mat4")
 local Voxel = V.require("VoxelState")
 local ShadowMap = V.require("ShadowMap")
+local Shadows = V.require("Shadows")
 local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local Sky = V.require("Sky")
@@ -902,7 +903,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   -- the sun's frame, filled by ShadowMap just before this pass opened.
   -- Sent unconditionally: the sampler is declared either way, and leaving
   -- one unbound is a driver-dependent crash rather than a fallback.
-  local map = ShadowMap.active()
+  local map = Shadows.enabled() and ShadowMap.active()
   pcall(sh.send, sh, "sunVP", "row", map and ShadowMap.uvVP or IDENTITY)
   local tex = ShadowMap.texture()
   if tex then pcall(sh.send, sh, "sunMap", tex) end
@@ -1223,7 +1224,7 @@ Voxel3D.SHADOW_ALPHA = 0.40   -- how far into black a shadowed surface goes
 -- driver the sun pass could not start on, which is when VoxelScene falls
 -- back to the flat decals below.
 function Voxel3D.shadowsActive()
-  return ShadowMap.active()
+  return Shadows.enabled() and ShadowMap.active()
 end
 
 -- The upright card a character presents to the sun: its 16x16 sprite quad

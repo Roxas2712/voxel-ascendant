@@ -519,6 +519,10 @@ function OverworldBattle.begin(state, battle)
               armed = false, token = 0 }
   cullCast(state)
   BattleCam.reset()
+  -- Queue the cold arena before the wipe is pushed. The update hook can now
+  -- spend its very first covered-frame budget on terrain instead of only
+  -- discovering the work after that slice has passed.
+  pcall(BattleScene.prepare, state, arena)
   return true
 end
 

@@ -1,7 +1,28 @@
-# Voxel Ascendant 0.1.5
+# Voxel Ascendant 0.1.6
 
-This maintenance release keeps Voxel Ascendant a narrow compatibility
-alternative for Gen1Recomp 0.1.90 and newer.
+This maintenance release adds explicit mobile-safe rendering controls and
+reduces the visible wait when a cold map or battle arena is first meshed.
+
+**BTL GRID** now controls voxel seams in 3D battles independently of the
+overworld's **V-GRID** row. Battles no longer force those seams on. **SHADOWS**
+controls the shadow-map pass in both scenes; switching it OFF also suppresses
+the flat fallback decals, which gives iPhone users a clean shadowless path.
+Both new settings default to the historical ON look and remain accessible
+inside the FULL preset.
+
+When shadows are ON, staged-battle shadows now use each combatant's stable
+bearing toward its opponent. The visible sprite card may continue facing the
+drifting camera, but its shadow stays rooted to the Pokemon rather than
+rotating with that camera-facing billboard.
+
+Map building remains asynchronous so loading cannot freeze a mobile frame.
+On a cold map the drawable body is queued before its border ring, terrain is
+made visible before decorative meshes finish, and battle arenas are queued
+before the transition starts. The complete scene still fills in behind the
+transition and subsequent frames.
+
+Voxel Ascendant remains a narrow compatibility alternative for Gen1Recomp
+0.1.90 and newer.
 
 This release supersedes the incomplete 0.1.4 iOS HUD fix. Kanto Ascendant
 6.5.6 can feature-detect Voxel Ascendant's historical edge-HUD compositor.
@@ -16,8 +37,8 @@ panels remain upright inside the centered UI canvas. The wild-battle intro also
 uses the engine's exact visibility rule, so no enemy panel appears behind the
 party-ball row before the status HUD exists.
 
-The 3D renderer, gameplay state, settings and desktop companion behavior are
-unchanged.
+The established iOS HUD isolation, gameplay behavior and desktop companion
+integration are unchanged outside these new renderer controls.
 
 Voxel Ascendant includes no Pokemon or trainer sprite pack and offers no
 sprite-pack menu. Battles use the game's existing art, or art selected by a

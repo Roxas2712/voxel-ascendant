@@ -61,15 +61,28 @@ end
 VoxelGrid.setting = ModSetting.new(VoxelGrid.KEY, VoxelGrid.LABEL,
                                    { false, true }, { "OFF", "ON" })
 
+-- Battles used to force the wireframe on through `override`, ignoring the
+-- player's V-GRID choice.  Keep the staged-shot default, but give it its own
+-- persistent switch: someone can now keep seams while walking and remove
+-- them in battle (or the other way round) without one scene rewriting the
+-- other scene's preference.
+VoxelGrid.BATTLE_KEY = "battleGrid"
+VoxelGrid.BATTLE_LABEL = "BTL GRID"
+VoxelGrid.battleSetting = ModSetting.new(VoxelGrid.BATTLE_KEY,
+                                         VoxelGrid.BATTLE_LABEL,
+                                         { true, false }, { "ON", "OFF" })
+
+function VoxelGrid.battleEnabled()
+  return VoxelGrid.battleSetting:get() and true or false
+end
+
 -- A pass that needs the wireframe whatever the player left the row on sets
 -- this for the length of its own draw and puts it back after. nil means
 -- "follow the setting", which is every frame outside such a pass.
 --
--- The overworld battle is the one user: a fight is a STAGED shot, not the
--- world being walked around in, and the seams are what make it read as
--- constructed rather than as a photograph of somewhere. The row still owns
--- what free-roam looks like, and is not written to -- switching the mode off
--- mid-battle would silently rewrite the player's own setting.
+-- The overworld battle is the one user. It supplies its dedicated BTL GRID
+-- value for the length of the draw without rewriting the free-roam V-GRID
+-- choice.
 VoxelGrid.override = nil
 
 function VoxelGrid.enabled()
