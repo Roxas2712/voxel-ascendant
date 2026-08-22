@@ -44,8 +44,10 @@ local BattleBillboard = V.require("BattleBillboard")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local AntiAlias = V.require("AntiAlias")
+local Weather = V.require("Weather")
+local HorizonWall = V.require("HorizonWall")
+local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local PaletteFX = require("src.render.PaletteFX")
-local Map = require("src.world.Map")
 
 local BattleScene = {}
 
@@ -138,19 +140,61 @@ end
 -- not standing in it. Both maps are kept live so neither the arena's mesh nor
 -- the one waiting to be walked back onto is evicted mid-battle.
 local function prefetchArena(state, host)
-  if host == state.map then return VoxelScene.prefetch(state) end
+  if host == state.map then
+    local terrain, nbMesh, water, nbWater, plan = VoxelScene.prefetch(state)
+    if not (terrain and plan and plan.state) then return nil end
+
+    -- VoxelScene's fifth result is the hole-free subset of connected maps:
+    -- every included body already exists, and HorizonWall closes each seam
+    -- whose neighbour is still cold. Battles used to ignore that result and
+    -- draw the sparse first-four-value tuple directly. The wider 2X/3X lens
+    -- made the missing bodies -- and the body-only current map's bare edge --
+    -- plainly visible.
+    local horizon, horizonReady
+    if plan.horizonFallback then
+      -- VoxelScene has already gated this plan on the masked FULL current
+      -- ring and every connected body. It deliberately carries no semantic
+      -- horizon after that exact state build failed.
+      horizon, horizonReady = {}, true
+    else
+      horizon, horizonReady = HorizonWall.meshes(plan.state)
+    end
+    if not horizonReady then return nil end
+
+    -- With semantic scenery disabled the current FULL mesh is closed by its
+    -- masked border ring instead. Those masks assume every connected body is
+    -- present, so preserve VoxelScene's atomic rule rather than accepting a
+    -- compact partial plan in that mode.
+    if (plan.horizonFallback or not HorizonWall.preferBody(host))
+       and #(plan.state.neighbors or {}) ~= #(state.neighbors or {}) then
+      return nil
+    end
+    return {
+      terrain = terrain, water = water,
+      neighbors = plan.state.neighbors or {},
+      meshes = plan.meshes or nbMesh or {},
+      waters = plan.waters or nbWater or {},
+      horizon = horizon or {},
+    }
+  end
+
   local live = { [host.id] = true, [state.map.id] = true }
   for _, nb in ipairs(state.neighbors or {}) do live[nb.map.id] = true end
   ChunkMesher.setLive(live)
   TerrainAtlas.setLive(live)
-  if not ChunkMesher.peek(host, false) and not ChunkMesher.peek(host, true) then
-    ChunkMesher.request(host, true, nil, true)
-  end
+  -- A foreign authored arena has no connected-map state from which to build a
+  -- semantic union. Wait for its closed FULL ring; drawing the quicker BODY
+  -- fallback here leaves a naked edge, especially under the 3X battle lens.
   ChunkMesher.request(host, false, nil, true)
   local terrain, water = ChunkMesher.pair(host, false)
-  if not terrain then terrain, water = ChunkMesher.pair(host, true) end
-  return terrain, {}, water, {}
+  if not terrain then return nil end
+  return {
+    terrain = terrain, water = water,
+    neighbors = {}, meshes = {}, waters = {}, horizon = {},
+  }
 end
+
+BattleScene._prefetchArena = prefetchArena -- named for the focused suite
 
 -- Queue the arena before the transition starts drawing. BattleScene.render
 -- also calls the same path every frame, but the first covered update pumps
@@ -193,8 +237,9 @@ end
 -- one is a BACK view -- the player seen from behind, already turned to face
 -- up the field -- so it arrives pointing the right way and mirroring it would
 -- turn it around to face the camera it is standing in front of.
-local function monMatrix(tex, x, groundY, z, mirror, yaw)
-  local k = BattleBillboard.FULL_W / BattleBillboard.FULL_PIC
+local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale)
+  local k = (BattleBillboard.FULL_W / BattleBillboard.FULL_PIC)
+            * (actorScale or 1)
   local w = BattleScene.GB_W * k
   local h = BattleScene.GB_H * k
   local ox = -((tex.ax / BattleScene.GB_W) - 0.5) * w
@@ -218,21 +263,28 @@ end
 local function monCards(arena, groundY, textures)
   local out = {}
   if not textures then return out end
+  local stage = V.require("VoxelBattleStage")
+  local actorScale = stage.presentationScale(arena)
   for _, side in ipairs({ "enemy", "player" }) do
     local tex = textures[side]
     local cell = (side == "player") and arena.player or arena.enemy
-    if tex and tex.canvas and cell then
+    local cardX, cardY, cardZ = stage.presentationPosition(
+      arena, side, groundY)
+    if tex and tex.canvas and cell and cardX then
       local mirror = (side == "player") and not tex.trainer
-      local other = (side == "player") and arena.enemy or arena.player
-      local objectYaw = other
+      local otherSide = (side == "player") and "enemy" or "player"
+      local otherX, _, otherZ = stage.presentationPosition(
+        arena, otherSide, groundY)
+      local objectYaw = otherX
                         and BattleBillboard.yawToward(
-                              cell[1], cell[2], { other[1], 0, other[2] })
+                              cardX, cardZ, { otherX, 0, otherZ })
                         or 0
       out[#out + 1] = { tex = tex.canvas,
-                        model = monMatrix(tex, cell[1], groundY, cell[2],
-                                          mirror),
-                        shadowModel = monMatrix(tex, cell[1], groundY,
-                                                cell[2], mirror, objectYaw) }
+                        model = monMatrix(tex, cardX, cardY, cardZ,
+                                          mirror, nil, actorScale),
+                        shadowModel = monMatrix(tex, cardX, cardY,
+                                                cardZ, mirror, objectYaw,
+                                                actorScale) }
     end
   end
   return out
@@ -267,10 +319,13 @@ function BattleScene.fxCard(arena, groundY, anchors)
   local dgb = e[1] - p[1]
   if math.abs(dgb) < 1 then return nil end
   local GW, GH = BattleScene.GB_W, BattleScene.GB_H
-  local Px, Py, Pz = arena.player[1], groundY, arena.player[2]
-  local Ex, Ey, Ez = arena.enemy[1], groundY, arena.enemy[2]
-  local s = BattleBillboard.FULL_W / BattleBillboard.FULL_PIC
-  local Mx, My, Mz = (Px + Ex) / 2, groundY, (Pz + Ez) / 2
+  local stage = V.require("VoxelBattleStage")
+  local Px, Py, Pz = stage.presentationPosition(arena, "player", groundY)
+  local Ex, Ey, Ez = stage.presentationPosition(arena, "enemy", groundY)
+  if not (Px and Ex) then return nil end
+  local s = (BattleBillboard.FULL_W / BattleBillboard.FULL_PIC)
+            * stage.presentationScale(arena)
+  local Mx, My, Mz = (Px + Ex) / 2, (Py + Ey) / 2, (Pz + Ez) / 2
 
   local eye = Voxel3D.eye
   local yaw = BattleBillboard.yawToward(Mx, Mz, eye)
@@ -447,6 +502,21 @@ end
 BattleScene.FLASH_COLOR = { 1, 1, 1 }
 BattleScene.FLASH_STRENGTH = 0.5
 
+-- Resolve the arena's weather from the map that actually supplies its floor,
+-- not blindly from the overworld map. Authored battles may move the camera to
+-- another floor of the same building/cave, and Weather.mode is also the one
+-- authority that keeps every interior clear. Kept as a tiny seam so the
+-- battle/weather contract can be exercised without constructing a full GPU
+-- scene in the Lua test runner.
+function BattleScene.weatherMode(host)
+  return Weather.mode(host)
+end
+
+function BattleScene.applyWeather(canvas, w, h, host, cell, mode)
+  return Weather.apply(canvas, w, h, host, cell,
+                       mode or BattleScene.weatherMode(host))
+end
+
 -- ------- the tile clock, while the overworld is not the one drawing
 --
 -- Water and flowers animate off TileRenderer's 60Hz counter, and the ENGINE
@@ -481,13 +551,13 @@ function BattleScene.render(state, arena, textures, token)
   -- the floor the fight is staged on: normally the player's own, sometimes
   -- another floor of the same cave or building (see BattleArena)
   local host = arena.map or state.map
-  local neighbors = (host == state.map) and (state.neighbors or {}) or {}
+  local neighbors = {}
 
   -- the hour's light reaches the arena exactly as it reaches free-roam: the
   -- shared rig follows the clock on an outdoor floor and stays at noon on an
   -- indoor one, and the same tint multiplies the staged shot -- with the
   -- same window glass on whatever buildings stand in the background
-  local outdoor = host.def and Map.isOutdoor(host.def) or false
+  local outdoor = Weather.isOutdoor(host)
   DayNight.applyRig(outdoor)
   -- a canopy floor (Viridian Forest) fights under the hour's tint too,
   -- with the rig and the void exactly as they were
@@ -508,15 +578,18 @@ function BattleScene.render(state, arena, textures, token)
 
   -- shares the free-roam mode's request/evict bookkeeping, so a battle warms
   -- exactly the meshes walking around would have and nothing extra
-  local terrain, nbMesh, water, nbWater
+  local terrain, nbMesh, water, nbWater, horizon
   if discs then
     -- and nothing is meshed for a disc fight, which is the other half of why
     -- the rung works everywhere: there is no waiting for a chunk to build, so
     -- the first frame of the first battle on a cold map is the finished shot
-    nbMesh, water, nbWater = {}, nil, {}
+    nbMesh, water, nbWater, horizon = {}, nil, {}, {}
   else
-    terrain, nbMesh, water, nbWater = prefetchArena(state, host)
-    if not terrain then return nil end
+    local stage = prefetchArena(state, host)
+    if not stage then return nil end
+    terrain, water = stage.terrain, stage.water
+    neighbors, nbMesh = stage.neighbors, stage.meshes
+    nbWater, horizon = stage.waters, stage.horizon
   end
 
   local lx, ly, s, pw, ph = BattleScene.letterbox()
@@ -528,6 +601,18 @@ function BattleScene.render(state, arena, textures, token)
   end
 
   local groundY = BattleScene.groundY(host, arena)
+  local sceneryEnabled = HorizonWall.enabled()
+  PanoramaBackdrop.setEnabled(sceneryEnabled)
+  local panoramaReady = not discs and outdoor and sceneryEnabled
+                         and PanoramaBackdrop.prepare()
+  local portableBackdrop = nil
+  if discs and arena.arenaStyle then
+    portableBackdrop = V.require("VoxelBattleStage").backdropFor(arena, outdoor)
+    -- ARENA promises a complete picture.  If this driver's image path cannot
+    -- prepare it, decline this frame instead of silently falling back to the
+    -- old empty-sky platform.
+    if not portableBackdrop then return nil end
+  end
   local cam, pitch = BattleCam.rig(arena, groundY)
   cam.fov = BattleScene.letterboxFov(cam.fov, ph, s)
 
@@ -556,8 +641,8 @@ function BattleScene.render(state, arena, textures, token)
   -- of the same ramp, which is a room's "past the wall". Transparent -- the
   -- free-roam default -- would let the letterbox clear through wherever the
   -- geometry stops.
-  local sky = VoxelScene.skyColor(host, 1)
-             or VoxelScene.skyShade(INDOOR_SHADE, 1)
+  local mapSky = VoxelScene.skyColor(host, 1)
+  local sky = mapSky or VoxelScene.skyShade(INDOOR_SHADE, 1)
   -- On a disc rung the void is not a backdrop behind the scenery -- it IS the
   -- scenery, because the map is not drawn. So outdoors it gets the full
   -- treatment the free-roam camera gets: the banded gradient and the hour's
@@ -565,11 +650,20 @@ function BattleScene.render(state, arena, textures, token)
   -- sky it is handed carries bands). Indoors there is nothing to dress: a
   -- room's void is one flat shade, which is what a room looks like past the
   -- wall, and the disc fight in a cave is lit and coloured as that cave.
-  if discs and VoxelScene.skyColor(host, 1) then
+  -- A canopy colour closes Viridian Forest's void, but is explicitly not an
+  -- open sky: even a disc-only arena must not punch sun, moon, clouds or
+  -- stars through the leaves.
+  if discs and mapSky and not mapSky.canopy then
     local Sky = V.require("Sky")
     local okDress, dressed = pcall(Sky.dress, sky)
     if okDress and dressed then sky = dressed end
   end
+
+  -- Weather belongs to the arena map for the same reason as its palette and
+  -- sky. Pass the already-resolved mode to both sky dressing and the final
+  -- overlay so AUTO cannot roll differently within one frame. Indoors this
+  -- is always clear, including disc fights staged in caves or buildings.
+  local weatherMode = BattleScene.weatherMode(host)
 
   Voxel3D.camera = cam
   -- the sun is turned up for the arena and put back afterwards, so the
@@ -597,21 +691,46 @@ function BattleScene.render(state, arena, textures, token)
     -- pw and ph, and why the HUDs and the depth of field, drawn onto the
     -- folded canvas afterwards, stay the chunky GB art they are.
     local rw, rh = AntiAlias.expand(pw, ph)
-    if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle") then
+    if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle",
+                              { weather = weatherMode }) then
       return
     end
     if discs then
+      if arena.arenaStyle then
+        assert(V.require("VoxelBattleStage").drawBackdrop(
+          arena, outdoor, portableBackdrop), "ARENA backdrop draw failed")
+      end
       -- discs: the two platforms, and nothing else. No terrain, no
       -- neighbouring maps, no water, no grass and no flowers -- see the
       -- matching skips further down. What is behind them is the sky the
       -- clear painted.
-      V.require("VoxelBattleStage").draw(arena, groundY)
+      -- A reviewed full-frame painting already contains its two grounded
+      -- combat clearings.  The old generated platform would sit over it as a
+      -- conspicuous pixel oval, so only legacy/plain disc stages draw here.
+      if not V.require("VoxelBattleStage").hasAuthoredBackdrop(arena) then
+        V.require("VoxelBattleStage").draw(arena, groundY)
+      end
     else
+    if panoramaReady then
+      PanoramaBackdrop.drawAt(arena.mid[1], groundY, arena.mid[2])
+    end
     Voxel3D.draw(terrain, atlasFor(host), nil)
     for i, nb in ipairs(neighbors) do
       Voxel3D.draw(nbMesh[i], atlasFor(nb.map),
                    Mat4.translate(nb.ox, 0, nb.oy))
     end
+    -- The same compact panorama that closes the overworld union closes MAP
+    -- battles. It is prepared before beginScene, so this pass only draws
+    -- known-good meshes and a cold neighbour can never become a sky-coloured
+    -- hole when BTL CAM widens to 2X or 3X.
+    Voxel3D.glass(false)
+    for _, rim in ipairs(horizon or {}) do
+      if rim.kind ~= "water" then
+        Voxel3D.draw(rim.mesh, rim.texture,
+                     Mat4.translate(rim.ox, 0, rim.oy))
+      end
+    end
+    Voxel3D.glass(true)
     -- and the water over it -- PLAIN, always: the flat animated tiles, never
     -- the reflective pass, whatever the WATER row says. The reflection is
     -- tuned for the overworld's ladder of cameras; this shot's is PLACED --
@@ -628,6 +747,16 @@ function BattleScene.render(state, arena, textures, token)
                      Mat4.translate(nb.ox, 0, nb.oy))
       end
     end
+    -- This texture is procedural rather than a tileset-atlas slot, so the
+    -- host map's window mask has no meaningful coordinates on it.
+    Voxel3D.glass(false)
+    for _, rim in ipairs(horizon or {}) do
+      if rim.kind == "water" then
+        Voxel3D.draw(rim.mesh, rim.texture,
+                     Mat4.translate(rim.ox, 0, rim.oy))
+      end
+    end
+    Voxel3D.glass(true)
     end
     -- The mons, standing on their tiles. Depth-tested like everything else,
     -- so a ledge or a tree between the camera and a Pokemon really is in
@@ -681,34 +810,47 @@ function BattleScene.render(state, arena, textures, token)
                      ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
       end
     end
-    local canvas = AntiAlias.resolve(Voxel3D.endScene(), pw, ph, "battle")
+    -- Paint onto the expanded scene before AA resolves it, exactly like the
+    -- overworld path. Rain/snow therefore keep the same pixel scale and fog
+    -- or lightning cover the whole 3D shot without touching the engine HUD,
+    -- which is composited later by OverworldBattle.
+    local rendered = Voxel3D.endScene()
+    rendered = BattleScene.applyWeather(rendered, rw, rh, host,
+                                        Voxel3D.cell, weatherMode)
+    local canvas = AntiAlias.resolve(rendered, pw, ph, "battle")
     if not canvas then return end
 
     local vp = Voxel3D.vp
-    local pmx, pmy = BattleScene.toGB(vp, arena.player[1], groundY,
-                                      arena.player[2], lx, ly, s, pw, ph)
-    local emx, emy = BattleScene.toGB(vp, arena.enemy[1], groundY,
-                                      arena.enemy[2], lx, ly, s, pw, ph)
+    local stage = V.require("VoxelBattleStage")
+    local playerX, playerY, playerZ = stage.presentationPosition(
+      arena, "player", groundY)
+    local enemyX, enemyY, enemyZ = stage.presentationPosition(
+      arena, "enemy", groundY)
+    if not (playerX and enemyX) then return end
+    local pmx, pmy = BattleScene.toGB(vp, playerX, playerY,
+                                      playerZ, lx, ly, s, pw, ph)
+    local emx, emy = BattleScene.toGB(vp, enemyX, enemyY,
+                                      enemyZ, lx, ly, s, pw, ph)
     if not (pmx and emx) then return end
     -- How wide one overworld square is on screen where each mon stands, in
     -- GB pixels. This is what the pics are scaled to: a mon covers its own
     -- square and no more, at whatever the drift has done to the distance.
     local half = BattleScene.CELL / 2
-    local pl = BattleScene.toGB(vp, arena.player[1] - half, groundY,
-                                arena.player[2], lx, ly, s, pw, ph)
-    local pr = BattleScene.toGB(vp, arena.player[1] + half, groundY,
-                                arena.player[2], lx, ly, s, pw, ph)
-    local el = BattleScene.toGB(vp, arena.enemy[1] - half, groundY,
-                                arena.enemy[2], lx, ly, s, pw, ph)
-    local er = BattleScene.toGB(vp, arena.enemy[1] + half, groundY,
-                                arena.enemy[2], lx, ly, s, pw, ph)
+    local pl = BattleScene.toGB(vp, playerX - half, playerY,
+                                playerZ, lx, ly, s, pw, ph)
+    local pr = BattleScene.toGB(vp, playerX + half, playerY,
+                                playerZ, lx, ly, s, pw, ph)
+    local el = BattleScene.toGB(vp, enemyX - half, enemyY,
+                                enemyZ, lx, ly, s, pw, ph)
+    local er = BattleScene.toGB(vp, enemyX + half, enemyY,
+                                enemyZ, lx, ly, s, pw, ph)
     if not (pl and pr and el and er) then return end
     out = {
       canvas = canvas,
       player = { pmx, pmy },
       enemy = { emx, emy },
-      playerSpan = math.abs(pr - pl),
-      enemySpan = math.abs(er - el),
+      playerSpan = math.abs(pr - pl) * stage.presentationScale(arena),
+      enemySpan = math.abs(er - el) * stage.presentationScale(arena),
       -- the letterbox, so the depth-of-field pass can put its sharp band on
       -- the two marks rather than on a fraction of the window
       lx = lx, ly = ly, scale = s, pw = pw, ph = ph,

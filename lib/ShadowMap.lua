@@ -121,8 +121,11 @@ local SHADER = [[
 #ifdef VERTEX
   uniform mat4 lightVP;
   uniform mat4 model;
+  attribute vec3 InstanceOffset;
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    vec4 c = lightVP * (model * vertex_position);
+    vec4 placed = vertex_position;
+    placed.xyz += InstanceOffset;
+    vec4 c = lightVP * (model * placed);
     // the projection is orthographic, so w is 1 and clip z IS the depth,
     // linear in world units along the sun line
     vDepth = c.z * 0.5 + 0.5;
@@ -225,9 +228,16 @@ function ShadowMap.available()
           and love.graphics.setDepthMode) then
     return false
   end
-  -- the smallest rung is enough to answer the question; fit() picks the
-  -- one this frame actually wants
-  return getShader() ~= nil and getCanvas(ShadowMap.SIZES[1]) ~= nil
+  if getShader() == nil then return false end
+  -- Once begin() has selected the fitted rung, availability is a read-only
+  -- capability answer. Re-requesting the smallest rung here used to release a
+  -- live 1536/2048 canvas every frame; begin() then allocated the large one
+  -- again, producing a global periodic GPU/GC spike and invalidating its
+  -- cached shadow pass even while nothing moved.
+  if canvas ~= nil then return canvas ~= false end
+  -- Before the first begin, the smallest rung is enough to probe support;
+  -- fit() will replace this one time if the actual view needs a larger map.
+  return getCanvas(ShadowMap.SIZES[1]) ~= nil
 end
 
 -- The map to sample, or the blank stand-in. Never nil once the main pass
@@ -479,9 +489,20 @@ end
 function ShadowMap.draw(mesh, texture, model)
   if not (drawing and mesh) then return end
   local sh = getShader()
-  if texture then mesh:setTexture(texture) end
   pcall(sh.send, sh, "model", "row", model or IDENTITY)
-  love.graphics.draw(mesh)
+  if mesh.__voxelMeshBundle then
+    if mesh.base then
+      if texture then mesh.base:setTexture(texture) end
+      love.graphics.draw(mesh.base)
+    end
+    for _, group in ipairs(mesh.instances or {}) do
+      if texture then group.mesh:setTexture(texture) end
+      love.graphics.drawInstanced(group.mesh, group.count)
+    end
+  else
+    if texture then mesh:setTexture(texture) end
+    love.graphics.draw(mesh)
+  end
 end
 
 -- Close the pass and stamp it with the signature it was drawn for.

@@ -86,16 +86,30 @@ local VoxelGrid = V.require("VoxelGrid")
 local Shadows = V.require("Shadows")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
+local BattlePartyBalls = V.require("BattlePartyBalls")
+local BattleMusic = V.require("BattleMusic")
+local SpritePacks = V.require("SpritePacks")
+local SpriteHooks = V.require("SpriteHooks")
+local BattleCam = V.require("BattleCam")
 local BattleExit = V.require("BattleExit")
 local DayNight = V.require("DayNight")
 local DayTint = V.require("DayTint")
+local Sky = V.require("Sky")
+local SkyEvents = V.require("SkyEvents")
+local Weather = V.require("Weather")
 local Water = V.require("Water")
 local AntiAlias = V.require("AntiAlias")
+local DeviceProfile = V.require("DeviceProfile")
 local WallDecals = V.require("WallDecals")
 local PublicFacade = V.require("PublicFacade")
+local KantoAscendantCompat = V.require("KantoAscendantCompat")
 local FirstPerson = V.require("FirstPerson")
 local FreeMove = V.require("FreeMove")
 local CamControl = V.require("CamControl")
+local VoxelShortcut = V.require("VoxelShortcut")
+local HorizonWall = V.require("HorizonWall")
+local PanoramaBackdrop = V.require("PanoramaBackdrop")
+local TransitionReveal = V.require("TransitionReveal")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -137,11 +151,13 @@ function voidFill.check()
   local now = TileRenderer.voidFill
   if voidFill.last ~= nil and now ~= voidFill.last then
     ChunkMesher.invalidate()   -- no map id: every ring on every map is stale
+    HorizonWall.invalidate()
+    PanoramaBackdrop.invalidate()
   end
   voidFill.last = now
 end
 
-mod.content.render_pipelines:register("voxel", {
+local voxelPipeline = {
   label = "VOXEL",
   levels = Voxel.ANGLE_LABELS,
   -- 3 is the engine's TILT key, which this mode supersedes -- see the
@@ -183,6 +199,9 @@ mod.content.render_pipelines:register("voxel", {
     -- battles and menus, and a CYCLE evening falls mid-fight exactly as it
     -- would mid-walk
     DayNight.update(dt)
+    Sky.update(dt)
+    SkyEvents.update(dt)
+    Weather.update(dt)
     -- The overworld battle rides this hook rather than owning a pipeline of
     -- its own, because it owns no pass of the FRAME: it draws under a battle
     -- screen the engine composites, which is not a stage the registry has.
@@ -202,14 +221,24 @@ mod.content.render_pipelines:register("voxel", {
     -- them announces it. Ahead of the active() gate, so switching it
     -- while voxel mode is OFF still invalidates what is cached.
     voidFill.check()
-    if not Voxel.active() then return end
     local Game = require("src.core.Game")
     local ow = Game and Game.overworld
-    if ow and ow.map and ow.camera then
+    local warm = ChunkMesher.preloadSetting:get()
+    if ow and ow.map and ow.camera and (Voxel.active() or warm) then
       pcall(VoxelScene.prefetch, ow)
     end
-    ChunkMesher.pump(Game and Game.stack
-                     and Game.stack:top() ~= ow)
+    if not Voxel.active() then
+      if warm then
+        ChunkMesher.pump(Game and Game.stack and Game.stack:top() ~= ow, true)
+      end
+      return
+    end
+    local covered = Game and Game.stack and Game.stack:top() ~= ow
+    -- A fade/menu still runs the engine's own animation and input work. Keep
+    -- its covered build slice to 6ms; while the complete 2D fallback is
+    -- visible, the bounded 8ms loading slice likewise keeps iPhone responsive
+    -- until the atomic swap.
+    ChunkMesher.pump(covered, false, not Voxel.ready)
   end,
 
   drawWorld = function(ctx)
@@ -249,8 +278,19 @@ mod.content.render_pipelines:register("voxel", {
     OverworldBattle.invalidate()
     AntiAlias.invalidate()
     ChunkMesher.invalidate()   -- no map id = every cached mesh
+    HorizonWall.invalidate()
+    PanoramaBackdrop.invalidate()
   end,
-})
+}
+
+-- Gen1Recomp 0.1.90 does not know the optional revealReady schema field, so
+-- include it only after feature-detecting the complete new engine seam.  On
+-- 0.1.90 configure() installs an idempotent engine_internals compatibility
+-- wrapper with the exact same predicate instead; the registered record stays
+-- byte-for-byte valid against that baseline schema.
+local revealReady = TransitionReveal.configure()
+if revealReady then voxelPipeline.revealReady = revealReady end
+mod.content.render_pipelines:register("voxel", voxelPipeline)
 
 mod.content.render_pipelines:register("tiltshift", {
   label = "T-SHIFT",
@@ -318,6 +358,10 @@ applyFull = function(level)
   -- most photographed, and a lake with the sky and the shoreline in it is
   -- most of what makes the model read as being outdoors
   Water.setting:setIndex(1, Game)
+  Sky.setting:setValue("full", Game)
+  Sky.cloudSetting:setValue("on", Game)
+  SkyEvents.setting:setValue("full", Game)
+  HorizonWall.setting:setValue("full", Game)
   -- and the view fitted to the window
   opts.zoom = 0
   Zoom.applyOptions(opts)
@@ -326,6 +370,9 @@ applyFull = function(level)
   -- battle rows stay on the menu under FULL (see the rows hook), so this is
   -- where the preset puts them and not where they are held.
   OverworldBattle.setting:setIndex(1, Game)
+  -- BTL CAM is a persisted presentation/resource choice, not part of the
+  -- diorama preset. FULL enables staged battles but never overwrites an old
+  -- 1X/2X choice; a save without that key starts at BattleCam's 3X default.
   -- Keep both player-side cards in the 3D scene when the FULL preset is first
   -- selected. Each remains independently changeable afterwards.
   OverworldBattle.pokemonBackSetting:setIndex(1, Game)
@@ -335,11 +382,10 @@ applyFull = function(level)
   -- is solved against (OverworldBattle.forceOG); FULL has just switched staged
   -- fights on, so the layout follows them.
   OverworldBattle.forceOG(Game)
-  -- and a deterministic noon sky: FULL pins DAYTIME to DAY. Unlike
-  -- the rest of the preset this one IS held, not just set -- the row is off
-  -- the menu while FULL owns it (the rows hook below), so a value changed
-  -- under it could never be seen or changed back.
-  DayNight.forceDay(Game)
+  -- FULL showcases the complete outdoor system, including the colour-graded
+  -- day/night clock. DAYTIME remains selectable afterwards, so this is a
+  -- starting value rather than a lock.
+  DayNight.setting:setValue("cycle", Game)
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
 end
 
@@ -364,7 +410,46 @@ local function stagedBattles()
   return OverworldBattle.enabled()
 end
 
+local function adjustableBattleCamera()
+  return stagedBattles() and not OverworldBattle.arenaMode()
+end
+
+local function authoredBattleCamera()
+  return stagedBattles() and OverworldBattle.arenaMode()
+end
+
 local SETTINGS = {
+  { DeviceProfile.setting,
+    "Choose a persistent hardware profile. AUTO selects PC/MAX on desktop, "
+    .. "HANDHELD on iOS/Android and ECO on Web. Changing any managed row "
+    .. "switches to CUSTOM and preserves those individual values.",
+    row = DeviceProfile.row },
+  { Sky.setting,
+    "Outdoor sky over Kanto. FULL draws the time-aware banded sky with sun "
+    .. "or moon, FLAT keeps only the cheaper horizon colour, and OFF leaves "
+    .. "the outdoor backdrop unpainted." },
+  { Sky.cloudSetting,
+    "Pixel-art clouds crossing the outdoor sky. They follow the current "
+    .. "day/night colour and can be disabled independently for performance." },
+  { SkyEvents.setting,
+    "Rare world-anchored sky events. FULL permits rainbows plus distant "
+    .. "Pidgeot and Ho-Oh flights; RAINBOW or FLYERS keeps only that class, "
+    .. "and OFF skips all event drawing for slower devices.",
+    full = true },
+  { Weather.setting,
+    "Outdoor weather. CLEAR preserves the dry default, AUTO chooses stable "
+    .. "map-appropriate spells; RAIN, SNOW, FOG or STORM forces that effect. "
+    .. "The same weather remains visible in staged outdoor battles." },
+  { HorizonWall.setting,
+    "Close the streamed world edge with a map-aware near layer and original "
+    .. "distant Kanto panorama outdoors, plus rock walls in caves. Water, "
+    .. "coastal openings and connected maps stay real. OFF draws neither "
+    .. "the scenery curtain nor the outdoor panorama." },
+  { ChunkMesher.preloadSetting,
+    "Build the current map and connected neighbours into a safe in-memory "
+    .. "mesh cache while voxel mode is off. ON makes the first switch and "
+    .. "most map changes appear immediately; OFF saves background CPU.",
+    full = true },
   { VoxelGrid.setting, "One-pixel wireframe along every voxel edge." },
   -- The staged fight used to force this on even when V-GRID said OFF. It is
   -- deliberately independent: battle framing should not rewrite the look the
@@ -393,8 +478,22 @@ local SETTINGS = {
   -- knobs; what a battle is drawn over, and how it is framed, are not that.
   { OverworldBattle.setting,
     "Fight in three dimensions using the game's native Gen 1 pictures as "
-    .. "camera-facing cards. MAP stages the fight on nearby voxel terrain; "
-    .. "DISCS uses a portable procedural stage where the map has no room.",
+    .. "camera-facing cards. MAP uses nearby voxel terrain; ARENA builds a "
+    .. "location- and anchor-aware field; DISCS uses two neutral platforms.",
+    full = true },
+  { BattleCam.distanceSetting,
+    "Set the saved starting distance of MAP and DISCS battles. 1X is the "
+    .. "closest, tightest view; 2X is the balanced middle ground; 3X is the "
+    .. "default and widest view. Q/E, wheel and pinch "
+    .. "can still fine-tune it during a fight.",
+    when = adjustableBattleCamera,
+    full = true },
+  { BattleCam.arenaCameraSetting,
+    "ARENA keeps every authored Pokemon footing on its fixed 3X master "
+    .. "composition. 3X holds that exact shot; STADIUM adds only the "
+    .. "background-reviewed automatic action director. Manual orbit, pitch "
+    .. "and zoom stay locked in both ARENA modes.",
+    when = authoredBattleCamera,
     full = true },
   -- Only offered while a fight can actually be staged on the map: with 3D-BTL
   -- off the engine draws the classic screen, which is this row's ON already,
@@ -410,10 +509,20 @@ local SETTINGS = {
     .. "The foe is still out there on its own tile.",
     when = stagedBattles,
     full = true },
+  { BattleMusic.setting,
+    "Battle music from separately installed companion packs. ORIGINAL keeps "
+    .. "the game/KASC cue; SHUFFLE chooses once per fight from every "
+    .. "compatible installed generation, while GEN 2-6 pins one generation. "
+    .. "Unavailable choices disappear and missing packs fall back to the "
+    .. "original cue. Voxel Ascendant includes and downloads no audio.",
+    full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
-    .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
-    .. "shadows, the sky and the light following." },
+    .. "or leave AUTO to run it -- long DAY and NIGHT plateaus with short "
+    .. "graded dawn and dusk transitions. The "
+    .. "colour-graded world, clouds, stars, windows, shadows and sky "
+    .. "following the same clock.",
+    full = true },
   -- Marked `full` for the opposite reason the battle rows are: this is not a
   -- knob on the look at all, it is what the look COSTS. FULL is a preset for
   -- the diorama, not a licence to spend four times the fill rate on the
@@ -431,6 +540,33 @@ local SETTINGS = {
     full = true },
 }
 
+-- Profiles own only cost/automation choices, never camera composition,
+-- world curve or the player's sprite/back-picture preferences.
+DeviceProfile.configure({
+  { setting = Sky.setting,
+    max = "full", handheld = "full", eco = "flat" },
+  { setting = Sky.cloudSetting,
+    max = "on", handheld = "on", eco = "off" },
+  { setting = SkyEvents.setting,
+    max = "full", handheld = "flyers", eco = "off" },
+  { setting = Weather.setting,
+    max = "auto", handheld = "auto", eco = "auto" },
+  { setting = HorizonWall.setting,
+    max = "full", handheld = "full", eco = "full" },
+  { setting = ChunkMesher.preloadSetting,
+    max = true, handheld = true, eco = false },
+  { setting = Shadows.setting,
+    max = true, handheld = true, eco = false },
+  { setting = Water.setting,
+    max = "full", handheld = "sky", eco = "sky" },
+  { setting = OverworldBattle.setting,
+    max = true, handheld = true, eco = false },
+  { setting = DayNight.setting,
+    max = "cycle", handheld = "cycle", eco = "cycle" },
+  { setting = AntiAlias.setting,
+    max = 2, handheld = 0, eco = 0 },
+})
+
 local schema = {}
 for _, entry in ipairs(SETTINGS) do
   schema[#schema + 1] = entry[1]:schema(entry[2])
@@ -439,7 +575,7 @@ mod.options:define(schema)
 
 -- ------- this mod's hotkeys
 --
---   3  VOXEL    cycle the camera ladder      (was 6; skips FULL)
+-- 3/V  VOXEL    cycle the camera ladder      (was 6; skips FULL)
 --   5  V-GRID   toggle the wireframe         (new)
 --   6  T-SHIFT  cycle the blur ladder        (was 9)
 --   7  V-CURVE  cycle the horizon bend       (new)
@@ -677,9 +813,8 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local full = Voxel.isFull(Pipelines.level("voxel"))
   if full then
     -- FULL owns the rows that PARAMETERISE the diorama -- the wireframe, the
-    -- horizon bend, the blur, the hour -- so those come off the menu and
-    -- DAYTIME is held at DAY while its row is unreachable.
-    DayNight.forceDay(game)
+    -- horizon bend and blur -- so those come off the menu. DAYTIME remains
+    -- available because the complete preset now includes the running clock.
     dropRow(out, "pipeline:tiltshift")
   end
   local extra = {}
@@ -698,8 +833,14 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     -- manager's page carries every one of them either way.
     local offered = (entry.full or not full)
                     and (not entry.when or entry.when())
-    if offered then extra[#extra + 1] = entry[1]:row() end
+    if offered then
+      extra[#extra + 1] = entry.row and entry.row() or entry[1]:row()
+    end
   end
+  -- Optional sprite packs are separate mods, never bundled artwork. The
+  -- dynamic row can therefore only be built after every provider registered;
+  -- it deliberately lives outside the static manager schema.
+  extra[#extra + 1] = SpritePacks.row()
   return insertGrouped(out, extra)
 end)
 
@@ -710,15 +851,12 @@ mod.events:on("mod.options_changed", function(payload)
   for _, entry in ipairs(SETTINGS) do
     if payload.key == entry[1].key then entry[1]:sync(payload.value) end
   end
+  DeviceProfile.externalChanged(require("src.core.Game"),
+                                payload.key, payload.value)
   -- 3D-BTL switched on from the manager's page pins BATTLE LAYOUT exactly as
   -- the OPTIONS row does. The manager persists its own value; this is the one
   -- that has to follow it.
   if stagedBattles() then OverworldBattle.forceOG() end
-  -- and DAYTIME changed from the manager's page while FULL owns it snaps
-  -- straight back to DAY -- the OPTIONS row is hidden, but the manager's is
-  -- not, and FULL's pin must hold against both
-  local Pipelines = require("src.render.Pipelines")
-  if Voxel.isFull(Pipelines.level("voxel")) then DayNight.forceDay() end
 end)
 
 -- ------- keeping the geometry in step with the world
@@ -735,7 +873,19 @@ end)
 -- instead of blinking the whole scene down to the flat 2D path
 mod.events:on("world.block_replaced", function(payload)
   local mapId = payload and (payload.mapId or (payload.map and payload.map.id))
-  if mapId then ChunkMesher.refresh(mapId) end
+  if mapId then
+    ChunkMesher.refresh(mapId)
+    local map = payload and payload.map
+    if not map then
+      local Game = require("src.core.Game")
+      local active = Game and Game.overworld and Game.overworld.map
+      if active and active.id == mapId then map = active end
+    end
+    if HorizonWall.blockAffectsGeometry(
+         map, payload and payload.bx, payload and payload.by) then
+      HorizonWall.invalidateMap(mapId)
+    end
+  end
 end)
 
 -- The event above is the ANNOUNCED edit -- OverworldState:replaceBlock
@@ -774,6 +924,9 @@ do
       local results = packValues(setBlock(self, bx, by, block, ...))
       if self.id and self:blockAt(bx, by) ~= before then
         ChunkMesher.refresh(self.id)
+        if HorizonWall.blockAffectsGeometry(self, bx, by) then
+          HorizonWall.invalidateMap(self.id)
+        end
       end
       return unpackValues(results, 1, results.n)
     end
@@ -801,7 +954,10 @@ end
 mod.events:on("map.reloaded", function(payload)
   if payload and payload.reason == "colors" then return end
   local mapId = payload and (payload.mapId or (payload.map and payload.map.id))
-  if mapId then ChunkMesher.invalidate(mapId) end
+  if mapId then
+    ChunkMesher.invalidate(mapId)
+    HorizonWall.invalidateMap(mapId)
+  end
 end)
 
 -- ------- rows come and go, so the menu has to notice
@@ -866,6 +1022,14 @@ end
 -- where the reasoning for each one is written down. Installed once, here,
 -- so this file keeps naming every engine seam the mod touches.
 OverworldBattle.install()
+BattlePartyBalls.install()
+BattleMusic.install(mod)
+SpriteHooks.install(mod)
+
+-- When Kanto Ascendant is present, contribute one descriptor through the
+-- public Start-menu hook. Its higher-priority collector moves that row into
+-- ASCENDANT; without KASC this bridge is a complete no-op.
+KantoAscendantCompat.install(mod)
 
 -- 1ST and 3RD share one player-attached camera and one camera-relative
 -- movement path. These installers only claim input while either rung is
@@ -873,10 +1037,12 @@ OverworldBattle.install()
 FirstPerson.install()
 FreeMove.install()
 CamControl.install()
+VoxelShortcut.install(cycleVoxel)
 
--- SELECT cycles the same VOXEL camera ladder as the 3 key. This makes the
--- two player-attached modes reachable and escapable on controllers and on
--- touch devices without a number row.
+-- SELECT remains the compatibility controller shortcut for the same VOXEL
+-- camera ladder. VoxelShortcut adds the dedicated V key and mapped ZR/R2/RT
+-- trigger; retaining SELECT keeps touch devices and older muscle memory
+-- working without making either path behave differently.
 do
   local OverworldState = require("src.world.OverworldController")
   if not OverworldState.voxelAscendantSelectHook then
@@ -941,6 +1107,7 @@ end, 100)
 -- so this is where the map's cast comes back.
 mod.events:on("battle.ended", function()
   OverworldBattle.finish()
+  BattleMusic.finish()
 end)
 
 -- ------- and the way back out
@@ -976,14 +1143,18 @@ DayTint.install()
 -- time it is in Kanto is a fact about that journey, like where the player is
 -- standing. Written on the engine's save.writing event -- the moment before
 -- the bytes hit disk -- and read back whenever a save is opened or begun. A
--- save with no clock in it starts at day; that is DayNight.restore's
--- fallback, and also the DAYTIME row's own default.
+-- A save with no clock in it starts at noon on the default AUTO dial;
+-- explicit DAY/NIGHT/DUSK/DAWN pins remain stored options.
 mod.events:on("save.writing", function()
   DayNight.store()
+  SkyEvents.store()
 end)
 
 mod.events:on("save.loaded", function()
   DayNight.restore()
+  SkyEvents.restore()
+  DeviceProfile.restore(require("src.core.Game"), false)
+  SpritePacks.restore(require("src.core.Game"))
   -- a save written before this mod was installed can carry TILT or GBC FX
   -- switched on, and their rows are not there to switch them back off (see
   -- pinEngineFx). Answered here rather than only when the menu opens, so a
@@ -993,7 +1164,17 @@ end)
 
 mod.events:on("save.created", function()
   DayNight.restore()
+  SkyEvents.restore()
+  DeviceProfile.restore(require("src.core.Game"), true)
+  SpritePacks.restore(require("src.core.Game"))
   pinEngineFx()
+end)
+
+-- Hot reload constructs a new mod loader around an already loaded save, so
+-- no save.loaded event is guaranteed. Restore the selected pack here too;
+-- providers may register before or after this without losing the stored id.
+mod.events:on("game.ready", function()
+  SpritePacks.restore(require("src.core.Game"))
 end)
 
 -- The engine's own time-of-day seam. OverworldState:timeOfDay() is an
@@ -1007,26 +1188,57 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "0.1.7"
+mod.exports.version = "2.0.0"
 mod.exports.apiVersion = 1
 mod.exports.renderer = {
   id = "VOXEL_ASCENDANT",
-  version = "0.1.7",
+  version = "2.0.0",
   pipeline = "voxel",
-  cameraProfile = "orbit-first-third",
+  -- Stable staged-battle discriminator consumed by Kanto Ascendant's
+  -- reviewed renderer facade. The staged battle camera is still orbit-only;
+  -- overworld 1ST/3RD are advertised on their own field and capability.
+  cameraProfile = "orbit-only",
+  overworldCameraProfile = "orbit-first-third",
 }
 mod.exports.capabilities = {
   voxelWorld = true,
-  battleCards = { "MAP", "DISCS" },
+  -- KASC 6.7's public compatibility receipt pins the historical first two
+  -- entries as MAP/DISCS. New capabilities append; the OPTIONS ladder may
+  -- still present MAP/ARENA/DISCS in its more useful player-facing order.
+  battleCards = { "MAP", "DISCS", "ARENA" },
   wallDecals = WallDecals.API_VERSION,
   cameraModes = { "ORBIT", "FIRST_PERSON", "THIRD_PERSON" },
+  spriteOverrideHooks = {
+    "vasc.sprite.pokemon", "vasc.sprite.battle", "vasc.sprite.dex",
+    "vasc.sprite.overworld_pokemon", "vasc.sprite.player",
+    "vasc.sprite.trainer", "vasc.sprite.icon", "vasc.sprite.overworld",
+  },
+  spritePacks = { apiVersion=SpritePacks.API_VERSION, bundledAssets=false,
+                  liveActivation=true, licenseReceipt=true, sha256=true },
+  battleMusicPacks = {
+    apiVersion=BattleMusic.API_VERSION, bundledAudio=false,
+    networkDownloads=false, liveActivation=true,
+  },
   freeMovement = true,
+  backgroundMeshCache = "memory",
+  skyEvents = {
+    "RAINBOW", "PIDGEY", "PIDGEOTTO", "PIDGEOT",
+    "SPEAROW", "FEAROW", "MURKROW",
+    "ARTICUNO", "ZAPDOS", "MOLTRES", "HO_OH",
+  },
   diskCache = false,
+  -- Historical KASC capability: this means the old model-backed Stadium
+  -- renderer, not ARENA CAM's internal presentation director.
   stadium = false,
   vr = false,
 }
+mod.exports.integrations = {
+  kantoAscendantMenu = KantoAscendantCompat.receipt(),
+}
 mod.exports.Voxel3D = Voxel3D
 mod.exports.WallDecals = WallDecals
+mod.exports.spritePacks = SpritePacks.public()
+mod.exports.battleMusic = BattleMusic.public()
 
 -- Compatibility modules are selected eagerly into a closed table. Unknown
 -- names never reach the private owner-scoped loader, and the facade exposes
@@ -1034,8 +1246,9 @@ mod.exports.WallDecals = WallDecals
 local publicModules = {
   AntiAlias = AntiAlias,
   BattleArena = V.require("BattleArena"),
-  BattleCam = V.require("BattleCam"),
+  BattleCam = BattleCam,
   OverworldBattle = OverworldBattle,
+  SkyEvents = SkyEvents,
   Voxel3D = Voxel3D,
   VoxelScene = VoxelScene,
   VoxelState = Voxel,

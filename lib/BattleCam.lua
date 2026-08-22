@@ -64,6 +64,8 @@
 -- the mod namespace (see main.lua): V.require loads a sibling module
 local V = ...
 
+local ModSetting = V.require("ModSetting")
+
 local BattleCam = {}
 
 -- ------- the rig, in world pixels (a map cell is 16, a block 32)
@@ -169,15 +171,44 @@ BattleCam.PITCH_DRAG = 1.6        -- fraction of the range per screen HEIGHT
 BattleCam.PITCH_STICK = 0.9
 BattleCam.PITCH_MOUSE = 0.0016
 
--- ------- and the player's own zoom
+-- ------- and the player's own zoom / saved distance
 --
 -- How much world the frame holds, as a multiple of the rig's own frameH:
 -- BELOW one is zoomed in. It has to be the LENS rather than the distance,
 -- because the rig derives its field of view from frameH and the distance
 -- together -- so moving the eye alone changes the perspective and not the
 -- framing, which is exactly what the dolly breath above is for.
+--
+-- Q/E, wheel and pinch remain a fine, session-local adjustment. BTL CAM is
+-- the persistent starting distance: changing that row snaps the live goal to
+-- exactly 1X/2X/3X once, then lets the direct controls move freely again.
+-- Keeping the remembered rung separate from `zoomGoal` is important -- if we
+-- copied it every frame, the first wheel notch would be undone immediately.
+BattleCam.DISTANCE_KEY = "battleCameraDistance"
+BattleCam.DISTANCE_LABEL = "BTL CAM"
+BattleCam.DEFAULT_DISTANCE = 3
+BattleCam.distanceSetting =
+  ModSetting.new(BattleCam.DISTANCE_KEY, BattleCam.DISTANCE_LABEL,
+                 { 1, 2, 3 }, { "1X", "2X", "3X" },
+                 BattleCam.DEFAULT_DISTANCE)
+
+-- Full-picture Arena Scenery has authored screen-space footing.  Letting the
+-- ordinary 1X/2X/3X ladder or the free camera move that composition makes the
+-- two cards slide off the clearings painted for them.  ARENA therefore owns a
+-- separate, deliberately small choice: the exact solved 3X master shot, or a
+-- bounded Stadium director that starts from that same 3X shot.  MAP and DISCS
+-- keep the ordinary distance ladder and all manual controls.
+BattleCam.ARENA_CAMERA_KEY = "arenaCamera"
+BattleCam.ARENA_CAMERA_LABEL = "ARENA CAM"
+BattleCam.ARENA_FIXED = "fixed3x"
+BattleCam.ARENA_STADIUM = "stadium"
+BattleCam.arenaCameraSetting = ModSetting.new(
+  BattleCam.ARENA_CAMERA_KEY, BattleCam.ARENA_CAMERA_LABEL,
+  { BattleCam.ARENA_FIXED, BattleCam.ARENA_STADIUM },
+  { "3X", "STADIUM" }, BattleCam.ARENA_STADIUM)
+
 BattleCam.ZOOM_MIN = 0.45         -- the pair filling the frame
-BattleCam.ZOOM_MAX = 2.0          -- the fight in its own landscape
+BattleCam.ZOOM_MAX = 3.0          -- widest saved rung and manual hard stop
 BattleCam.ZOOM_STEP = 1.15
 BattleCam.ZOOM_TIME = 0.18
 
@@ -187,6 +218,48 @@ BattleCam.pitch = 0
 BattleCam.pitchGoal = 0
 BattleCam.zoom = 1
 BattleCam.zoomGoal = 1
+
+-- The last STORED rung copied into the live camera. Manual zoom deliberately
+-- does not change this: it remains free until the saved rung itself changes.
+local appliedDistance = nil
+local activeArena = nil
+
+local function authoredArena(arena)
+  return arena and arena.arenaStyle ~= nil
+end
+
+function BattleCam.arenaDirectorSelected()
+  return BattleCam.arenaCameraSetting:get() == BattleCam.ARENA_STADIUM
+end
+
+function BattleCam.arenaDirectorEnabled(arena)
+  return authoredArena(arena) and BattleCam.arenaDirectorSelected()
+         and BattleCam.steerable and not BattleCam.still
+end
+
+local function wantedDistance()
+  return math.max(1, math.min(BattleCam.ZOOM_MAX,
+    tonumber(BattleCam.distanceSetting:get()) or BattleCam.DEFAULT_DISTANCE))
+end
+
+-- Public for recentering and explicit option changes. Ordinary frames never
+-- force the saved rung over the player's fine session-local zoom.
+function BattleCam.applyDistanceSetting(force)
+  local wanted = wantedDistance()
+  if not force and appliedDistance == wanted then return false end
+  BattleCam.zoom, BattleCam.zoomGoal = wanted, wanted
+  appliedDistance = wanted
+  return true
+end
+
+-- The distance actually used to compose this frame.  An ARENA backdrop is
+-- always authored against the 3X master frame; its optional director is an
+-- additive camera move, never a different BTL-CAM rung.
+function BattleCam.presentationDistance(arena)
+  if authoredArena(arena) then return BattleCam.DEFAULT_DISTANCE end
+  BattleCam.applyDistanceSetting(false)
+  return BattleCam.zoom
+end
 
 -- Whether the player may steer at all. The active player-side BACK setting
 -- clears it: that setting pins the trainer or Pokemon to the GB slot instead
@@ -211,6 +284,22 @@ BattleCam.still = false
 
 BattleCam.t = 0
 
+-- ARENA's automatic director is additive to the saved 1X/2X/3X lens.  It is
+-- deliberately absent from MAP and DISCS: only the carried Arena-Scenery set
+-- can guarantee that a cut will not put a real wall between camera and mon.
+-- A manual camera input wins for the rest of the moment, then the director
+-- eases back rather than snapping the player's view away.
+BattleCam.DIRECTOR_MANUAL_HOLD = 4.0
+BattleCam.DIRECTOR_ESTABLISH = 1.45
+BattleCam.DIRECTOR_TIME = 0.30
+BattleCam.directorClock = 0
+BattleCam.directorManualUntil = 0
+BattleCam.directorYaw, BattleCam.directorYawGoal = 0, 0
+BattleCam.directorLift, BattleCam.directorLiftGoal = 0, 0
+BattleCam.directorFocus, BattleCam.directorFocusGoal = 0, 0
+BattleCam.directorFrame, BattleCam.directorFrameGoal = 1, 1
+BattleCam.directorActionToken, BattleCam.directorActionAge = nil, 0
+
 -- Only the DRIFT's phase, so every fight opens on the same breath. Where
 -- the player last put the camera is deliberately NOT reset: an angle and a
 -- lens they chose are how they want to watch battles, not a thing about
@@ -219,14 +308,23 @@ BattleCam.t = 0
 -- rig's own shot, which is the one the composition is solved for.
 function BattleCam.reset()
   BattleCam.t = 0
+  BattleCam.directorClock = 0
+  BattleCam.directorManualUntil = 0
+  BattleCam.directorYaw, BattleCam.directorYawGoal = 0, 0
+  BattleCam.directorLift, BattleCam.directorLiftGoal = 0, 0
+  BattleCam.directorFocus, BattleCam.directorFocusGoal = 0, 0
+  BattleCam.directorFrame, BattleCam.directorFrameGoal = 1, 1
+  BattleCam.directorActionToken, BattleCam.directorActionAge = nil, 0
+  activeArena = nil
+  BattleCam.applyDistanceSetting(false)
 end
 
--- Back to the solved shot, for anything that wants the composition as
--- authored rather than as steered.
+-- Back to the solved angle at the player's saved distance, for anything that
+-- wants the composition recentred rather than left at its manual steer.
 function BattleCam.recentre()
   BattleCam.orbit, BattleCam.orbitGoal = 0, 0
   BattleCam.pitch, BattleCam.pitchGoal = 0, 0
-  BattleCam.zoom, BattleCam.zoomGoal = 1, 1
+  BattleCam.applyDistanceSetting(true)
 end
 
 -- How far the eye may swing, in radians, before it is square to the arena's
@@ -248,9 +346,15 @@ end
 -- composition" rule and the two stops live in one place each.
 local function setAxis(key, goal)
   if not BattleCam.steerable then return false end
+  if authoredArena(activeArena) then return false end
   local was = BattleCam[key]
   BattleCam[key] = math.max(0, math.min(1, goal))
-  return BattleCam[key] ~= was
+  local changed = BattleCam[key] ~= was
+  if changed then
+    BattleCam.directorManualUntil = BattleCam.directorClock
+                                    + BattleCam.DIRECTOR_MANUAL_HOLD
+  end
+  return changed
 end
 
 -- A drag, in fractions of the screen's width (orbit) or height (pitch).
@@ -300,13 +404,20 @@ function BattleCam.stickPitch(y, dt)
 end
 
 -- The zoom, in notches (positive pulls OUT, like every other zoom here).
-function BattleCam.stepZoom(notches)
+function BattleCam.stepZoom(notches, arena)
   if not BattleCam.steerable then return false end
+  if authoredArena(arena or activeArena) then return false end
+  BattleCam.applyDistanceSetting(false)
   local was = BattleCam.zoomGoal
   BattleCam.zoomGoal = math.max(BattleCam.ZOOM_MIN,
                         math.min(BattleCam.ZOOM_MAX,
                                  was * (BattleCam.ZOOM_STEP ^ (notches or 0))))
-  return BattleCam.zoomGoal ~= was
+  local changed = BattleCam.zoomGoal ~= was
+  if changed then
+    BattleCam.directorManualUntil = BattleCam.directorClock
+                                    + BattleCam.DIRECTOR_MANUAL_HOLD
+  end
+  return changed
 end
 
 -- How far apart the two mons READ from the current orbit, as a multiple of
@@ -358,15 +469,27 @@ function BattleCam.spread(arena)
 end
 
 -- How much world the frame holds right now: the rig's own reach at the
--- player's zoom and at whatever the orbit has done to the pair's spacing,
--- or the rig's own alone whenever both are being withheld (VR's fixed
--- seat, a BACK row's pinned composition). The sun's box is fitted to this
--- too, so a zoomed shot lights exactly the ground it shows -- which is why
--- BattleScene asks this rather than multiplying for itself.
+-- player's zoom and at whatever the orbit has done to the pair's spacing.
+-- A pinned BACK picture withholds orbit and pitch, but not the saved BTL CAM
+-- distance: distance is a framing preference in its own row, and silently
+-- snapping 2X/3X back to 1X while that picture was active made the row lie.
+-- VR still gets the authored frame because its fixed seat owns the whole
+-- camera. The sun's box is fitted to this too, so a zoomed shot lights exactly
+-- the ground it shows -- which is why BattleScene asks this rather than
+-- multiplying for itself.
 function BattleCam.frameH(arena)
+  BattleCam.applyDistanceSetting(false)
   local base = BattleCam.rigFor(arena).frameH
-  if BattleCam.still or not BattleCam.steerable then return base end
-  return base * BattleCam.zoom * BattleCam.spread(arena)
+  if BattleCam.still then return base end
+  -- `rig` ignores the stored orbit/pitch while steering is withheld. Its lens
+  -- must ignore their spread too or a stale angle would widen a fixed shot.
+  local isAuthored = authoredArena(arena)
+  local spread = BattleCam.steerable and not isAuthored
+                 and BattleCam.spread(arena) or 1
+  local directed = BattleCam.arenaDirectorEnabled(arena)
+  local frame = directed and BattleCam.directorFrame or 1
+  local distance = isAuthored and BattleCam.DEFAULT_DISTANCE or BattleCam.zoom
+  return base * distance * spread * frame
 end
 
 local function chase(now, goal, dt, time)
@@ -377,8 +500,12 @@ end
 
 -- Real frame time, like every other presentational tween in this mod: a
 -- fast-forwarded battle must not spin the camera.
-function BattleCam.update(dt)
-  BattleCam.t = BattleCam.t + (dt or 0)
+function BattleCam.update(dt, arena, battle)
+  BattleCam.applyDistanceSetting(false)
+  activeArena = arena
+  dt = dt or 0
+  BattleCam.t = BattleCam.t + dt
+  BattleCam.directorClock = BattleCam.directorClock + dt
   -- keep the phase small forever rather than letting a long session lose
   -- float precision in the sines below
   local wrap = BattleCam.PAN_PERIOD * BattleCam.DOLLY_PERIOD
@@ -391,6 +518,68 @@ function BattleCam.update(dt)
                           BattleCam.PITCH_TIME)
   BattleCam.zoom = chase(BattleCam.zoom, BattleCam.zoomGoal, dt,
                          BattleCam.ZOOM_TIME)
+
+  local token = nil
+  if battle and battle.animPlaying then
+    token = tostring(battle.animName or "move") .. ":"
+            .. tostring(battle.animAttackerIsPlayer and 1 or 0)
+  end
+  if token then
+    if token ~= BattleCam.directorActionToken then
+      BattleCam.directorActionToken, BattleCam.directorActionAge = token, 0
+    else
+      BattleCam.directorActionAge = BattleCam.directorActionAge + dt
+    end
+  else
+    BattleCam.directorActionToken, BattleCam.directorActionAge = nil, 0
+  end
+
+  local enabled = BattleCam.arenaDirectorEnabled(arena)
+                  and BattleCam.directorClock >= BattleCam.directorManualUntil
+  local yaw, lift, focus, frame = 0, 0, 0, 1
+  if enabled and BattleCam.directorClock < BattleCam.DIRECTOR_ESTABLISH then
+    -- Opening crane: a high three-quarter look that settles into the authored
+    -- 3X master shot.  ARENA never consumes the ordinary BTL-CAM ladder.
+    yaw, lift, frame = math.rad(-8), math.rad(5), 1
+  elseif enabled and token then
+    -- Stadium-like action cut.  The first beat favours the attacker; the
+    -- remainder crosses the axis toward the target.  `player` is south (+Z)
+    -- in every BattleArena shape, so one signed focus offset serves both.
+    local attacker = battle.animAttackerIsPlayer and 1 or -1
+    local firstBeat = BattleCam.directorActionAge < .30
+    local subject = firstBeat and attacker or -attacker
+    focus = subject * 7
+    yaw = subject * math.rad(7)
+    lift = math.rad(firstBeat and 2 or 4)
+    frame = firstBeat and .91 or .84
+  elseif enabled then
+    -- Between actions the set keeps breathing in a restrained overview.
+    yaw = math.rad(3.5) * math.sin(BattleCam.directorClock * .62)
+    lift = math.rad(1.5) * (.5 + .5 * math.sin(
+      BattleCam.directorClock * .41 + 1.2))
+    frame = .97
+  end
+  BattleCam.directorYawGoal = yaw
+  BattleCam.directorLiftGoal = lift
+  BattleCam.directorFocusGoal = focus
+  BattleCam.directorFrameGoal = frame
+  BattleCam.directorYaw = chase(BattleCam.directorYaw, yaw, dt,
+                                BattleCam.DIRECTOR_TIME)
+  BattleCam.directorLift = chase(BattleCam.directorLift, lift, dt,
+                                 BattleCam.DIRECTOR_TIME)
+  BattleCam.directorFocus = chase(BattleCam.directorFocus, focus, dt,
+                                  BattleCam.DIRECTOR_TIME)
+  BattleCam.directorFrame = chase(BattleCam.directorFrame, frame, dt,
+                                  BattleCam.DIRECTOR_TIME)
+end
+
+function BattleCam.directorState()
+  return {
+    yaw = BattleCam.directorYaw, lift = BattleCam.directorLift,
+    focus = BattleCam.directorFocus, frame = BattleCam.directorFrame,
+    action = BattleCam.directorActionToken,
+    manual = BattleCam.directorClock < BattleCam.directorManualUntil,
+  }
 end
 
 local function phase(t, period)
@@ -430,27 +619,38 @@ function BattleCam.rig(arena, groundY, canonical)
   -- it turns: rotating (side, back) by +yaw carries the eye back toward the
   -- arena's own axis, and the room the player has is all on the far side of
   -- that -- out toward square-on. (orbitRange measures exactly that room.)
-  local steer = steered and -BattleCam.orbit * BattleCam.orbitRange(arena) or 0
-  local yaw = steer + (fixed and 0
-              or BattleCam.PAN_YAW * phase(BattleCam.t, BattleCam.PAN_PERIOD))
+  local isAuthored = authoredArena(arena)
+  local directed = steered and BattleCam.arenaDirectorEnabled(arena)
+  local playerSteer = steered and not isAuthored
+  local steer = playerSteer
+                and -BattleCam.orbit * BattleCam.orbitRange(arena) or 0
+  -- A static ARENA must be pixel-repeatable against its painted clearings.
+  -- STADIUM supplies its own bounded motion, so the generic drift/dolly is
+  -- disabled for both ARENA choices.
+  local yaw = steer + (directed and BattleCam.directorYaw or 0)
+              + ((fixed or isAuthored) and 0
+                 or BattleCam.PAN_YAW * phase(
+                      BattleCam.t, BattleCam.PAN_PERIOD))
   local c, s = math.cos(yaw), math.sin(yaw)
   -- the breath scales the whole offset, height included, so the eye moves
   -- along its own line to the arena and the pitch of the shot never changes
-  local k = fixed and 1
+  local k = (fixed or isAuthored) and 1
             or 1 + BattleCam.PAN_DOLLY
                    * phase(BattleCam.t, BattleCam.DOLLY_PERIOD)
   local dx = (R.side * c - R.back * s) * k
   local dz = (R.side * s + R.back * c) * k
 
   local eye = { mx + dx, groundY + R.height * k, mz + dz }
-  local focus = { mx + R.lookX, groundY + R.lookY, mz }
+  local focus = { mx + R.lookX, groundY + R.lookY,
+                  mz + (directed and BattleCam.directorFocus or 0) }
 
   -- and the climb: the eye swung UP about the focus, at a constant radius.
   -- About the focus so the aim stays nailed to the two mons and only the
   -- seat moves, and at a constant radius so climbing never changes how big
   -- anything is -- that is the lens's job below, and a rig that did both at
   -- once would have no way to do either on purpose.
-  local lift = steered and BattleCam.pitch * BattleCam.PITCH_RANGE or 0
+  local lift = playerSteer and BattleCam.pitch * BattleCam.PITCH_RANGE or 0
+  if directed then lift = lift + BattleCam.directorLift end
   if lift > 0 then
     local vx, vy, vz = eye[1] - focus[1], eye[2] - focus[2], eye[3] - focus[3]
     local flat = math.sqrt(vx * vx + vz * vz)

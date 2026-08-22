@@ -3513,7 +3513,7 @@ return {
           { 78, 26, 26, 26, 26, 26, 26, 79 },
         },
         roofRows = 16, roofBack = 7, roofFront = 9, roofCycle = { 5, 8 },
-        slab = 4, frontEave = 4, ledge = nil,
+        slab = 4, frontEave = 4, ledge = nil, heightScale = 1.4,
       },
 
       -- assets/docs/buildings/B04: the little 4x2 cottage, 12
@@ -3530,7 +3530,8 @@ return {
           { 78, 26, 27, 28, 26, 26, 26, 79 },
         },
         roofRows = 16, roofBack = 7, roofFront = 9, roofCycle = { 5, 8 },
-        slab = 4, frontEave = 4, ledge = nil,
+        slab = 4, frontEave = 4, ledge = nil, heightScale = 1.4,
+        rearDoorWidth = 12,
       },
 
       -- assets/docs/buildings/B17: the wide 6x2 house: Cerulean's
@@ -3544,7 +3545,8 @@ return {
           { 78, 26, 27, 28, 26, 26, 26, 26, 26, 26, 26, 79 },
         },
         roofRows = 16, roofBack = 7, roofFront = 9, roofCycle = { 5, 8 },
-        slab = 4, frontEave = 4, ledge = nil,
+        slab = 4, frontEave = 4, ledge = nil, heightScale = 1.4,
+        rearDoorWidth = 12,
       },
 
       -- assets/docs/buildings/B11: the 6x2 scenery block, 5
@@ -3558,7 +3560,7 @@ return {
           { 78, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 79 },
         },
         roofRows = 16, roofBack = 7, roofFront = 9, roofCycle = { 5, 8 },
-        slab = 4, frontEave = 4, ledge = nil,
+        slab = 4, frontEave = 4, ledge = nil, heightScale = 1.4,
       },
 
       -- assets/docs/buildings/B34: the 4x2 scenery block, one
@@ -3572,7 +3574,7 @@ return {
           { 78, 26, 26, 26, 26, 26, 26, 79 },
         },
         roofRows = 16, roofBack = 7, roofFront = 9, roofCycle = { 5, 8 },
-        slab = 4, frontEave = 4, ledge = nil,
+        slab = 4, frontEave = 4, ledge = nil, heightScale = 1.4,
       },
 
       -- assets/docs/buildings/B33: the Route 5 day care.

@@ -53,8 +53,22 @@ GlassMask._isBlack = isBlack     -- named for the suite
 -- coordinates. Returns { {x=, y=, w=, h=}, ... } rects of GLASS texels
 -- (the border is the detector's evidence, not part of the answer).
 function GlassMask.scan(getPixel, w, h)
+  -- Shape tests revisit the same texel many times (a black border candidate
+  -- is read by six horizontal probes and then again by neighbouring
+  -- candidates). ImageData:getPixel crosses the Lua/C boundary, so doing that
+  -- repeatedly turned the first outdoor frame for a new tileset into a large
+  -- synchronous spike. The reader is pure by contract; memoising only its
+  -- black/not-black answer keeps the detector byte-for-byte equivalent while
+  -- bounding native pixel reads to one per atlas texel.
+  local blackPixels = {}
   local function black(x, y)
-    return isBlack(getPixel(x, y))
+    local i = y * w + x + 1
+    local value = blackPixels[i]
+    if value == nil then
+      value = isBlack(getPixel(x, y))
+      blackPixels[i] = value
+    end
+    return value
   end
   local function borderRow(x, y)
     for c = 1, 6 do
@@ -141,6 +155,19 @@ end
 function GlassMask.texture(tileset)
   local e = entry(tileset)
   return (e and e.texture) or nil
+end
+
+-- First-visit preparation seam. VoxelScene calls this from update-time
+-- prefetch, before the world Canvas is bound, so the one scan/texture upload
+-- lands under the transition instead of the first visible 3D draw.
+function GlassMask.prepared(tileset)
+  local path = tileset and tileset.image
+  return not path or cache[path] ~= nil
+end
+
+function GlassMask.prepare(tileset)
+  entry(tileset)
+  return GlassMask.prepared(tileset)
 end
 
 -- A 1x1 transparent stand-in, for the frames (and drivers) with no mask:

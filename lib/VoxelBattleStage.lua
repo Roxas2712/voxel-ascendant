@@ -48,6 +48,8 @@ local V = ...
 
 local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
+local DayNight = V.require("DayNight")
+local Assets = require("src.render.Assets")
 
 local VoxelBattleStage = {}
 
@@ -147,6 +149,8 @@ local TOP = { 0.74, 0.71, 0.63 }
 local TOP_ALT = { 0.67, 0.64, 0.57 }
 
 local texture = nil
+local arenaTextures, arenaOrder = {}, {}
+local backdropTextures, backdropOrder = {}, {}
 
 -- A small deterministic scatter, for the surface itself. Not a random one: an
 -- authored constant that happens to look unpatterned is worth more here than
@@ -221,6 +225,556 @@ function VoxelBattleStage.texture()
   return texture or nil
 end
 
+local function arenaGrain(profile, x, y, seed)
+  local bx, by = floor(x / 6), floor(y / 6)
+  local n = (bx * 37 + by * 71 + seed) % 17
+  local p = profile.pattern
+  if p == "waves" then return (by + floor(bx / 2) + seed) % 4 == 0 end
+  if p == "paving" or p == "tiles" then return bx % 2 == by % 2 end
+  if p == "panels" then return bx % 4 == 0 or by % 4 == 0 end
+  if p == "deck" then return by % 3 == 0 end
+  if p == "bridge" then return by % 4 == 0 or bx == 4 or bx == 17 end
+  if p == "canal" then return by % 5 == 0 or (bx + by + seed) % 11 == 0 end
+  if p == "gate" then return bx % 6 == 0 or by % 6 == 0 end
+  if p == "runes" then return n == 0 or n == 5 end
+  if p == "crystal" then return (bx + by * 2 + seed) % 5 == 0 end
+  if p == "scales" then return (bx + floor(by / 2)) % 3 == 0 end
+  if p == "court" then return bx == 10 or by == 10 end
+  local limit = (p == "grass" or p == "leaves" or p == "sand") and 6 or 4
+  return n < limit
+end
+
+-- Strong location motifs over the shared procedural grain. They are broad
+-- deterministic colour regions rather than imported pictures, so they stay
+-- readable at 3X without adding a texture asset or another draw.
+local WATER = { .20, .49, .68 }
+local WATER_LIGHT = { .34, .65, .73 }
+local GOLD = { .88, .67, .18 }
+local FLOWER = { .88, .28, .31 }
+local PALE = { .76, .76, .68 }
+local VIOLET = { .45, .35, .65 }
+
+local function landmark(profile, x, y, base)
+  local motif = profile.motif
+  if not motif then return base end
+  local dx, dy = (x - 63.5) / 63.5, (y - 63.5) / 63.5
+  local ax, ay = math.abs(dx), math.abs(dy)
+  if motif == "nugget_bridge" then
+    if ax > .51 then return WATER end
+    if ax > .41 then return GOLD end
+    if y % 16 <= 2 then return profile.edge end
+  elseif motif == "cerulean_canal" then
+    if ax > .24 and ax < .43 then return WATER_LIGHT end
+    if ax <= .08 then return PALE end
+    if ax > .48 and ((floor(y / 10) + floor(x / 8)) % 3 == 0) then
+      return FLOWER
+    end
+  elseif motif == "route2_gate" then
+    if ax < .22 then return PALE end
+    if ay > .42 and ax > .27 and ax < .55 then return profile.edge end
+  elseif motif == "moon" then
+    local r = math.sqrt(dx * dx + dy * dy)
+    if r > .43 and r < .58 then return profile.edge end
+    if ax < .12 then return PALE end
+  elseif motif == "moon_exit" then
+    if ax < .17 then return PALE end
+    if ay > .34 and ax > .28 then return profile.edge end
+  elseif motif == "rock_water" then
+    if ax > .43 then return WATER end
+    if (floor(x / 12) + floor(y / 10)) % 5 == 0 then return profile.edge end
+  elseif motif == "vermilion_gate" then
+    if ax > .55 then return WATER end
+    if x % 18 <= 2 then return profile.edge end
+  elseif motif == "indigo_gate" then
+    if ax < .20 then return PALE end
+    if ay > .42 and ax > .30 and ax < .58 then return VIOLET end
+  elseif motif == "indigo_road" then
+    if ax < .24 then
+      return ((floor(y / 10) + floor(x / 8)) % 3 == 0) and VIOLET or PALE
+    end
+  elseif motif == "cape" then
+    if ax > .48 or dy < -.60 then return WATER_LIGHT end
+    if ax < .08 then return PALE end
+  end
+  return base
+end
+
+local function arenaTexture(style)
+  if not (style and style.profile and style.variant) then return nil end
+  local key = style.id .. ":" .. style.variant
+  if arenaTextures[key] then return arenaTextures[key] end
+  local ok, img = pcall(function()
+    local n, profile, seed = 128, style.profile, style.seed or 0
+    local data = love.image.newImageData(n, n)
+    local half = (n - 1) / 2
+    for y = 0, n - 1 do
+      local dy = (y - half) / half
+      for x = 0, n - 1 do
+        local dx = (x - half) / half
+        local d = math.sqrt(dx * dx + dy * dy)
+        local cover = d <= .90 and 1 or d >= 1 and 0 or (1 - d) / .10
+        local threshold = (BAYER[y % 8 + 1][x % 8 + 1] + .5) / 64
+        local a = cover > threshold and 1 or 0
+        local c = arenaGrain(profile, x, y, seed) and profile.alt or profile.top
+        c = landmark(profile, x, y, c)
+        -- A dark court ring and centre tick make this read as a battlefield,
+        -- not a floating square of generic ground.
+        if d > .76 and d < .80 or math.abs(x - half) < 1.1 and math.abs(y-half) < 8 then
+          c = profile.edge
+        end
+        data:setPixel(x, y, c[1], c[2], c[3], a)
+      end
+    end
+    local out = love.graphics.newImage(data)
+    out:setFilter("nearest", "nearest")
+    out:setWrap("clampzero", "clampzero")
+    return out
+  end)
+  if not (ok and img) then return nil end
+  arenaTextures[key] = img
+  arenaOrder[#arenaOrder + 1] = key
+  if #arenaOrder > 8 then
+    local old = table.remove(arenaOrder, 1)
+    local victim = arenaTextures[old]
+    if victim and victim.release then pcall(victim.release, victim) end
+    arenaTextures[old] = nil
+  end
+  return img
+end
+
+-- ------- full-frame Arena Scenery
+--
+-- ARENA is deliberately opt-in per reviewed place.  Every authored bitmap
+-- keeps its upper sky transparent, so the engine remains responsible for
+-- clock, weather, sun, moon and stars; the painting supplies only the place.
+-- Unknown or malformed art never falls back to the rejected procedural
+-- pixel collage: the ARENA frame declines and the ordinary battle remains.
+VoxelBattleStage.BACKDROP_W = 1280
+VoxelBattleStage.BACKDROP_H = 800
+VoxelBattleStage.BACKDROP_CACHE = 8
+
+local AUTHORED_BACKDROPS = {
+  nugget_bridge = {
+    path = "assets/battle/nugget_bridge_a.compact.png",
+    width = 1280,
+    height = 800,
+    camera = "3X",
+    outdoor = true,
+    actorScale = 1,
+    clockTint = false,
+    -- Every reviewed painting owns both of its presentation anchors.  These
+    -- offsets are from the canonical arena cells in world X/Y/Z; they are not
+    -- shared defaults.  The painted bank rises toward the bridge, so the
+    -- player is pulled onto the broad foreground meadow and the foe onto the
+    -- higher right clearing.  STADIUM moves the camera around these same
+    -- fixed anchors.
+    anchors = {
+      -- Pull the near/player card onto the broad foreground meadow rather
+      -- than balancing it on the narrow blue/green riverbank boundary.
+      player = { x=0, y=-8, z=0 },
+      enemy = { x=0, y=-16, z=0 },
+    },
+  },
+}
+
+-- The selected 111-anchor gallery is compiled to a small map-id table.  Keep
+-- the original Nugget Bridge entry above as a fail-closed compatibility
+-- receipt; a missing/corrupt generated table must never make that reviewed
+-- arena disappear or turn unknown places into authored ones.
+local okReviewed, REVIEWED_BACKDROPS = pcall(function()
+  return V.data("arena_scenery")
+end)
+if not okReviewed or type(REVIEWED_BACKDROPS) ~= "table" then
+  REVIEWED_BACKDROPS = {}
+end
+
+local function finite(v)
+  return type(v) == "number" and v == v and v > -math.huge and v < math.huge
+end
+
+local function validWindow(region, width, height)
+  if type(region) ~= "table" then return false end
+  local shape = region.shape
+  if shape == "rect" or shape == "ellipse" then
+    return finite(region.x) and finite(region.y)
+           and finite(region.w) and finite(region.h)
+           and region.w > 0 and region.h > 0
+           and region.x >= 0 and region.y >= 0
+           and region.x + region.w <= width
+           and region.y + region.h <= height
+  end
+  if shape ~= "poly" or type(region.points) ~= "table"
+     or #region.points < 6 or #region.points % 2 ~= 0 then
+    return false
+  end
+  for i=1,#region.points,2 do
+    local x, y = region.points[i], region.points[i + 1]
+    if not (finite(x) and finite(y) and x >= 0 and y >= 0
+            and x <= width and y <= height) then
+      return false
+    end
+  end
+  return true
+end
+
+local function authoredSpec(arena)
+  local style = arena and arena.arenaStyle
+  local spec = style and (REVIEWED_BACKDROPS[style.mapId]
+                          or AUTHORED_BACKDROPS[style.id])
+  if not (spec and spec.camera == "3X" and type(spec.outdoor) == "boolean"
+          and type(spec.path) == "string" and spec.path ~= ""
+          and spec.width == VoxelBattleStage.BACKDROP_W
+          and spec.height == VoxelBattleStage.BACKDROP_H
+          and finite(spec.actorScale) and spec.actorScale >= 1
+          and spec.actorScale <= 2.25
+          and type(spec.clockTint) == "boolean"
+          and type(spec.anchors) == "table") then
+    return nil
+  end
+  for _, side in ipairs({ "player", "enemy" }) do
+    local anchor = spec.anchors[side]
+    if not (type(anchor) == "table" and finite(anchor.x)
+            and finite(anchor.y) and finite(anchor.z)) then
+      return nil
+    end
+  end
+  if spec.clockTint then
+    if type(spec.windows) ~= "table" or #spec.windows == 0 then return nil end
+    for _, region in ipairs(spec.windows) do
+      if not validWindow(region, spec.width, spec.height) then return nil end
+    end
+  elseif spec.windows ~= nil then
+    return nil
+  end
+  return spec
+end
+
+local function clamp01(v)
+  return math.max(0, math.min(1, v or 0))
+end
+
+local function paint(data, x, y, c, k, a, lift)
+  if not c or (a or 1) <= 0 then
+    data:setPixel(x, y, 0, 0, 0, 0)
+    return
+  end
+  k, lift = k or 1, lift or 0
+  data:setPixel(x, y,
+    clamp01(c[1] * k + lift), clamp01(c[2] * k + lift),
+    clamp01(c[3] * k + lift), clamp01(a or 1))
+end
+
+local function hashPixel(seed, x, y)
+  return (seed + x * 37 + y * 71 + ((x * y) % 29) * 17) % 101
+end
+
+local function ellipse(x, y, cx, cy, rx, ry)
+  local dx, dy = (x - cx) / rx, (y - cy) / ry
+  return dx * dx + dy * dy <= 1
+end
+
+local function foreground(profile, seed, x, y)
+  local row = floor(math.max(0, y - 78) / 7)
+  local span = math.max(4, 13 - floor(row / 2))
+  local checker = (floor((x + row * 3) / span) + row) % 2 == 0
+  local grainy = arenaGrain(profile, x * 2, y * 2, seed)
+  return (checker ~= grainy) and profile.top or profile.alt
+end
+
+local function indoorPixel(style, x, y)
+  local p, seed = style.profile, style.seed or 0
+  if y < 16 then
+    return p.edge, .48 + (hashPixel(seed, floor(x / 8), 0) % 2) * .06
+  end
+  if y < 82 then
+    -- A complete rear wall with columns and a central room-specific crest.
+    local panel = floor(x / 20) % 2 == 0
+    local c = panel and p.alt or p.top
+    local k = .76 + (y - 16) / 210
+    if x % 32 < 3 or x % 32 > 28 then c, k = p.edge, .78 end
+    if y > 69 and y < 74 then c, k = p.edge, .88 end
+    local cx = 80
+    if ellipse(x, y, cx, 45, 15, 18) then
+      local ring = not ellipse(x, y, cx, 45, 10, 13)
+      if ring then c, k = p.edge, 1.18
+      elseif (x + y + seed) % 7 < 2 then c, k = p.top, 1.20 end
+    end
+    -- Lamps/windows keep League, Rocket and KASC rooms from reading as one
+    -- flat rectangle while still deriving solely from the profile palette.
+    if y > 28 and y < 50 and (x % 40) > 8 and (x % 40) < 16 then
+      c, k = p.top, 1.28
+    end
+    return c, k
+  end
+  local c = foreground(p, seed, x, y)
+  if y < 88 then return p.edge, .83 end
+  if (floor((x - 80) / math.max(5, (150 - y) / 5))
+      + floor((y - 88) / 8)) % 2 == 0 then
+    return c, 1.04
+  end
+  return c, .88
+end
+
+local function genericOutdoor(style, x, y)
+  local p, seed = style.profile, style.seed or 0
+  local pattern = p.pattern
+  local horizon = 29 + hashPixel(seed, floor(x / 9), 1) % 7
+  if pattern == "forest" or pattern == "leaves" then
+    horizon = 22 + hashPixel(seed, floor(x / 7), 2) % 12
+  elseif pattern == "waves" then
+    horizon = 37 + hashPixel(seed, floor(x / 18), 2) % 3
+  end
+  if y < horizon then return nil end
+  if y < horizon + 18 then
+    if pattern == "paving" or pattern == "tiles" then
+      local bx = floor(x / 18)
+      local roof = horizon + (bx % 3) * 3
+      if y < roof + 4 then return p.edge, .82 end
+      local window = y > roof + 8 and x % 18 > 5 and x % 18 < 10
+      return window and p.top or p.alt, window and 1.26 or .96
+    end
+    if pattern == "forest" or pattern == "leaves" then
+      local trunk = x % 19 > 8 and x % 19 < 12 and y > horizon + 9
+      return trunk and p.edge or p.alt, trunk and .72 or .90
+    end
+    if pattern == "waves" then return WATER, .92 end
+    return ((x + floor(y / 3) + seed) % 11 < 4) and p.edge or p.alt,
+           .78
+  end
+  if pattern == "waves" and y < 96 then
+    return ((y + floor(x / 9)) % 9 < 2) and WATER_LIGHT or WATER,
+           .94
+  end
+  if y < 78 then
+    return ((floor(x / 11) + floor(y / 7) + seed) % 3 == 0)
+           and p.alt or p.top, .86
+  end
+  return foreground(p, seed, x, y), 1
+end
+
+local function outdoorPixel(style, x, y)
+  local p, seed, motif = style.profile, style.seed or 0, style.profile.motif
+
+  if motif == "nugget_bridge" then
+    if y < 27 then return nil end
+    if y < 46 then
+      -- Cerulean/tree line at the far end of the bridge.
+      local house = x > 18 and x < 42 or x > 116 and x < 143
+      if house then
+        if y < 32 then return FLOWER, .72 end
+        local window = y > 36 and x % 13 > 5 and x % 13 < 9
+        return window and PALE or p.alt, window and 1.20 or .94
+      end
+      return ((x + seed) % 17 < 8) and p.edge or p.alt, .76
+    end
+    local t = (y - 46) / 98
+    local half = 8 + t * 48
+    local dx = math.abs(x - 79.5)
+    if dx <= half then
+      if dx > half - 3 then return GOLD, .98 end
+      local joint = (floor(y / 9) + floor(x / 14)) % 2 == 0
+      return joint and p.top or p.alt, joint and 1.03 or .94
+    end
+    return ((y + floor(x / 8)) % 11 < 2) and WATER_LIGHT or WATER,
+           .96
+  end
+
+  if motif == "cerulean_canal" then
+    if y < 26 then return nil end
+    if y < 51 then
+      local house = x % 38 > 5 and x % 38 < 27
+      if house then
+        if y < 31 + (x % 4) then return FLOWER, .78 end
+        local window = y > 37 and x % 11 > 4 and x % 11 < 8
+        return window and PALE or p.alt, window and 1.20 or .95
+      end
+      return p.edge, .78
+    end
+    if y < 89 then
+      local bank = y < 55 or y > 84
+      if bank then return PALE, .90 end
+      return ((y + floor(x / 10)) % 10 < 2) and WATER_LIGHT or WATER,
+             .96
+    end
+    if x % 23 > 16 and y < 112 then return FLOWER, 1.05 end
+    return foreground(p, seed, x, y), 1
+  end
+
+  if motif == "moon" or motif == "moon_exit" then
+    local peak = 17 + math.abs(x - 80) * (motif == "moon" and .37 or .46)
+    if y < peak then return nil end
+    if y < 82 then
+      if ellipse(x, y, 80, 70, 15, 20) and y > 55 then
+        return p.edge, .38
+      end
+      local vein = (x * 3 + y * 5 + seed) % 31 < 5
+      return vein and p.alt or p.top, vein and .78 or .92
+    end
+    return foreground(p, seed, x, y), 1
+  end
+
+  if motif == "route2_gate" then
+    if y < 23 + hashPixel(seed, floor(x / 8), 3) % 8 then return nil end
+    local gate = x >= 54 and x <= 105 and y >= 31 and y <= 78
+    if gate then
+      if y < 38 then return p.edge, .92 end
+      if x > 70 and x < 90 and y > 53 then return p.edge, .42 end
+      local window = y > 44 and y < 54 and (x < 69 or x > 91)
+      return window and PALE or p.alt, window and 1.16 or 1
+    end
+    if y < 77 then
+      local trunk = x % 17 > 7 and x % 17 < 11 and y > 55
+      return trunk and p.edge or p.alt, trunk and .65 or .83
+    end
+    if math.abs(x - 80) < (y - 72) * .36 then return PALE, .82 end
+    return foreground(p, seed, x, y), .96
+  end
+
+  if motif == "rock_water" or motif == "cape" then
+    if y < 30 + hashPixel(seed, floor(x / 12), 4) % 7 then return nil end
+    if y < 68 and (x < 36 or x > 124) then return p.edge, .86 end
+    if y < 96 then
+      return ((y + floor(x / 10)) % 10 < 2) and WATER_LIGHT or WATER,
+             .95
+    end
+    return foreground(p, seed, x, y), .96
+  end
+
+  if motif == "vermilion_gate" or motif == "indigo_gate"
+     or motif == "indigo_road" then
+    if y < 27 then return nil end
+    local gateHalf = motif == "indigo_road" and 18 or 27
+    if y < 80 and math.abs(x - 80) < gateHalf then
+      if y < 35 then return p.edge, .88 end
+      if math.abs(x - 80) < 9 and y > 48 then return p.edge, .38 end
+      return (x % 13 > 8) and p.alt or p.top, .96
+    end
+    if y < 76 then return p.alt, .75 end
+    if math.abs(x - 80) < (y - 64) * .35 then return PALE, .86 end
+    return foreground(p, seed, x, y), 1
+  end
+
+  return genericOutdoor(style, x, y)
+end
+
+local function backdropImage(arena, outdoor)
+  local style = arena and arena.arenaStyle
+  local spec = authoredSpec(arena)
+  outdoor = outdoor and true or false
+  if not (spec and spec.outdoor == outdoor and type(V.path) == "string") then
+    return nil
+  end
+  local key = style.id .. ":" .. spec.path
+  if backdropTextures[key] ~= nil then
+    return backdropTextures[key] or nil
+  end
+  local ok, image = pcall(function()
+    local path = V.path .. "/" .. spec.path
+    local data = Assets.imageData(path)
+    if not (data and type(data.getDimensions) == "function") then
+      error("missing Arena Scenery ImageData")
+    end
+    local w, h = data:getDimensions()
+    if w ~= spec.width or h ~= spec.height then
+      if data.release then pcall(data.release, data) end
+      error("Arena Scenery dimensions changed")
+    end
+    local okImage, out = pcall(love.graphics.newImage, data)
+    if data.release then pcall(data.release, data) end
+    if not okImage or not out then error("Arena Scenery image upload failed") end
+    pcall(out.setFilter, out, "linear", "linear")
+    pcall(out.setWrap, out, "clamp", "clamp")
+    return out
+  end)
+  if not (ok and image) then
+    backdropTextures[key] = false
+    return nil
+  end
+  backdropTextures[key] = image
+  backdropOrder[#backdropOrder + 1] = key
+  if #backdropOrder > VoxelBattleStage.BACKDROP_CACHE then
+    local old = table.remove(backdropOrder, 1)
+    local victim = backdropTextures[old]
+    if victim and victim.release then pcall(victim.release, victim) end
+    backdropTextures[old] = nil
+  end
+  return image
+end
+
+function VoxelBattleStage.hasAuthoredBackdrop(arena)
+  return authoredSpec(arena) ~= nil
+end
+
+function VoxelBattleStage.presentationPosition(arena, side, groundY)
+  local cell = arena and arena[side]
+  if not (type(cell) == "table" and finite(cell[1]) and finite(cell[2])) then
+    return nil
+  end
+  local spec = authoredSpec(arena)
+  local anchor = spec and spec.anchors[side]
+  return cell[1] + (anchor and anchor.x or 0),
+         (groundY or 0) + (anchor and anchor.y or 0),
+         cell[2] + (anchor and anchor.z or 0)
+end
+
+function VoxelBattleStage.presentationGroundY(arena, side, groundY)
+  local _, y = VoxelBattleStage.presentationPosition(arena, side, groundY)
+  return y
+end
+
+-- A full-frame painting can depict a stadium or an intimate cabin while the
+-- two feet remain at exactly the same reviewed pixels.  Scale the cards about
+-- those feet instead of moving the anchors or the engine HUD.  Unknown,
+-- malformed and every non-ARENA surface retain the historical 1:1 size.
+function VoxelBattleStage.presentationScale(arena)
+  local spec = authoredSpec(arena)
+  return spec and spec.actorScale or 1
+end
+
+function VoxelBattleStage.backdropFor(arena, outdoor)
+  return backdropImage(arena, outdoor and true or false)
+end
+
+function VoxelBattleStage.presentationTint(arena)
+  return Voxel3D.tint
+end
+
+function VoxelBattleStage.presentationWindowTint(arena)
+  local spec = authoredSpec(arena)
+  if not (spec and spec.clockTint) then return nil end
+  local clock = DayNight.tint(true)
+  if not (type(clock) == "table" and finite(clock[1])
+          and finite(clock[2]) and finite(clock[3])) then
+    return nil
+  end
+  return clock
+end
+
+-- `image` is prepared before beginScene.  The draw itself is one alpha
+-- composited screen quad behind the depth buffer, tinted by the same clock
+-- value as the platform and Pokemon.
+function VoxelBattleStage.drawBackdrop(arena, outdoor, image)
+  if not (arena and arena.arenaStyle) then return false end
+  image = image or backdropImage(arena, outdoor and true or false)
+  if not image then return false end
+  local drawn = Voxel3D.backdrop(
+    image, VoxelBattleStage.presentationTint(arena))
+  if not drawn then return false end
+  local spec = authoredSpec(arena)
+  local tint = VoxelBattleStage.presentationWindowTint(arena)
+  if spec and tint then
+    -- A white/day tint is a no-op inside Voxel3D.  Dawn, dusk and night are
+    -- multiplied only through the reviewed glass shapes, continuously.
+    Voxel3D.backdropWindows(tint, spec.windows, spec.width, spec.height)
+  end
+  return true
+end
+
+function VoxelBattleStage.textureFor(arena)
+  return arena and arena.arenaStyle and arenaTexture(arena.arenaStyle)
+         or VoxelBattleStage.texture()
+end
+
 -- ------- the mesh
 --
 -- One quad, lying flat on the ground plane, spanning -1..1 in x and z with
@@ -253,7 +807,14 @@ end
 function VoxelBattleStage.invalidate()
   if texture and texture.release then pcall(texture.release, texture) end
   if mesh and mesh.release then pcall(mesh.release, mesh) end
-  texture, mesh = nil, nil
+  for _, image in pairs(arenaTextures) do
+    if image and image.release then pcall(image.release, image) end
+  end
+  for _, image in pairs(backdropTextures) do
+    if image and image.release then pcall(image.release, image) end
+  end
+  texture, mesh, arenaTextures, arenaOrder = nil, nil, {}, {}
+  backdropTextures, backdropOrder = {}, {}
 end
 
 -- How far under the ground plane the disc actually sits. A hair, and only so
@@ -272,6 +833,13 @@ end
 -- The two platforms this frame, as (side, matrix) -- shared by the camera's
 -- pass and the sun's, so the two can never disagree about where they are.
 local function each(arena, groundY, fn)
+  if arena.arenaStyle and arena.mid then
+    fn(Mat4.mul(
+      Mat4.translate(arena.mid[1], groundY - VoxelBattleStage.SINK,
+                     arena.mid[2]),
+      Mat4.scale(44, 1, 62)))
+    return
+  end
   for _, side in ipairs({ "enemy", "player" }) do
     local cell = arena[side]
     if cell then
@@ -294,7 +862,7 @@ end
 -- months.
 VoxelBattleStage.ORIGIN = { 16, 16 }
 
-function VoxelBattleStage.arena(map)
+function VoxelBattleStage.arena(map, style)
   local BattleArena = V.require("BattleArena")
   local arena = BattleArena.at(VoxelBattleStage.ORIGIN[1], VoxelBattleStage.ORIGIN[2],
                                "wide")
@@ -303,6 +871,8 @@ function VoxelBattleStage.arena(map)
   -- the fight is happening in -- never for its geometry
   arena.map = map
   arena.discs = true
+  arena.arenaStyle = style
+  arena.portableStage = style and "arena" or "discs"
   return arena
 end
 
@@ -314,7 +884,7 @@ end
 function VoxelBattleStage.draw(arena, groundY)
   if not (arena and arena.discs) then return end
   local m = VoxelBattleStage.mesh()
-  local tex = VoxelBattleStage.texture()
+  local tex = VoxelBattleStage.textureFor(arena)
   if not (m and tex) then return end
   Voxel3D.seams(false)
   Voxel3D.glass(false)
@@ -330,7 +900,7 @@ end
 function VoxelBattleStage.cast(shadowMap, arena, groundY)
   if not (arena and arena.discs and shadowMap) then return end
   local m = VoxelBattleStage.mesh()
-  local tex = VoxelBattleStage.texture()
+  local tex = VoxelBattleStage.textureFor(arena)
   if not (m and tex) then return end
   each(arena, groundY, function(matrix) shadowMap.draw(m, tex, matrix) end)
 end

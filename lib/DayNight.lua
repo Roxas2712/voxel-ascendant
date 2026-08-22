@@ -3,15 +3,15 @@
 --
 -- THE CLOCK is twenty minutes around: ten of day, ten of night. The DAYTIME
 -- row either PINS it -- DAY, NIGHT, DUSK and DAWN are fixed times on that
--- dial, not separate looks -- or lets it run (CYCLE), in which case the pin
+-- dial, not separate looks -- or lets it run (AUTO), in which case the pin
 -- the player left is where the cycle picks up. Everything below is a pure
 -- function of the clock, so the pinned settings and the running cycle can
 -- never drift apart: DUSK is simply the cycle stopped at sunset.
 --
 -- THE SUN's noon is this mod's existing sun, exactly: shear (-0.85, -0.55),
--- hanging in the southeast about 45 degrees up. That is the DAY setting and
--- the default, so a player who never touches the row sees the mod they
--- already had. From there the arc swings NORTH at both ends -- rising 70
+-- hanging in the southeast about 45 degrees up. That is the DAY pin; AUTO is
+-- the default, so a player who never touches the row sees the whole clock.
+-- From there the arc swings NORTH at both ends -- rising 70
 -- degrees north of east, setting the mirror of that -- because the camera
 -- looks north and the northern sky is the only sky it ever frames: a sun
 -- that rose due east would light the world for ten minutes without once
@@ -55,7 +55,10 @@ local DayNight = {}
 
 DayNight.CYCLE = 1200         -- seconds around the whole dial
 DayNight.DAY_LEN = 600        -- the sun's half; the moon has the rest
-DayNight.BLEND = 75           -- seconds of palette blend either side of a twilight
+-- Keep the sky in unmistakable DAY or NIGHT for five sixths of the dial.
+-- Forty-second shoulders are long enough to grade cleanly but short enough
+-- that dawn/golden/dusk/violet remain transitions rather than the main state.
+DayNight.BLEND = 40
 
 -- where the pinned settings stop the clock
 DayNight.T = { dawn = 0, day = 300, dusk = 600, night = 900 }
@@ -63,18 +66,17 @@ DayNight.T = { dawn = 0, day = 300, dusk = 600, night = 900 }
 DayNight.KEY = "daytime"
 DayNight.LABEL = "DAYTIME"
 
--- DAY first: an unset, unreadable, or legacy SYNC value fails closed to the
--- deterministic daytime pin. No wall-clock or process API is consulted.
+-- Preserve the stored-value ladder for existing saves, but make an unset or
+-- unreadable value enter the deterministic save-local AUTO clock. No wall
+-- clock or process API is consulted, so captures and replays remain stable.
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
                                   { "day", "night", "dusk", "dawn", "cycle" },
-                                  { "DAY", "NIGHT", "DUSK", "DAWN", "CYCLE" })
+                                  { "DAY", "NIGHT", "DUSK", "DAWN", "AUTO" },
+                                  "cycle")
 
--- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
--- row is off the menu with the rest of the rows the preset owns, and the
--- value is held HERE at SYNC -- the diorama preset's sky follows the clock
--- on the wall, whatever was chosen before. Called from every path that can
--- arrive at or act under FULL (main.lua: the preset itself, the rows hook,
--- the manager's options_changed), mirroring OverworldBattle.forceOG.
+-- Compatibility helper for callers that deliberately want fixed noon. FULL
+-- no longer calls it: the complete preset starts AUTO and leaves DAYTIME
+-- selectable.
 function DayNight.forceDay(game)
   if DayNight.setting:get() ~= "day" then
     DayNight.setting:setIndex(1, game)
@@ -218,19 +220,34 @@ local function dial()
   return DIAL
 end
 
--- Phase weights at clock `t`, off the dial above.
+-- Phase weights at clock `t`, off the dial above. Every consumer treats this
+-- as read-only. A frame asks for the same exact clock value from the sky,
+-- windows, world hook and water reflection; retaining that one answer avoids
+-- rebuilding a short-lived table at every one of those call sites without
+-- quantising the clock or changing any blend value.
+local mixCache = { t = nil, value = nil }
+
 function DayNight.mix(t)
   t = t % DayNight.CYCLE
+  if mixCache.t == t then return mixCache.value end
   local d = dial()
   for i = 1, #d - 1 do
     local a, b = d[i], d[i + 1]
     if t >= a[1] and t < b[1] then
-      if a[2] == b[2] then return { [a[2]] = 1 } end
-      local u = (t - a[1]) / (b[1] - a[1])
-      return { [a[2]] = 1 - u, [b[2]] = u }
+      local value
+      if a[2] == b[2] then
+        value = { [a[2]] = 1 }
+      else
+        local u = (t - a[1]) / (b[1] - a[1])
+        value = { [a[2]] = 1 - u, [b[2]] = u }
+      end
+      mixCache.t, mixCache.value = t, value
+      return value
     end
   end
-  return { dawn = 1 }
+  local value = { dawn = 1 }
+  mixCache.t, mixCache.value = t, value
+  return value
 end
 
 -- back onto the 5-bit lattice after any blend
@@ -333,7 +350,7 @@ end
 -- Advance the cycle. Runs every frame from the voxel pipeline's update hook
 -- (which ticks through battles and menus too, so night falls during a long
 -- fight exactly as it does on a walk). Stepping ONTO cycle picks up from
--- the pin the player was just looking at: DUSK then CYCLE rolls on into
+-- the pin the player was just looking at: DUSK then AUTO rolls on into
 -- night rather than teleporting the sky.
 function DayNight.update(dt)
   local m = mode()
@@ -405,15 +422,42 @@ function DayNight.body(t)
   }
 end
 
--- Maps under a CANOPY: not outdoor -- there is no sky to paint and no sun
--- or moon to see, so the shadow rig stays the mod's fixed noon light,
--- which is all that ever filtered through the leaves -- but not a sealed
--- room either: night still FALLS in them. Of everything the clock does,
--- exactly one thing reaches a canopy map: the hour's tint.
+-- Maps under a CANOPY: not open outdoor sky -- there is no sun or moon to
+-- see, so the shadow rig stays the mod's fixed noon light, which is all that
+-- ever filtered through the leaves -- but not a sealed room either: night
+-- still FALLS in them. The hour therefore reaches both the forest-floor tint
+-- and a muted canopy backdrop instead of leaving the void black.
 DayNight.CANOPY = { VIRIDIAN_FOREST = true }
 
 function DayNight.isCanopy(map)
-  return (map and map.id and DayNight.CANOPY[map.id]) and true or false
+  local id = map and (map.id or (map.def and map.def.id))
+  return (id and DayNight.CANOPY[id]) and true or false
+end
+
+-- Four canopy shades, lightest first, derived from the very same six-rung
+-- sky palette the clock is already blending. The forest filter keeps some of
+-- twilight's warmth and night's blue while pressing every phase toward deep
+-- leaf greens. Returning a palette (rather than one hardcoded colour) lets
+-- VoxelScene run it through the active display mode before choosing its fill.
+local CANOPY_SOURCE = { 1, 2, 4, 6 }
+local canopyCache = { key = nil, palette = nil }
+
+function DayNight.canopyPalette(t)
+  t = t or DayNight.time()
+  local key = math.floor(t % DayNight.CYCLE)
+  if canopyCache.key == key then return canopyCache.palette end
+
+  local sky, palette = DayNight.palette(t), {}
+  for i, source in ipairs(CANOPY_SOURCE) do
+    local c = sky[source]
+    palette[i] = {
+      q8(c[1] * 0.38 + 16),
+      q8(c[2] * 0.46 + 16),
+      q8(c[3] * 0.28 + 8),
+    }
+  end
+  canopyCache.key, canopyCache.palette = key, palette
+  return palette
 end
 
 -- How lit the WINDOWS are, 0..1 -- the lamps behind the glass, not the sky.

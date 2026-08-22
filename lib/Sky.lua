@@ -8,12 +8,15 @@
 -- it has always had -- its horizon is above the frame and its look is not this
 -- rung's to change.
 --
--- THE RECIPE is the 8-bit skybox one: a short palette of blues painted as flat
--- horizontal bands, deepest overhead, with a CHECKERBOARD of the next band
--- dithered into the bottom of each one. Alternating two colours on a pixel grid
--- is how a machine with four colours to a palette got a fifth, sixth and seventh
--- out of them, and it is what keeps four bands reading as a gradient rather than
--- as four stripes. No clouds, nothing moving.
+-- THE RECIPE starts with DayNight's short 8-bit key palette, then expands it to
+-- a ninety-six-step nearest-sampled ramp. The source colours still decide the
+-- look of every hour, but no single step is tall enough to read as one of the
+-- enormous curved blue stripes a low 1ST/3RD camera exposed. The steps remain
+-- hard pixel colours -- this is not a filtered bitmap or an airbrushed shader.
+-- The compact checker transition is retained only for the level screen path;
+-- a perspective ray fan never turns it into curved checker ribbons. Moving
+-- atmosphere is a separate, world-anchored sprite layer below; it never changes
+-- how the colour field itself is sampled.
 --
 -- NOTHING IS RESAMPLED, which is the whole of why it is drawn this way. There is
 -- no baked 160x144 picture scaled up to the window and no downsized buffer blown
@@ -51,14 +54,61 @@
 local V = ...
 
 local DayNight = V.require("DayNight")
+local ModSetting = V.require("ModSetting")
+local SkyEvents = V.require("SkyEvents")
 local PaletteFX = require("src.render.PaletteFX")
 
 local Sky = {}
 
--- The most bands a phase palette may paint with. Eight leaves headroom over
--- DayNight's six-band ones without paying for more; the ramp the shader reads
--- them from is built at the width actually used, so the cap costs nothing.
+-- How much sky the voxel renderer paints. This is deliberately separate
+-- from DAYTIME: DAYTIME chooses the hour and therefore the colours, while
+-- SKY chooses whether Kanto has a full banded sky, a cheap flat backdrop,
+-- or no outdoor backdrop at all. FULL remains the established default.
+Sky.setting = ModSetting.new("sky", "SKY",
+  { "full", "flat", "off" }, { "FULL", "FLAT", "OFF" })
+
+Sky.cloudSetting = ModSetting.new("clouds", "CLOUDS",
+  { "on", "off" }, { "ON", "OFF" })
+
+Sky.clock = 0
+
+function Sky.update(dt)
+  if dt and dt > 0 then Sky.clock = (Sky.clock + dt) % 65521 end
+  -- Decode the one compact cloud atlas outside paint(). Graphics may not exist
+  -- during module construction, so the update seam is the first safe prewarm.
+  -- CLOUDS OFF deliberately avoids even this one-time I/O/allocation.
+  if Sky.cloudSetting:get() ~= "off" and Sky.prewarmClouds then
+    Sky.prewarmClouds()
+  end
+end
+
+function Sky.mode()
+  return Sky.setting:get()
+end
+
+function Sky.enabled()
+  return Sky.mode() ~= "off"
+end
+
+function Sky.banded()
+  return Sky.mode() == "full"
+end
+
+-- The most KEY colours a phase palette may contribute. DayNight currently has
+-- six; eight leaves display-mode headroom. These are expanded below rather than
+-- painted directly, because six steps across a low camera's sky become a few
+-- huge curved stripes.
 Sky.MAX_BANDS = 8
+
+-- A low 65-degree 1ST/3RD view exposes only about 20 degrees of the fixed
+-- 55-degree sky field. With 24 texels that was merely 8-9 visible colours --
+-- 40-49 canvas pixels per ring in the native 1710x1069 pilot. Ninety-six puts
+-- about 35 colours in the same slice (roughly 10-12 crisp pixels per ring),
+-- while the complete nearest-sampled RGBA8 texture is still only 384 bytes.
+-- The pass remains one rectangle / one draw call, and water consumes this exact
+-- same ramp and count.
+Sky.GRADIENT_BANDS = 96
+Sky.GRADIENT_RGBA_BYTES = Sky.GRADIENT_BANDS * 4
 
 -- The checkerboard between bands. DITHER_START is how far down a band it begins,
 -- as a fraction of that band: lower is a wider blend, and 1 switches it off. 0.6
@@ -66,6 +116,20 @@ Sky.MAX_BANDS = 8
 -- as one averaged colour instead of as a step with a soft bottom edge.
 Sky.DITHER = true
 Sky.DITHER_START = 0.6
+
+-- A checker transition looks intentional on the level, screen-linear sky,
+-- where its cells stay square and the transition is only a few rows tall. On
+-- a perspective ray fan the same angular grid projects into broad curved
+-- checker ribbons (especially in 3RD at a low pitch), which are easily read as
+-- enormous striped clouds. Keep the world-anchored colour bands, but make
+-- their transitions clean in free cameras; the actual clouds below provide
+-- the pixel texture there.
+Sky.RAY_DITHER = false
+
+function Sky.ditherStart(ray)
+  return Sky.DITHER and (not ray or Sky.RAY_DITHER)
+         and Sky.DITHER_START or 2
+end
 
 -- How much of the frame the bands cover when the horizon is NOT in it, as a
 -- fraction of the canvas height.
@@ -97,14 +161,49 @@ Sky.ELEV_SPAN = math.rad(55)
 --
 -- Memoised, because this runs once a frame and the answer only moves when the
 -- mode does.
-local cache = { bands = nil, key = {}, ramp = nil }
+local cache = {
+  bands = nil, anchors = nil, key = {}, ramp = nil, anchorCount = nil,
+}
+
+-- Expand the few authored/display-mode key colours into the fine ramp without
+-- adding a texture filter. Interpolation happens only when the tiny palette is
+-- rebuilt (normally once per clock second); every frame and every reflected
+-- water pixel still performs one nearest texel lookup. Endpoints are exact, so
+-- haze at the horizon and the deepest zenith shade cannot drift from DayNight.
+local function densify(anchors, count)
+  local n = #anchors
+  if n < 1 or count < 1 then return {} end
+  local result = {}
+  if n == 1 or count == 1 then
+    local c = anchors[1]
+    for i = 1, count do result[i] = { c[1], c[2], c[3] } end
+    return result
+  end
+  for i = 1, count do
+    local p = (i - 1) / (count - 1) * (n - 1)
+    local a = math.floor(p) + 1
+    local b = math.min(a + 1, n)
+    local t = p - math.floor(p)
+    local ca, cb = anchors[a], anchors[b]
+    result[i] = {
+      ca[1] + (cb[1] - ca[1]) * t,
+      ca[2] + (cb[2] - ca[2]) * t,
+      ca[3] + (cb[3] - ca[3]) * t,
+    }
+  end
+  return result
+end
+
+Sky._densify = densify             -- focused palette/runtime contract seam
 
 function Sky.bands()
   local pal = DayNight.palette()
   local shades = PaletteFX.effectiveColors(pal) or pal
   local n = math.min(#shades, #pal, Sky.MAX_BANDS)
   local key, k = cache.key, 0
-  local same = cache.bands ~= nil and #cache.bands == n
+  local same = cache.bands ~= nil
+               and #cache.bands == Sky.GRADIENT_BANDS
+               and cache.anchorCount == n
   for i = 1, n do
     local c = shades[i]
     for ch = 1, 3 do
@@ -120,12 +219,15 @@ function Sky.bands()
   if cache.ramp and cache.ramp.release then pcall(cache.ramp.release, cache.ramp) end
   cache.ramp, cache.rampFor = nil, nil
 
-  local bands = {}
+  local anchors = {}
   for i = 1, n do
-    -- backwards: the palette's darkest rung is the top band
+    -- backwards: the palette's darkest key is the top of the gradient
     local c = shades[n - i + 1]
-    bands[i] = { c[1] / 255, c[2] / 255, c[3] / 255 }
+    anchors[i] = { c[1] / 255, c[2] / 255, c[3] / 255 }
   end
+  local bands = densify(anchors, Sky.GRADIENT_BANDS)
+  cache.anchorCount = n
+  cache.anchors = anchors
   cache.bands = bands
   return bands
 end
@@ -146,6 +248,11 @@ end
 --
 -- Mutates the descriptor, which is a fresh table per frame from its caller.
 function Sky.dress(sky)
+  if not Sky.enabled() then return nil end
+  if not Sky.banded() then
+    if sky then sky.bands = nil end
+    return sky
+  end
   local bands = Sky.bands()
   local haze = bands and bands[#bands]
   if not (sky and haze) then return sky end
@@ -287,7 +394,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 
 -- ------- the ramp
 --
--- The bands as a one-texel-per-band TEXTURE rather than as a uniform array,
+-- The fine ramp as a one-texel-per-step TEXTURE rather than as a uniform array,
 -- which is what they used to be: `uniform vec3 bands[8]`, filled from Lua and
 -- read through a loop counter. On desktop GL that is as portable as it looks.
 -- On Android it was not. The sky's lower bands came back BLACK -- a hard-edged
@@ -304,15 +411,16 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 -- because they all have the same shape: slots past the first few read as zero,
 -- and zero is black.
 --
--- A sampler has none of them. One texture unit replaces eight uniform vectors,
+-- A sampler has none of them. One texture unit replaces an array of uniforms,
 -- there is no array to index and no budget to overrun, and a texel that does
 -- not exist cannot read as black because the image is built at exactly the
 -- width the shader divides by. Nearest and clamped, so a sample lands on one
 -- band's own colour and an out-of-range one lands on the end band rather than
 -- on nothing.
 --
--- Rebuilt only when the bands move, which is when the clock or the display
--- mode does; Sky.bands drops it as it rebuilds the list it is made from.
+-- Rebuilt only when the key colours move, which is when the clock or the display
+-- mode does; Sky.bands drops it as it rebuilds the 96-step list. At RGBA8 the
+-- complete allocation is 384 bytes, with no mip chain.
 local function rampFor(bands)
   if cache.ramp and cache.rampFor == bands then return cache.ramp end
   if not (love.image and love.image.newImageData
@@ -331,6 +439,7 @@ local function rampFor(bands)
   -- clamp: the shader clamps its index too, so this is the second of two
   -- guards against ever sampling off the end -- and it returns the edge band.
   pcall(img.setFilter, img, "nearest", "nearest")
+  pcall(img.setMipmapFilter, img, nil)
   pcall(img.setWrap, img, "clamp", "clamp")
   cache.ramp, cache.rampFor = img, bands
   return img
@@ -348,6 +457,7 @@ Sky._rampFor = rampFor            -- named for the suite
 -- falls back to flat bands -- so a driver that loses the gradient loses the
 -- reflected gradient with it rather than showing two different skies.
 function Sky.ramp()
+  if not Sky.banded() then return nil end
   local bands = Sky.bands()
   if not (bands and bands[1]) then return nil end
   local img = rampFor(bands)
@@ -382,12 +492,15 @@ end
 
 Sky._getShader = getShader        -- named for the suite
 
--- The flat fallback: the same bands as solid rectangles, no checker, on the same
--- quantised edges. For a driver that could not compile the shader -- which is
--- also every headless run.
+-- The flat fallback: the authored key colours as solid rectangles, no checker,
+-- on the same quantised edges. A driver that cannot compile the one-draw shader
+-- therefore keeps the old bounded draw count (normally six), rather than turning
+-- the 96 palette texels into 96 rectangle calls. Every supported GPU uses the
+-- fine ramp above; this path is also what headless contract runs exercise.
 local function paintFlat(w, h, bands, edge, alpha, cell, top)
   local g = love.graphics
-  local n = #bands
+  local paintBands = (bands == cache.bands and cache.anchors) or bands
+  local n = #paintBands
   local span = edge - (top or 0)
   local prev = 0
   for i = 1, n do
@@ -395,7 +508,7 @@ local function paintFlat(w, h, bands, edge, alpha, cell, top)
                 or math.floor(((top or 0) + i / n * span) / cell + 0.5) * cell
     cut = math.max(prev, math.min(cut, math.min(h, math.ceil(edge))))
     if cut > prev then
-      local c = bands[i]
+      local c = paintBands[i]
       g.setColor(c[1], c[2], c[3], alpha)
       g.rectangle("fill", 0, prev, w, cut - prev)
     end
@@ -510,6 +623,538 @@ local function paintDisc(body, edge, cell, w, h)
   g.setColor(1, 1, 1, 1)
 end
 
+-- ------- clouds, stars and shooting stars
+--
+-- The original atmosphere painter chose every cloud and star directly in
+-- CANVAS coordinates. That is harmless for the pitch-only orbit (there is no
+-- yaw to reveal the shortcut), but 1ST and 3RD can turn freely: a cloud glued
+-- to x=40 on the canvas then turns with the player's head instead of staying
+-- over the same part of Kanto.
+--
+-- A free-pitch camera already hands the sky its ray fan. The helpers below use
+-- that fan in reverse: a stable WORLD direction is intersected with the
+-- camera's image plane and becomes a canvas point. Clouds are allowed to drift
+-- through world azimuth over time, but moving the camera never changes their
+-- direction; stars are completely fixed. The pitch-only orbit keeps its
+-- established screen composition, while every camera with a ray fan gets the
+-- honest world-space path.
+
+local TAU = math.pi * 2
+local GOLDEN_ANGLE = math.pi * (3 - math.sqrt(5))
+
+local function wrapPi(a)
+  return (a + math.pi) % TAU - math.pi
+end
+
+-- A bearing/elevation pair as a unit direction in the voxel world's axes.
+-- Bearing zero is +Z, matching FirstPerson's yaw. DayNight.body uses its own
+-- astronomical bearing convention and already returns an explicit vector.
+function Sky.direction(azimuth, elevation)
+  local ce = math.cos(elevation or 0)
+  return { math.sin(azimuth or 0) * ce, math.sin(elevation or 0),
+           math.cos(azimuth or 0) * ce }
+end
+
+-- Project one WORLD direction through the affine ray fan built by Voxel3D.
+--
+-- The fan says that canvas fraction (u,v) looks along
+--     base + u*du + v*dv.
+-- We solve for the point where that direction is parallel to `direction`.
+-- A positive scale is in front of the eye; a negative one is the opposite
+-- half of the sky and must not wrap onto the display. Returns x, y and whether
+-- the centre lies inside the canvas. Off-canvas forward points still return
+-- their coordinates so a caller may admit a wide sprite by its own margin.
+local function projectXYZ(ray, w, h, dx, dy, dz)
+  if not (ray and ray.base and ray.du and ray.dv
+          and dx and dy and dz and w and h and w > 0 and h > 0) then
+    return nil, nil, false
+  end
+  local dl = math.sqrt(dx * dx + dy * dy + dz * dz)
+  if dl < 1e-9 then return nil, nil, false end
+  dx, dy, dz = dx / dl, dy / dl, dz / dl
+  local b, du, dv = ray.base, ray.du, ray.dv
+  -- cross(dv, d) and cross(du, d), kept scalar: this runs once per visible
+  -- star/cloud candidate and must not create hundreds of short-lived tables
+  -- per frame on iPhone.
+  local nux = dv[2] * dz - dv[3] * dy
+  local nuy = dv[3] * dx - dv[1] * dz
+  local nuz = dv[1] * dy - dv[2] * dx
+  local nvx = du[2] * dz - du[3] * dy
+  local nvy = du[3] * dx - du[1] * dz
+  local nvz = du[1] * dy - du[2] * dx
+  local denU = du[1] * nux + du[2] * nuy + du[3] * nuz
+  local denV = dv[1] * nvx + dv[2] * nvy + dv[3] * nvz
+  if math.abs(denU) < 1e-9 or math.abs(denV) < 1e-9 then
+    return nil, nil, false
+  end
+  local u = -(b[1] * nux + b[2] * nuy + b[3] * nuz) / denU
+  local v = -(b[1] * nvx + b[2] * nvy + b[3] * nvz) / denV
+  local px = b[1] + du[1] * u + dv[1] * v
+  local py = b[2] + du[2] * u + dv[2] * v
+  local pz = b[3] + du[3] * u + dv[3] * v
+  if px * dx + py * dy + pz * dz <= 1e-7 then return nil, nil, false end
+  local x, y = u * w, v * h
+  return x, y, u >= 0 and u <= 1 and v >= 0 and v <= 1
+end
+
+function Sky.projectDirection(ray, w, h, direction)
+  if not direction then return nil, nil, false end
+  return projectXYZ(ray, w, h, direction[1], direction[2], direction[3])
+end
+
+-- Convenience form used by atmosphere/event painters.
+function Sky.projectSky(ray, w, h, azimuth, elevation)
+  if type(azimuth) ~= "number" or type(elevation) ~= "number" then
+    return nil, nil, false
+  end
+  local ce = math.cos(elevation or 0)
+  return projectXYZ(ray, w, h, math.sin(azimuth or 0) * ce,
+                    math.sin(elevation or 0), math.cos(azimuth or 0) * ce)
+end
+
+-- One projection closure for optional sky-event painters. Production cameras
+-- always supply their true ray fan, including the orbit's atmosphere-only fan.
+-- The fallback below is for headless/compatibility callers: the orbit looks
+-- north (-Z, azimuth pi), and `edge` lets elevation meet its real horizon.
+function Sky.projector(ray, w, h, edge)
+  if ray then
+    return function(azimuth, elevation)
+      return Sky.projectSky(ray, w, h, azimuth, elevation)
+    end
+  end
+  edge = math.max(1, math.min(h or 1, edge or (h or 1) * Sky.SPAN))
+  local halfAz = math.rad(52)
+  return function(azimuth, elevation)
+    local relative = wrapPi((azimuth or math.pi) - math.pi)
+    local x = (0.5 + relative / (halfAz * 2)) * w
+    local y = edge * (1 - (elevation or 0) / Sky.ELEV_SPAN)
+    return x, y, x >= 0 and x <= w and y >= 0 and y <= edge
+  end
+end
+
+local function nightStrength()
+  local mix = DayNight.mix(DayNight.time())
+  return math.min(1, (mix.night or 0) + (mix.violet or 0) * 0.8
+                     + (mix.dusk or 0) * 0.15)
+end
+
+Sky.CLOUD_COUNT = 18
+Sky.CLOUD_MAX_DRAWS = Sky.CLOUD_COUNT
+Sky.CLOUD_DRIFT = math.rad(0.22) -- world radians per second, a slow high wind
+
+-- Four authored 128x128 transparent sprites in one row. The atlas is a single
+-- 256 KiB RGBA8 GPU allocation (plus negligible Quad metadata), shared by all
+-- eighteen stable cloud addresses. No per-cloud texture and no mip chain.
+Sky.CLOUD_ASSET = {
+  path = "assets/sky/clouds.png",
+  width = 512, height = 128,
+  frameWidth = 128, frameHeight = 128, frames = 4,
+  rgbaBytes = 512 * 128 * 4,
+}
+
+local cloudAtlas = { state = "cold", image = nil, quads = nil, error = nil }
+
+local function releaseCloudAtlas()
+  if cloudAtlas.image and cloudAtlas.image.release then
+    pcall(cloudAtlas.image.release, cloudAtlas.image)
+  end
+end
+
+function Sky.invalidateCloudAsset()
+  releaseCloudAtlas()
+  cloudAtlas = { state = "cold", image = nil, quads = nil, error = nil }
+end
+
+function Sky.cloudAssetStatus()
+  return cloudAtlas.state, cloudAtlas.error
+end
+
+-- One explicit, idempotent prewarm. A missing/invalid image fails closed and
+-- stays failed rather than attempting filesystem I/O from a later paint call.
+-- Returns (ready, attempted), where attempted is 1 only for the decode pass.
+function Sky.prewarmClouds()
+  if Sky.cloudSetting:get() == "off" then return false, 0 end
+  if cloudAtlas.state == "ready" then return true, 0 end
+  if cloudAtlas.state ~= "cold" then return false, 0 end
+  local graphics = love and love.graphics or nil
+  if not (graphics and type(graphics.newImage) == "function"
+          and type(graphics.newQuad) == "function") then
+    return false, 0 -- graphics can become available on a later update
+  end
+  if type(V.path) ~= "string" then
+    cloudAtlas.state, cloudAtlas.error = "missing", "path"
+    return false, 1
+  end
+
+  cloudAtlas.state = "loading"
+  local spec = Sky.CLOUD_ASSET
+  local source = V.path .. "/" .. spec.path
+  local ok, image = pcall(graphics.newImage, source,
+                          { mipmaps = false, linear = false })
+  if not ok or not image then
+    -- LÖVE versions predating ImageSettings already default to no mipmaps.
+    ok, image = pcall(graphics.newImage, source)
+  end
+  if not ok or not image then
+    cloudAtlas.state, cloudAtlas.error = "missing", "decode"
+    return false, 1
+  end
+  if image.setFilter then
+    pcall(image.setFilter, image, "nearest", "nearest", 1)
+  end
+  if image.setMipmapFilter then pcall(image.setMipmapFilter, image, nil) end
+  local dimOk, width, height = pcall(image.getDimensions, image)
+  if not dimOk or width ~= spec.width or height ~= spec.height then
+    if image.release then pcall(image.release, image) end
+    cloudAtlas.state, cloudAtlas.error = "invalid", "dimensions"
+    return false, 1
+  end
+
+  local quads = {}
+  for frame = 0, spec.frames - 1 do
+    local quadOk, quad = pcall(graphics.newQuad,
+      frame * spec.frameWidth, 0, spec.frameWidth, spec.frameHeight,
+      spec.width, spec.height)
+    if not quadOk or not quad then
+      if image.release then pcall(image.release, image) end
+      cloudAtlas.state, cloudAtlas.error = "invalid", "quad"
+      return false, 1
+    end
+    quads[frame + 1] = quad
+  end
+  cloudAtlas.state, cloudAtlas.error = "ready", nil
+  cloudAtlas.image, cloudAtlas.quads = image, quads
+  return true, 1
+end
+
+-- Stable sky address for cloud `i`. Time moves the CLOUD through the world;
+-- the camera is deliberately absent from this calculation.
+function Sky.cloudDirection(i, clock)
+  local az, el = Sky.cloudAngles(i, clock)
+  return Sky.direction(az, el), az, el
+end
+
+function Sky.cloudAngles(i, clock)
+  i = math.max(1, math.floor(i or 1))
+  -- Three wind/elevation layers keep the sky varied without spawning or
+  -- destroying anything. Their addresses remain functions of (i, clock)
+  -- alone: camera yaw/pitch never enters the result.
+  local layer = (i - 1) % 3
+  local speed = Sky.CLOUD_DRIFT * (0.76 + layer * 0.11 + (i % 4) * 0.025)
+  local az = wrapPi(i * GOLDEN_ANGLE + (clock or Sky.clock) * speed)
+  local el = math.rad(13 + layer * 6 + ((i * 7) % 6))
+  return az, el
+end
+
+-- Deterministic art/size assignment, independent of clock and camera. Square
+-- source cells include transparent breathing room, so these dimensions match
+-- the old puffs' visible footprint while allowing softer authored contours.
+function Sky.cloudVisual(i, cell)
+  i = math.max(1, math.floor(i or 1))
+  cell = math.max(1, cell or 1)
+  local variant = ((i * 3 + math.floor(i / 4)) % Sky.CLOUD_ASSET.frames) + 1
+  local cells = 12 + ((i * 5) % 4) * 2
+  if i % 4 == 0 then cells = cells + 4 end
+  local size = cells * cell
+  return variant, size, size
+end
+
+local function paintClouds(w, h, edge, cell, alpha, ray, night)
+  if Sky.cloudSetting:get() == "off" then return end
+  if cloudAtlas.state ~= "ready" then return end
+  local g = love and love.graphics or nil
+  if not (g and type(g.draw) == "function" and type(g.setColor) == "function") then
+    return
+  end
+  local shade = 1 - night * 0.55
+  -- Use the same bearing/elevation projection in every camera. The nil-ray
+  -- projector is the north-facing compatibility/orbit view, not a new set of
+  -- canvas coordinates, so no cloud can follow a turn of the camera.
+  local project = Sky.projector(ray, w, h, edge)
+  -- Every cloud shares the hour/weather tint, so bind it once rather than
+  -- creating eighteen redundant graphics-state changes in the worst case.
+  g.setColor(shade, shade, math.min(1, shade + 0.04), alpha * 0.88)
+  for i = 1, Sky.CLOUD_COUNT do
+    local variant, width, height = Sky.cloudVisual(i, cell)
+    local az, el = Sky.cloudAngles(i, Sky.clock)
+    local x, y = project(az, el)
+    -- Admit an off-canvas centre only while transparent atlas bounds can still
+    -- reach the scissor. An admitted cloud is exactly one textured draw.
+    local mx, my = width * 0.5, height * 0.5
+    if x and x >= -mx and x <= w + mx and y >= -my and y <= edge + my then
+      g.draw(cloudAtlas.image, cloudAtlas.quads[variant], x, y, 0,
+             width / Sky.CLOUD_ASSET.frameWidth,
+             height / Sky.CLOUD_ASSET.frameHeight,
+             Sky.CLOUD_ASSET.frameWidth * 0.5,
+             Sky.CLOUD_ASSET.frameHeight * 0.5)
+    end
+  end
+  g.setColor(1, 1, 1, 1)
+end
+
+Sky._paintClouds = paintClouds -- focused headless budget/zero-work QA seam
+
+-- Night is still a zero-work path by day, but when it is visible the old
+-- 160 identical blue-white squares were too uniform to read as a real sky.
+-- Keep the field deterministic/world-fixed and expand it with five bounded
+-- colour/size/twinkle families. Rectangles remain texture-free and allocate
+-- no retained GPU memory.
+Sky.STAR_COUNT = 224
+Sky.FALLBACK_STAR_COUNT = 72
+Sky.STAR_VARIANTS = {
+  { color = { 0.96, 0.98, 1.00 }, cells = 1, speed = 1.7 },
+  { color = { 0.78, 0.88, 1.00 }, cells = 1, speed = 2.1 },
+  { color = { 1.00, 0.90, 0.70 }, cells = 1, speed = 1.3 },
+  { color = { 0.90, 0.80, 1.00 }, cells = 1, speed = 2.6 },
+  { color = { 1.00, 0.98, 0.86 }, cells = 2, speed = 1.1 },
+}
+
+function Sky.starVisual(i)
+  i = math.max(1, math.floor(i or 1))
+  local variant = ((i * 11 + math.floor(i / 7)) % #Sky.STAR_VARIANTS) + 1
+  local visual = Sky.STAR_VARIANTS[variant]
+  return visual.color, visual.cells, visual.speed, i * 1.37
+end
+
+local starDirections = {}
+
+-- A deterministic low-discrepancy scatter over the upper hemisphere. Stars
+-- never read Sky.clock here: only their brightness twinkles, never their place.
+function Sky.starDirection(i)
+  i = math.max(1, math.floor(i or 1))
+  if starDirections[i] then return starDirections[i] end
+  local az = wrapPi(i * GOLDEN_ANGLE)
+  local u = ((i * 73) % 167 + 0.5) / 167
+  local el = math.asin(0.06 + u * 0.92)
+  local direction = Sky.direction(az, el)
+  starDirections[i] = direction
+  return direction, az, el
+end
+
+-- Three small, deliberately abstract Pokemon constellations. They are point
+-- drawings, not borrowed sprite pixels: ears and a lightning tail, a fish
+-- body and tail, and a long neck over a shell. Their fixed bearing/elevation
+-- makes them genuine places in Kanto's sky instead of HUD ornaments.
+Sky.CONSTELLATIONS = {
+  {
+    id = "PIKACHU", az = math.rad(-52), el = math.rad(48),
+    color = { 1.00, 0.90, 0.58 },
+    points = {
+      { -2.0, -1.0 }, { -3.2, 3.0 }, { -1.2, 1.3 },
+      {  1.2, 1.3 }, {  3.2, 3.0 }, {  2.0, -1.0 },
+      {  0.0, -2.4 }, { -3.6, -0.7 }, { -5.0, -2.0 },
+      { -3.7, -2.6 },
+    },
+    segments = { {1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,1},
+                 {1,8},{8,9},{9,10},{10,8} },
+  },
+  {
+    id = "MAGIKARP", az = math.rad(36), el = math.rad(38),
+    color = { 0.72, 0.88, 1.00 },
+    points = {
+      { -3.4, 0.0 }, { -1.7, 1.7 }, { 0.7, 1.8 }, { 2.5, 0.0 },
+      {  0.7,-1.8 }, { -1.7,-1.7 }, { -5.0, 1.7 }, { -5.0,-1.7 },
+      {  1.0, 0.2 },
+    },
+    segments = { {1,2},{2,3},{3,4},{4,5},{5,6},{6,1},
+                 {1,7},{7,8},{8,1},{3,9} },
+  },
+  {
+    id = "LAPRAS", az = math.rad(139), el = math.rad(43),
+    color = { 0.86, 0.80, 1.00 },
+    points = {
+      { -3.8,-1.4 }, { -2.4, 0.2 }, { -0.5, 1.0 }, { 1.6, 0.6 },
+      {  3.4,-0.8 }, {  1.5,-1.7 }, { -1.1,-1.8 }, { -2.8,-1.2 },
+      {  2.4, 2.2 }, {  2.7, 4.1 }, { 3.5, 4.7 },
+    },
+    segments = { {1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,8},{8,1},
+                 {4,9},{9,10},{10,11} },
+  },
+}
+
+local constellationDirections = {}
+
+function Sky.constellationDirection(constellation, point)
+  local def = type(constellation) == "number"
+              and Sky.CONSTELLATIONS[constellation] or constellation
+  local p = def and def.points and def.points[point]
+  if not p then return nil end
+  local key = tostring(def.id) .. ":" .. tostring(point)
+  local cached = constellationDirections[key]
+  if cached then return cached.direction, cached.az, cached.el end
+  local az = wrapPi(def.az + math.rad(p[1]))
+  local el = math.max(math.rad(8), math.min(math.rad(82),
+                                           def.el + math.rad(p[2])))
+  local answer = { direction = Sky.direction(az, el), az = az, el = el }
+  constellationDirections[key] = answer
+  return answer.direction, az, el
+end
+
+Sky.CONSTELLATION_MAX_LINES = 0
+for _, constellation in ipairs(Sky.CONSTELLATIONS) do
+  Sky.CONSTELLATION_MAX_LINES = Sky.CONSTELLATION_MAX_LINES
+                                + #constellation.segments
+end
+
+-- The active shooting star's stable world direction. A new thirteen-second
+-- window chooses another bearing; during its short life the meteor itself
+-- crosses that part of the sky. `trail` walks backward along the same arc.
+function Sky.shootingDirection(clock, trail)
+  local az, el = Sky.shootingAngles(clock, trail)
+  if not az then return nil end
+  return Sky.direction(az, el), az, el
+end
+
+function Sky.shootingAngles(clock, trail)
+  clock = clock or Sky.clock
+  local phase = clock % 13
+  if phase >= 0.85 then return nil end
+  local cycle = math.floor(clock / 13)
+  local p = phase / 0.85 - (trail or 0) * 0.032
+  local start = wrapPi((cycle + 1) * GOLDEN_ANGLE)
+  local az = wrapPi(start + math.rad(18) * p)
+  local el = math.rad(55 - 17 * p)
+  return az, el
+end
+
+local function paintStars(w, h, edge, cell, alpha, ray, strength)
+  if strength <= 0.03 then return end
+  local g = love.graphics
+  local function star(i, x, y, strengthScale)
+    local color, cells, speed, phase = Sky.starVisual(i)
+    local twinkle = 0.58 + 0.42 * math.sin(Sky.clock * speed + phase)
+    local a = alpha * strength * (strengthScale or 1) * twinkle
+    g.setColor(color[1], color[2], color[3], a)
+    local s = cell * cells
+    g.rectangle("fill", math.floor((x - s / 2) / cell) * cell,
+                math.floor((y - s / 2) / cell) * cell, s, s)
+  end
+
+  local function constellations()
+    if strength <= 0.48 then return end
+    local project = ray and nil or Sky.projector(nil, w, h, edge)
+    for ci, def in ipairs(Sky.CONSTELLATIONS) do
+      local xs, ys, seen = {}, {}, {}
+      for pi = 1, #def.points do
+        local direction, az, el = Sky.constellationDirection(def, pi)
+        local x, y, visible
+        if ray then x, y, visible = Sky.projectDirection(ray, w, h, direction)
+        else x, y, visible = project(az, el) end
+        xs[pi], ys[pi], seen[pi] = x, y, visible
+      end
+
+      -- Rough one-pixel lines keep the drawings subtle. A compatibility
+      -- renderer without line support still gets every authored star.
+      if type(g.line) == "function" then
+        local oldWidth = type(g.getLineWidth) == "function"
+                         and g.getLineWidth() or nil
+        local oldStyle = type(g.getLineStyle) == "function"
+                         and g.getLineStyle() or nil
+        if type(g.setLineWidth) == "function" then
+          g.setLineWidth(math.max(1, cell * 0.45))
+        end
+        if type(g.setLineStyle) == "function" then g.setLineStyle("rough") end
+        g.setColor(def.color[1], def.color[2], def.color[3],
+                   alpha * strength * 0.20)
+        for _, segment in ipairs(def.segments) do
+          local a, b = segment[1], segment[2]
+          if seen[a] and seen[b] then g.line(xs[a], ys[a], xs[b], ys[b]) end
+        end
+        if oldWidth and type(g.setLineWidth) == "function" then
+          g.setLineWidth(oldWidth)
+        end
+        if oldStyle and type(g.setLineStyle) == "function" then
+          g.setLineStyle(oldStyle)
+        end
+      end
+      for pi = 1, #def.points do
+        if seen[pi] then
+          local x, y = xs[pi], ys[pi]
+          local s = (pi == 1 or pi == #def.points) and cell * 2 or cell
+          g.setColor(def.color[1], def.color[2], def.color[3],
+                     alpha * strength * 0.88)
+          g.rectangle("fill", math.floor((x - s / 2) / cell) * cell,
+                      math.floor((y - s / 2) / cell) * cell, s, s)
+        end
+      end
+    end
+  end
+
+  if ray then
+    for i = 1, Sky.STAR_COUNT do
+      local x, y, visible = Sky.projectDirection(ray, w, h,
+                                                 Sky.starDirection(i))
+      if visible then star(i, x, y) end
+    end
+    constellations()
+    if strength > 0.35 then
+      for p = 0, 7 do
+        local az, el = Sky.shootingAngles(Sky.clock, p)
+        local x, y, visible = Sky.projectSky(ray, w, h, az, el)
+        if visible then
+          g.setColor(1, 1, 1, alpha * strength * (1 - p / 8))
+          g.rectangle("fill", math.floor(x / cell) * cell,
+                      math.floor(y / cell) * cell, cell, cell)
+        end
+      end
+    end
+    return
+  end
+
+  local starEdge = math.max(cell, edge * 0.82)
+  for i = 1, Sky.FALLBACK_STAR_COUNT do
+    local x = (i * 113 + (i * i) * 7) % math.max(1, math.floor(w))
+    local y = (i * 61 + (i * i) * 3) % math.max(1, math.floor(starEdge))
+    star(i, x, y)
+  end
+  constellations()
+
+  -- A short deterministic window every thirteen seconds: rare enough to be
+  -- noticed, frequent enough that a pinned NIGHT setting is not static.
+  local phase = Sky.clock % 13
+  if phase < 0.85 and strength > 0.35 then
+    local travel = phase / 0.85
+    local x = w * (0.18 + travel * 0.52)
+    local y = edge * (0.20 + travel * 0.18)
+    for p = 0, 7 do
+      g.setColor(1, 1, 1, alpha * strength * (1 - p / 8))
+      g.rectangle("fill", math.floor((x - p * cell * 2) / cell) * cell,
+                  math.floor((y - p * cell) / cell) * cell, cell, cell)
+    end
+  end
+end
+
+Sky._paintStars = paintStars -- focused deterministic/night-only QA seam
+
+local function paintAtmosphere(w, h, edge, cell, alpha, ray, context)
+  local g = love.graphics
+  if not (g and g.setScissor and g.rectangle) then return end
+  local sx, sy, sw, sh = g.getScissor()
+  local x, y, rw, rh = 0, 0, math.ceil(w), math.max(1, math.floor(edge))
+  if sx then
+    local x2, y2 = math.min(x + rw, sx + sw), math.min(y + rh, sy + sh)
+    x, y = math.max(x, sx), math.max(y, sy)
+    rw, rh = math.max(0, x2 - x), math.max(0, y2 - y)
+  end
+  if rw <= 0 or rh <= 0 then return end
+  g.setScissor(x, y, rw, rh)
+  local night = nightStrength()
+  paintStars(w, h, edge, cell, alpha, ray, night)
+  local eventContext = {
+    skyEnabled = Sky.banded(),
+    g = g, w = w, h = h, edge = edge, cell = cell, alpha = alpha,
+    project = Sky.projector(ray, w, h, edge),
+    weather = context and context.weather or nil,
+  }
+  -- Rainbow is distant atmosphere; clouds can pass in front of it. Flyers
+  -- are nearer silhouettes and cross over both. Both layers use the same
+  -- world projector and their own zero-draw performance gate.
+  SkyEvents.paint(eventContext, "back")
+  paintClouds(w, h, edge, cell, alpha, ray, night)
+  SkyEvents.paint(eventContext, "front")
+  if sx then g.setScissor(sx, sy, sw, sh) else g.setScissor() end
+end
+
 -- ------- the disc as a TEXTURE, for the VR eyes
 --
 -- A VR eye must not paint the disc in screen space at all: a canvas-grid
@@ -596,7 +1241,7 @@ end
 -- Returns false when there is nothing to paint, in which case the caller's flat
 -- fill is the whole sky. That fill is the palest band, so a frame that declines
 -- this looks like a hazy day rather than like a bug.
-function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray)
+function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray, context)
   local bands = sky and sky.bands
   if not (bands and bands[1]) then return false end
   if not (w and h and w > 0 and h > 0) then return false end
@@ -679,7 +1324,7 @@ function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray)
                 math.max(1e-4, rayAngle(0.5, 0, 0.5, 1) * cell / h))
       end
       sh:send("cell", cell)
-      sh:send("start", Sky.DITHER and Sky.DITHER_START or 2)
+      sh:send("start", Sky.ditherStart(ray))
       sh:send("alpha", alpha)
       sh:send("glowAmt", glowAmt)
       if glowAmt > 0 then
@@ -716,6 +1361,9 @@ function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray)
     paintFlat(w, h, bands, (axis or ray) and math.min(h, edge) or edge,
               alpha, cell, math.min(top or 0, edge - 1))
   end
+  local atmosphereRay = context and context.ray or ray
+  paintAtmosphere(w, h, math.min(h, edge), cell, alpha,
+                  atmosphereRay, context)
   -- the disc goes over the glow, under nothing: plain rectangles, so it is
   -- there whether or not the shader built. NOT under an axis or a ray fan:
   -- those cameras hang the baked disc in the world instead (drawWorldDisc,
@@ -731,9 +1379,11 @@ function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray)
   return true
 end
 
--- Drop the compiled shader (window resize, hot reload), so a re-created graphics
--- context builds a new one instead of drawing with a handle from the old. The
--- ramp is a GPU object on the same context and goes with it.
+-- Drop every GPU object owned by the sky family (window resize, context loss,
+-- hot reload), so a re-created graphics context never sees a stale handle.
+-- Cloud and rare-event atlases deliberately go through their public module
+-- invalidators: both reset to cold and therefore remain reloadable by their
+-- ordinary staged prewarm paths. Every release path is idempotent.
 function Sky.invalidate()
   shader = nil
   if cache.ramp and cache.ramp.release then pcall(cache.ramp.release, cache.ramp) end
@@ -742,6 +1392,10 @@ function Sky.invalidate()
     pcall(discBake.img.release, discBake.img)
   end
   discBake.key, discBake.img = nil, nil
+  Sky.invalidateCloudAsset()
+  if SkyEvents and type(SkyEvents.invalidateAssets) == "function" then
+    pcall(SkyEvents.invalidateAssets)
+  end
 end
 
 return Sky

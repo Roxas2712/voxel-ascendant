@@ -1,5 +1,98 @@
 # Changelog
 
+## 2.0.0 — 2026-08-22
+
+- Add the reviewed ARENA battle presentation: 46 independent location masters
+  cover 111 anchors across 95 maps, with fixed 3X footing, original HUD
+  placement and an optional authored STADIUM director.
+- Add continuous AUTO dawn/day/dusk/night lighting to the overworld, live sky,
+  outdoor arenas and only the reviewed exterior-window regions of interiors.
+- Add location-aware battle anchor selection for trainer, rival, Gym, League,
+  cave, ship and special-room fights without changing MAP, DISCS or classic
+  battle placement.
+- Add persistent AUTO/PC/MAX/HANDHELD/ECO/CUSTOM device profiles, dedicated
+  keyboard/controller voxel shortcuts and mouse-release-safe free cameras.
+- Add a versioned optional battle-music provider API with ORIGINAL, per-fight
+  SHUFFLE and available GEN 2–6 choices. No audio or network downloader is
+  bundled; provider failure restores the original cue.
+- Retain the dynamic reveal/load gate and Route 8 structure-analysis shortcut:
+  presentation waits only for the actual destination, while the verified
+  no-object regions remove 240,228 build-budget ticks without geometry drift.
+
+## 0.1.8 — 2026-08-19
+
+- Fix Gen1Recomp 0.2.19 zero-fade warps leaving `transitioning` permanently
+  set after a cold voxel destination (notably Fly to Cinnabar), even though
+  the arrival animation had already released the player's input lock.
+- Add dedicated `V` and mapped right-trigger (`ZR`/`R2`/`RT`) camera-ladder
+  shortcuts. Existing `3` and SELECT controls remain available.
+- Add switchable Kanto skies with sun, pixel clouds, a color-coordinated
+  20-minute day/night cycle, moon, stars and occasional shooting stars.
+- Anchor clouds, stars, shooting stars, sun/moon and rare sky events to world
+  bearings across ORBIT/1ST/3RD instead of rotating them with the camera.
+- Add independently switchable, save-persistent rare rainbows and distant
+  sky life with FULL/RAINBOW/FLYERS/OFF performance levels. Ordinary windows
+  rotate Pidgey, Pidgeotto, Pidgeot, Spearow, Fearow and Murkrow through
+  deterministic one-to-four-bird formations; Articuno, Zapdos, Moltres and
+  Ho-Oh remain much rarer singleton sightings.
+- Add lightweight CLEAR/AUTO/RAIN/SNOW/FOG/STORM weather. Fog uses bounded
+  drifting haze; storms add denser rain and rare deterministic lightning.
+  Active outdoor weather now remains visible in staged 3D battles.
+- Replace enlarged border-block wallpaper with cached, transparent pixel-art
+  skyline panels: varied layered trees, water/reeds, stepped mountains and
+  stratified cave walls. Semantic outdoor/cave maps no longer build the old
+  decorative border ring; separately tiled caps close elevated-view corners.
+- Close every semantic cave and Pokemon Tower floor with a 160px wall and a
+  32px-tessellated downward-facing ceiling. Cave tilesets select that shell
+  regardless of map id; the two location-named Pokecenters remain rooms.
+  Pokemon Tower now shares an opaque 512x160 two-bay wall and 256x256 coffered
+  ceiling instead of repeating the former small procedural brick stamp.
+- Add a world-fixed Kanto ridge behind open-sky routes, towns and mountain
+  regions while keeping canopy forest, caves and the southern sea distinct.
+  Route 1/Viridian replace their raised green side slabs with compact town-edge
+  silhouettes and two sparse rows of batched voxel trees.
+- Keep distant forest panels crisp with coarse outlined tree art and explicit
+  1x-DPI, nearest-filtered, non-MSAA/non-mipmapped panorama canvases.
+- Replace Viridian Forest's black no-sky void with a muted, day/night-aware
+  canopy fill. It stays closed to celestial bodies while fog and storms still
+  reach both the forest overworld and staged forest battles.
+- Continue Cinnabar's free southern/western edges and the adjoining sea-route
+  edges as reflective open ocean rather than procedural scenery walls.
+- Replace the South Sea landmark cards with four irregularly grounded V3
+  cut-outs: rocky island, lighthouse post, separated skerries and Cinnabar.
+  Crop transparent module padding and map visible texels 1:1 to world pixels;
+  map ownership, shared draw and 256 KiB texture budget stay unchanged.
+- Add safe RAM-only PRELOAD. Current and connected meshes warm in the
+  background, generation checks invalidate map edits, and the cache never
+  writes stale geometry to disk.
+- Keep the complete 2D renderer visible until current terrain, grass, flowers,
+  figures, atlas/mask and panorama are drawable as one atomic scene. Repeated
+  forest, grass and building geometry now uses shared templates plus instance
+  offsets; connected jobs still rotate through a bounded budget. Split
+  route-sized indexed GPU conversion into 1,024-vertex pages so transitions
+  cannot stop the main thread for seconds or reveal delayed decoration pop-in.
+- Derive a visual height datum from the engine's real one-way ledge triples.
+  The existing 6px lip stays on the lower base while the plateau behind rises,
+  producing flush and stackable Route 4 terraces without changing collision,
+  movement, encounter or jump logic. Terrain, buildings, vegetation, figures,
+  entities, camera placement and shadows all use the same snapshot.
+- Fix outdoor house backs copying arbitrary front windows or signage. Rear
+  walls repeat a clean 8x8 source-wall tile, then restore only an unambiguous
+  native 2x2 door course on door-bearing OVERWORLD/FOREST buildings. A rear
+  door becomes functional only where a real aligned warp already exists;
+  cosmetic counterparts never invent collision, destinations or gameplay.
+- Fix Kanto Ascendant 6.7 trainer-front routing and advertise the exact staged
+  battle camera profile its compatibility bridge expects.
+- Show an optional **VOXEL ASCENDANT** settings entry inside Kanto Ascendant's
+  **ASCENDANT** menu through public runtime discovery, with no hard dependency
+  and a no-op fallback when KASC is absent.
+- Add a persistent **BTL CAM** 1X/2X/3X starting-distance control shared by
+  MAP and DISCS 3D fights. New saves default to the wide 3X view, valid saved
+  1X/2X choices remain intact and FULL no longer overwrites that preference.
+  The existing Q/E, wheel and pinch zoom can still fine-tune the live shot up
+  to 3X without being reset every frame; 2D battle framing and HUD rendering
+  remain unchanged.
+
 ## 0.1.7 — 2026-08-19
 
 - Split the former **BACK SPRITES** control into independent **TRAINER BACK**
@@ -90,3 +183,15 @@
 
 The upstream v1.6.1 history is retained separately in
 `UPSTREAM_CHANGELOG.md`; it contains features intentionally absent here.
+## 0.1.8 — RC panorama completion
+
+- Add an original, reproducibly built 1024×192 Kanto distance panorama behind
+  outdoor map unions and MAP battles, centred on the player or battle arena.
+- Preserve real terrain, connected neighbours, coastal openings, water,
+  foreground scenery, the reviewed map-aware edge curtain, authored landmarks
+  and all 1X/2X/3X camera rigs; draw the panorama strictly behind them.
+- Keep 3X as the default battle view, retain stored 1X/2X choices and leave
+  FULL from rewriting the battle-camera setting.
+- Reduce the accepted panorama prototype from 2048×384 to 1024×192 after
+  native 3X/coast comparison, saving 2.25 MiB retained VRAM; load it lazily
+  and release its texture and mesh when SCENERY is switched OFF.

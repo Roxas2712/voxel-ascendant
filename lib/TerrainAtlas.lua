@@ -41,6 +41,12 @@ local cacheData = {}    -- the pixels behind the atlases we baked ourselves
 local animated = {}     -- key -> one map's private, mutable animated atlas
                         -- false = given up on; nil = not built (or retrying)
 local attempts = {}     -- key -> consecutive failures, for the retry budget
+-- Match ChunkMesher's one-neighbourhood history. A door warp replaces the
+-- outdoor live set with one small interior; retaining that previous set keeps
+-- the already-built RED++ animated atlases beside the retained terrain meshes,
+-- so walking back out does not rebuild/read back textures on the first 3D
+-- frame. Two neighbourhoods is still a hard bound, not a session-wide cache.
+local prevLive = {}
 
 -- A failure that might not repeat -- a driver refusing one readback, an
 -- asset briefly unreadable, a patch that threw once mid-reload -- must not
@@ -66,6 +72,15 @@ local function paletteKey(colors)
     parts[i] = c and (c[1] .. "," .. c[2] .. "," .. c[3]) or "-"
   end
   return table.concat(parts, ";")
+end
+
+local NO_PALETTE_KEY = "-;-;-;-"
+
+local function animationKey(map, colors)
+  local perMap = map.renderer and map.renderer.gbcAtlas and map.id or nil
+  return map.tileset.image .. "#a#"
+    .. (colors and paletteKey(colors) or NO_PALETTE_KEY)
+    .. (perMap or "")
 end
 
 -- The atlas image `map`'s terrain should sample, given the 4-color world
@@ -255,19 +270,27 @@ end
 -- of. LOVE 11 hands out no ImageData for an Image, so the only route is a
 -- round trip: draw it 1:1 into a canvas and read that back.
 --
--- This runs inside the world pass, with the pipeline's own canvas bound, so
--- the previous target is captured and put back rather than unbound -- the
--- usual setCanvas() would drop the rest of the frame on the floor. One
+-- Preparation normally runs before the world pass; the defensive forMap
+-- fallback may still run with the pipeline's own canvas bound, so the previous
+-- target and draw state are captured and put back rather than unbound. One
 -- readback per map, cached with the entry it feeds; the atlas is a couple
 -- of hundred pixels square, so the GPU sync costs far less than the mesh
 -- build it happens alongside. Every step is guarded: a driver that refuses
 -- canvas readback costs the animation and nothing else.
 local function readback(image)
   if not (image and love.graphics and love.graphics.newCanvas
-          and love.graphics.getCanvas) then
+          and love.graphics.getCanvas and love.graphics.getShader
+          and love.graphics.setShader and love.graphics.getBlendMode
+          and love.graphics.setBlendMode and love.graphics.getColor
+          and love.graphics.setColor and love.graphics.setCanvas
+          and love.graphics.clear and love.graphics.draw) then
     return nil
   end
   local prev = love.graphics.getCanvas()
+  local prevShader = love.graphics.getShader()
+  local prevBlend, prevAlpha = love.graphics.getBlendMode()
+  local cr, cg, cb, ca = love.graphics.getColor()
+  local canvas
   local ok, data = pcall(function()
     local w, h = image:getDimensions()
     -- dpiscale = 1, or this is not a copy. On a highdpi surface (Android,
@@ -275,8 +298,13 @@ local function readback(image)
     -- so the atlas would be drawn into a texture 2.75x its size and read
     -- back magnified -- and every tile coordinate below, which counts in
     -- eights from the top-left, would land somewhere between two tiles.
-    local canvas = love.graphics.newCanvas(w, h, { dpiscale = 1 })
+    canvas = love.graphics.newCanvas(w, h, { dpiscale = 1 })
     love.graphics.setCanvas(canvas)
+    -- forMap may still be reached from inside the scene pass. Its 3D shader
+    -- expects mesh attributes and would either reject or recolour this plain
+    -- Image draw; a readback is an exact texture copy, so no shader belongs
+    -- on it.
+    love.graphics.setShader()
     love.graphics.clear(0, 0, 0, 0)
     -- straight copy: no blending against the cleared target, no tint from
     -- whatever colour the pass left set, or the atlas comes back wrong
@@ -287,27 +315,28 @@ local function readback(image)
     -- LOVE refuses newImageData on the currently-active canvas, so the
     -- previous target has to come back BEFORE the read, not just after
     love.graphics.setCanvas(prev)
-    local out = canvas:newImageData()
-    if canvas.release then canvas:release() end
-    return out
+    return canvas:newImageData()
   end)
   pcall(love.graphics.setCanvas, prev)
+  pcall(love.graphics.setShader, prevShader)
+  pcall(love.graphics.setBlendMode, prevBlend, prevAlpha)
+  pcall(love.graphics.setColor, cr, cg, cb, ca)
+  if canvas and canvas.release then pcall(canvas.release, canvas) end
   return ok and data or nil
 end
 
--- RED++'s per-map atlas, rebuilt on the CPU.
+-- RED++'s per-map atlas, rebuilt on the CPU as a compatibility fallback.
 --
 -- This is the case that has no pixels anywhere: `getGbcAtlas` bakes one
 -- ImageData per map, hands the texture to the renderer and drops the
 -- pixels on the floor. Without them the animated tiles cannot be patched,
 -- which is why water and flowers stood still under RED++ and nowhere else.
 --
--- The readback below can recover them from the texture, but it is at the
--- mercy of whether the driver will read a canvas back, and it costs a GPU
--- sync mid-frame. Everything the engine baked FROM is public, so bake it
--- again instead: the raw art, the per-tile palette group, the group's
--- colours, and the same recolorSample cutoffs. Deterministic, no driver
--- involved, and it can be tested without a GPU.
+-- The preferred path reads the tiny exact texture before draw. If a driver
+-- refuses Canvas readback, everything the engine baked FROM is public, so
+-- this reconstructs it instead: the raw art, the per-tile palette group, the
+-- group's colours, and the same recolorSample cutoffs. Deterministic, no
+-- driver involved, and it can be tested without a GPU.
 --
 -- It does mirror engine logic and could drift from getGbcAtlas if that
 -- changes -- the readback stays behind it as the exact-but-fragile route.
@@ -385,7 +414,11 @@ local function rendererPixels(map)
     if ok and data then return data end
   end
   if renderer.gbcAtlas then
-    return gbcPixels(map) or readback(renderer.image)
+    -- The engine's Image is already the exact per-map RED++ bake. A tiny
+    -- 128x48 readback avoids repeating its thousands of getPixel/setPixel
+    -- calls in Lua; the deterministic CPU mirror remains the fallback for a
+    -- driver that refuses Canvas readback.
+    return readback(renderer.image) or gbcPixels(map)
   end
   local ok, data = pcall(Assets.imageData, map.tileset.image)
   return ok and data or nil
@@ -498,8 +531,7 @@ function TerrainAtlas.animate(map, colors, base, baked)
   -- on the tileset and palette alone, which is bounded by how many of those
   -- exist at all.
   local perMap = map.renderer and map.renderer.gbcAtlas and map.id or nil
-  local key = map.tileset.image .. "#a#" .. paletteKey(colors or {})
-    .. (perMap or "")
+  local key = animationKey(map, colors)
   local entry = animated[key]
   if entry == nil then
     entry = newEntry(map, base, baked)
@@ -553,6 +585,29 @@ function TerrainAtlas.forMap(map, colors)
   return TerrainAtlas.animate(map, colors, base, baked) or base
 end
 
+-- RED++ already owns the correctly-coloured static atlas; its only missing
+-- resource is our private animated copy. That makes it safe to prepare with a
+-- nil world palette before draw-time palette hooks exist. VoxelScene warms at
+-- most one cold resource per prefetch call and withholds a newly meshed
+-- neighbour behind the existing horizon until this reports ready, so no
+-- static-water or wrong-colour intermediate frame is ever exposed.
+local function prewarmEligible(map)
+  local renderer = map and map.renderer
+  return renderer and renderer.gbcAtlas and renderer.image
+         and map.tileset and map.tileset.image
+end
+
+function TerrainAtlas.prepared(map)
+  if not prewarmEligible(map) then return true end
+  return animated[animationKey(map, nil)] ~= nil
+end
+
+function TerrainAtlas.prepare(map)
+  if TerrainAtlas.prepared(map) then return true end
+  TerrainAtlas.forMap(map, nil)
+  return TerrainAtlas.prepared(map)
+end
+
 -- The image a character model should texture from under an SGB palette.
 --
 -- In the 2D SGB modes, sprites are colorized by the screen-space
@@ -590,22 +645,24 @@ function TerrainAtlas.forSprite(path, colors)
   return cache[key] or nil
 end
 
--- Release the animated copies of maps outside `live` (a set of map ids),
--- the same neighbourhood ChunkMesher bounds its meshes to and called from
--- the same place. Only the per-map RED++ copies are held this way; the rest
--- are keyed by tileset and palette, of which a session sees a handful.
+-- Release the animated copies of maps outside `live` and its one previous
+-- neighbourhood, matching ChunkMesher's round-trip retention. Only the
+-- per-map RED++ copies are held this way; the rest are keyed by tileset and
+-- palette, of which a session sees a handful.
 -- Without this a cross-region trek accumulates one atlas and one texture
 -- per map ever entered, and each pins the engine's own baked ImageData
 -- alive behind it.
 function TerrainAtlas.setLive(live)
   for key, entry in pairs(animated) do
-    if entry and entry.mapId and not live[entry.mapId] then
+    if entry and entry.mapId
+       and not live[entry.mapId] and not prevLive[entry.mapId] then
       if entry.image and entry.image.release then
         pcall(entry.image.release, entry.image)
       end
       animated[key] = nil
     end
   end
+  prevLive = live
 end
 
 function TerrainAtlas.invalidate()
@@ -618,6 +675,10 @@ function TerrainAtlas.invalidate()
     end
   end
   animated = {}
+  -- Invalidation is a generation boundary. Keeping ids from the old atlas
+  -- generation here would incorrectly exempt a newly-built texture from the
+  -- next setLive eviction.
+  prevLive = {}
 end
 
 Assets.register(TerrainAtlas.invalidate)

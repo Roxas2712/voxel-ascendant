@@ -89,15 +89,22 @@ local SHADER = [[
   uniform float pull;
   uniform vec3 curve;         // xy = the focus in world XZ, z = k; 0 = off
   attribute float VertexShade;
+  // ChunkMesher attaches this as a per-instance attribute only for repeated
+  // structure hulls. Ordinary meshes leave it disabled, whose graphics-API
+  // default is (0, 0, 0): one shader therefore preserves the exact old path and
+  // also places a shared hull without a second shader switch per group.
+  attribute vec3 InstanceOffset;
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
     vShade = VertexShade;
+    vec4 placed = vertex_position;
+    placed.xyz += InstanceOffset;
 #ifdef VOXEL_GRID
     // MODEL space, deliberately: every mesh here is built a unit per
     // voxel in its own frame, so the seams ride the model however it is
     // posed rather than the world's grid sliding across a leaning sprite
-    vGrid = vertex_position.xyz;
+    vGrid = placed.xyz;
 #endif
-    vec4 w = model * vertex_position;
+    vec4 w = model * placed;
     // The shadow lookup runs off `sunModel`, not `model`. For terrain the
     // two are the same matrix, but a character is drawn as a slab LEANING
     // back by the camera's pitch -- a trick played on the viewer, which
@@ -108,7 +115,7 @@ local SHADER = [[
     // with the card's position asks the question the sun actually
     // answered. (The pull below is excluded for the same reason: it is a
     // depth trick aimed at the camera's own buffer.)
-    vSun = (sunVP * (sunModel * vertex_position)).xyz;
+    vSun = (sunVP * (sunModel * placed)).xyz;
     // The curved world (see WorldCurve): drop every vertex by the square
     // of how far its column stands from the camera's focus. Applied AFTER
     // the shadow lookup above and clear of the wireframe's model space, so
@@ -385,6 +392,34 @@ function Voxel3D.available()
   return Voxel3D.shader() ~= nil
 end
 
+-- Hardware instancing is an optional acceleration, never a requirement for
+-- voxel mode. In particular, some iPhone/OpenGL ES 2 drivers expose the rest
+-- of the 3D path but not per-instance vertex attributes. Cache the capability
+-- answer so a rejected driver is not probed again for every cold map.
+local instancing = nil
+
+function Voxel3D.canInstance()
+  if instancing ~= nil then return instancing end
+  local g = love and love.graphics
+  if not (g and type(g.getSupported) == "function"
+          and type(g.drawInstanced) == "function") then
+    instancing = false
+    return false
+  end
+  local ok, supported = pcall(g.getSupported)
+  instancing = ok and type(supported) == "table"
+               and supported.instancing == true or false
+  return instancing
+end
+
+-- attachAttribute can still reject `perinstance` on a driver which advertised
+-- the broad capability. ChunkMesher calls this only after releasing that
+-- incomplete build and immediately retries through its historical expanded
+-- geometry path.
+function Voxel3D.rejectInstancing()
+  instancing = false
+end
+
 -- Build a mesh in the shared format. `verts` is the LOVE vertex list and
 -- `map` the triangle index list. Returns nil when meshes are unavailable,
 -- which the callers treat the same way they treat a missing model.
@@ -453,6 +488,12 @@ Voxel3D.camera = nil
 -- for the orbit, whose frame-hung sky is the classic look.
 Voxel3D.skyRayLive = nil
 
+-- Clouds, stars and rare sky events need a ray fan even in the classic orbit
+-- so switching between ORBIT and 1ST/3RD does not teleport the atmosphere.
+-- The orbit still leaves skyRayLive nil and therefore keeps its established
+-- frame-shaped gradient; only the discrete atmosphere uses this second fan.
+Voxel3D.atmosphereRayLive = nil
+
 -- ------- which way, and how steeply, this camera looks
 --
 -- Two facts about the view direction, set alongside the eye and the focus
@@ -488,9 +529,38 @@ local function setLook(eye, focus)
   Voxel3D.lookFlat = { dx / flat, 0, dz / flat }
 end
 
+local function cameraRay(eye, focus, upv, fov, aspect)
+  if not (eye and focus and upv and fov and aspect) then return nil end
+  local fx = focus[1] - eye[1]
+  local fy = focus[2] - eye[2]
+  local fz = focus[3] - eye[3]
+  local fl = math.sqrt(fx * fx + fy * fy + fz * fz)
+  if fl < 1e-6 then return nil end
+  fx, fy, fz = fx / fl, fy / fl, fz / fl
+  local crx = fy * upv[3] - fz * upv[2]
+  local cry = fz * upv[1] - fx * upv[3]
+  local crz = fx * upv[2] - fy * upv[1]
+  local crl = math.sqrt(crx * crx + cry * cry + crz * crz)
+  if crl < 1e-6 then return nil end
+  crx, cry, crz = crx / crl, cry / crl, crz / crl
+  local cux = cry * fz - crz * fy
+  local cuy = crz * fx - crx * fz
+  local cuz = crx * fy - cry * fx
+  local tanY = math.tan(fov / 2)
+  local tanX = tanY * aspect
+  return {
+    base = { fx - crx * tanX + cux * tanY,
+             fy - cry * tanX + cuy * tanY,
+             fz - crz * tanX + cuz * tanY },
+    du = { crx * 2 * tanX, cry * 2 * tanX, crz * 2 * tanX },
+    dv = { cux * -2 * tanY, cuy * -2 * tanY, cuz * -2 * tanY },
+  }
+end
+
 -- View and projection for a `vw` x `vh` world-pixel view centred on
 -- (cx, cy) in world pixels. Returns the combined matrix.
 function Voxel3D.viewProjection(cx, cy, vw, vh)
+  Voxel3D.atmosphereRayLive = nil
   local cam = Voxel3D.camera
   if cam then
     local eye, focus = cam.eye, cam.focus
@@ -506,6 +576,7 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
       Voxel3D.fovY = cam.fov
       -- the VR eyes bring their fan with them (VRRig.eyeCamera)
       Voxel3D.skyRayLive = cam.skyRay
+      Voxel3D.atmosphereRayLive = cam.skyRay
       return Mat4.mul(Mat4.mul(Mat4.scale(1, -1, 1), cam.proj), cam.view)
     end
     local dx = eye[1] - focus[1]
@@ -521,35 +592,12 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
     -- the same clip-space Y flip the orbit needs, for the same reason: we
     -- bypass LOVE's transform_projection and canvas coordinates run Y down
     proj = Mat4.mul(Mat4.scale(1, -1, 1), proj)
-    -- The camera's RAY FAN, for the sky's skybox path (Sky.paint's `ray`):
-    -- a placed camera with a FREE PITCH -- the first-person rig, steered
-    -- by a mouse on the flat screen -- must not hang its gradient off the
-    -- frame, or looking up and down drags the bands with the view. Built
-    -- from the very basis the view below is: forward, the true right, the
-    -- true up, and the symmetric frustum's tangents.
     local upv = cam.up or { 0, 1, 0 }
-    local fx, fy, fz = -dx / dist, -dy / dist, -dz / dist
-    local crx = fy * upv[3] - fz * upv[2]
-    local cry = fz * upv[1] - fx * upv[3]
-    local crz = fx * upv[2] - fy * upv[1]
-    local crl = math.sqrt(crx * crx + cry * cry + crz * crz)
-    if crl > 1e-6 then
-      crx, cry, crz = crx / crl, cry / crl, crz / crl
-      local cux = cry * fz - crz * fy
-      local cuy = crz * fx - crx * fz
-      local cuz = crx * fy - cry * fx
-      local tanY = math.tan(cam.fov / 2)
-      local tanX = tanY * (vw / vh)
-      Voxel3D.skyRayLive = {
-        base = { fx - crx * tanX + cux * tanY,
-                 fy - cry * tanX + cuy * tanY,
-                 fz - crz * tanX + cuz * tanY },
-        du = { crx * 2 * tanX, cry * 2 * tanX, crz * 2 * tanX },
-        dv = { cux * -2 * tanY, cuy * -2 * tanY, cuz * -2 * tanY },
-      }
-    else
-      Voxel3D.skyRayLive = nil
-    end
+    -- A free-pitch camera uses the fan for both its gradient and discrete
+    -- atmosphere. The helper is allocation-bounded (three tiny vectors once
+    -- per frame); per-star projection in Sky is scalar and allocation-free.
+    Voxel3D.skyRayLive = cameraRay(eye, focus, upv, cam.fov, vw / vh)
+    Voxel3D.atmosphereRayLive = Voxel3D.skyRayLive
     -- world up by default, so the horizon stays level -- a placed camera
     -- that rolled with its own pitch would tip the whole arena. A caller
     -- may hand its own up: the first-person BLEND does, because its far
@@ -580,6 +628,10 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
   -- when looking straight down, +Y is screen-up when looking level. Never
   -- parallel to the view direction, so there is no degenerate a = 0 case.
   local up = { 0, math.sin(a), -math.cos(a) }
+  -- Keep the classic orbit gradient frame-shaped, but project every cloud,
+  -- star and event through the orbit's real north-facing camera. This makes
+  -- the atmosphere continuous when entering or leaving 1ST/3RD.
+  Voxel3D.atmosphereRayLive = cameraRay(eye, focus, up, fov, vw / vh)
 
   local proj = Mat4.perspective(fov, vw / vh,
                                 math.max(1, dist * 0.05), dist * 4 + 4096)
@@ -810,7 +862,7 @@ end
 -- void transparent, which is what every rung below it wants.
 -- `slot` names which cached canvas to render into (see `slots` above);
 -- omitted is the free-roam world pass.
-function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
+function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
   local grid = VoxelGrid.enabled()
@@ -864,6 +916,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
   -- hangs in the WORLD (drawWorldDisc). Without one -- the orbit, whose
   -- pitch is the rung's -- the classic frame-hung painting stands.
   local skyRay = Voxel3D.skyRayLive
+  local atmosphereRay = Voxel3D.atmosphereRayLive or skyRay
   local hy = Voxel3D.horizonY(h)
   -- where the sky's bottom edge lands, which is what the reflection
   -- reads its bands against (see Water). nil when nothing painted bands.
@@ -882,11 +935,18 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
     -- through this very camera); a flat sky has no bands and hangs nothing.
     if skyRay and sky.bands then
       Sky.paint(w, h, sky, nil, Voxel3D.cell, Voxel3D.skyBody(w, h),
-                nil, nil, skyRay)
+                nil, nil, skyRay, {
+                  ray = atmosphereRay,
+                  weather = skyContext and skyContext.weather or nil,
+                })
       drawWorldDisc(w, h)
     else
       Sky.paint(w, h, sky, hy, Voxel3D.cell,
-                sky.bands and Voxel3D.skyBody(w, h) or nil)
+                sky.bands and Voxel3D.skyBody(w, h) or nil,
+                nil, nil, nil, {
+                  ray = atmosphereRay,
+                  weather = skyContext and skyContext.weather or nil,
+                })
     end
   else
     love.graphics.clear(0, 0, 0, 0, true, true)
@@ -961,6 +1021,97 @@ function Voxel3D.depth(mode)
   if not active then return end
   pcall(love.graphics.setDepthMode, mode == "always" and "always" or "lequal",
         true)
+end
+
+-- Paint a screen-filling image behind every depth-tested part of the active
+-- scene.  The colour target stays paired with its existing depth buffer, but
+-- the picture neither tests nor writes depth; terrain, platforms and cards
+-- therefore remain real geometry in front of it.  This is deliberately a
+-- narrow scene primitive rather than an overlay: overlays run after the 3D
+-- pass and would cover the Pokemon as well as the empty backdrop.
+function Voxel3D.backdrop(image, tint)
+  if not (active and activeShader and image and canvasW > 0 and canvasH > 0)
+  then
+    return false
+  end
+  local okSize, iw, ih = pcall(image.getDimensions, image)
+  if not (okSize and type(iw) == "number" and type(ih) == "number"
+          and iw > 0 and ih > 0) then
+    return false
+  end
+  love.graphics.setShader()
+  love.graphics.setDepthMode("always", false)
+  local c = type(tint) == "table" and tint or { 1, 1, 1 }
+  love.graphics.setColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+  local ok = pcall(love.graphics.draw, image, 0, 0, 0,
+                   canvasW / iw, canvasH / ih)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setDepthMode("lequal", true)
+  love.graphics.setShader(activeShader)
+  return ok
+end
+
+-- Multiply the world clock into authored window glass without grading the
+-- room around it.  Regions are authored in the backdrop's source pixels and
+-- scaled to the active battle canvas.  Rectangles, porthole ellipses and
+-- simple convex panes cover the reviewed interiors without a mask texture.
+function Voxel3D.backdropWindows(tint, regions, sourceW, sourceH)
+  local gfx = love.graphics
+  if not (active and activeShader and type(tint) == "table"
+          and type(regions) == "table" and #regions > 0
+          and type(sourceW) == "number" and sourceW > 0
+          and type(sourceH) == "number" and sourceH > 0
+          and canvasW > 0 and canvasH > 0
+          and gfx and gfx.setBlendMode and gfx.setColor
+          and gfx.rectangle and gfx.ellipse and gfx.polygon) then
+    return false
+  end
+  local r, g, b = tint[1], tint[2], tint[3]
+  if not (type(r) == "number" and type(g) == "number"
+          and type(b) == "number") then return false end
+  if r > .999 and g > .999 and b > .999 then return true end
+
+  local sx, sy = canvasW / sourceW, canvasH / sourceH
+  local blend, alphaMode = "alpha", "alphamultiply"
+  if gfx.getBlendMode then
+    local ok, gotBlend, gotAlpha = pcall(gfx.getBlendMode)
+    if ok then blend, alphaMode = gotBlend or blend, gotAlpha or alphaMode end
+  end
+  local cr, cg, cb, ca = 1, 1, 1, 1
+  if gfx.getColor then
+    local ok, a, d, c, e = pcall(gfx.getColor)
+    if ok then cr, cg, cb, ca = a or 1, d or 1, c or 1, e or 1 end
+  end
+
+  local ok = pcall(function()
+    gfx.setShader()
+    gfx.setDepthMode("always", false)
+    gfx.setBlendMode("multiply", "premultiplied")
+    gfx.setColor(r, g, b, 1)
+    for _, region in ipairs(regions) do
+      if region.shape == "rect" then
+        gfx.rectangle("fill", region.x * sx, region.y * sy,
+                      region.w * sx, region.h * sy)
+      elseif region.shape == "ellipse" then
+        gfx.ellipse("fill", (region.x + region.w * .5) * sx,
+                    (region.y + region.h * .5) * sy,
+                    region.w * sx * .5, region.h * sy * .5, 48)
+      else
+        local points = {}
+        for i=1,#region.points,2 do
+          points[#points + 1] = region.points[i] * sx
+          points[#points + 1] = region.points[i + 1] * sy
+        end
+        gfx.polygon("fill", points)
+      end
+    end
+  end)
+
+  pcall(gfx.setBlendMode, blend or "alpha", alphaMode)
+  pcall(gfx.setColor, cr, cg, cb, ca)
+  pcall(gfx.setDepthMode, "lequal", true)
+  pcall(gfx.setShader, activeShader)
+  return ok
 end
 
 -- ------------------------------------------------ the player's own ghost --
@@ -1300,12 +1451,23 @@ function Voxel3D.draw(mesh, texture, model, pull, sunModel)
   -- sending a uniform to the other shader would go nowhere
   local sh = activeShader
   if not sh then return end
-  if texture then mesh:setTexture(texture) end
   -- LOVE defaults matrix uniforms to column-major; Mat4 is row-major
   pcall(sh.send, sh, "model", "row", model or IDENTITY)
   pcall(sh.send, sh, "sunModel", "row", sunModel or model or IDENTITY)
   pcall(sh.send, sh, "pull", pull or 0)
-  love.graphics.draw(mesh)
+  if mesh.__voxelMeshBundle then
+    if mesh.base then
+      if texture then mesh.base:setTexture(texture) end
+      love.graphics.draw(mesh.base)
+    end
+    for _, group in ipairs(mesh.instances or {}) do
+      if texture then group.mesh:setTexture(texture) end
+      love.graphics.drawInstanced(group.mesh, group.count)
+    end
+  else
+    if texture then mesh:setTexture(texture) end
+    love.graphics.draw(mesh)
+  end
 end
 
 -- Project a world point to canvas pixels: returns (x, y, scale), or nil

@@ -26,10 +26,26 @@ local Water = V.require("Water")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local FirstPerson = V.require("FirstPerson")
+local HorizonWall = V.require("HorizonWall")
+local PanoramaBackdrop = V.require("PanoramaBackdrop")
+local Weather = V.require("Weather")
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
 
 local VoxelScene = {}
+
+-- The map object whose CURRENT scene most recently passed the same atomic
+-- gate render() uses.  Voxel.ready alone is not enough at a warp midpoint:
+-- the map can change inside FixedStep and Transition may tick again before
+-- the pipeline's next update has had a chance to clear the source map's ready
+-- bit.  Object identity makes that stale source answer false immediately,
+-- including under fast-forward's multiple logic steps per rendered frame.
+local readyMap = nil
+
+function VoxelScene.readyForReveal(state)
+  return state ~= nil and state.map ~= nil
+         and Voxel.ready == true and readyMap == state.map
+end
 
 -- What the active display mode actually paints with.
 --
@@ -86,6 +102,7 @@ VoxelScene._modeColors = modeColors   -- named for the suite
 local SKY_SHADES = { { 222, 242, 255 }, { 135, 196, 240 },
                      { 64, 120, 192 }, { 16, 40, 80 } }
 local SKY_SHADE = 2       -- the ramp's "sky" proper; 1 is its highlight
+local CANOPY_SHADE = 2    -- sheltered forest fill, light enough not to void
 
 -- the ramp as the display mode has it, which is the only form anything here
 -- should be reading it in
@@ -118,14 +135,24 @@ function VoxelScene.skyShade(shade, alpha)
 end
 
 -- The sky `map` stands under at strength `t`, or nil where there is no sky
--- to paint: indoors, or with the horizon out of frame.
+-- to paint: sealed interiors, or with the horizon out of frame. A canopy map
+-- gets a flat, clock-coloured forest backdrop: it closes the void without
+-- pretending that open sun, moon, stars or clouds are visible through leaves.
 --
 -- One flat colour, which is what a caller that only needs something to clear the
 -- void to wants -- the overworld battle's arena shot is one of those. The
 -- gradient is added on top of this by skyFor, for the free-roam camera alone.
 function VoxelScene.skyColor(map, t)
-  if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
+  local canopy = DayNight.isCanopy(map)
+  if not canopy and not HorizonWall.hasSky(map) then return nil end
+  if not Sky.enabled() then return nil end
   if not t or t <= 0 then return nil end
+  if canopy then
+    local raw = DayNight.canopyPalette()
+    local shades = PaletteFX.effectiveColors(raw) or raw
+    local c = shades[CANOPY_SHADE] or raw[CANOPY_SHADE]
+    return { c[1] / 255, c[2] / 255, c[3] / 255, t, canopy = true }
+  end
   local sky = VoxelScene.skyShade(SKY_SHADE, t)
   -- outdoors the flat fill follows the CLOCK: it becomes the hour's haze --
   -- gold at dusk, navy at night -- so a battle staged on the map at
@@ -148,6 +175,7 @@ end
 local function skyFor(map)
   local sky = VoxelScene.skyColor(map, skyStrength(Voxel.angle))
   if not sky then return nil end
+  if sky.canopy then return sky end
   return Sky.dress(sky)
 end
 
@@ -164,9 +192,10 @@ local YAW = {
   left = -math.pi / 2,
 }
 
--- The ground height a cell stands at, so a character on a ledge stands on
--- top of it rather than sunk into it. Uses the same bottom-left collision
--- tile the engine walks on (Map:cellTile).
+-- The ground height a cell stands at: its collision-derived terrace datum
+-- plus the same bottom-left TileShape support the engine walks on. On L the
+-- datum is deliberately low and the intrinsic 6px ledge shape reaches the
+-- high S surface; adding both blindly on the high datum would double the lip.
 local function groundAt(map, cellX, cellY)
   -- Off the map, cellTile border-extends into the map's borderBlock --
   -- which on maps ringed with trees is a RAISED tile. The only entity
@@ -176,16 +205,19 @@ local function groundAt(map, cellX, cellY)
   -- this, crossing into such a map hoisted the walker tree-high for
   -- exactly one step -- the "hops like a ledge" seam bug.
   if not map:inBounds(cellX, cellY) then return 0 end
+  local elevation = type(ChunkMesher.elevation) == "function"
+                    and ChunkMesher.elevation(map) or nil
+  local base = elevation and elevation:at(cellX, cellY) or 0
   local shapes = TileShape.forMap(map)
   local s = shapes[map:cellTile(cellX, cellY)]
-  if not s then return 0 end
+  if not s then return base end
   -- a recessed class (water) still supports whatever stands on it; only
   -- raised ground lifts the model.  Stairs never do: the class height is
   -- the flight's TALL end, but the player enters at floor level and the
   -- warp fires as they step in -- lifting them onto the geometry read as
   -- climbing an invisible block
-  if s.art == "stair" then return 0 end
-  return s.h > 0 and s.h or 0
+  if s.art == "stair" then return base end
+  return base + (s.h > 0 and s.h or 0)
 end
 
 VoxelScene.YAW = YAW
@@ -418,6 +450,301 @@ end
 -- actually changes (a map crossing), not every frame.
 local lastLiveKey = nil
 
+local function atlasPrepared(map)
+  return not TerrainAtlas.prepared or TerrainAtlas.prepared(map)
+end
+
+local CONNECTION_DIRECTIONS = {
+  { edge = "north", facing = "up" },
+  { edge = "south", facing = "down" },
+  { edge = "west", facing = "left" },
+  { edge = "east", facing = "right" },
+}
+
+local function neighborIndex(state, mapId)
+  for i, nb in ipairs(state.neighbors or {}) do
+    if nb.map and nb.map.id == mapId then return i, nb end
+  end
+end
+
+-- The direct connection the player can ACTUALLY reach by continuing in their
+-- current movement/facing direction. Route 4's south connection, for example,
+-- only overlaps cells 0..19; standing at x70 must not make Route 3 steal build
+-- time. Conversely a player at Route 8's east end who is already walking west
+-- should warm Saffron for the whole corridor, not spend the first twelve cells
+-- boosting Lavender behind them. Priority changes only queue order: no extra
+-- work, collision/input rule or frame slice is introduced.
+local function seamCandidate(state)
+  local player, def = state and state.player, state and state.map
+                      and state.map.def
+  if not (player and def and def.connections) then return nil end
+  local bestIndex, bestDirection, bestScore
+  for _, spec in ipairs(CONNECTION_DIRECTIONS) do
+    local connection = def.connections[spec.edge]
+    local i, nb
+    if connection then i, nb = neighborIndex(state, connection.map) end
+    if i and nb and nb.map and nb.map.def then
+      local distance, along, destinationSpan
+      if spec.edge == "north" then
+        distance, along = player.cellY, player.cellX
+        destinationSpan = nb.map.def.width * 2
+      elseif spec.edge == "south" then
+        distance = def.height * 2 - 1 - player.cellY
+        along, destinationSpan = player.cellX, nb.map.def.width * 2
+      elseif spec.edge == "west" then
+        distance, along = player.cellX, player.cellY
+        destinationSpan = nb.map.def.height * 2
+      else
+        distance = def.width * 2 - 1 - player.cellX
+        along, destinationSpan = player.cellY, nb.map.def.height * 2
+      end
+      local landing = along - (connection.offset or 0) * 2
+      if player.facing == spec.facing and distance >= -1
+         and landing >= 0 and landing < destinationSpan then
+        local score = distance
+        if not bestScore or score < bestScore then
+          bestIndex, bestDirection, bestScore = i, spec.edge, score
+        end
+      end
+    end
+  end
+  return bestIndex, bestDirection
+end
+
+VoxelScene._seamCandidate = seamCandidate
+
+local function visuallyReady(nb, index, nbMesh)
+  return nbMesh[index] and ChunkMesher.auxReady(nb.map)
+         and atlasPrepared(nb.map)
+end
+
+local function copySet(source)
+  local out = {}
+  for id, value in pairs(source or {}) do if value then out[id] = true end end
+  return out
+end
+
+local function stateForIds(state, ids)
+  if not (ids and ids[state.map.id]) then return nil end
+  local neighbors, seen = {}, { [state.map.id] = true }
+  for _, nb in ipairs(state.neighbors or {}) do
+    if ids[nb.map.id] then
+      neighbors[#neighbors + 1] = nb
+      seen[nb.map.id] = true
+    end
+  end
+  for id in pairs(ids) do if not seen[id] then return nil end end
+  return { map = state.map, neighbors = neighbors,
+           worldMaps = state.worldMaps }
+end
+
+local function planForIds(state, nbMesh, nbWater, ids)
+  local planState = stateForIds(state, ids)
+  if not planState then return nil end
+  local meshes, waters, maps = {}, {}, { [state.map.id] = true }
+  for i, nb in ipairs(state.neighbors or {}) do
+    if ids[nb.map.id] then
+      if not visuallyReady(nb, i, nbMesh) then return nil end
+      meshes[#meshes + 1] = nbMesh[i]
+      waters[#meshes] = nbWater[i]
+      maps[nb.map.id] = true
+    end
+  end
+  return { state = planState, meshes = meshes, waters = waters, maps = maps }
+end
+
+local function directIds(state)
+  local ids, ordered = { [state.map.id] = true }, {}
+  local connections = state.map.def and state.map.def.connections or {}
+  for _, spec in ipairs(CONNECTION_DIRECTIONS) do
+    local connection = connections[spec.edge]
+    local i, nb
+    if connection then i, nb = neighborIndex(state, connection.map) end
+    if i and nb and not ids[nb.map.id] then
+      ids[nb.map.id] = true
+      ordered[#ordered + 1] = i
+    end
+  end
+  return ids, ordered
+end
+
+-- The visible union can grow to the complete survey neighbourhood, but a
+-- re-root must not depend on that arbitrary two-hop set remaining identical.
+-- `handoffUnion` retains current + every direct connection (a guaranteed
+-- subset after a direct crossing); `activeUnion` is the richer visible set.
+local activeUnion, handoffUnion
+
+local function setActive(state, ids)
+  activeUnion = { rootId = state.map.id, ids = copySet(ids) }
+end
+
+local function unionStatus(union)
+  local ids = {}
+  for id in pairs(union and union.ids or {}) do ids[#ids + 1] = id end
+  table.sort(ids, function(a, b) return tostring(a) < tostring(b) end)
+  return { rootId = union and union.rootId or nil, ids = ids }
+end
+
+-- Passive QA visibility into the two semantic sets that decide whether a
+-- seamless re-root can reuse a complete 3D scene.  This does not request a
+-- mesh, advance a HorizonWall coroutine or expose the mutable set tables.
+-- A native timeout can therefore distinguish "the target body vanished"
+-- from "the ready body was no longer part of the retained union" without
+-- perturbing the condition it is trying to measure.
+function VoxelScene.planStatus()
+  return {
+    active = unionStatus(activeUnion),
+    handoff = unionStatus(handoffUnion),
+    liveKey = lastLiveKey,
+  }
+end
+
+-- A draw plan is the compact, hole-free subset of connected maps that may be
+-- painted THIS frame. The public prefetch tuple stays indexed like
+-- state.neighbors for BattleScene and other existing callers; the overworld
+-- uses this private fifth result instead, so a missing first neighbour cannot
+-- make Lua's sparse-array length hide a ready second one (and, more
+-- importantly, cannot make atlas/figure/grass work run for a body that is not
+-- there yet).
+local function drawPlan(state, nbMesh, nbWater)
+  local neighbors, meshes, waters = {}, {}, {}
+  local maps = { [state.map.id] = true }
+  for i, nb in ipairs(state.neighbors or {}) do
+    -- ChunkMesher deliberately lands a neighbour's terrain before its
+    -- finishing overlays so several connected bodies can share the small
+    -- background budget fairly.  That cached body is not yet a complete
+    -- visual answer, though: exposing it here makes grass, flowers and
+    -- authored figures appear a few frames later.  Keep the semantic horizon
+    -- closed over the connection until the aux bundle has landed atomically.
+    -- The current map remains independently progressive/urgent below, so a
+    -- cold neighbour never delays the destination's first complete frame.
+    if nbMesh[i] and ChunkMesher.auxReady(nb.map)
+       and atlasPrepared(nb.map) then
+      neighbors[#neighbors + 1] = nb
+      meshes[#meshes + 1] = nbMesh[i]
+      waters[#neighbors] = nbWater[i]
+      maps[nb.map.id] = true
+    end
+  end
+  return {
+    -- HorizonWall only reads map + neighbors. Keeping this deliberately
+    -- narrow prevents an accidental mutation of the live OverworldState.
+    state = { map = state.map, neighbors = neighbors },
+    meshes = meshes,
+    waters = waters,
+    maps = maps,
+  }
+end
+
+local function currentOnlyPlan(state)
+  return {
+    state = { map = state.map, neighbors = {}, worldMaps = state.worldMaps },
+    meshes = {}, waters = {}, maps = { [state.map.id] = true },
+  }
+end
+
+local function semanticPlan(state, nbMesh, nbWater, approachedIndex)
+  local previousHandoff = handoffUnion
+  local plan, horizonReady
+
+  local function tryUnion(union)
+    if not (union and union.ids[state.map.id]) then return nil end
+    local candidate = planForIds(state, nbMesh, nbWater, union.ids)
+    if not candidate then return nil end
+    local _, ready = HorizonWall.meshes(candidate.state)
+    if not ready then return nil end
+    return candidate
+  end
+
+  -- First preserve the exact complete union when only its root changed. If
+  -- the new two-hop neighbourhood omits part of that rich survey set, use the
+  -- deliberately retained direct-connection handoff instead.
+  plan = tryUnion(activeUnion)
+  if not plan and previousHandoff ~= activeUnion then
+    plan = tryUnion(previousHandoff)
+  end
+  if plan then
+    setActive(state, plan.maps)
+    horizonReady = true
+  else
+    plan = currentOnlyPlan(state)
+    local _, ready, buildFailed = HorizonWall.meshes(plan.state)
+    horizonReady = ready
+    setActive(state, plan.maps)
+    -- Active/handoff unions are optional reuse candidates, but this
+    -- current-only curtain is the minimum semantic scene. If its exact build
+    -- failed, stop staging wider variants and let prefetch switch atomically
+    -- to the established FULL-ring path.
+    if buildFailed then return plan, false, true end
+  end
+
+  -- Keep one root-independent seam answer warm: current plus every direct
+  -- connection. All of those maps remain within two hops after crossing any
+  -- one of them, unlike an arbitrary survey/full union. The mesh may build
+  -- before terrain/aux/atlas; it is only recorded as a handoff after the
+  -- complete horizon itself is ready, and tryUnion still gates every body.
+  local handoffIds, directOrder = directIds(state)
+  local handoffState = stateForIds(state, handoffIds)
+  if handoffState then
+    local _, ready = HorizonWall.meshes(handoffState)
+    if ready then
+      handoffUnion = { rootId = state.map.id, ids = copySet(handoffIds) }
+    end
+  end
+
+  -- Stage exactly one expansion around the currently visible answer. The
+  -- approached direct map wins; then remaining direct maps; only after those
+  -- do farther survey neighbours enter. A body is promoted in the same call
+  -- only when body + aux + atlas + the future horizon are all complete.
+  local candidateIndex
+  if approachedIndex then
+    local nb = state.neighbors[approachedIndex]
+    if nb and not activeUnion.ids[nb.map.id] then candidateIndex = approachedIndex end
+  end
+  if not candidateIndex then
+    local waitingDirect
+    for _, i in ipairs(directOrder) do
+      local nb = state.neighbors[i]
+      if nb and not activeUnion.ids[nb.map.id] then
+        waitingDirect = waitingDirect or i
+        if visuallyReady(nb, i, nbMesh) then
+          candidateIndex = i
+          break
+        end
+      end
+    end
+    candidateIndex = candidateIndex or waitingDirect
+  end
+  if not candidateIndex then
+    for i, nb in ipairs(state.neighbors or {}) do
+      if not activeUnion.ids[nb.map.id]
+         and visuallyReady(nb, i, nbMesh) then
+        candidateIndex = i
+        break
+      end
+    end
+  end
+
+  if candidateIndex then
+    local futureIds = copySet(activeUnion.ids)
+    futureIds[state.neighbors[candidateIndex].map.id] = true
+    local futureState = stateForIds(state, futureIds)
+    if futureState then
+      local _, ready = HorizonWall.meshes(futureState)
+      if ready and visuallyReady(state.neighbors[candidateIndex],
+                                  candidateIndex, nbMesh) then
+        local futurePlan = planForIds(state, nbMesh, nbWater, futureIds)
+        if futurePlan then
+          plan, horizonReady = futurePlan, true
+          setActive(state, futureIds)
+        end
+      end
+    end
+  end
+
+  return plan, horizonReady, false
+end
+
 -- Request everything `state`'s frame wants and evict what it no longer
 -- does; returns the current map's terrain mesh (or nil while it builds)
 -- and the neighbour meshes ready to draw. render() calls this for the
@@ -429,6 +756,7 @@ local lastLiveKey = nil
 -- fallback while the first slices run.
 function VoxelScene.prefetch(state)
   local Voxel = V.require("VoxelState")
+  local approachedIndex = seamCandidate(state)
 
   -- The live set is the current map plus its rendered neighbours. When
   -- it changes, everything outside it (and the previous set, which
@@ -450,6 +778,37 @@ function VoxelScene.prefetch(state)
     TerrainAtlas.setLive(live)
   end
 
+  -- Retire one cold draw resource per prefetch call, while transitions and
+  -- the complete 2D fallback are still in charge. Glass is current-map-only;
+  -- RED++ animation atlases then warm current map first and connected maps in
+  -- source order. A ready neighbour whose atlas is still cold stays out of
+  -- drawPlan (and therefore behind the already closed horizon) until a later
+  -- call finishes it. This removes first-use work from the visible draw while
+  -- keeping every eventual pixel identical.
+  local preparedOne = false
+  local GlassMask = V.require("GlassMask")
+  local wantsGlass = HorizonWall.hasSky(state.map)
+  if wantsGlass and GlassMask.prepared and GlassMask.prepare
+     and not GlassMask.prepared(state.map.tileset) then
+    GlassMask.prepare(state.map.tileset)
+    preparedOne = true
+  end
+  if not preparedOne and TerrainAtlas.prepared and TerrainAtlas.prepare then
+    local warmMaps = { state.map }
+    if approachedIndex and state.neighbors[approachedIndex] then
+      warmMaps[#warmMaps + 1] = state.neighbors[approachedIndex].map
+    end
+    for i, nb in ipairs(state.neighbors or {}) do
+      if i ~= approachedIndex then warmMaps[#warmMaps + 1] = nb.map end
+    end
+    for _, map in ipairs(warmMaps) do
+      if not TerrainAtlas.prepared(map) then
+        TerrainAtlas.prepare(map)
+        break
+      end
+    end
+  end
+
   -- masks: where connected neighbour BODIES sit, so the border ring is
   -- suppressed under them (see runGeometry)
   local masks = {}
@@ -461,43 +820,104 @@ function VoxelScene.prefetch(state)
 
   -- Builds are asynchronous (ChunkMesher.pump runs in the pipeline's
   -- update): request what this frame wants and draw what is ready.
-  -- The current map draws its body-only mesh while the full one (the
-  -- border ring) is still building -- a seam crossing promotes a
-  -- neighbour whose body is already cached, and the ring pops in a few
-  -- frames later, mostly hidden behind the map just left. A neighbour
-  -- missing its body-only mesh draws its cached FULL mesh instead -- a
-  -- crossing demotes the map just left, and it must not vanish from
-  -- behind the player while its body variant builds; its ring is
-  -- already masked out under this map's body, so the stand-in is safe.
+  -- The current map asks for the one variant its edge treatment needs:
+  -- body-only under semantic scenery, or the masked full border otherwise.
+  -- A connected map contributes only once its body-only slot and atomic aux
+  -- bundle exist. Until then the filtered horizon closes that seam; there is
+  -- no terrain-first grass/flower/figure pop and no mismatched full stand-in
+  -- whose border could overlap the curtain or the current body.
   -- The water surface rides along with whichever variant answers: it was
   -- cut out of that build's own geometry (ChunkMesher.pair), so the two
   -- always come from the same slot and a lake is never drawn twice or left
   -- as a hole.
-  -- Queue a body-only version first. On a cold map this is the smallest
-  -- complete scene the player can walk on; the border-ring version upgrades
-  -- it in place afterwards. Previously only the full build was requested, so
-  -- a new map stayed on the flat fallback until even its off-screen border
-  -- had finished meshing.
-  local cachedFull = ChunkMesher.peek(state.map, false)
-  local cachedBody = ChunkMesher.peek(state.map, true)
-  if not cachedFull and not cachedBody then
-    ChunkMesher.request(state.map, true, nil, true)
-  end
-  ChunkMesher.request(state.map, false, masks, true)
-  local terrain, water = ChunkMesher.pair(state.map, false)
-  if not terrain then
-    terrain, water = ChunkMesher.pair(state.map, true)
-  end
+  -- On a cold semantic map the body is the smallest complete scene the player
+  -- can walk on because the horizon supplies its edge. Previously the swap
+  -- still waited for every connected body, even when they were off-screen.
+  local preferBody = HorizonWall.preferBody(state.map)
+  -- Request the geometry this visual mode actually needs. A body mesh is not
+  -- a complete fallback when SCENERY is off (or indoors): without its ring it
+  -- exposes the void. Outdoor semantic scenery deliberately chooses body-only
+  -- because the cheap panorama is its edge closure.
+  ChunkMesher.request(state.map, preferBody,
+                      preferBody and nil or masks, true)
+  local terrain, water = ChunkMesher.pair(state.map, preferBody)
   local nbMesh, nbWater = {}, {}
+  local directSet = directIds(state)
   for i, nb in ipairs(state.neighbors or {}) do
-    ChunkMesher.request(nb.map, true)
-    nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, true)
-    if not nbMesh[i] then
-      nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, false)
+    -- Connected bodies are enough here: the current map's masked full ring is
+    -- the legacy closure when SCENERY is off, while semantic scenery closes
+    -- the whole streamed union itself. With semantic scenery the current map
+    -- is the only urgent job: cold neighbours continue on the ordinary frame
+    -- budget after that complete first scene has appeared. The legacy/full
+    -- path remains atomic and therefore keeps all of its required bodies
+    -- urgent, exactly as before.
+    local backgroundRank = 0
+    if preferBody then
+      if i == approachedIndex then backgroundRank = 2
+      elseif directSet[nb.map.id] then backgroundRank = 1 end
     end
+    ChunkMesher.request(nb.map, true, nil, not preferBody, backgroundRank)
+    -- Neighbours are always requested body-only above; their own panorama
+    -- class only controls the union's curtain, not this cache slot.
+    nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, true)
   end
-  Voxel.ready = terrain ~= nil
-  return terrain, nbMesh, water, nbWater
+
+  -- Prepare the tiny panorama mesh/Canvas during update-time prefetch. It is
+  -- independent of terrain atlases, so the eventual first 3D draw only reads
+  -- an already complete background and never changes Canvas targets mid-pass.
+  --
+  -- Outdoors/caves with semantic scenery can safely open on the CURRENT body
+  -- alone. The horizon is built from exactly the neighbours whose bodies are
+  -- already drawable: its curtain therefore closes every still-cold seam.
+  -- When another body lands, the synchronous horizon cache swap removes that
+  -- seam's curtain and extends around the new union in the same frame -- never
+  -- a body over an old wall (z-fighting), and never an absent body behind an
+  -- already-open edge (void).
+  --
+  -- A failed expanded horizon is not allowed to expose the new body. Rebuild
+  -- the cheap current-only closure and retain a complete smaller scene. If
+  -- even that cannot be made, Voxel.ready keeps the engine's 2D world.
+  local plan
+  local horizonReady
+  if preferBody then
+    local horizonFailed
+    plan, horizonReady, horizonFailed = semanticPlan(
+      state, nbMesh, nbWater, approachedIndex)
+    if horizonFailed then
+      -- A failed semantic curtain can never make a body-only map complete.
+      -- Fall back to the same masked FULL ring used when scenery is off, and
+      -- preserve that path's atomic rule: the full current map plus every
+      -- connected body/aux/atlas must be ready together. Until then
+      -- Voxel.ready remains false and the engine keeps its complete 2D world.
+      ChunkMesher.request(state.map, false, masks, true)
+      terrain, water = ChunkMesher.pair(state.map, false)
+      for i, nb in ipairs(state.neighbors or {}) do
+        ChunkMesher.request(nb.map, true, nil, true)
+        nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, true)
+      end
+      plan = drawPlan(state, nbMesh, nbWater)
+      plan.horizonFallback = true
+      horizonReady = #plan.state.neighbors == #(state.neighbors or {})
+    end
+  else
+    -- SCENERY OFF/interiors use the current map's masked full border. Its
+    -- connection masks assume every neighbour body is present, so this path
+    -- must preserve the old atomic swap or it would reveal real holes.
+    plan = drawPlan(state, nbMesh, nbWater)
+    local allReady = #plan.state.neighbors == #(state.neighbors or {})
+    local _, fullHorizonReady = HorizonWall.meshes(state)
+    horizonReady = fullHorizonReady and allReady
+  end
+  local glassReady = not wantsGlass or not GlassMask.prepared
+                     or GlassMask.prepared(state.map.tileset)
+  local complete = terrain ~= nil and horizonReady and atlasPrepared(state.map)
+                   and glassReady
+  Voxel.ready = complete
+  readyMap = complete and state.map or nil
+  -- The first four values are BattleScene's established, sparse/index-aligned
+  -- contract. The fifth is overworld-private and safe for old Lua callers to
+  -- ignore.
+  return terrain, nbMesh, water, nbWater, plan
 end
 
 -- Capture every entity's pose for this frame. pose() advances the hop /
@@ -513,18 +933,23 @@ end
 -- below). Only that one entry gets the see-through treatment: NPCs and the
 -- ghosts standing on a neighbour map are left to honest occlusion, because
 -- it is only your own character you cannot afford to lose behind a roof.
-local function posesOf(state, spriteColors)
+local function posesOf(state, spriteColors, drawableMaps)
   local colors = spriteColors(state.map)
   local posed = {}
   local me = nil
   for _, g in ipairs(state.ghosts or {}) do
-    local sprite, vx, vy, facing, phase, flip = g.npc:pose()
-    posed[#posed + 1] = {
-      sprite = sprite, px = vx + g.ox, py = g.npc.py + g.oy,
-      facing = facing, phase = phase, flip = flip,
-      gh = groundAt(g.map or state.map, g.npc.cellX, g.npc.cellY),
-      lift = g.npc.py - vy, colors = spriteColors(g.map or state.map),
-    }
+    local ghostMap = g.map or state.map
+    -- A connected-map NPC must arrive with its ground, not hover over the
+    -- temporary horizon closure while that neighbour is still meshing.
+    if not drawableMaps or drawableMaps[ghostMap.id] then
+      local sprite, vx, vy, facing, phase, flip = g.npc:pose()
+      posed[#posed + 1] = {
+        sprite = sprite, px = vx + g.ox, py = g.npc.py + g.oy,
+        facing = facing, phase = phase, flip = flip,
+        gh = groundAt(ghostMap, g.npc.cellX, g.npc.cellY),
+        lift = g.npc.py - vy, colors = spriteColors(ghostMap),
+      }
+    end
   end
   for _, e in ipairs(state.entities or {}) do
     if not (state.flyAnim and e == state.player) then
@@ -579,6 +1004,76 @@ end
 
 local glint = {}
 
+-- A character card is exactly one 16px cell wide and tall
+-- (SpriteBillboards.buildCard).  The first-person eye stands at the centre
+-- of the player's cell, thirteen pixels above its floor.  Therefore a card
+-- one cell straight ahead occupies
+--
+--   atan(13 / 16) + atan(3 / 16) = 49.7 degrees
+--
+-- of the 65-degree vertical lens: a follower in the nearest legal trail cell
+-- is not a readable character, it is the inside of a card covering the view.
+-- At two cells that span is only 27.5 degrees and the character is readable,
+-- so the near volume is pinned to ONE card width rather than an aesthetic
+-- distance.  Width is tested just as strictly: the camera's optical-centre
+-- ray must actually pierce the eye-facing 16x16 card.  A close actor behind,
+-- beside, above or below the look ray consequently stays drawn.
+local ACTOR_CARD_SIZE = 16
+local ACTOR_CARD_HALF = ACTOR_CARD_SIZE / 2
+local ACTOR_NEAR_SQ = ACTOR_CARD_SIZE * ACTOR_CARD_SIZE
+local ACTOR_EPS = 1e-6
+
+local function actorEngulfsEye(p)
+  local eye, focus = Voxel3D.eye, Voxel3D.focus
+  if not (p and type(p.px) == "number" and type(p.py) == "number"
+          and eye and focus and eye[1] and eye[2] and eye[3]
+          and focus[1] and focus[2] and focus[3]) then
+    return false
+  end
+
+  local foot = (p.gh or 0) + (p.lift or 0)
+  local cx, cz = p.px + ACTOR_CARD_HALF, p.py + ACTOR_CARD_HALF
+  local dx, dz = cx - eye[1], cz - eye[3]
+  local rangeSq = dx * dx + dz * dz
+  if rangeSq > ACTOR_NEAR_SQ + ACTOR_EPS then return false end
+
+  -- A follower may spawn on the player's own cell when the cell behind is
+  -- blocked.  The camera is then in the card plane itself; vertical overlap
+  -- is the complete and direction-independent answer.
+  if rangeSq < ACTOR_EPS * ACTOR_EPS then
+    return eye[2] >= foot - ACTOR_EPS
+           and eye[2] <= foot + ACTOR_CARD_SIZE + ACTOR_EPS
+  end
+
+  -- Normalized optical-centre ray.  Its intersection with the cylindrical
+  -- billboard's plane is solved in scalars: the card normal points from its
+  -- centre to the eye, so t = range^2 / dot(forward_xz, eye_to_card).
+  local fx, fy, fz = focus[1] - eye[1], focus[2] - eye[2],
+                     focus[3] - eye[3]
+  local forwardSq = fx * fx + fy * fy + fz * fz
+  if forwardSq < ACTOR_EPS * ACTOR_EPS then return false end
+  local invForward = 1 / math.sqrt(forwardSq)
+  fx, fy, fz = fx * invForward, fy * invForward, fz * invForward
+  local ahead = fx * dx + fz * dz
+  if ahead <= ACTOR_EPS then return false end
+  local t = rangeSq / ahead
+
+  local hitX, hitY, hitZ = eye[1] + fx * t, eye[2] + fy * t,
+                           eye[3] + fz * t
+  local range = math.sqrt(rangeSq)
+  -- A horizontal tangent of the card that cardYaw turns toward this eye.
+  -- Only its sign is arbitrary, and the bound below is symmetric.
+  local tangentX, tangentZ = -dz / range, dx / range
+  local lateral = (hitX - cx) * tangentX + (hitZ - cz) * tangentZ
+  return math.abs(lateral) <= ACTOR_CARD_HALF + ACTOR_EPS
+         and hitY >= foot - ACTOR_EPS
+         and hitY <= foot + ACTOR_CARD_SIZE + ACTOR_EPS
+end
+
+-- A named, pure camera-space seam for the focused headless contract.  It
+-- allocates nothing and owns no render/game state.
+VoxelScene._actorEngulfsEye = actorEngulfsEye
+
 -- ------- the cast
 --
 -- Everybody standing on the map: the walkers, and the authored FIGURES the
@@ -609,14 +1104,24 @@ local function drawCast(state, posed, atlasFor)
   -- character genuinely behind a building is far deeper and loses the
   -- test, so buildings and trees really occlude.
   --
-  -- In first person two of them change: the player's own card is left out
-  -- (the eye is standing in it), and every other card wears the frame its
-  -- pose SHOWS this eye (viewFacing) rather than the one it shows the
-  -- south. Both run through here, so the water's reflection copy -- drawn
-  -- by this same function -- agrees with the frame to the pixel.
+  -- In first person three of them change: the player's own card is left out
+  -- (the eye is standing in it); another actor whose nearest-cell card
+  -- actually engulfs the optical centre is left out for the same reason; and
+  -- every other card wears the frame its pose SHOWS this eye (viewFacing)
+  -- rather than the one it shows the south.  The near test is gated by the
+  -- exact 1ST level as well as hideMe: a wall-collapsed 3RD camera may hide
+  -- its own player card, but must never make surrounding actors disappear.
+  -- Both camera draws run through here, so the water's reflection copy
+  -- agrees with the frame to the pixel; the sun pass deliberately does not
+  -- and the hidden actor keeps casting its ordinary world shadow.
   local hideMe = FirstPerson.hidePlayer()
+  local hideNearActor = hideMe and Voxel.isFirstPerson(Voxel.level)
   for _, p in ipairs(posed) do
-    if not (p.isPlayer and hideMe) then
+    local hidden = p.isPlayer and hideMe
+    if not hidden and hideNearActor and not p.isPlayer then
+      hidden = actorEngulfsEye(p)
+    end
+    if not hidden then
       drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
                  p.colors, p.lift)
     end
@@ -641,6 +1146,8 @@ local function drawCast(state, posed, atlasFor)
   -- flowers are the world's own drawing, not people
   Voxel3D.seams(true)
 end
+
+VoxelScene._drawCast = drawCast       -- named for the focused draw contract
 
 -- ------- the water pass
 --
@@ -704,7 +1211,7 @@ end
 -- GPUs they don't reliably (that fight is what put the Android port back on
 -- flat water). Confined to the curve there is no regression to reach: the
 -- flat world never had the far-shore bug in the first place.
-function VoxelScene.drawWater(draws, cast)
+function VoxelScene.drawWater(draws, cast, options)
   -- prepass only under the bend; see the header
   local curved = (Voxel3D.curveK or 0) > 0
   if curved then
@@ -723,7 +1230,9 @@ function VoxelScene.drawWater(draws, cast)
                                                     Voxel3D.curveK or 0 },
       screen = { w, h }, cell = Voxel3D.cell, fov = Voxel3D.fovY,
       skyEdge = Voxel3D.skyEdge, grid = VoxelGrid.enabled(),
+      skyRay = Voxel3D.skyRayLive,
       lookFlat = Voxel3D.lookFlat, descent = Voxel3D.descent,
+      maritime = options and options.maritime == true,
     })
     if ok then
       for _, d in ipairs(draws) do
@@ -874,8 +1383,15 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- return nil: the engine keeps the 2D path for the frame and
   -- Voxel.ready holds the camera tween at flat, so the switch waits
   -- invisibly instead of freezing or tilting an empty stage.
-  local terrain, nbMesh, water, nbWater = VoxelScene.prefetch(state)
-  if not terrain then return nil end
+  local terrain, nbMesh, water, nbWater, plan = VoxelScene.prefetch(state)
+  -- `prefetch` marks the scene ready once the current terrain and a horizon
+  -- closed around the currently drawable union exist. On semantic-scenery
+  -- maps that union can begin with the current map alone; missing neighbours
+  -- keep building behind its curtain. The full-ring fallback remains atomic.
+  local Voxel = V.require("VoxelState")
+  if not terrain or not Voxel.ready then return nil end
+  plan = plan or drawPlan(state, nbMesh, nbWater)
+  local drawState, drawMesh, drawWater = plan.state, plan.meshes, plan.waters
 
   local cam = state.camera
   local cx, cy = cam.x + vw / 2, cam.y + vh / 2
@@ -884,9 +1400,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- rig at the clock (or at noon, indoors -- a cave at midnight is exactly
   -- as dark as a cave at noon) and set the tint the scene shader multiplies
   -- every surface by. A CANOPY map (Viridian Forest) is the case between:
-  -- the rig stays at noon and no sky is painted, but the hour's tint still
-  -- falls through the leaves -- night reaches a forest floor.
-  local outdoor = state.map.def and Map.isOutdoor(state.map.def) or false
+  -- the rig stays at noon and its backdrop is closed by muted leaf colour,
+  -- while the hour's tint still falls through -- night reaches the forest.
+  local outdoor = HorizonWall.hasSky(state.map)
   DayNight.applyRig(outdoor)
   Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(state.map))
   -- and the window glass: the tileset's own panes (found in its art --
@@ -899,18 +1415,48 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   local g = VoxelScene.glintStep(glint, cx, cy)
   Voxel3D.glassPhase, Voxel3D.glassGlint = g.phase, g.amp
 
-  local function atlasFor(map)
-    return TerrainAtlas.forMap(map, modeColors(paletteFor, map))
+  -- One map has one effective palette and one terrain atlas for the whole
+  -- render. Terrain, water, grass, flowers, figures, reflections and a stale
+  -- shadow pass all ask through these closures, so resolving the display-mode
+  -- palette (and its world.tod/map hooks) at every draw was pure repeated
+  -- work. Separate ready tables matter because both colors and atlas may
+  -- legitimately be nil in a compatibility path.
+  local colorsByMap, colorsReady = {}, {}
+  local atlasByMap, atlasReady = {}, {}
+  local function effectiveColorsFor(map)
+    if not colorsReady[map] then
+      colorsReady[map] = true
+      colorsByMap[map] = modeColors(paletteFor, map)
+    end
+    return colorsByMap[map]
   end
+  local function atlasFor(map)
+    if not atlasReady[map] then
+      atlasReady[map] = true
+      atlasByMap[map] = TerrainAtlas.forMap(map, effectiveColorsFor(map))
+    end
+    return atlasByMap[map]
+  end
+
+  -- Generate panorama textures/meshes before beginScene binds the world
+  -- canvas. The former lazy call happened inside drawScene; its temporary
+  -- Canvas could detach the active world target on the first frame, leaving
+  -- no background or isolated black fragments until later frames recovered.
+  local horizon = plan.horizonFallback and {}
+                  or HorizonWall.meshes(drawState)
+  local sceneryEnabled = HorizonWall.enabled()
+  PanoramaBackdrop.setEnabled(sceneryEnabled)
+  local panoramaReady = outdoor and sceneryEnabled
+                         and PanoramaBackdrop.prepare()
 
   -- sprite palettes only exist in the SGB modes; under RED++ the OBP bake
   -- inside sprite:resolveImage() already colors the sheet
   local function spriteColors(map)
     if PaletteFX.usesGbcPack() then return nil end
-    return modeColors(paletteFor, map)
+    return effectiveColorsFor(map)
   end
 
-  local posed, me = posesOf(state, spriteColors)
+  local posed, me = posesOf(state, spriteColors, plan.maps)
 
   -- Place the free-roam rig before either the shadow or eye pass. The scene
   -- centre follows the player during the blend so curve, depth and lighting
@@ -919,8 +1465,8 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   if fpRig then cx, cy = fpCx, fpCy end
 
   local shCx, shCy = FirstPerson.shadowCenter(cx, cy, vh)
-  castShadows(state, terrain, nbMesh, posed, shCx, shCy, vw, vh, atlasFor,
-              water, nbWater)
+  castShadows(drawState, terrain, drawMesh, posed, shCx, shCy, vw, vh,
+              atlasFor, water, drawWater)
 
   -- Everything between beginScene and endScene, as one function: the flat
   -- path runs it once, a VR frame runs it once PER EYE -- same posed
@@ -928,11 +1474,32 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- about anything but their viewpoint.
   local function drawScene()
 
+  if panoramaReady then
+    PanoramaBackdrop.drawAt(me and me.px or cx, 0, me and me.py or cy)
+  end
+
   Voxel3D.draw(terrain, atlasFor(state.map), nil)
-  for i, nb in ipairs(state.neighbors or {}) do
-    Voxel3D.draw(nbMesh[i], atlasFor(nb.map),
+  for i, nb in ipairs(drawState.neighbors or {}) do
+    Voxel3D.draw(drawMesh[i], atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy))
   end
+  -- A low-cost textured belt and curtain around the streamed map union.
+  -- This closes the world edge for 1ST/3RD without extending fully carved
+  -- tree hulls to the far plane (which is prohibitively expensive on iPhone).
+  Voxel3D.glass(false)
+  for _, rim in ipairs(horizon) do
+    if rim.kind ~= "water" then
+      -- The cold Route 8 seam proxy samples the current Route 8 atlas instead
+      -- of retaining a duplicate $39 texture.  All ordinary horizon parts
+      -- keep their baked texture; the proxy is absent as soon as Lavender's
+      -- real body joins the draw union.
+      local rimTexture = rim.textureMap and atlasFor(rim.textureMap)
+                         or rim.texture
+      Voxel3D.draw(rim.mesh, rimTexture,
+                   Mat4.translate(rim.ox, 0, rim.oy))
+    end
+  end
+  Voxel3D.glass(true)
 
   -- Without a shadow map (headless, or a driver that could not make the
   -- canvas) the old flat decals stand in: ground-only, characters only,
@@ -959,13 +1526,29 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- which is the same answer the shadow map's own pass gives (see
   -- ShadowMap.sprites) -- people do not shadow water either way.
   local waterDraws = {}
+  local function maritime(map)
+    return type(Water.maritime) == "function" and Water.maritime(map) == true
+  end
+  local maritimeWater = maritime(state.map)
   if water then
     waterDraws[#waterDraws + 1] = { water, atlasFor(state.map), nil }
   end
-  for i, nb in ipairs(state.neighbors or {}) do
-    if nbWater and nbWater[i] then
-      waterDraws[#waterDraws + 1] = { nbWater[i], atlasFor(nb.map),
+  for i, nb in ipairs(drawState.neighbors or {}) do
+    maritimeWater = maritimeWater or maritime(nb.map)
+    if drawWater and drawWater[i] then
+      waterDraws[#waterDraws + 1] = { drawWater[i], atlasFor(nb.map),
                                       Mat4.translate(nb.ox, 0, nb.oy) }
+    end
+  end
+  -- Directional horizon water (currently Cinnabar's whole free southern
+  -- edge) belongs in the same reflective/fallback pass as native map water.
+  -- Drawing it with the opaque panorama meshes would make a static blue mat
+  -- meet animated ocean at a visible seam.
+  for _, rim in ipairs(horizon) do
+    if rim.kind == "water" then
+      waterDraws[#waterDraws + 1] = {
+        rim.mesh, rim.texture, Mat4.translate(rim.ox, 0, rim.oy),
+      }
     end
   end
   -- the cast goes into the reflection copy only -- see drawWater for why it
@@ -973,8 +1556,8 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- the real pass below uses
   if #waterDraws > 0 then
     VoxelScene.drawWater(waterDraws, function()
-      drawCast(state, posed, atlasFor)
-    end)
+      drawCast(drawState, posed, atlasFor)
+    end, { maritime = maritimeWater })
   end
 
 
@@ -1013,7 +1596,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- drawEntity resolves the lean-over-the-wall-in-front case, and a
   -- character genuinely behind a building is far deeper and loses the
   -- test, so buildings and trees really occlude.
-  drawCast(state, posed, atlasFor)
+  drawCast(drawState, posed, atlasFor)
   -- tall grass last, pulled camera-ward exactly as far as the characters
   -- were (same per-vertex shader bias, so grass never drifts either):
   -- relative depth between a walker and the tuft row south of their feet
@@ -1025,7 +1608,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   local lean = math.max(leanAngle(), 0.05)
   local pull = VoxelScene.pull(lean)
   Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
-  for _, nb in ipairs(state.neighbors or {}) do
+  for _, nb in ipairs(drawState.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy), pull)
   end
@@ -1044,7 +1627,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- through the same snugged transform the sun stored them with
   Voxel3D.draw(ChunkMesher.flowers(state.map), atlasFor(state.map), nil,
                fpull, ShadowMap.snug(nil))
-  for _, nb in ipairs(state.neighbors or {}) do
+  for _, nb in ipairs(drawState.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy), fpull,
                  ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
@@ -1052,13 +1635,16 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
 
   end   -- drawScene
 
-  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, skyFor(state.map)) then
+  local weatherMode = Weather.mode(state.map)
+  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, skyFor(state.map), nil,
+                            { weather = weatherMode }) then
     return nil
   end
   drawScene()
   local WallDecals = V.require("WallDecals")
-  WallDecals.drawState(state)
-  return Voxel3D.endScene()
+  WallDecals.drawState(drawState)
+  local out = Voxel3D.endScene()
+  return Weather.apply(out, w, h, state.map, Voxel3D.cell, weatherMode)
 end
 
 return VoxelScene

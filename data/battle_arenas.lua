@@ -1,12 +1,11 @@
 -- Where each map's battles happen.
 --
--- One authored spot per area, rather than whichever clearing happens to be
--- nearest the step the fight started on. A battle on Route 1 should look the
--- same every time it happens on Route 1 -- and, more importantly, "open
--- ground" is not the same question as "you can see the two of them": the
--- battle camera sits low and a long way back, so a hedge, a ledge lip or the
--- corner of a house anywhere along that sightline hides a Pokemon completely
--- while every cell it is standing on is perfectly walkable.
+-- Reviewed fallback spots per area. BattleArena first accepts a nearby,
+-- visible clearing on the player's own elevation; these records cover places
+-- where no such local shot exists and let long routes/caves provide several
+-- geographically distinct, photographed compositions instead of one repeated
+-- postcard. "Open ground" alone is not enough: a hedge, ledge lip or house
+-- corner along the low camera line can hide a Pokemon completely.
 --
 -- Each entry is the arena's north-west corner in map CELLS, and which of
 -- BattleArena.SHAPES it is. Picked by tools/arena_pick (BattleArena.search
@@ -51,8 +50,21 @@ return {
   -- line square behind the pair, nothing crossing either of them.
   ["ROUTE_1"] = { x = 4, y = 14, shape = "narrow" },
   ["ROUTE_2"] = { x = 1, y = 49, shape = "wide" },
-  ["ROUTE_3"] = { x = 57, y = 1, shape = "wide" },
-  ["ROUTE_4"] = { x = 46, y = 7, shape = "wide" },
+  -- Route 3 is the long Mt Moon approach. Its former single eastern wide
+  -- point was terrain-obstructed and every fight teleported there. These
+  -- three independently clear narrow lanes cover west/middle/east; the wide
+  -- southern overlook is retained through its short lens as a fourth view.
+  ["ROUTE_3"] = { spots = {
+    { x = 27, y = 4, shape = "narrow" },
+    { x = 49, y = 6, shape = "narrow" },
+    { x = 59, y = 4, shape = "narrow" },
+    { x = 44, y = 8, shape = "wide", cam = "wide" },
+  } },
+  ["ROUTE_4"] = { spots = {
+    { x = 46, y = 2, shape = "wide" },
+    { x = 47, y = 3, shape = "wide" },
+    { x = 47, y = 4, shape = "narrow" },
+  } },
   ["ROUTE_5"] = { x = 13, y = 24, shape = "wide" },
   ["ROUTE_6"] = { x = 5, y = 17, shape = "narrow" },
   ["ROUTE_7"] = { x = 8, y = 8, shape = "narrow" },
@@ -130,7 +142,24 @@ return {
   ["VICTORY_ROAD_3F"] = { x = 20, y = 1, shape = "wide" },
 
   -- ------- towns and the last interiors
-  ["CERULEAN_CITY"] = { x = 15, y = 16, shape = "wide" },
+  -- Do not stage the rival between the north-city houses. These are the
+  -- nearest genuinely open west/east grounds; the height-aware local search
+  -- may still choose a closer plaza when it has the full one-cell apron.
+  ["CERULEAN_CITY"] = { spots = {
+    { x = 6, y = 19, shape = "wide" },
+    { x = 6, y = 20, shape = "wide" },
+    { x = 35, y = 13, shape = "narrow" },
+    { x = 35, y = 14, shape = "narrow" },
+  } },
+  -- The automatic land search accepts the plaza cells under Cinnabar's wide
+  -- roof overhang because they are walkable, but the low MAP-battle camera
+  -- then sits inside the real roof geometry. Stage the island's encounters
+  -- on its completely open southern water strip instead: the full 3x6 shape
+  -- at x=1,y=10 is water, the eye looks back toward the island, and no map,
+  -- collision, camera or encounter position is moved.
+  ["CINNABAR_ISLAND"] = {
+    x = 1, y = 10, shape = "wide", adaptive = false,
+  },
   ["GAME_CORNER"] = { x = 8, y = 7, shape = "wide" },
   -- the lab is ten cells by twelve, so the long lens is always off-map, and
   -- on it a desk clipped one mon and a pillar the other
@@ -179,9 +208,21 @@ return {
   ["FIGHTING_DOJO"] = { x = 4, y = 1, shape = "narrow" },
   ["LANCES_ROOM"] = { x = 5, y = 15, shape = "wide" },
   ["LORELEIS_ROOM"] = { x = 5, y = 2, shape = "narrow" },
-  ["MT_MOON_1F"] = { x = 24, y = 17, shape = "wide" },
+  ["MT_MOON_1F"] = { spots = {
+    { x = 7, y = 3, shape = "wide" },
+    { x = 14, y = 3, shape = "wide" },
+    { x = 31, y = 3, shape = "wide" },
+    { x = 6, y = 24, shape = "wide" },
+    { x = 12, y = 24, shape = "wide" },
+    { x = 34, y = 24, shape = "wide" },
+  } },
   ["MT_MOON_B1F"] = { x = 5, y = 12, shape = "wide" },
-  ["MT_MOON_B2F"] = { x = 2, y = 16, shape = "wide" },
+  ["MT_MOON_B2F"] = { spots = {
+    { x = 1, y = 13, shape = "wide" },
+    { x = 2, y = 16, shape = "wide" },
+    { x = 1, y = 24, shape = "wide" },
+    { x = 2, y = 27, shape = "wide" },
+  } },
 
   -- The three gyms the default rig cannot stand back from. Five blocks is
   -- further than these rooms are wide, so the eye landed outside the map and

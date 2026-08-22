@@ -211,6 +211,11 @@ end
 -- water's edge like everything else this pass draws. What it buys is a
 -- surface with real swell in it instead of a two-rung terrace.
 Water.WAVE_HEIGHT = 5
+-- The long southern sea union needs a calmer silhouette than a small inland
+-- pond: five-pixel bars at a grazing view break the whole horizon into teeth.
+-- This is selected from canonical map semantics by VoxelScene, never from a
+-- camera pitch/distance probe, so 1ST, 3RD and orbit render the same surface.
+Water.MARITIME_WAVE_HEIGHT = 3
 
 -- ------- the trains
 --
@@ -353,9 +358,35 @@ Water.WAVE_STRIDE = 1
 -- enough to sweep a low sun or moon into a broken glitter path down the
 -- lake, and not so much that the sky's own bands come apart.
 Water.WAVE_SLOPE = 3.5
+Water.MARITIME_WAVE_SLOPE = 2.5
 -- and how far the horizon lean is allowed to open that up, since it squashes
 -- the same tilt on its way past (see LEAN_FROM)
 Water.WAVE_SLOPE_LEAN = 1.5
+
+local MARITIME_MAPS = {
+  ROUTE_19 = { width = 10, height = 27, tileset = "OVERWORLD" },
+  ROUTE_20 = { width = 50, height = 9, tileset = "OVERWORLD" },
+  ROUTE_21 = { width = 10, height = 45, tileset = "OVERWORLD" },
+  CINNABAR_ISLAND = { width = 10, height = 9, tileset = "OVERWORLD" },
+  VERMILION_DOCK = { width = 14, height = 6, tileset = "SHIP_PORT" },
+  SS_ANNE_BOW = { width = 10, height = 7, tileset = "SHIP" },
+}
+
+function Water.maritime(map)
+  local def = map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  local spec = MARITIME_MAPS[id]
+  return spec ~= nil and def ~= nil and id == tostring(def.id or "")
+         and def.tileset == spec.tileset
+         and def.width == spec.width and def.height == spec.height
+end
+
+function Water.waveUniforms(maritime)
+  if maritime == true then
+    return Water.MARITIME_WAVE_HEIGHT, Water.MARITIME_WAVE_SLOPE
+  end
+  return Water.WAVE_HEIGHT, Water.WAVE_SLOPE
+end
 
 -- THE MARCH. Steps are in world pixels and lengthen as they go: near the
 -- surface the reflection needs precision (a shoreline is a few pixels), far
@@ -1225,7 +1256,9 @@ Water._waveTime = waveTime
 --   depth     its depth, likewise
 --   vp, eye, curve, screen, cell   the camera, as beginScene sent it
 --   skyEdge   where the sky's bottom is, or nil indoors / with no bands
+--   skyRay    the free-camera ray fan, or nil for the level/orbit sky
 --   grid      whether the voxel wireframe is compiled into this frame
+--   maritime  map/union semantic selected before camera setup; no view query
 --
 -- Returns false when the pass cannot run, in which case the caller draws the
 -- water mesh through the ordinary scene shader instead.
@@ -1276,8 +1309,9 @@ function Water.begin(ctx)
   send("lookFlat", ctx.lookFlat or { 0, 0, -1 })
   send("lean", Water.lean(ctx.descent))
   send("leanElev", Water.LEAN_ELEV)
-  send("waveHeight", Water.WAVE_HEIGHT)
-  send("waveSlope", Water.WAVE_SLOPE)
+  local waveHeight, waveSlope = Water.waveUniforms(ctx.maritime)
+  send("waveHeight", waveHeight)
+  send("waveSlope", waveSlope)
   send("waveSlopeLean", Water.WAVE_SLOPE_LEAN)
   send("waveT", waveTime())
   -- the columns' side faces wear the MESH's own direction shading, sent in
@@ -1329,7 +1363,11 @@ function Water.sendSky(sh, ctx)
   send("skyRamp", ramp)
   send("skyCount", count)
   send("skyEdge", edge)
-  send("skyStart", Sky.DITHER and Sky.DITHER_START or 2)
+  -- Reflection and visible sky share one transition contract. Perspective
+  -- cameras disable the angular checker ribbons; level/orbit keeps the compact
+  -- screen-space dither. Using Sky's helper also preserves a future explicit
+  -- RAY_DITHER choice instead of restating only today's constants here.
+  send("skyStart", Sky.ditherStart(ctx.skyRay))
   send("skyOn", 1)
 
   local body = DayNight.body()

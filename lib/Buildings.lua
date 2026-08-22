@@ -113,6 +113,97 @@ local function keyOf(tx, ty)
   return (ty + 64) * 4096 + (tx + 64)
 end
 
+-- A camera can approach an outdoor building from its NORTH side even when
+-- Red's original top-down entrance exists only on the south.  The synthesized
+-- rear used to erase that entrance completely.  Recover it only when the
+-- matched building itself contains one unambiguous native 2x2 door course.
+-- OVERWORLD and FOREST use different original tile ids, so both are pinned
+-- explicitly.  A uniquely aligned north warp is retained as functional
+-- evidence when present (Route 2 / Cerulean); without one the result is a
+-- cosmetic rear facade only -- no collision, warp or gameplay is invented.
+local REAR_DOOR_COURSES = {
+  OVERWORLD = { 11, 12, 27, 28 },
+  FOREST = { 42, 43, 58, 59 },
+}
+
+-- A native door drawn on the SOUTH facade is not evidence that the building
+-- owns a second entrance on its NORTH facade.  Applying that rule globally
+-- put decorative back doors on ordinary Vermilion houses.  Functional,
+-- exactly aligned north warps remain self-authenticating.  Cosmetic mirrors
+-- are restricted to the few reviewed map families where the opposite-facing
+-- entrance is part of the authored landmark read: Route 2's two Forest/gate
+-- elevations, Saffron's deliberately double-readable skyline buildings and
+-- the Safari rest houses.  Every other ordinary house keeps a closed rear.
+local COSMETIC_REAR_DOOR_MAPS = {
+  ROUTE_2 = true,
+  SAFFRON_CITY = true,
+  SAFARI_ZONE_CENTER = true,
+  SAFARI_ZONE_EAST = true,
+  SAFARI_ZONE_NORTH = true,
+  SAFARI_ZONE_WEST = true,
+}
+
+local function rearFacadeDoor(map, tx, ty, bw, bh, t)
+  local def = map and (map.def or map)
+  local tileset = map and map.tileset
+  local tilesetId = def and def.tileset
+  local course = REAR_DOOR_COURSES[tilesetId]
+  if not (def and course
+          and (not tileset or not tileset.id or tileset.id == tilesetId)
+          and type(tx) == "number" and tx == math.floor(tx) and tx % 2 == 0
+          and type(ty) == "number" and ty == math.floor(ty) and ty % 2 == 0
+          and type(bw) == "number" and bw == math.floor(bw)
+          and type(bh) == "number" and bh == math.floor(bh) and bh >= 2
+          and t and type(t.tiles) == "table"
+          and type(t.tiles[bh - 1]) == "table"
+          and type(t.tiles[bh]) == "table") then
+    return nil
+  end
+  local top, bottom = t.tiles[bh - 1], t.tiles[bh]
+  local doorCol = nil
+  for col = 1, bw - 1 do
+    if top[col] == course[1] and top[col + 1] == course[2]
+       and bottom[col] == course[3] and bottom[col + 1] == course[4] then
+      if doorCol then return nil end -- ambiguous/mutated template
+      doorCol = col - 1
+    end
+  end
+  if doorCol == nil or doorCol % 2 ~= 0 then return nil end
+
+  local wx, wy = (tx + doorCol) / 2, ty / 2 - 1
+  local hit, hits = nil, 0
+  for _, warp in ipairs(def.warps or {}) do
+    if warp.x == wx and warp.y == wy and type(warp.destMap) == "string"
+       and warp.destMap ~= "" and type(warp.destWarp) == "number" then
+      hit, hits = warp, hits + 1
+    end
+  end
+  local functional = hits == 1 and hit ~= nil
+  local mapId = tostring(def.id or map.id or "")
+  if not functional and not COSMETIC_REAR_DOOR_MAPS[mapId] then
+    return nil
+  end
+  local displayWidth = t.rearDoorWidth
+  if type(displayWidth) ~= "number" or displayWidth ~= math.floor(displayWidth)
+     or displayWidth < 8 or displayWidth > 16 then
+    displayWidth = 16
+  end
+  return {
+    x = doorCol * 8, z = -0.02,
+    displayWidth = displayWidth,
+    tiles = { top[doorCol + 1], top[doorCol + 2],
+              bottom[doorCol + 1], bottom[doorCol + 2] },
+    tileset = tilesetId,
+    functional = functional,
+    warp = functional and hit and {
+      x = hit.x, y = hit.y, map = hit.destMap, index = hit.destWarp,
+    } or nil,
+  }
+end
+
+Buildings.rearFacadeDoor = rearFacadeDoor
+Buildings.rearWarpDoor = rearFacadeDoor -- compatibility for authoring probes
+
 local function shadeOf(r, g, b, a)
   if a == 0 then return WHITE end
   local v = math.min(r, g, b)
@@ -134,6 +225,15 @@ local function profile()
 end
 
 local models = {}          -- "<tileset>:<index>" -> prebuilt local quads
+local diagnosticShell = false
+
+-- The exact shell-voxel count is a development/reference metric, not render
+-- input.  Keeping it opt-in avoids allocating a large temporary set while a
+-- player first approaches a dense city; the focused contract and native
+-- profiler enable it explicitly and still pin the historical number.
+function Buildings.diagnostics(enabled)
+  diagnosticShell = enabled and true or false
+end
 
 -- ------------------------------------------------------------------ read --
 
@@ -160,7 +260,9 @@ local function read(t, data, perRow)
   local W, H = bw * 8, bh * 8
   local col, ax, ay = {}, {}, {}
   for sy = 0, H - 1 do
-    Budget.tick()
+    -- `getPixel` is comparatively expensive. Check every scanline instead of
+    -- waiting for 32 whole rows before yielding a cold template build.
+    Budget.check()
     local row = tiles[math.floor(sy / 8) + 1]
     for sx = 0, W - 1 do
       local tile = row[math.floor(sx / 8) + 1]
@@ -200,6 +302,7 @@ local function read(t, data, perRow)
     if not sealed("e") then seed(W - 1, y) end
   end
   while n > 0 do
+    Budget.tick()
     local i = queue[n]
     n = n - 1
     local x, y = i % W, math.floor(i / W)
@@ -210,7 +313,10 @@ local function read(t, data, perRow)
   end
 
   local inside = {}
-  for i = 0, W * H - 1 do inside[i] = not outside[i] end
+  for i = 0, W * H - 1 do
+    Budget.tick()
+    inside[i] = not outside[i]
+  end
 
   -- `scrub` names pixel rects where the drawing paints an object standing
   -- ON the surface (Red's potted plant on the dining tabletop). The object
@@ -230,6 +336,7 @@ local function read(t, data, perRow)
     end
     local donor = nil
     for i = 0, W * H - 1 do
+      Budget.tick()
       if col[i] == GREY and inside[i]
          and not inRect(i % W, math.floor(i / W)) then
         donor = i
@@ -237,6 +344,7 @@ local function read(t, data, perRow)
       end
     end
     for i = 0, W * H - 1 do
+      Budget.tick()
       if inRect(i % W, math.floor(i / W)) then
         col[i] = GREY
         ax[i], ay[i] = ax[donor], ay[donor]
@@ -249,7 +357,121 @@ end
 
 -- --------------------------------------------------------------- measure --
 
-local function measure(sp, t)
+-- Synthesize a plain rear wall from the facade's own 8x8 source tiles.
+-- A whole source tile is rejected as soon as any of its pixels belongs to a
+-- recessed pane/door region: keeping only the frame pixels would still paint
+-- the outline of that opening on the rear. Repeated, fully solid tiles win,
+-- with the least noisy tile as a deterministic tie-breaker. The returned
+-- values remain indices into `sp`, so palette recolouring and UV adjacency
+-- keep working exactly like the authored facade.
+local function rearMaterial(sp, recess, roofRows, ground)
+  local W, rear = sp.W, {}
+
+  local function fallbackRow(sy)
+    local counts, donors = {}, {}
+    local function scan(allowBlack, allowRecess)
+      for sx = 0, W - 1 do
+        Budget.tick()
+        local i = sy * W + sx
+        if sp.inside[i] and (allowRecess or not recess[i])
+           and (allowBlack or sp.col[i] ~= BLACK) then
+          local shade = sp.col[i]
+          counts[shade] = (counts[shade] or 0) + 1
+          donors[shade] = donors[shade] or i
+        end
+      end
+      local best, bestN = nil, -1
+      for shade = WHITE, BLACK do
+        local n = counts[shade] or 0
+        if n > bestN then best, bestN = donors[shade], n end
+      end
+      return bestN > 0 and best or nil
+    end
+    return scan(false, false) or scan(true, false) or scan(true, true)
+  end
+
+  local firstBand = math.floor(roofRows / 8)
+  local lastBand = math.floor((ground - 1) / 8)
+  for band = firstBand, lastBand do
+    Budget.check()
+    local sy0 = math.max(roofRows, band * 8)
+    local sy1 = math.min(ground - 1, band * 8 + 7)
+    local sources = {}
+    for bx = 0, math.floor((W - 1) / 8) do
+      local x0 = bx * 8
+      local probe = sy0 * W + x0
+      local key = math.floor(sp.ax[probe] / 8) .. ":"
+                  .. math.floor(sp.ay[probe] / 8)
+      local e = sources[key]
+      if not e then
+        e = { uses = 0, coverage = 0, changes = 0,
+              dirty = false, donorX = x0 }
+        sources[key] = e
+      end
+      e.uses = e.uses + 1
+      for sy = sy0, sy1 do
+        Budget.tick()
+        local previous = nil
+        for sx = x0, math.min(x0 + 7, W - 1) do
+          local i = sy * W + sx
+          if recess[i] then e.dirty = true end
+          if sp.inside[i] then
+            e.coverage = e.coverage + 1
+            local shade = sp.col[i]
+            if previous ~= nil and shade ~= previous then
+              e.changes = e.changes + 1
+            end
+            previous = shade
+          end
+        end
+      end
+    end
+
+    local best = nil
+    for _, e in pairs(sources) do
+      if not e.dirty and (not best
+          or e.uses > best.uses
+          or (e.uses == best.uses and e.coverage > best.coverage)
+          or (e.uses == best.uses and e.coverage == best.coverage
+              and e.changes < best.changes)
+          or (e.uses == best.uses and e.coverage == best.coverage
+              and e.changes == best.changes and e.donorX < best.donorX)) then
+        best = e
+      end
+    end
+
+    for sy = sy0, sy1 do
+      Budget.tick()
+      local fallback = fallbackRow(sy)
+      for sx = 0, W - 1 do
+        local i = sy * W + sx
+        rear[i] = best and (sy * W + best.donorX + sx % 8) or fallback
+      end
+    end
+  end
+  return rear
+end
+
+Buildings.rearMaterial = rearMaterial
+
+-- Turn the same door-free wall course used by the rear into a side-facing
+-- strip.  `rear` already chose one real 8px source tile for every vertical
+-- facade band and rejected any tile touched by a recessed pane/door.  The
+-- side therefore advances through that tile one texel per world voxel, then
+-- repeats on the map's 8px lattice.  This preserves the authored brick,
+-- siding, window-course, eave and base rhythm instead of stretching the one
+-- outline-adjacent facade texel over the full depth of the building.
+--
+-- Resolve directly into the rear table instead of allocating a second
+-- wall-height x depth table.  Cold-build memory and retained model/stamp data
+-- therefore stay unchanged.
+local function sideMaterialAt(sp, rear, sy, z)
+  return rear[sy * sp.W + z % CELL]
+end
+
+Buildings.sideMaterialAt = sideMaterialAt
+
+local function measure(sp, t, plainRear)
   local W, H = sp.W, sp.H
   local roofRows = t.roofRows
 
@@ -257,6 +479,7 @@ local function measure(sp, t)
   -- far the roof has stepped down by the time it reaches that column.
   local top = {}
   for x = 0, W - 1 do
+    Budget.tick()
     local r = roofRows
     for y = 0, roofRows - 1 do
       if sp.inside[y * W + x] then r = y break end
@@ -271,6 +494,7 @@ local function measure(sp, t)
   -- would float it that far above its own plot.
   local ground = roofRows
   for sy = H - 1, roofRows, -1 do
+    Budget.tick()
     local drawn = false
     for sx = 0, W - 1 do
       if sp.inside[sy * W + sx] then drawn = true break end
@@ -289,6 +513,7 @@ local function measure(sp, t)
   -- colour, which is what the flanks of the real thing would show.
   local interior = {}
   for sy = roofRows, H - 1 do
+    Budget.check()
     for sx = 0, W - 1 do
       local i = sy * W + sx
       local src = i
@@ -316,6 +541,7 @@ local function measure(sp, t)
   -- window) layers for free.
   local recess, seen = {}, {}
   for sy = roofRows, H - 1 do
+    Budget.check()
     for sx = 0, W - 1 do
       local i0 = sy * W + sx
       if not seen[i0] and sp.inside[i0] and sp.col[i0] ~= BLACK then
@@ -331,6 +557,7 @@ local function measure(sp, t)
           end
         end
         while #stack > 0 do
+          Budget.tick()
           local i = table.remove(stack)
           cells[#cells + 1] = i
           local cx, cy = i % W, math.floor(i / W)
@@ -344,7 +571,10 @@ local function measure(sp, t)
           step(cx, cy - 1)
         end
         if x1 - x0 < RECESS_MAX and y1 - y0 < RECESS_MAX then
-          for _, i in ipairs(cells) do recess[i] = true end
+          for _, i in ipairs(cells) do
+            Budget.tick()
+            recess[i] = true
+          end
         end
       end
     end
@@ -358,12 +588,22 @@ local function measure(sp, t)
   -- not carry the rule's polarity, so the facade stays flush.
   if t.panes == false then recess = {} end
 
+  local depth = t.depthPx or ((t.depth or #t.tiles) * 8)
+
+  -- Outdoor drawings only contain the SOUTH facade. An indoor template may
+  -- be furniture whose authored north face intentionally mirrors the sprite,
+  -- so retain its historical behaviour and synthesize the other exterior
+  -- elevations only outdoors.  Side and rear share the same door-free source
+  -- course; only their world-facing texture axis differs.
+  local rear = plainRear and rearMaterial(sp, recess, roofRows, ground) or nil
+
   -- One representative texel per shade, taken from the building's own art:
   -- the roof's fascia and its undersides are geometry the drawing implies
   -- but never paints, and they must still wear its palette (and pick up
   -- whatever SGB recolouring the atlas carries).
   local shadeTexel = {}
   for i = 0, sp.W * sp.H - 1 do
+    Budget.tick()
     if sp.inside[i] and not shadeTexel[sp.col[i]] then
       shadeTexel[sp.col[i]] = i
     end
@@ -387,9 +627,10 @@ local function measure(sp, t)
   -- depth is not a whole tile row -- the Bike Shop toolbox is a box
   -- standing in the middle of its own cell, not a thing that fills a plot.
   return { top = top, ytop = ytop,
-           D = t.depthPx or ((t.depth or #t.tiles) * 8),
+           D = depth,
            ground = ground,
-           recess = recess, interior = interior, shadeTexel = shadeTexel }
+           recess = recess, interior = interior, rear = rear,
+           shadeTexel = shadeTexel }
 end
 
 -- ----------------------------------------------------------------- build --
@@ -411,7 +652,13 @@ local function deskSetModel(sp, pr, t)
   local col, inside = sp.col, sp.inside
   local vox = {}
   local function key(x, y, z) return (y * D + z) * W + x end
-  local function put(x, y, z, i) vox[key(x, y, z)] = i end
+  -- Every authored model eventually passes through put(). Sampling here
+  -- keeps all of the differently-shaped desk/fixture loops cooperative,
+  -- including future template variants, without changing their order.
+  local function put(x, y, z, i)
+    Budget.tick()
+    vox[key(x, y, z)] = i
+  end
 
   -- de-outline walk bounded to the part, so a part's side faces show
   -- its own material and never the neighbour's (the sprite-wide walk
@@ -980,11 +1227,84 @@ local function model(sp, pr, t)
       if pr.recess[i] then return nil end
       return i
     end
-    if z == 0 then return i end
+    if z == 0 then
+      if pr.rear then return pr.rear[i] or pr.interior[i] end
+      return i
+    end
     return pr.interior[i]
   end
 
+  -- A voxel stores one texel for all of its faces, but an exterior corner
+  -- needs different art on each elevation: the rear course on -Z, the real
+  -- facade on +Z, and the depth-running wall course on +/-X.  Keep occupancy
+  -- and voxel material byte-for-byte unchanged and override only the emitted
+  -- flank face.  Roofs, awnings and indoor models retain the historical cell
+  -- material; `pr.rear` (the shared exterior course) exists only outdoors.
+  local function sideAt(x, y, z, cellTexel)
+    if not pr.rear or not cellTexel or x < 0 or x >= W
+       or z < 0 or z >= D then
+      return cellTexel
+    end
+
+    local tx = T[x]
+    if top[x] < roofRows and y > tx - slab and y <= tx
+       and z >= rz0 and z <= rz1 then
+      return cellTexel
+    end
+    if ledge0 and (z == -2 or z == -1 or z == D or z == D + 1) then
+      return cellTexel
+    end
+
+    local sy = ground - 1 - y
+    local i = sy * W + x
+    if y == 0 and not sp.inside[i] and sy > 0 and sp.inside[i - W] then
+      sy, i = sy - 1, i - W
+    end
+    if not sp.inside[i] then return cellTexel end
+    return sideMaterialAt(sp, pr.rear, sy, z) or cellTexel
+  end
+
+  -- Occupancy along depth is analytical for every ordinary profiled
+  -- building: one roof slab, or one facade extrusion with at most the
+  -- recessed front voxel separating it from an authored awning.  Expose the
+  -- exact inclusive intervals so emit() can discover the shell without
+  -- materialising millions of invisible interior voxels first.  Material is
+  -- still resolved by at() at every emitted face, so UVs, rear/side courses,
+  -- pane recesses and merge order remain byte-for-byte the historical model.
+  local function ranges(x, y)
+    if x < 0 or x >= W or y < 0 or y > ytop then return nil end
+    local tx = T[x]
+    if top[x] < roofRows
+        and y > tx - slab and y <= tx then
+      return { rz0, rz1 }
+    end
+    if top[x] < roofRows and y > tx - slab then return nil end
+
+    local sy = ground - 1 - y
+    local i = sy * W + x
+    -- at() decides the protruding ledge before its special base-course
+    -- fallback, so preserve that original row for the occupancy interval.
+    local awning = ledge0 and sy >= ledge0 and sy <= ledge1
+                   and sp.inside[i] == true
+    if y == 0 and not sp.inside[i] and sy > 0 and sp.inside[i - W] then
+      sy, i = sy - 1, i - W
+    end
+    if not sp.inside[i] then return nil end
+
+    local front = not pr.recess[i]
+    if awning then
+      if front then return { -2, D + 1 } end
+      if D - 2 >= 0 then return { -2, D - 2, D, D + 1 } end
+      return { -2, -1, D, D + 1 }
+    end
+    if front then return { 0, D - 1 } end
+    if D - 2 >= 0 then return { 0, D - 2 } end
+    return nil
+  end
+
   return { at = at, W = W, ytop = ytop,
+           sideAt = sideAt, sideStrip = pr.rear ~= nil,
+           ranges = ranges,
            zmin = ledge0 and -2 or 0,
            zmax = math.max(rz1, ledge0 and (D + 1) or 0) }
 end
@@ -998,39 +1318,204 @@ end
 -- every texel exactly where the sprite put it.
 local function emit(m, sp, atlasW, atlasH)
   local W = m.W
-  local quads = { voxels = 0, shell = 0 }
-  local cell = {}                        -- (y, z, x) -> sprite pixel index
+  local quads = { voxels = 0, shell = diagnosticShell and 0 or nil }
+  local cell = {}                        -- dense fallback for furniture sets
 
   local zmin, zmax, ytop = m.zmin, m.zmax, m.ytop
   local zn = zmax - zmin + 1
+  local plane = zn * W
+  -- Exact exposure indexes, populated while the volume is materialised.
+  -- A face can only exist where occupancy changes across its plane; the old
+  -- emitter nevertheless rescanned the complete dense volume five times.
+  -- Silph Co. is 128x192x151, so those rejected interior rows alone delayed
+  -- a cold neighbouring Saffron build by seconds.  These sparse sets let the
+  -- face loops retain their historical order and merging rules while
+  -- entering only rows that provably contain at least one exposed voxel.
+  local zPos, zNeg, yPos, yNeg, xPos, xNeg = {}, {}, {}, {}, {}, {}
+  local function rowKey(y, z)
+    return y * zn + (z - zmin)
+  end
+  local function xKey(y, x)
+    return y * W + x
+  end
+  local rangeCache = type(m.ranges) == "function" and {} or nil
+  local function rangesAt(x, y)
+    if not rangeCache or x < 0 or x >= W or y < 0 or y > ytop then
+      return nil
+    end
+    local k = y * W + x
+    local hit = rangeCache[k]
+    if hit == nil then
+      hit = m.ranges(x, y) or false
+      rangeCache[k] = hit
+    end
+    return hit or nil
+  end
+  local function rangeContains(ranges, z)
+    if not ranges then return false end
+    for at = 1, #ranges, 2 do
+      if z >= ranges[at] and z <= ranges[at + 1] then return true end
+    end
+    return false
+  end
   local function ci(x, y, z)
     if x < 0 or x >= W or y < 0 or y > ytop or z < zmin or z > zmax then
       return nil
     end
+    if rangeCache then
+      if not rangeContains(rangesAt(x, y), z) then return nil end
+      return m.at(x, y, z)
+    end
     return cell[(y * zn + (z - zmin)) * W + x]
   end
-  for y = 0, ytop do
-    Budget.tick()
-    for z = zmin, zmax do
-      local base = (y * zn + (z - zmin)) * W
+  if rangeCache then
+    local function sameRanges(a, b)
+      if a == b then return true end
+      if not a or not b or #a ~= #b then return false end
+      for i = 1, #a do if a[i] ~= b[i] then return false end end
+      return true
+    end
+    local function hasOutside(a, b)
+      if not a then return false end
+      if sameRanges(a, b) then return false end
+      for at = 1, #a, 2 do
+        for z = a[at], a[at + 1] do
+          Budget.tick()
+          if not rangeContains(b, z) then return true end
+        end
+      end
+      return false
+    end
+    local function markDifference(a, b, active, activeY)
+      if not a or sameRanges(a, b) then return end
+      for at = 1, #a, 2 do
+        for z = a[at], a[at + 1] do
+          Budget.tick()
+          if not rangeContains(b, z) then active[rowKey(activeY, z)] = true end
+        end
+      end
+    end
+    local function markAll(a, active, activeY)
+      if not a then return end
+      for at = 1, #a, 2 do
+        for z = a[at], a[at + 1] do
+          Budget.tick()
+          active[rowKey(activeY, z)] = true
+        end
+      end
+    end
+
+    for y = 0, ytop do
+      Budget.check()
       for x = 0, W - 1 do
-        local v = m.at(x, y, z)
-        cell[base + x] = v
-        if v then quads.voxels = quads.voxels + 1 end
+        Budget.tick()
+        local current = rangesAt(x, y)
+        if current then
+          for at = 1, #current, 2 do
+            local first, last = current[at], current[at + 1]
+            quads.voxels = quads.voxels + last - first + 1
+            zNeg[rowKey(y, first)] = true
+            zPos[rowKey(y, last)] = true
+          end
+        end
+
+        local left = x > 0 and rangesAt(x - 1, y) or nil
+        if x == 0 then
+          if current then xNeg[xKey(y, x)] = true end
+        else
+          if hasOutside(current, left) then xNeg[xKey(y, x)] = true end
+          if hasOutside(left, current) then xPos[xKey(y, x - 1)] = true end
+        end
+        if x == W - 1 and current then xPos[xKey(y, x)] = true end
+
+        local below = y > 0 and rangesAt(x, y - 1) or nil
+        if y == 0 then markAll(current, yNeg, y)
+        else
+          markDifference(current, below, yNeg, y)
+          markDifference(below, current, yPos, y - 1)
+        end
+        if y == ytop then markAll(current, yPos, y) end
+      end
+    end
+  else
+    for y = 0, ytop do
+      for z = zmin, zmax do
+        -- One z scanline is at most the sprite width; checking it directly
+        -- prevents a wide/deep building from monopolising a resume until 32
+        -- complete y planes have been materialised.
+        Budget.check()
+        local rk = rowKey(y, z)
+        local base = rk * W
+        for x = 0, W - 1 do
+          local v = m.at(x, y, z)
+          cell[base + x] = v
+          local occupied = v ~= nil
+          if occupied then quads.voxels = quads.voxels + 1 end
+
+          -- +/-X: the boundary is shared by this cell and the preceding x.
+          -- Record the side whose occupied voxel owns the eventual face.
+          local xk = xKey(y, x)
+          if x == 0 then
+            if occupied then xNeg[xk] = true end
+          else
+            local leftOccupied = cell[base + x - 1] ~= nil
+            if occupied ~= leftOccupied then
+              if occupied then xNeg[xk] = true
+              else xPos[xk - 1] = true end
+            end
+          end
+          if x == W - 1 and occupied then xPos[xk] = true end
+
+          -- +/-Z: the previous row is already present in this y plane.
+          if z == zmin then
+            if occupied then zNeg[rk] = true end
+          else
+            local previousOccupied = cell[base - W + x] ~= nil
+            if occupied ~= previousOccupied then
+              if occupied then zNeg[rk] = true
+              else zPos[rk - 1] = true end
+            end
+          end
+          if z == zmax and occupied then zPos[rk] = true end
+
+          -- +/-Y: the complete preceding y plane remains in `cell`.
+          if y == 0 then
+            if occupied then yNeg[rk] = true end
+          else
+            local belowOccupied = cell[base - plane + x] ~= nil
+            if occupied ~= belowOccupied then
+              if occupied then yNeg[rk] = true
+              else yPos[rk - zn] = true end
+            end
+          end
+          if y == ytop and occupied then yPos[rk] = true end
+        end
       end
     end
   end
-  -- the shell: what survives hidden-face culling. Counted here rather than
-  -- derived from the quads because it is the number
-  -- tools/building_voxels.py checks this build against.
-  for y = 0, ytop do
-    Budget.tick()
+
+  -- `shell` remains the exact number of occupied voxels with at least one
+  -- exposed face (the reference methodology's Stage 5 number).  Mark those
+  -- voxels while emitting the already-indexed faces instead of performing a
+  -- second full-volume pass solely for diagnostics.
+  local shellSeen = diagnosticShell and {} or nil
+  local function markShell(x, y, z)
+    local k = (rowKey(y, z) * W) + x
+    if not shellSeen[k] then
+      shellSeen[k] = true
+      quads.shell = quads.shell + 1
+    end
+  end
+  -- The renderer intentionally omits y=0 undersides because the building
+  -- stands on terrain, while the reference shell count includes them.  Count
+  -- that one bounded footprint plane explicitly; all other shell voxels are
+  -- reached by an emitted face below.
+  if diagnosticShell then
     for z = zmin, zmax do
-      for x = 0, W - 1 do
-        if ci(x, y, z) and not (ci(x + 1, y, z) and ci(x - 1, y, z)
-            and ci(x, y + 1, z) and ci(x, y - 1, z)
-            and ci(x, y, z + 1) and ci(x, y, z - 1)) then
-          quads.shell = quads.shell + 1
+      Budget.tick()
+      if yNeg[rowKey(0, z)] then
+        for x = 0, W - 1 do
+          if ci(x, 0, z) then markShell(x, 0, z) end
         end
       end
     end
@@ -1077,58 +1562,77 @@ local function emit(m, sp, atlasW, atlasH)
     return i0, strip == true, n
   end
 
+  -- Flank counterpart to runX.  Outdoor walls now advance through a real
+  -- source tile along depth, so adjacent atlas texels must merge as a strip;
+  -- constant roof/awning texels still take the historical flat run.  Both are
+  -- capped at the 8px world lattice, preserving WorldCurve's watertight join.
+  local function sideTexel(x, y, z)
+    local i = ci(x, y, z)
+    if i and m.sideAt then return m.sideAt(x, y, z, i) end
+    return i
+  end
+
+  local function runZ(y, x, d, z)
+    local i0 = sideTexel(x, y, z)
+    if not m.sideStrip then
+      local n, cap = 1, runCap(z)
+      while n < cap and z + n <= zmax do
+        local nz = z + n
+        if sideTexel(x, y, nz) ~= i0 or ci(x + d, y, nz) then break end
+        n = n + 1
+      end
+      return i0, false, n
+    end
+
+    local strip, n = nil, 1
+    local cap = runCap(z)
+    while n < cap and z + n <= zmax do
+      local nz = z + n
+      local i = sideTexel(x, y, nz)
+      if not i or ci(x + d, y, nz) then break end
+      local prev = sideTexel(x, y, nz - 1)
+      if sp.ay[i] ~= sp.ay[prev] then break end
+      local delta = sp.ax[i] - sp.ax[prev]
+      if delta == 1 then
+        if strip == false then break end
+        strip = true
+      elseif delta == 0 then
+        if strip == true then break end
+        strip = false
+      else
+        break
+      end
+      n = n + 1
+    end
+    return i0, strip == true, n
+  end
+
   -- ---- faces along +-Z (the facade, the roof's rims): merge along x ----
   for _, d in ipairs({ 1, -1 }) do
     local shade = d == 1 and SHADE.south or SHADE.north
+    local active = d == 1 and zPos or zNeg
     for y = 0, ytop do
-      Budget.tick()
       for z = zmin, zmax do
-        local x = 0
-        while x < W do
-          if ci(x, y, z) and not ci(x, y, z + d) then
-            local i, strip, n = runX(y, z, 0, 0, d, x)
-            local u0, u1, v0, v1 = uvOf(i, strip, n)
-            local zf = d == 1 and (z + 1) or z
-            if d == 1 then
-              put({ x, y, zf }, { x + n, y, zf },
-                  { x + n, y + 1, zf }, { x, y + 1, zf },
-                  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
-            else
-              put({ x + n, y, zf }, { x, y, zf },
-                  { x, y + 1, zf }, { x + n, y + 1, zf },
-                  { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }, shade)
-            end
-            x = x + n
-          else
-            x = x + 1
-          end
-        end
-      end
-    end
-  end
-
-  -- ---- faces along +-Y (roof surfaces, undersides): merge along x ----
-  for _, d in ipairs({ 1, -1 }) do
-    local shade = d == 1 and SHADE.top or SHADE.bottom
-    for y = 0, ytop do
-      Budget.tick()
-      -- the underside of the bottom layer is the ground it stands on
-      if not (d == -1 and y == 0) then
-        for z = zmin, zmax do
+        Budget.tick()
+        if active[rowKey(y, z)] then
+          Budget.check()
           local x = 0
           while x < W do
-            if ci(x, y, z) and not ci(x, y + d, z) then
-              local i, strip, n = runX(y, z, 0, d, 0, x)
+            if ci(x, y, z) and not ci(x, y, z + d) then
+              local i, strip, n = runX(y, z, 0, 0, d, x)
               local u0, u1, v0, v1 = uvOf(i, strip, n)
-              local yf = d == 1 and (y + 1) or y
+              local zf = d == 1 and (z + 1) or z
               if d == 1 then
-                put({ x, yf, z }, { x + n, yf, z },
-                    { x + n, yf, z + 1 }, { x, yf, z + 1 },
-                    { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, shade)
-              else
-                put({ x, yf, z + 1 }, { x + n, yf, z + 1 },
-                    { x + n, yf, z }, { x, yf, z },
+                put({ x, y, zf }, { x + n, y, zf },
+                    { x + n, y + 1, zf }, { x, y + 1, zf },
                     { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
+              else
+                put({ x + n, y, zf }, { x, y, zf },
+                    { x, y + 1, zf }, { x + n, y + 1, zf },
+                    { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }, shade)
+              end
+              if diagnosticShell then
+                for sx = x, x + n - 1 do markShell(sx, y, z) end
               end
               x = x + n
             else
@@ -1140,44 +1644,123 @@ local function emit(m, sp, atlasW, atlasH)
     end
   end
 
-  -- ---- faces along +-X (the flanks): merge along z, one texel each ----
+  -- ---- faces along +-Y (roof surfaces, undersides): merge along x ----
   for _, d in ipairs({ 1, -1 }) do
+    local shade = d == 1 and SHADE.top or SHADE.bottom
+    local active = d == 1 and yPos or yNeg
     for y = 0, ytop do
-      for x = 0, W - 1 do
-        local z = zmin
-        while z <= zmax do
-          local i = ci(x, y, z)
-          if i and not ci(x + d, y, z) then
-            local n, cap = 1, runCap(z)
-            while n < cap and z + n <= zmax do
-              local j = ci(x, y, z + n)
-              if j ~= i or ci(x + d, y, z + n) then break end
-              n = n + 1
+      -- the underside of the bottom layer is the ground it stands on
+      if not (d == -1 and y == 0) then
+        for z = zmin, zmax do
+          Budget.tick()
+          if active[rowKey(y, z)] then
+            Budget.check()
+            local x = 0
+            while x < W do
+              if ci(x, y, z) and not ci(x, y + d, z) then
+                local i, strip, n = runX(y, z, 0, d, 0, x)
+                local u0, u1, v0, v1 = uvOf(i, strip, n)
+                local yf = d == 1 and (y + 1) or y
+                if d == 1 then
+                  put({ x, yf, z }, { x + n, yf, z },
+                      { x + n, yf, z + 1 }, { x, yf, z + 1 },
+                      { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, shade)
+                else
+                  put({ x, yf, z + 1 }, { x + n, yf, z + 1 },
+                      { x + n, yf, z }, { x, yf, z },
+                      { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
+                end
+                if diagnosticShell then
+                  for sx = x, x + n - 1 do markShell(sx, y, z) end
+                end
+                x = x + n
+              else
+                x = x + 1
+              end
             end
-            local u0, u1, v0, v1 = uvOf(i, false, n)
-            local xf = d == 1 and (x + 1) or x
-            if d == 1 then
-              put({ xf, y, z + n }, { xf, y, z },
-                  { xf, y + 1, z }, { xf, y + 1, z + n },
-                  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
-                  SHADE.side)
-            else
-              put({ xf, y, z }, { xf, y, z + n },
-                  { xf, y + 1, z + n }, { xf, y + 1, z },
-                  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
-                  SHADE.side)
-            end
-            z = z + n
-          else
-            z = z + 1
           end
         end
       end
     end
   end
 
+  -- ---- faces along +-X (the flanks): merge flat or adjacent z texels ----
+  for _, d in ipairs({ 1, -1 }) do
+    local active = d == 1 and xPos or xNeg
+    for y = 0, ytop do
+      for x = 0, W - 1 do
+        Budget.tick()
+        if active[xKey(y, x)] then
+          Budget.check()
+          local z = zmin
+          while z <= zmax do
+            local occupied = ci(x, y, z)
+            if occupied and not ci(x + d, y, z) then
+              local i, strip, n = runZ(y, x, d, z)
+              local u0, u1, v0, v1 = uvOf(i, strip, n)
+              local xf = d == 1 and (x + 1) or x
+              if d == 1 then
+                local uv = strip
+                  and { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }
+                  or  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }
+                put({ xf, y, z + n }, { xf, y, z },
+                    { xf, y + 1, z }, { xf, y + 1, z + n },
+                    uv, SHADE.side)
+              else
+                put({ xf, y, z }, { xf, y, z + n },
+                    { xf, y + 1, z + n }, { xf, y + 1, z },
+                    { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
+                    SHADE.side)
+              end
+              if diagnosticShell then
+                for sz = z, z + n - 1 do markShell(x, y, sz) end
+              end
+              z = z + n
+            else
+              z = z + 1
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Drop the multi-megabyte dense volume before returning the retained local
+  -- quad model.  The closures above die here too, but clearing the upvalue
+  -- makes the table collectible immediately instead of at a later GC trace.
+  cell, rangeCache, shellSeen = nil, nil, nil
   return quads
 end
+
+-- The compact one-storey OVERWORLD drawings are faithful to their source
+-- pixels but, next to a full-height trainer sprite, their 19--20 world-pixel
+-- silhouette reads like a half-buried hut.  A profile may opt into a bounded
+-- Y-only scale.  Validate the complete shared model before touching it so a
+-- malformed override falls back byte-for-byte; X/Z, UVs, shades, topology,
+-- collision and the claimed footprint remain unchanged.
+local function applyHeightScale(quads, scale)
+  if scale == nil or scale == 1 then return quads, true end
+  if type(scale) ~= "number" or scale ~= scale
+     or scale <= 1 or scale > 2 or scale == math.huge then
+    return quads, false
+  end
+  for _, q in ipairs(quads or {}) do
+    for corner = 1, 4 do
+      local c = q[corner]
+      local y = type(c) == "table" and c[2] or nil
+      if type(y) ~= "number" or y ~= y
+         or y == math.huge or y == -math.huge then
+        return quads, false
+      end
+    end
+  end
+  for _, q in ipairs(quads) do
+    for corner = 1, 4 do q[corner][2] = q[corner][2] * scale end
+  end
+  quads.heightScale = scale
+  return quads, true
+end
+Buildings.applyHeightScale = applyHeightScale
 
 -- ------------------------------------------------------------- placement --
 
@@ -1185,6 +1768,7 @@ end
 local function matches(S, t, tx, ty)
   local tiles = t.tiles
   for r = 1, #tiles do
+    Budget.tick()
     local row = tiles[r]
     for c = 1, #row do
       if S.tileAt[keyOf(tx + c - 1, ty + r - 1)] ~= row[c] then
@@ -1196,9 +1780,9 @@ local function matches(S, t, tx, ty)
 end
 
 -- Find every placement of every template for this map's tileset, build one
--- model per template, and stamp it. Returns nothing; the quads land in
--- S.objectQuads and the tiles are claimed so the volume path never boxes a
--- building this module has already modelled.
+-- model per template, and stamp it. Returns nothing; each placement retains
+-- only that shared local model plus its offset, and the tiles are claimed so
+-- the volume path never boxes a building this module has already modelled.
 function Buildings.build(S, map, data, perRow)
   if not data then return end
   local tileset = map.tileset
@@ -1211,14 +1795,46 @@ function Buildings.build(S, map, data, perRow)
   local tw, th = map.def.width * 4, map.def.height * 4
   local quads = S.objectQuads
 
+  -- Every template used to sweep every possible map origin merely to reject
+  -- almost all of them on its first tile. Build that first-tile lookup once
+  -- instead. Positions are appended by y then x, so each template still
+  -- claims matches in the exact historical row-major order; the outer loop
+  -- below remains the authored template-priority order. Store one linear
+  -- position rather than a table per cell to keep the transient index small.
+  local missingTile = {}
+  local candidatesByFirst = {}
+  for _, t in ipairs(list) do
+    if type(t.tiles) == "table" and #t.tiles > 0 then
+      local first = t.tiles[1][1]
+      local candidateKey = first == nil and missingTile or first
+      candidatesByFirst[candidateKey] = candidatesByFirst[candidateKey] or {}
+    end
+  end
+  for ty = 0, th - 1 do
+    for tx = 0, tw - 1 do
+      Budget.tick()
+      local tile = S.tileAt[keyOf(tx, ty)]
+      local candidateKey = tile == nil and missingTile or tile
+      local candidates = candidatesByFirst[candidateKey]
+      if candidates then
+        candidates[#candidates + 1] = ty * tw + tx
+      end
+    end
+  end
+
   for index, t in ipairs(list) do
     if type(t.tiles) == "table" and #t.tiles > 0 then
       local bh, bw = #t.tiles, #t.tiles[1]
       local first = t.tiles[1][1]
       local built = nil
-      for ty = 0, th - bh do
+      local candidateKey = first == nil and missingTile or first
+      local candidates = candidatesByFirst[candidateKey]
+      for ci = 1, candidates and #candidates or 0 do
         Budget.tick()
-        for tx = 0, tw - bw do
+        local position = candidates[ci]
+        local tx = position % tw
+        local ty = math.floor(position / tw)
+        if tx <= tw - bw and ty <= th - bh then
           -- A placement never stamps into cells another template already
           -- claimed. Templates are matched independently, and one
           -- drawing can satisfy two grids: the Pokemon Tower's upper
@@ -1241,7 +1857,9 @@ function Buildings.build(S, map, data, perRow)
           end
           if free and matches(S, t, tx, ty) then
             if not built then
+              local plainRear = S.outdoor == true
               local key = tileset.id .. ":" .. index
+                          .. (plainRear and ":rear" or ":copy")
               if not models[key] then
                 if t.claimOnly then
                   -- claim the cells, stamp nothing: the drawing here is
@@ -1252,8 +1870,10 @@ function Buildings.build(S, map, data, perRow)
                   models[key] = {}
                 else
                   local sp = read(t, data, perRow)
-                  local pr = measure(sp, t)
-                  models[key] = emit(model(sp, pr, t), sp, atlasW, atlasH)
+                  local pr = measure(sp, t, plainRear)
+                  local modelQuads = emit(model(sp, pr, t), sp,
+                                           atlasW, atlasH)
+                  models[key] = applyHeightScale(modelQuads, t.heightScale)
                 end
               end
               built = models[key]
@@ -1266,8 +1886,12 @@ function Buildings.build(S, map, data, perRow)
   end
 end
 
--- One placement: claim its tiles (so the detector leaves them alone and
--- the mesher paints ground under them) and copy the model into place.
+-- One placement: claim its tiles (so the detector leaves them alone and the
+-- mesher paints ground under them), then retain one shared local model plus a
+-- compact translation. ChunkMesher expands this exact record on drivers that
+-- lack instancing; capable drivers upload the template once. Keeping the
+-- local quads avoids tens of thousands of translated corner tables per city
+-- analysis and the GC pauses those copies caused during later neighbour work.
 --
 -- Two template fields alter what a claim means, for a drawing that
 -- carries a STANDEE on its surface (Red's potted plant on the dining
@@ -1308,6 +1932,38 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
     vote(tx + bw, ty + r)
   end
 
+  -- A building's collision door is the one authored point where gameplay
+  -- states exactly which terrace its floor meets. Keep the bottom-left tile
+  -- coordinate of every such cell inside the claimed drawing. ChunkMesher
+  -- accepts the anchor only when all doors agree; a doorless scenery block
+  -- or contradictory multi-door mod therefore retains the historical origin
+  -- datum byte-for-byte instead of inheriting a guessed perimeter height.
+  local doorGroundSamples = {}
+  if map and type(map.cellTile) == "function" then
+    local cx0, cx1 = math.floor(tx / 2), math.floor((tx + bw - 1) / 2)
+    local cy0, cy1 = math.floor(ty / 2), math.floor((ty + bh - 1) / 2)
+    for cy = cy0, cy1 do
+      for cx = cx0, cx1 do
+        Budget.tick()
+        local footTx, footTy = cx * 2, cy * 2 + 1
+        if footTx >= tx and footTx < tx + bw
+           and footTy >= ty and footTy < ty + bh then
+          local door = false
+          if type(map.isDoorTileCell) == "function" then
+            local ok, value = pcall(map.isDoorTileCell, map, cx, cy)
+            door = ok and value and true or false
+          elseif type(map.doorTiles) == "table" then
+            door = map.doorTiles[map:cellTile(cx, cy)] and true or false
+          end
+          if door then
+            doorGroundSamples[#doorGroundSamples + 1] = footTx
+            doorGroundSamples[#doorGroundSamples + 1] = footTy
+          end
+        end
+      end
+    end
+  end
+
   for r = 0, bh - 1 do
     for c = 0, bw - 1 do
       local k = keyOf(tx + c, ty + r)
@@ -1327,28 +1983,24 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
   end
 
   local mx, mz = tx * 8, ty * 8
-  local out = S.objectQuads
-  for _, q in ipairs(quads) do
-    out[#out + 1] = {
-      { q[1][1] + mx, q[1][2], q[1][3] + mz },
-      { q[2][1] + mx, q[2][2], q[2][3] + mz },
-      { q[3][1] + mx, q[3][2], q[3][3] + mz },
-      { q[4][1] + mx, q[4][2], q[4][3] + mz },
-      uv = q.uv, shade = q.shade,
-      -- placements only ever scan the BODY, so a building is always this
-      -- map's own structure: the mesher's edge keep-rules must not eat
-      -- the parts that poke past the boundary (an edge-row house's eave
-      -- juts frontEave voxels into the neighbour's airspace, and the
-      -- neighbour-body mask read that overhang as a ring scrap -- which
-      -- opened the roof rim into the sky from across the seam)
-      own = true,
-    }
+  if #quads == 0 then return end
+  local stamps = S.buildingStamps
+  if not stamps then
+    stamps = {}
+    S.buildingStamps = stamps
   end
+  stamps[#stamps + 1] = {
+    quads = quads, mx = mx, mz = mz,
+    tx = tx, ty = ty, bw = bw, bh = bh,
+    heightScale = quads.heightScale or 1,
+    doorGroundSamples = doorGroundSamples,
+    northDoor = rearFacadeDoor(map, tx, ty, bw, bh, t),
+  }
 end
 
--- What the models built so far cost, keyed "<tileset>:<index>": the voxel
--- and shell counts tools/building_voxels.py checks this implementation
--- against (Stage 5 of the methodology), and the quad count that ships.
+-- What the models built so far cost, keyed "<tileset>:<index>". `shell` is
+-- present when diagnostics were enabled before that model was built; voxel
+-- and retained quad counts are always available.
 function Buildings.stats()
   local out = {}
   for key, quads in pairs(models) do

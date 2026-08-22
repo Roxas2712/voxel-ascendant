@@ -31,20 +31,36 @@ local function modId()
 end
 
 -- `values` are the stored values in ladder order and `labels` what the row
--- shows for each; values[1] is the default, and the one an unreadable or
--- unrecognised stored value falls back to.
-function ModSetting.new(key, label, values, labels)
+-- shows for each. Callers may name a default value without reordering the
+-- visible ladder; omitted/unrecognised defaults retain the historical first
+-- rung. An unreadable or unrecognised stored value falls back to that default.
+function ModSetting.new(key, label, values, labels, defaultValue)
+  local defaultIndex = 1
+  if defaultValue ~= nil then
+    for i, value in ipairs(values) do
+      if value == defaultValue then defaultIndex = i break end
+    end
+  end
   return setmetatable({
     key = key, label = label, values = values, labels = labels,
+    defaultIndex = defaultIndex,
     index = nil,          -- nil = not yet read back from the persisted options
   }, ModSetting)
+end
+
+-- Observe an explicit player/programmatic change. Syncing a value written by
+-- the mod manager is deliberately separate: that caller already owns the
+-- persistence event and can decide whether the change belongs to a preset.
+function ModSetting:onChange(fn)
+  self.change = type(fn) == "function" and fn or nil
+  return self
 end
 
 local function indexOf(self, value)
   for i, v in ipairs(self.values) do
     if v == value then return i end
   end
-  return 1
+  return self.defaultIndex or 1
 end
 
 -- ------- rungs that are not always there
@@ -60,15 +76,15 @@ end
 -- which is the truth. What the player is missing, and how to get it, is said
 -- once in the row's help text instead of implied by a dead setting.
 --
--- values[1] is never gated: it is the default and the fallback, so there is
--- always at least one rung to land on.
+-- The default is never gated: it is also the fallback, so there is always at
+-- least one rung to land on.
 function ModSetting:setGate(gate)
   self.gate = gate
   return self
 end
 
 function ModSetting:allows(i)
-  if i == 1 or not self.gate then return true end
+  if i == (self.defaultIndex or 1) or not self.gate then return true end
   local ok, allowed = pcall(self.gate, self.values[i], i)
   return (not ok) or allowed and true or false
 end
@@ -104,7 +120,7 @@ function ModSetting:get()
   -- moved the ROM, or opened the same save on another machine -- reads as
   -- the default rather than as a mode with nothing behind it. The stored
   -- value is left alone, so putting the ROM back restores their choice.
-  if not self:allows(i) then return self.values[1] end
+  if not self:allows(i) then return self.values[self.defaultIndex or 1] end
   return self.values[i]
 end
 
@@ -112,7 +128,7 @@ function ModSetting:level()
   return self:read() - 1
 end
 
-function ModSetting:setIndex(i, game)
+function ModSetting:setIndex(i, game, silent)
   local n = #self.values
   i = ((i - 1) % n + n) % n + 1
   self.index = i
@@ -130,26 +146,29 @@ function ModSetting:setIndex(i, game)
     loader.modOptions[id][self.key] = value
   end
   if game and game.writeOptions then pcall(game.writeOptions, game) end
+  if not silent and self.change then
+    pcall(self.change, game, value, i)
+  end
   return value
 end
 
 -- Set by the STORED VALUE rather than by its place on the ladder, for a
 -- caller that knows which setting it wants and not where it sits -- a
--- preset, or an assertion. An unrecognised value lands on values[1], the
--- same default indexOf answers everywhere else, so this can never leave a
--- setting holding something the row cannot display.
+-- preset, or an assertion. An unrecognised value lands on the declared
+-- default, the same index that indexOf answers everywhere else, so this
+-- cannot leave a setting holding something the row cannot display.
 --
 -- Worth having as its own entry point because a ladder's ORDER is not a
 -- promise: 3D-BTL grew a third rung in the middle of itself (see
 -- OverworldBattle), and every caller that had counted to two would have
 -- silently meant something else afterwards.
-function ModSetting:setValue(value, game)
-  return self:setIndex(indexOf(self, value), game)
+function ModSetting:setValue(value, game, silent)
+  return self:setIndex(indexOf(self, value), game, silent)
 end
 
 -- Step to the next rung that is actually live, in `dir`. Bounded by the
 -- ladder's length so a gate that refuses everything still terminates on
--- values[1], which allows() never gates.
+-- the declared default, which allows() never gates.
 function ModSetting:cycle(game, dir)
   dir = dir or 1
   local n = #self.values
@@ -201,7 +220,8 @@ function ModSetting:schema(help)
              default = self.values[1], help = help }
   end
   return { key = self.key, type = "choice", label = self.label,
-           choices = choices, default = self.values[1], help = help }
+           choices = choices,
+           default = self.values[self.defaultIndex or 1], help = help }
 end
 
 return ModSetting

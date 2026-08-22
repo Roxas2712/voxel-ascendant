@@ -168,11 +168,12 @@ function ThirdPerson.extended()
   return ThirdPerson.extension() > 0.5
 end
 
--- How far back the eye must ACTUALLY be, in world pixels, for the player's
--- own card to be worth drawing: a shade under a cell, which is the point
--- where a 16-pixel card stops being a character and starts being a wall of
--- pixels across the lens.
+-- Absolute floor for drawing the player's own card.  The proportional gate in
+-- showsPlayer() is the stronger rule at ordinary zooms: collision must leave
+-- at least 67% of the requested boom, otherwise the card appears while the
+-- camera is still pressed into a gatehouse/building and fills the lens.
 ThirdPerson.SHOW_AT = 14
+ThirdPerson.SHOW_REACH_FRACTION = 0.67
 
 -- Whether the player's own card belongs in the frame. Not the same
 -- question as extended(): back into a fence and the boom collapses into
@@ -180,7 +181,9 @@ ThirdPerson.SHOW_AT = 14
 -- from inside exactly as it would in first person -- so it comes out, and
 -- the rung reads as first person for as long as the world insists on it.
 function ThirdPerson.showsPlayer()
-  return ThirdPerson.extension() > 0 and ThirdPerson.len >= ThirdPerson.SHOW_AT
+  local threshold = math.max(ThirdPerson.SHOW_AT,
+    ThirdPerson.reachFor() * ThirdPerson.SHOW_REACH_FRACTION)
+  return ThirdPerson.extension() > 0 and ThirdPerson.len >= threshold
 end
 
 -- ------- the world the boom has to fit through
@@ -220,6 +223,27 @@ local function cellAt(ow, wx, wz)
   return nil
 end
 
+-- The class of the COLLISION CELL the ray is crossing.  A ledge lip is
+-- intentionally unwalkable -- movement enters it only through the engine's
+-- ledge-hop verb -- but visually it is still a six-pixel terrain course, not
+-- a 20px house/tree wall.  The boom must therefore keep the real ground+PAD
+-- test for it and skip only the generic unwalkable-prop clearance below.
+--
+-- Read the canonical per-cell shape, rather than TileShape.at for whichever
+-- 8px half the point happens to occupy: the high half of the same ledge cell
+-- may resolve to ordinary ground while the collision cell remains the lip.
+local function collisionClass(map, cx, cy)
+  local ok, class = pcall(function()
+    local TileShape = V.require("TileShape")
+    local shapes = TileShape.forMap(map)
+    local shape = shapes and shapes[map:cellTile(cx, cy)]
+    return shape and shape.class
+  end)
+  return ok and class or nil
+end
+
+ThirdPerson._collisionClass = collisionClass -- named for the suite
+
 -- Whether the eye may not stand at this world point. Two refusals, and
 -- they are different questions:
 --
@@ -240,7 +264,10 @@ local function occupied(ow, wx, y, wz)
   gh = (okG and gh) or 0
   if y < gh + ThirdPerson.PAD then return true end
   local okW, walkable = pcall(function() return map:isWalkableCell(cx, cy) end)
-  if okW and not walkable and y < gh + ThirdPerson.CLEAR then return true end
+  if okW and not walkable and collisionClass(map, cx, cy) ~= "ledge"
+     and y < gh + ThirdPerson.CLEAR then
+    return true
+  end
   return false
 end
 

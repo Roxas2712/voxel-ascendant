@@ -42,9 +42,11 @@ local BattleArena = {}
 
 -- ------- the authored spot
 --
--- Every map gets ONE place its battles happen, chosen once and written down
--- in data/battle_arenas.lua, rather than whatever clearing happens to be
--- nearest to wherever the fight started. Two reasons.
+-- Every map gets one or more reviewed fallbacks in data/battle_arenas.lua.
+-- Before using them, an outdoor/cave fight may use a nearby, visible clearing
+-- on the player's own terrain course. This restores local variety without
+-- returning to an unconstrained "nearest walkable cell" that can put a rival
+-- between two houses. Two reasons for keeping the reviewed layer.
 --
 -- A fight should look the same every time it happens somewhere. Picking the
 -- nearest patch means Route 1 has a dozen different battle scenes depending
@@ -146,6 +148,27 @@ local function openCell(map, cx, cy, surfing)
 end
 
 BattleArena.openCell = openCell
+
+local function entryList(pick)
+  if type(pick) ~= "table" then return {} end
+  local source = type(pick.spots) == "table" and pick.spots
+                 or (#pick > 0 and pick or nil)
+  if not source then return { pick } end
+  local out = {}
+  for _, child in ipairs(source) do
+    if type(child) == "table" then
+      local entry = {}
+      for k, v in pairs(pick) do
+        if k ~= "spots" and type(k) ~= "number" then entry[k] = v end
+      end
+      for k, v in pairs(child) do entry[k] = v end
+      out[#out + 1] = entry
+    end
+  end
+  return out
+end
+
+BattleArena.entryList = entryList
 
 -- The map's open cells as one flat boolean grid, so the rectangle test
 -- below is a lookup rather than a tileset walk per cell. Built once per
@@ -278,40 +301,93 @@ function BattleArena.find(map, fromX, fromY, surfing)
   -- said explicitly, because the fallback search below would otherwise go and
   -- find one of the bad spots that were already rejected by eye.
   if pick == false then return nil end
-  if pick then
+  local entries = entryList(pick)
+  local authoredBest, authoredScore = nil, nil
+  local grids = {}
+  local originHeight = heightAt(map, fromX * CELL + CELL / 2,
+                                fromY * CELL + CELL / 2)
+  for index, entry in ipairs(entries) do
     local shape = nil
     for _, s in ipairs(BattleArena.SHAPES) do
-      if s.id == (pick.shape or "wide") then shape = s end
+      if s.id == (entry.shape or "wide") then shape = s end
     end
-    -- an entry may point at another floor of the same cave or building; the
-    -- arena is then measured against THAT map, and carries it
+    -- An entry may point at another floor of the same cave or building; the
+    -- arena is then measured against THAT map, and carries it.
     local host = map
-    if shape and pick.map and pick.map ~= map.id then
+    if shape and entry.map and entry.map ~= map.id then
       local ok, other = pcall(function()
         local Game = require("src.core.Game")
-        return require("src.world.MapLoader").load(Game.data, pick.map)
+        return require("src.world.MapLoader").load(Game.data, entry.map)
       end)
       host = (ok and other) or nil
     end
-    if shape and host then
-      -- An authored spot is checked with WATER COUNTING AS GROUND, whatever
-      -- the player is doing. The surfing test exists to stop the automatic
-      -- search staging a walker's fight out at sea; an authored entry was
-      -- chosen and looked at by a person, so if it is on water that is the
-      -- point of it -- the surf routes fight in the middle of their own
-      -- ocean rather than on a scrap of beach at the edge of the map. Land
-      -- entries are unaffected: land passes the test either way.
-      local grid, gw = openGrid(host, true)
-      if fits(grid, gw, pick.x, pick.y, shape.w, shape.h) then
-        local arena = place(shape, pick.x, pick.y)
-        arena.map = host
-        -- which camera rig this spot is framed for; nil is the default long
-        -- lens, "close" the short one small rooms need (see BattleCam)
-        arena.cam = pick.cam
-        return arena
+    if shape and host and type(entry.x) == "number" and type(entry.y) == "number"
+       and entry.x == math.floor(entry.x) and entry.y == math.floor(entry.y) then
+      -- Authored water remains intentional, independent of whether the
+      -- triggering player was surfing. Cache the grid per borrowed map while
+      -- comparing multiple candidates.
+      local cached = grids[host]
+      if not cached then
+        local grid, gw = openGrid(host, true)
+        cached = { grid, gw }
+        grids[host] = cached
+      end
+      if fits(cached[1], cached[2], entry.x, entry.y, shape.w, shape.h) then
+        local arena = place(shape, entry.x, entry.y)
+        arena.map, arena.cam = host, entry.cam
+        arena.anchorSource, arena.anchorIndex = "authored", index
+        local dx = arena.mid[1] / CELL - fromX
+        local dy = arena.mid[2] / CELL - fromY
+        local score = dx * dx + dy * dy + index * 1e-6
+        if host == map then
+          local eh = heightAt(host, arena.enemy[1], arena.enemy[2])
+          local ph = heightAt(host, arena.player[1], arena.player[2])
+          arena.anchorHeight = (eh + ph) / 2
+          -- Matching the player's course dominates distance. An arena whose
+          -- two mon cells disagree is retained only as a last authored
+          -- fallback, never preferred over a level one.
+          score = score + math.abs(arena.anchorHeight - originHeight) * 100000
+          score = score + math.abs(eh - ph) * 1000000
+        else
+          score = score + 10000000
+        end
+        if not authoredScore or score < authoredScore then
+          authoredBest, authoredScore = arena, score
+        end
       end
     end
   end
+
+  -- A bounded local candidate gives large routes and caves more than one
+  -- repeated postcard. It must be on the exact player height, visible from a
+  -- canonical battle rig, and close enough that the scene still reads as the
+  -- encounter location. Towns/cities additionally require a one-cell open
+  -- apron, excluding the narrow house corridors that prompted this change.
+  local def = map.def or {}
+  local tileset = tostring(def.tileset
+    or (map.tileset and map.tileset.id) or "")
+  local adaptiveSurface = tileset == "OVERWORLD" or tileset == "FOREST"
+                       or tileset == "CAVERN" or tileset == "PLATEAU"
+                       or tileset == "SHIP_PORT"
+  local adaptive = adaptiveSurface
+  if type(pick) == "table" and pick.adaptive ~= nil then
+    adaptive = pick.adaptive == true
+  end
+  if adaptive then
+    local id = tostring(map.id or "")
+    local urban = id:match("_CITY$") or id:match("_TOWN$")
+    local localPick = BattleArena.search(map, fromX, fromY, surfing, true, {
+      height = originHeight, maxDistance = 18,
+      roomy = urban and true or false, allowWide = true,
+    })
+    if localPick then
+      localPick.map = map
+      localPick.anchorSource = "local-height"
+      localPick.anchorHeight = originHeight
+      return localPick
+    end
+  end
+  if authoredBest then return authoredBest end
 
   local found = BattleArena.search(map, fromX, fromY, surfing)
   if found then found.map = map end
@@ -332,7 +408,8 @@ end
 -- in. Two passes rather than one score: a clear arena on the far side of a
 -- route beats an obstructed one underfoot, because being able to see the
 -- fight is the point, but an obstructed one still beats no battle at all.
-function BattleArena.search(map, fromX, fromY, surfing, wantClear)
+function BattleArena.search(map, fromX, fromY, surfing, wantClear, options)
+  options = type(options) == "table" and options or nil
   local grid, gw, gh = openGrid(map, surfing)
   for _, shape in ipairs(BattleArena.SHAPES) do
     for _, needClear in ipairs({ true, false }) do
@@ -344,9 +421,41 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear)
             local my = y + (shape.h - 1) / 2
             local dx, dy = mx - fromX, my - fromY
             local d = dx * dx + dy * dy
-            if not bestD or d < bestD then
+            local allowed = not options
+            if options then
+              allowed = true
+              if options.maxDistance
+                 and d > options.maxDistance * options.maxDistance then
+                allowed = false
+              end
+              if allowed and options.roomy then
+                if x <= 0 or y <= 0 or x + shape.w >= gw
+                   or y + shape.h >= gh
+                   or not fits(grid, gw, x - 1, y - 1,
+                               shape.w + 2, shape.h + 2) then
+                  allowed = false
+                end
+              end
+            end
+            if allowed and (not bestD or d < bestD) then
               local cand = place(shape, x, y)
-              if not needClear or BattleArena.clearance(map, cand) then
+              if options and options.height ~= nil then
+                local eh = heightAt(map, cand.enemy[1], cand.enemy[2])
+                local ph = heightAt(map, cand.player[1], cand.player[2])
+                if math.abs(eh - options.height) > 0.01
+                   or math.abs(ph - options.height) > 0.01 then
+                  allowed = false
+                end
+              end
+              local clear = allowed and (not needClear
+                            or BattleArena.clearance(map, cand))
+              if allowed and not clear and needClear and options
+                 and options.allowWide then
+                cand.cam = "wide"
+                clear = BattleArena.clearance(map, cand)
+                if not clear then cand.cam = nil end
+              end
+              if allowed and clear then
                 best, bestD = cand, d
               end
             end

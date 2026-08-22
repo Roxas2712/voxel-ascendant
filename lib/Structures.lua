@@ -86,9 +86,967 @@ local MAX_ROWS = 6                 -- volume height cap: 48px
 
 local cache = {}
 
+-- Safari's FOREST atlas draws a small set of boundary columns as a repeated
+-- body course followed by TWO distinct foot rows.  The generic repeat reader
+-- anchors at the southernmost row, so the unique $3e foot hides the repeated
+-- $2d/$2f body and the column hits the 48px safety cap.  In the authored 2D
+-- view this is one 8px body course plus its two-row foot: 24px total.
+--
+-- Keep this deliberately narrower than the generic one-row trim heuristic.
+-- The four outdoor Safari maps are the complete allow-list; the FOREST
+-- tileset, body bounds, exact terminal sequence and absence of a folded door
+-- must all agree.  Canonical Center currently has no matching column, but is
+-- named here so the visual rule follows the area's four-map contract without
+-- admitting rest houses or another FOREST map.
+local SAFARI_FOOT_MAPS = {
+  SAFARI_ZONE_CENTER = true,
+  SAFARI_ZONE_EAST = true,
+  SAFARI_ZONE_NORTH = true,
+  SAFARI_ZONE_WEST = true,
+}
+local SAFARI_FOOT_TRIM = { [0x2d] = 0x3d, [0x2f] = 0x3f }
+
+-- The southern sea maps author their otherwise-open outer limits with the
+-- same 16x16 round rock drawing used for scenery.  In the fixed 2D camera it
+-- is a useful stop marker; once folded into a cylinder for free cameras, a
+-- whole row of those drawings becomes a harbour-like barricade around open
+-- ocean.  Keep this strictly visual: only the structure grid is normalized,
+-- while the map's blocks, collision and connections remain untouched.
+--
+-- One block (4 tiles / 32px) is intentional.  The horizontal stop block puts
+-- its water in the outer half and the round drawing in the inner half, so an
+-- 8px/16px edge test would miss the north row.  A cylinder is required too:
+-- land, buildings, island shores and every other solid inside the same band
+-- retain their authored geometry.
+local OPEN_SEA_EDGES = {
+  ROUTE_19 = { south = true, east = true },
+  ROUTE_20 = { north = true, south = true },
+  ROUTE_21 = { west = true, east = true },
+  CINNABAR_ISLAND = { south = true, west = true },
+}
+local OPEN_SEA_BAND = 4
+local OPEN_SEA_WATER_TILE = 0x14
+local OPEN_SEA_STOP_CELL = { 0x2a, 0x2b, 0x3a, 0x3b }
+
+-- Route 8 uses the canonical four-tile overworld canopy as a low, continuous
+-- boundary course.  One revolved hull per cell reads as rows of metal drums
+-- in the free camera.  Folding the same authored pixels into an 8px course
+-- preserves the exact obstacle footprint while letting adjacent cells meet
+-- as one hedge/stone belt.  Body only: the streamed border ring keeps the
+-- ordinary tree treatment used by every other map.
+local ROUTE8_HEDGE_TILES = { [42] = true, [43] = true,
+                             [58] = true, [59] = true }
+local ROUTE8_HEDGE_SHAPE = {
+  class = "route8_hedge", art = "upright", h = 8, topTile = 44,
+  authored = true,
+}
+
+-- Nine vanilla outdoor warps use the same 16x16 cave-mouth drawing.  The
+-- collision cell is deliberately walkable, so the generic door detector
+-- folds it into the cliff region like an ordinary building door.  That is a
+-- useful fallback for unknown maps, but here it turns a rocky opening into a
+-- flat rectangular facade.  These exact canonical placements instead receive
+-- one visual-only tunnel stamp in ChunkMesher.
+--
+-- This is an allow-list, not a destination heuristic.  Each entry also pins
+-- the generated map dimensions, warp index/destination, four source tiles and
+-- the blocked cliff cells around the opening.  A ROM edit therefore falls
+-- back to the old detector independently at that one doorway; it can never
+-- acquire Kanto-specific geometry merely by naming a cave destination.
+local OUTDOOR_CAVE_PORTAL_MAPS = {
+  CERULEAN_CITY = { width = 20, height = 18, warps = {
+    [7] = { x = 4, y = 11, target = "CERULEAN_CAVE_1F", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x39 },
+  } },
+  ROUTE_10 = { width = 10, height = 36, warps = {
+    [2] = { x = 8, y = 17, target = "ROCK_TUNNEL_1F", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x2c },
+    [3] = { x = 8, y = 53, target = "ROCK_TUNNEL_1F", destWarp = 3,
+            west = 0x37, east = 0x37, south = 0x39 },
+  } },
+  ROUTE_11 = { width = 30, height = 9, warps = {
+    [5] = { x = 4, y = 5, target = "DIGLETTS_CAVE_ROUTE_11", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x39 },
+  } },
+  ROUTE_2 = { width = 10, height = 36, warps = {
+    [1] = { x = 12, y = 9, target = "DIGLETTS_CAVE_ROUTE_2", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x39 },
+  } },
+  ROUTE_20 = { width = 50, height = 9, warps = {
+    [1] = { x = 48, y = 5, target = "SEAFOAM_ISLANDS_1F", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x3c },
+    [2] = { x = 58, y = 9, target = "SEAFOAM_ISLANDS_1F", destWarp = 3,
+            west = 0x37, east = 0x37, south = 0x3c },
+  } },
+  ROUTE_4 = { width = 45, height = 9, warps = {
+    [2] = { x = 18, y = 5, target = "MT_MOON_1F", destWarp = 1,
+            west = 0x37, east = 0x37, south = 0x39 },
+    [3] = { x = 24, y = 5, target = "MT_MOON_B1F", destWarp = 8,
+            west = 0x24, east = 0x37, south = 0x39 },
+  } },
+}
+local OUTDOOR_CAVE_PORTAL_TILES = { 0x48, 0x49, 0x58, 0x59 }
+local OUTDOOR_CAVE_PORTAL_NORTH = 0x11
+local OUTDOOR_CAVE_PORTAL_COLLISION = 0x58
+local function keyOf(tx, ty)
+  return (ty + 64) * 4096 + (tx + 64)
+end
+
+-- Three canonical Route 8 wall courses are pure volumes.  The generic object
+-- detector historically proves that by rasterising a 1px-apron canvas over
+-- each connected region and flooding every candidate background pixel; all
+-- 800 source tiles then come back unchanged.  Together those negative proofs
+-- account for most of Route 8's cold current-map analysis.
+--
+-- This is deliberately a receipt, not a map-name shortcut.  The complete ROM
+-- block map and connections, the resolved region/member/air layout, every
+-- member shape, and the detector-relevant atlas masks must all remain exact.
+-- A map edit, tileset edit or changed drawing therefore takes the historical
+-- detector independently for that region.  On a match the detector's proven
+-- result is exactly `region.tiles`; returning that same table changes no
+-- geometry, ownership, collision or warp state.
+local ROUTE8_VOLUME_BLOCK_HASH = { 3506653494, 1754498528 }
+local ROUTE8_VOLUME_REGIONS = {
+  ["9:20:119:35"] = {
+    count = 490, hash = { 3661431076, 3836278869 },
+    tiles = { [0x11] = 382, [0x01] = 106, [0x1e] = 2 },
+  },
+  ["10:0:109:5"] = {
+    count = 249, hash = { 1804218531, 70213649 },
+    tiles = { [0x11] = 248, [0x35] = 1 },
+  },
+  ["114:0:119:13"] = {
+    count = 61, hash = { 3895117494, 3571742306 },
+    tiles = { [0x11] = 60, [0x35] = 1 },
+  },
+}
+-- Row-major candidate masks for the only four drawings in the receipts.
+-- These are the exact states the generic detector consumes, not raw colours:
+-- transparent or min(R,G,B)>0.83 is candidate background, everything else
+-- is solid.  Palette-equivalent art therefore remains valid while any edit
+-- that could change the detector's answer falls back.
+local ROUTE8_VOLUME_ATLAS_MASKS = {
+  [0x01] = { 0x00825520, 0x00000000 },
+  [0x11] = { 0x1020461c, 0x18302000 },
+  [0x1e] = { 0xfefcf1e0, 0xc992a412 },
+  [0x35] = { 0x40200000, 0x00000000 },
+}
+local route8VolumeAtlasCache = setmetatable({}, { __mode = "k" })
+
+local function rollingPair(h1, h2, value)
+  return (h1 * 257 + value) % 4294967291,
+         (h2 * 263 + value) % 4294967279
+end
+
+local function receiptCoordinate(value)
+  return type(value) == "number" and value == value
+     and value >= -4096 and value <= 4096 and value % 1 == 0
+end
+
+local function route8VolumeMapReceipt(map)
+  local def = map and map.def
+  local ts = map and map.tileset
+  if not (map and map.id == "ROUTE_8" and def and def.id == "ROUTE_8"
+          and def.width == 30 and def.height == 9 and def.index == 19
+          and def.source == "ROM:16:412D" and def.borderBlock == 44
+          and ts and ts.id == "OVERWORLD" and ts.tilesPerRow == 16
+          and ts.imageWidth == 128 and ts.imageHeight == 48
+          and type(def.blocks) == "table" and #def.blocks == 270) then
+    return false
+  end
+  local connections, count = def.connections, 0
+  if type(connections) ~= "table" then return false end
+  for _ in pairs(connections) do count = count + 1 end
+  local east, west = connections.east, connections.west
+  if not (count == 2 and type(east) == "table"
+          and east.map == "LAVENDER_TOWN" and east.offset == 0
+          and type(west) == "table" and west.map == "SAFFRON_CITY"
+          and west.offset == -4) then
+    return false
+  end
+  local h1, h2 = 2166136261, 2246822519
+  for i = 1, 270 do
+    local block = def.blocks[i]
+    if type(block) ~= "number" then return false end
+    h1, h2 = rollingPair(h1, h2, block + 1)
+  end
+  return h1 == ROUTE8_VOLUME_BLOCK_HASH[1]
+     and h2 == ROUTE8_VOLUME_BLOCK_HASH[2]
+end
+
+local function route8VolumeAtlasReceipt(data, perRow)
+  if perRow ~= 16 or not data or type(data.getPixel) ~= "function"
+     or type(data.getDimensions) ~= "function" then
+    return false
+  end
+  local cached = route8VolumeAtlasCache[data]
+  if cached ~= nil then return cached end
+  local okDimensions, width, height = pcall(data.getDimensions, data)
+  if not okDimensions or width ~= 128 or height ~= 48 then
+    route8VolumeAtlasCache[data] = false
+    return false
+  end
+  local exact = true
+  for tile, expected in pairs(ROUTE8_VOLUME_ATLAS_MASKS) do
+    local halves = { 0, 0 }
+    for py = 0, 7 do
+      for px = 0, 7 do
+        local okPixel, r, g, b, a = pcall(data.getPixel, data,
+          (tile % perRow) * 8 + px,
+          math.floor(tile / perRow) * 8 + py)
+        if not okPixel or type(r) ~= "number" or type(g) ~= "number"
+           or type(b) ~= "number" or type(a) ~= "number" then
+          route8VolumeAtlasCache[data] = false
+          return false
+        end
+        local bit = (a == 0 or math.min(r, g, b) > 0.83) and 1 or 0
+        local half = py * 8 + px < 32 and 1 or 2
+        halves[half] = halves[half] * 2 + bit
+      end
+    end
+    if halves[1] ~= expected[1] or halves[2] ~= expected[2] then
+      exact = false
+    end
+  end
+  route8VolumeAtlasCache[data] = exact
+  return exact
+end
+
+local function route8VolumeRegionReceipt(S, map, region, data, perRow, force)
+  if force ~= nil or type(S) ~= "table" or S.outdoor ~= true
+     or type(S.tileAt) ~= "table" or type(S.shapeAt) ~= "table"
+     or not route8VolumeMapReceipt(map)
+     or not route8VolumeAtlasReceipt(data, perRow)
+     or type(region) ~= "table" or type(region.tiles) ~= "table" then
+    return false
+  end
+  if not receiptCoordinate(region.minX)
+     or not receiptCoordinate(region.minY)
+     or not receiptCoordinate(region.maxX)
+     or not receiptCoordinate(region.maxY) then return false end
+  local bounds = ("%d:%d:%d:%d"):format(
+    region.minX, region.minY, region.maxX, region.maxY)
+  local receipt = ROUTE8_VOLUME_REGIONS[bounds]
+  if not receipt or #region.tiles ~= receipt.count then return false end
+
+  local members, counts = {}, {}
+  for _, cell in ipairs(region.tiles) do
+    local cx, cy = type(cell) == "table" and cell[1] or nil,
+                   type(cell) == "table" and cell[2] or nil
+    if not receiptCoordinate(cx) or not receiptCoordinate(cy)
+       or cx < region.minX or cx > region.maxX
+       or cy < region.minY or cy > region.maxY then return false end
+    local k = keyOf(cx, cy)
+    if members[k] then return false end
+    members[k] = true
+    local tile, shape = S.tileAt[k], S.shapeAt[k]
+    if type(tile) ~= "number" or not (shape and shape.class == "wall"
+       and shape.art == "upright" and not shape.authored) then
+      return false
+    end
+    counts[tile] = (counts[tile] or 0) + 1
+  end
+  for tile, n in pairs(counts) do
+    if receipt.tiles[tile] ~= n then return false end
+  end
+  for tile, n in pairs(receipt.tiles) do
+    if counts[tile] ~= n then return false end
+  end
+
+  local h1, h2 = 2166136261, 2246822519
+  for ty = region.minY, region.maxY do
+    for tx = region.minX, region.maxX do
+      local k = keyOf(tx, ty)
+      local shape = S.shapeAt[k]
+      -- For a nonmember cell the historical outdoor detector observes only
+      -- this air/barrier distinction.  Include it in the receipt so an
+      -- adjacent ground edit cannot open a sealed candidate run.
+      local value = members[k] and (S.tileAt[k] + 2)
+                    or ((shape and shape.flat and shape.class ~= "void")
+                        and 1 or 0)
+      h1, h2 = rollingPair(h1, h2, value)
+    end
+  end
+  -- Outdoors only the complete south apron seeds the flood.  Its end pixels
+  -- address one tile beyond each horizontal bound; pin every relevant
+  -- flat/nonvoid-vs-barrier state so adjacent ground cannot open the course.
+  for tx = region.minX - 1, region.maxX + 1 do
+    local k = keyOf(tx, region.maxY + 1)
+    local shape = S.shapeAt[k]
+    local value = (shape and shape.flat and shape.class ~= "void") and 1 or 0
+    h1, h2 = rollingPair(h1, h2, value)
+  end
+  return h1 == receipt.hash[1] and h2 == receipt.hash[2]
+end
+
+local function outdoorCavePortalMatch(map, index, spec, mapSpec)
+  local def = map and map.def
+  if not (def and def.tileset == "OVERWORLD" and Map.isOutdoor(def)
+          and def.width == mapSpec.width and def.height == mapSpec.height
+          and type(map.tileAt) == "function"
+          and type(map.cellTile) == "function"
+          and type(map.isWalkableCell) == "function"
+          and type(map.isDoorTileCell) == "function"
+          and type(map.warpAtCell) == "function") then
+    return false
+  end
+
+  local placed = map:warpAtCell(spec.x, spec.y)
+  local warp = type(placed) == "table" and placed.def or nil
+  if not (placed and placed.index == index and warp
+          and warp.x == spec.x and warp.y == spec.y
+          and warp.destMap == spec.target and warp.destWarp == spec.destWarp)
+      or map:cellTile(spec.x, spec.y) ~= OUTDOOR_CAVE_PORTAL_COLLISION
+      or not map:isDoorTileCell(spec.x, spec.y)
+      or not map:isWalkableCell(spec.x, spec.y) then
+    return false
+  end
+
+  local at = 1
+  for dy = 0, 1 do
+    for dx = 0, 1 do
+      if map:tileAt(spec.x * 2 + dx, spec.y * 2 + dy)
+          ~= OUTDOOR_CAVE_PORTAL_TILES[at] then
+        return false
+      end
+      at = at + 1
+    end
+  end
+
+  -- The mouth is cut into one exact blocked cliff course.  The southern cell
+  -- is the only open continuation and supplies the tunnel floor material.
+  if map:cellTile(spec.x, spec.y - 1) ~= OUTDOOR_CAVE_PORTAL_NORTH
+      or map:isWalkableCell(spec.x, spec.y - 1)
+      or map:cellTile(spec.x - 1, spec.y) ~= spec.west
+      or map:isWalkableCell(spec.x - 1, spec.y)
+      or map:cellTile(spec.x + 1, spec.y) ~= spec.east
+      or map:isWalkableCell(spec.x + 1, spec.y)
+      or map:cellTile(spec.x, spec.y + 1) ~= spec.south
+      or not map:isWalkableCell(spec.x, spec.y + 1) then
+    return false
+  end
+  return true
+end
+
+local function buildOutdoorCavePortals(S, map)
+  local mapSpec = OUTDOOR_CAVE_PORTAL_MAPS[map and map.id]
+  if not mapSpec then return end
+  for index = 1, #(map.def.warps or {}) do
+    local spec = mapSpec.warps[index]
+    if spec then Budget.tick() end
+    if spec and outdoorCavePortalMatch(map, index, spec, mapSpec) then
+      local tx, ty = spec.x * 2, spec.y * 2
+      S.portalCells[keyOf(tx, ty)] = true
+      S.portalStamps[#S.portalStamps + 1] = {
+        cx = spec.x, cy = spec.y, baseTx = tx, baseTy = ty,
+        warpIndex = index, target = spec.target,
+      }
+      -- Once the authored drawing stands at the back of the recess it must no
+      -- longer be repeated flat underfoot.  Continue the exact four quadrants
+      -- of the proven walkable cell immediately south instead; raw map art and
+      -- collision remain untouched.
+      for dy = 0, 1 do
+        for dx = 0, 1 do
+          S.topTileAt[keyOf(tx + dx, ty + dy)] =
+            map:tileAt(tx + dx, ty + 2 + dy)
+        end
+      end
+    end
+  end
+end
+
+-- Route 8 enters Lavender through one real, walkable 16px lane.  Lavender's
+-- first four cells continue that lane as the canonical $30/$39 checker,
+-- though, so a low camera reads the whole approach as an unmarked green
+-- apron.  Reuse Route 8's actual white top tile ($39) across those TOP
+-- surfaces.  It is already in the retained OVERWORLD atlas, keeps the exact
+-- terrain geometry/draw count and cannot affect collision or map block bytes.
+--
+-- This is deliberately fail-closed.  The map id, dimensions, exact Route 8
+-- connection, walkability and all four raw quadrants of each cell must match
+-- the canonical data before one visual tile changes.  A ROM hack or edited
+-- approach therefore keeps its own art instead of inheriting a screenshot-
+-- shaped repaint.
+local ROUTE8_LAVENDER_PATH = {
+  target = "LAVENDER_TOWN", connection = "west", source = "ROUTE_8",
+  offsetBlocks = 0, width = 10, height = 9,
+  firstCellX = 0, lastCellX = 3, cellY = 8,
+  dark = 0x30, light = 0x39,
+}
+
+local function connectionMap(connection)
+  if type(connection) == "table" then
+    return connection.map or connection.targetMap or connection.id
+  end
+  return connection
+end
+
+-- The southern surf routes contain a small number of existing ground/top
+-- quads whose plan-view material still points inland at the waterline.  In the
+-- fixed camera their neighbouring one-tile shore band hides that fact; at a
+-- low free-camera angle it turns the islands into green/cardboard rectangles.
+-- Keep the geometry and live OVERWORLD atlas exactly as they are and change
+-- only those 104 proven top UVs.  North/south candidates are registered first
+-- so a platform corner can never acquire an east/west rotation.
+--
+-- Every candidate is tied to the canonical map dimensions/connections, its
+-- exact source tile, and a real $14 water witness.  Where the source is one
+-- tile inland, `between` also pins the authored shore/foot material between it
+-- and the water.  One edited pixel therefore fails closed independently.
+local SOUTH_SEA_TOP_MAPS = {
+  ROUTE_19 = {
+    width = 10, height = 27,
+    connections = {
+      north = { map = "FUCHSIA_CITY", offset = -5 },
+      west = { map = "ROUTE_20", offset = 18 },
+    },
+    edges = {},
+  },
+  ROUTE_20 = {
+    width = 50, height = 9,
+    connections = {
+      east = { map = "ROUTE_19", offset = -18 },
+      west = { map = "CINNABAR_ISLAND", offset = 0 },
+    },
+    edges = {},
+  },
+  ROUTE_21 = {
+    width = 10, height = 45,
+    connections = {
+      north = { map = "PALLET_TOWN", offset = 0 },
+      south = { map = "CINNABAR_ISLAND", offset = 0 },
+    },
+    edges = {},
+  },
+}
+
+local function addSouthSeaTop(profile, side, tx, ty, source, material,
+                              transform, waterDx, waterDy, between)
+  local key = keyOf(tx, ty)
+  if profile.edges[key] then return end       -- N/S wins platform corners
+  profile.edges[key] = {
+    side = side, tx = tx, ty = ty, source = source, material = material,
+    transform = transform or "identity", waterDx = waterDx,
+    waterDy = waterDy, between = between,
+  }
+end
+
+do
+  local r19 = SOUTH_SEA_TOP_MAPS.ROUTE_19
+  for tx = 8, 21 do
+    addSouthSeaTop(r19, "south", tx, 19, 0x39, 0x33, "identity", 0, 1)
+  end
+  for tx = 24, 27 do
+    addSouthSeaTop(r19, "south", tx, 19, 0x39, 0x33, "identity", 0, 1)
+  end
+
+  local r20 = SOUTH_SEA_TOP_MAPS.ROUTE_20
+  -- First Seafoam platform: N/S before E/W, including all four corners.
+  for tx = 64, 71 do
+    addSouthSeaTop(r20, "north", tx, 16, 0x3c, 0x31, "vflip", 0, -1)
+    addSouthSeaTop(r20, "south", tx, 19, 0x3c, 0x31, "identity", 0, 2,
+                   0x31)
+  end
+  for ty = 17, 18 do
+    addSouthSeaTop(r20, "east", 71, ty, 0x3c, 0x31, "ccw", 1, 0)
+    addSouthSeaTop(r20, "west", 64, ty, 0x3c, 0x31, "cw", -1, 0)
+  end
+  for _, ty in ipairs({ 4, 6, 8, 10 }) do
+    addSouthSeaTop(r20, "east", 123, ty, 0x30, 0x32, "identity", 2, 0,
+                   0x32)
+  end
+  for _, ty in ipairs({ 13, 15, 17 }) do
+    addSouthSeaTop(r20, "west", 92, ty, 0x30, 0x54, "identity", -2, 0,
+                   0x54)
+  end
+  local south19 = {
+    [92] = 0x30, [94] = 0x30,
+    [96] = 0x3c, [97] = 0x3c, [98] = 0x3c, [99] = 0x3c,
+    [100] = 0x30, [102] = 0x30, [104] = 0x30, [106] = 0x30,
+    [108] = 0x30,
+  }
+  for _, tx in ipairs({ 92, 94, 96, 97, 98, 99, 100, 102, 104, 106, 108 }) do
+    local source = south19[tx]
+    local distance = source == 0x3c and 1 or 2
+    addSouthSeaTop(r20, "south", tx, 19, source,
+                   source == 0x3c and 0x31 or 0x33, "identity", 0, distance,
+                   distance == 2 and 0x33 or nil)
+  end
+  local south23 = {
+    [112] = 0x39, [113] = 0x39,
+    [116] = 0x3c, [117] = 0x3c, [118] = 0x3c, [119] = 0x3c,
+    [120] = 0x30, [122] = 0x30,
+  }
+  for _, tx in ipairs({ 112, 113, 116, 117, 118, 119, 120, 122 }) do
+    local source = south23[tx]
+    local distance = source == 0x3c and 1 or 2
+    addSouthSeaTop(r20, "south", tx, 23, source,
+                   source == 0x3c and 0x31 or 0x33, "identity", 0, distance,
+                   distance == 2 and 0x33 or nil)
+  end
+
+  local r21 = SOUTH_SEA_TOP_MAPS.ROUTE_21
+  for _, rect in ipairs({ { 8, 15, 48, 51 }, { 28, 35, 112, 115 } }) do
+    for tx = rect[1], rect[2] do
+      addSouthSeaTop(r21, "north", tx, rect[3], 0x3c, 0x31, "vflip", 0, -1)
+      addSouthSeaTop(r21, "south", tx, rect[4], 0x3c, 0x31, "identity", 0, 2,
+                     0x31)
+    end
+    for ty = rect[3] + 1, rect[4] - 1 do
+      addSouthSeaTop(r21, "east", rect[2], ty, 0x3c, 0x31, "ccw", 1, 0)
+      addSouthSeaTop(r21, "west", rect[1], ty, 0x3c, 0x31, "cw", -1, 0)
+    end
+  end
+end
+
+local CARDINALS = { "north", "south", "west", "east" }
+
+local function exactMapConnections(def, expected)
+  local actual = type(def.connections) == "table" and def.connections or {}
+  local expectedCount, actualCount = 0, 0
+  for _ in pairs(expected) do expectedCount = expectedCount + 1 end
+  for _ in pairs(actual) do actualCount = actualCount + 1 end
+  if actualCount ~= expectedCount then return false end
+  for _, side in ipairs(CARDINALS) do
+    local wanted, got = expected[side], actual[side]
+    if wanted then
+      if type(got) ~= "table" or connectionMap(got) ~= wanted.map
+         or tonumber(got.offset or 0) ~= wanted.offset then
+        return false
+      end
+    elseif got ~= nil then
+      return false
+    end
+  end
+  return true
+end
+
+local function exactSouthSeaMap(map, profile)
+  local def = map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  return profile ~= nil and def ~= nil and id == tostring(def.id or "")
+         and SOUTH_SEA_TOP_MAPS[id] == profile
+         and def.tileset == "OVERWORLD"
+         and def.width == profile.width and def.height == profile.height
+         and type(map.tileAt) == "function"
+         and exactMapConnections(def, profile.connections)
+end
+
+local function southSeaTopMaterial(map, tile, tx, ty)
+  local id = tostring(map and (map.id or (map.def and map.def.id)) or "")
+  local profile = SOUTH_SEA_TOP_MAPS[id]
+  if not exactSouthSeaMap(map, profile) then return tile end
+  local edge = profile.edges[keyOf(tx, ty)]
+  if not edge or tile ~= edge.source then return tile end
+  if edge.between then
+    local stepX = edge.waterDx == 0 and 0 or (edge.waterDx > 0 and 1 or -1)
+    local stepY = edge.waterDy == 0 and 0 or (edge.waterDy > 0 and 1 or -1)
+    if map:tileAt(tx + stepX, ty + stepY) ~= edge.between then return tile end
+  end
+  if map:tileAt(tx + edge.waterDx, ty + edge.waterDy) ~= 0x14 then
+    return tile
+  end
+  return edge.material, edge.transform, edge.side
+end
+
+Structures.southSeaTopMaterial = southSeaTopMaterial
+
+-- V4 keeps every V3/top-pass texture byte and every gameplay cell, but lets
+-- the already-proven shoreline tops finish as a short irregular lip instead
+-- of a vertical card edge.  The depth is measured in both source texels and
+-- world pixels by ChunkMesher; keeping it in {2,4,6} makes the outline
+-- visibly hand-stepped without stretching a retained atlas sample.
+local COAST_SIDE_PHASE = { north = 0, south = 1, west = 2, east = 3 }
+local function coastalLipDepth(tx, ty, side)
+  return 2 + ((tx * 3 + ty * 5 + (COAST_SIDE_PHASE[side] or 0)) % 3) * 2
+end
+
+Structures.coastalLipDepth = coastalLipDepth
+
+-- Cinnabar's walkable checker ends on a two-pixel-recessed water cell. Add an
+-- irregular 2/4/6-world-pixel visual lip over that existing water cell: two
+-- 8px atlas-preserving quads per proven 16px edge, and no collision volume.
+-- The mesher consumes these compact descriptors into its ordinary terrain
+-- sink, so the pass adds neither a texture nor a draw.
+local CINNABAR_QUAY = {
+  width = 10, height = 9,
+  connections = {
+    north = { map = "ROUTE_21", offset = 0 },
+    east = { map = "ROUTE_20", offset = 0 },
+  },
+  south = {}, west = {},
+}
+for cx = 4, 5 do CINNABAR_QUAY.south[#CINNABAR_QUAY.south + 1] = { cx, 11 } end
+for cx = 6, 19 do CINNABAR_QUAY.south[#CINNABAR_QUAY.south + 1] = { cx, 13 } end
+for _, cell in ipairs({ { 4, 4 }, { 4, 5 }, { 4, 10 }, { 4, 11 },
+                        { 6, 12 }, { 6, 13 } }) do
+  CINNABAR_QUAY.west[#CINNABAR_QUAY.west + 1] = cell
+end
+
+local function checkerCell(map, cx, cy)
+  local tx, ty = cx * 2, cy * 2
+  return map:tileAt(tx, ty) == 0x30 and map:tileAt(tx + 1, ty) == 0x39
+     and map:tileAt(tx, ty + 1) == 0x39
+     and map:tileAt(tx + 1, ty + 1) == 0x30
+end
+
+local function safeCellFlag(map, method, cx, cy)
+  if type(map[method]) ~= "function" then return nil end
+  local ok, value = pcall(map[method], map, cx, cy)
+  return ok and value == true or false
+end
+
+local function buildCinnabarQuays(S, map)
+  local def = map and map.def
+  -- Cinnabar is deliberately absent from SOUTH_SEA_TOP_MAPS: its existing
+  -- OPEN_SEA_STOP normalization stays authoritative and only this added quay
+  -- lip is eligible for the stricter signature below.
+  if not (def and map.id == "CINNABAR_ISLAND"
+      and def.id == "CINNABAR_ISLAND" and def.tileset == "OVERWORLD"
+      and def.width == CINNABAR_QUAY.width
+      and def.height == CINNABAR_QUAY.height
+      and type(map.tileAt) == "function"
+      and exactMapConnections(def, CINNABAR_QUAY.connections)) then
+    return
+  end
+
+  for _, cell in ipairs(CINNABAR_QUAY.south) do
+    local cx, cy = cell[1], cell[2]
+    local tx, ty = cx * 2, cy * 2
+    -- The east half of the short y=11 landing meets the canonical west-bank
+    -- $54 quadrant of the corner cell; its collision half is still the real
+    -- $14 water tile immediately beside it. Pin that one authored corner
+    -- rather than widening the accepted water band.
+    local waterRight = cx == 5 and cy == 11 and 0x54 or 0x14
+    if checkerCell(map, cx, cy)
+       and safeCellFlag(map, "isWalkableCell", cx, cy)
+       and not safeCellFlag(map, "isWaterCell", cx, cy)
+       and safeCellFlag(map, "isWaterCell", cx, cy + 1)
+       and map:tileAt(tx, ty + 2) == 0x33
+       and map:tileAt(tx + 1, ty + 2) == 0x33
+       and map:tileAt(tx, ty + 3) == 0x14
+       and map:tileAt(tx + 1, ty + 3) == waterRight then
+      S.quayEdges[#S.quayEdges + 1] = {
+        side = "south", cx = cx, cy = cy, tiles = { 0x33, 0x33 },
+        depths = {
+          coastalLipDepth(tx, ty + 1, "south"),
+          coastalLipDepth(tx + 1, ty + 1, "south"),
+        },
+      }
+    end
+  end
+  for _, cell in ipairs(CINNABAR_QUAY.west) do
+    local cx, cy = cell[1], cell[2]
+    local tx, ty = cx * 2, cy * 2
+    local specialCorner = cx == 6 and cy == 12
+    local edgeTop = specialCorner and 0x33 or 0x54
+    local waterTop = specialCorner and 0x33 or 0x14
+    if checkerCell(map, cx, cy)
+       and safeCellFlag(map, "isWalkableCell", cx, cy)
+       and not safeCellFlag(map, "isWaterCell", cx, cy)
+       and safeCellFlag(map, "isWaterCell", cx - 1, cy)
+       and map:tileAt(tx - 1, ty) == edgeTop
+       and map:tileAt(tx - 1, ty + 1) == 0x54
+       and map:tileAt(tx - 2, ty) == waterTop
+       and map:tileAt(tx - 2, ty + 1) == 0x14 then
+      S.quayEdges[#S.quayEdges + 1] = {
+        side = "west", cx = cx, cy = cy, tiles = { edgeTop, 0x54 },
+        depths = {
+          coastalLipDepth(tx, ty, "west"),
+          coastalLipDepth(tx, ty + 1, "west"),
+        },
+      }
+    end
+  end
+end
+
+local function route8ApproachVisualTile(map, tile, tx, ty)
+  local spec = ROUTE8_LAVENDER_PATH
+  local def = map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  if not (id == spec.target and def and def.tileset == "OVERWORLD"
+          and def.width == spec.width and def.height == spec.height
+          and type(map.tileAt) == "function"
+          and type(map.isWalkableCell) == "function") then
+    return tile
+  end
+  local connections = type(def.connections) == "table" and def.connections
+                      or nil
+  local connection = connections and connections[spec.connection]
+  if connectionMap(connection) ~= spec.source
+      or type(connection) ~= "table"
+      or tonumber(connection.offset or 0) ~= spec.offsetBlocks then
+    return tile
+  end
+
+  local cx, cy = math.floor(tx / 2), math.floor(ty / 2)
+  if cx < spec.firstCellX or cx > spec.lastCellX or cy ~= spec.cellY then
+    return tile
+  end
+  local ok, walkable = pcall(map.isWalkableCell, map, cx, cy)
+  if not ok or walkable ~= true then return tile end
+
+  local ax, ay = cx * 2, cy * 2
+  for dy = 0, 1 do
+    for dx = 0, 1 do
+      local expected = (dx + dy) % 2 == 0 and spec.dark or spec.light
+      if map:tileAt(ax + dx, ay + dy) ~= expected then return tile end
+    end
+  end
+  return spec.light
+end
+
+Structures.route8ApproachVisualTile = route8ApproachVisualTile
+
+-- Saffron's east entrance is a real T junction.  Route 8 contributes three
+-- walkable lanes, but the resident city's blank $23 pavement makes their
+-- northward turn read as one undifferentiated white apron at a low camera
+-- angle.  Reuse the dashed $39 path material already present in both maps on
+-- the TOPS of those pavement tiles only.  Existing curbs, posts and the two
+-- authored paving courses stay untouched, so the material follows the real
+-- route around the solid scenery block instead of suggesting a doorway.
+--
+-- The returned material/UV tables are an all-or-nothing, map-local plan.
+-- Dimensions,
+-- every connection, all sixteen source cells, the three blocking wall cells,
+-- gameplay flags, flat source shapes and the zero-datum terrace must match
+-- canonical generated data before one tile is admitted.  A block edit or a
+-- field/ledge override therefore keeps the complete raw Saffron drawing.
+local SAFFRON_ROUTE8_TURN = {
+  width = 20, height = 18, source = 0x23, material = 0x39, datum = 0,
+  northTurn = {
+    firstCellX = 36, lastCellX = 37,
+    firstCellY = 15, lastCellY = 18,
+    topCount = 17,
+  },
+  connections = {
+    north = { map = "ROUTE_5", offset = 5 },
+    south = { map = "ROUTE_6", offset = 5 },
+    west = { map = "ROUTE_7", offset = 4 },
+    east = { map = "ROUTE_8", offset = 4 },
+  },
+  cells = {
+    { 35, 15, 0x5b, 0x5b, 0x5b, 0x5b },
+    { 36, 15, 0x10, 0x23, 0x10, 0x23 },
+    { 37, 15, 0x23, 0x10, 0x23, 0x10 },
+    { 38, 15, 0x2c, 0x2c, 0x2c, 0x2c },
+    { 36, 16, 0x10, 0x23, 0x10, 0x23 },
+    { 37, 16, 0x23, 0x10, 0x23, 0x10 },
+    { 38, 16, 0x23, 0x23, 0x39, 0x23 },
+    { 39, 16, 0x23, 0x23, 0x23, 0x23 },
+    { 36, 17, 0x10, 0x23, 0x10, 0x23 },
+    { 37, 17, 0x23, 0x10, 0x23, 0x10 },
+    { 38, 17, 0x23, 0x23, 0x23, 0x23 },
+    { 39, 17, 0x23, 0x23, 0x39, 0x23 },
+    { 36, 18, 0x10, 0x23, 0x10, 0x23 },
+    { 37, 18, 0x23, 0x21, 0x23, 0x23 },
+    { 38, 18, 0x39, 0x39, 0x39, 0x39 },
+    { 39, 18, 0x39, 0x39, 0x39, 0x39 },
+  },
+  blockers = {
+    { 35, 16, 0x12, 0x53, 0x4d, 0x12, 0x5a },
+    { 35, 17, 0x17, 0x12, 0x5a, 0x17, 0x5d },
+    { 35, 18, 0x4b, 0x0a, 0x1f, 0x4b, 0x1f },
+  },
+}
+
+local function safeMapCall(map, method, cx, cy)
+  if type(map and map[method]) ~= "function" then return false end
+  return pcall(map[method], map, cx, cy)
+end
+
+local function saffronRoute8TurnTiles(map, shapes)
+  local spec, def = SAFFRON_ROUTE8_TURN, map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  if not (id == "SAFFRON_CITY" and def and def.id == "SAFFRON_CITY"
+      and def.tileset == "OVERWORLD" and def.width == spec.width
+      and def.height == spec.height and type(map.tileAt) == "function"
+      and type(map.cellTile) == "function"
+      and type(map.isWalkableCell) == "function"
+      and type(map.isWaterCell) == "function"
+      and type(map.isDoorTileCell) == "function"
+      and type(map.warpAtCell) == "function"
+      and exactMapConnections(def, spec.connections)
+      and type(shapes) == "table") then
+    return nil
+  end
+
+  local okLedge, LedgeElevation = pcall(V.require, "LedgeElevation")
+  if not (okLedge and LedgeElevation
+      and type(LedgeElevation.map) == "function") then return nil end
+  local okElevation, elevation = pcall(LedgeElevation.map, map)
+  if not (okElevation and elevation
+      and type(elevation.atTile) == "function") then return nil end
+
+  local out, topUV, materialCount, turnCount = {}, {}, 0, 0
+  for _, cell in ipairs(spec.cells) do
+    local cx, cy, at = cell[1], cell[2], 3
+    local okWalk, walkable = safeMapCall(map, "isWalkableCell", cx, cy)
+    local okWater, water = safeMapCall(map, "isWaterCell", cx, cy)
+    local okDoor, door = safeMapCall(map, "isDoorTileCell", cx, cy)
+    local okWarp, warp = safeMapCall(map, "warpAtCell", cx, cy)
+    if not (okWalk and walkable == true
+        and okWater and water == false
+        and okDoor and door == false
+        and okWarp and warp == nil) then
+      return nil
+    end
+    for dy = 0, 1 do
+      for dx = 0, 1 do
+        local tx, ty = cx * 2 + dx, cy * 2 + dy
+        local tile = map:tileAt(tx, ty)
+        if tile ~= cell[at] then return nil end
+        local okBase, base = pcall(elevation.atTile, elevation, tx, ty)
+        if not okBase or base ~= spec.datum then return nil end
+        if tile == spec.source then
+          local shape = TileShape.at(map, shapes, tile, tx, ty)
+          if not (shape and shape.flat == true and (shape.h or 0) == 0) then
+            return nil
+          end
+          out[keyOf(tx, ty)] = spec.material
+          materialCount = materialCount + 1
+          local turn = spec.northTurn
+          if cx >= turn.firstCellX and cx <= turn.lastCellX
+              and cy >= turn.firstCellY and cy <= turn.lastCellY then
+            -- $39 is not rotationally symmetric.  Alternating CW/CCW by
+            -- native 8px row keeps each repeated north/south edge in phase:
+            -- grey meets grey, white meets white, and both terminal edges
+            -- remain white.  The east/west edges are white in either
+            -- rotation, so the two-tile-wide lane also stays seamless.
+            topUV[keyOf(tx, ty)] = ty % 2 == 0 and "cw" or "ccw"
+            turnCount = turnCount + 1
+          end
+        end
+        at = at + 1
+      end
+    end
+  end
+
+  -- Pin the real wall independently of the path.  These cells are gameplay
+  -- solids and never appear in `out`; proving them here prevents an edited
+  -- opening from retaining a path that seems to invite the player through.
+  for _, cell in ipairs(spec.blockers) do
+    local cx, cy, collision, at = cell[1], cell[2], cell[3], 4
+    local okWalk, walkable = safeMapCall(map, "isWalkableCell", cx, cy)
+    local okCollision, actual = safeMapCall(map, "cellTile", cx, cy)
+    if not (okWalk and walkable == false
+        and okCollision and actual == collision) then
+      return nil
+    end
+    for dy = 0, 1 do
+      for dx = 0, 1 do
+        if map:tileAt(cx * 2 + dx, cy * 2 + dy) ~= cell[at] then return nil end
+        at = at + 1
+      end
+    end
+  end
+  if materialCount ~= 31 or turnCount ~= spec.northTurn.topCount then
+    return nil
+  end
+  return out, topUV
+end
+
+Structures.saffronRoute8TurnTiles = saffronRoute8TurnTiles
+
+local function route8VisualShape(map, shape, tile, tx, ty)
+  local def = map and map.def
+  if map and map.id == "ROUTE_8" and def
+      and tx >= 0 and ty >= 0 and tx < def.width * 4 and ty < def.height * 4
+      and ROUTE8_HEDGE_TILES[tile] and shape and shape.art == "cylinder" then
+    return ROUTE8_HEDGE_SHAPE
+  end
+  return shape
+end
+
+Structures.route8VisualShape = route8VisualShape
+
+local function openSeaStopCell(map, tx, ty)
+  if type(map.tileAt) ~= "function" then return nil end
+  local ax, ay = math.floor(tx / 2) * 2, math.floor(ty / 2) * 2
+  if map:tileAt(ax, ay) ~= OPEN_SEA_STOP_CELL[1]
+      or map:tileAt(ax + 1, ay) ~= OPEN_SEA_STOP_CELL[2]
+      or map:tileAt(ax, ay + 1) ~= OPEN_SEA_STOP_CELL[3]
+      or map:tileAt(ax + 1, ay + 1) ~= OPEN_SEA_STOP_CELL[4] then
+    return nil
+  end
+  return ax, ay
+end
+
+local function openSeaBeyondIsWater(map, ax, ay, edge)
+  -- The native stop ring can turn a corner one cell before the free side.
+  -- Follow at most the two 16px cells covered by OPEN_SEA_BAND: this opens
+  -- the complete decorative ring, but cannot walk inward along a real island
+  -- barrier. The chain must still terminate in canonical water.
+  for _ = 1, math.floor(OPEN_SEA_BAND / 2) do
+    local x0, y0, x1, y1
+    if edge == "north" then
+      x0, y0, x1, y1 = ax, ay - 1, ax + 1, ay - 1
+    elseif edge == "south" then
+      x0, y0, x1, y1 = ax, ay + 2, ax + 1, ay + 2
+    elseif edge == "west" then
+      x0, y0, x1, y1 = ax - 1, ay, ax - 1, ay + 1
+    else
+      x0, y0, x1, y1 = ax + 2, ay, ax + 2, ay + 1
+    end
+    if map:tileAt(x0, y0) == OPEN_SEA_WATER_TILE
+        and map:tileAt(x1, y1) == OPEN_SEA_WATER_TILE then
+      return true
+    end
+
+    local nx, ny = ax, ay
+    if edge == "north" then ny = ny - 2
+    elseif edge == "south" then ny = ny + 2
+    elseif edge == "west" then nx = nx - 2
+    else nx = nx + 2 end
+    local sx, sy = openSeaStopCell(map, nx, ny)
+    if sx ~= nx or sy ~= ny then return false end
+    ax, ay = nx, ny
+  end
+  return false
+end
+
+local function openSeaVisualTile(map, shapes, tile, tx, ty)
+  local def = map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  local edges = OPEN_SEA_EDGES[id]
+  if not (def and edges and def.tileset == "OVERWORLD"
+          and map.waterTiles and map.waterTiles[OPEN_SEA_WATER_TILE]) then
+    return tile
+  end
+
+  -- Treat a data connection as authoritative even if a semantic table is
+  -- accidentally widened later.  Only genuinely free sides may be opened.
+  local connections = type(def.connections) == "table" and def.connections
+                      or nil
+  local tw, th = def.width * 4, def.height * 4
+  local north = edges.north and not (connections and connections.north)
+                and ty >= 0 and ty < OPEN_SEA_BAND
+  local south = edges.south and not (connections and connections.south)
+                and ty >= th - OPEN_SEA_BAND and ty < th
+  local west = edges.west and not (connections and connections.west)
+               and tx >= 0 and tx < OPEN_SEA_BAND
+  local east = edges.east and not (connections and connections.east)
+               and tx >= tw - OPEN_SEA_BAND and tx < tw
+  if not (north or south or west or east) then return tile end
+
+  local shape = shapes and shapes[tile]
+  if not (shape and shape.art == "cylinder") then return tile end
+  local ax, ay = openSeaStopCell(map, tx, ty)
+  if not ax then return tile end
+
+  if north and openSeaBeyondIsWater(map, ax, ay, "north")
+      or south and openSeaBeyondIsWater(map, ax, ay, "south")
+      or west and openSeaBeyondIsWater(map, ax, ay, "west")
+      or east and openSeaBeyondIsWater(map, ax, ay, "east") then
+    return OPEN_SEA_WATER_TILE
+  end
+  return tile
+end
+
 -- ---------------------------------------------------------------- pixels --
 
 local atlasData = {}
+local voidTileCache = {}
 
 local function pixels(tileset)
   local path = tileset.image
@@ -102,9 +1060,16 @@ end
 -- tiles whose art is entirely black or transparent (interior darkness):
 -- these never extrude, whatever class they resolved to
 local function voidTiles(tileset)
-  local data = pixels(tileset)
-  if not data then return nil end
   local perRow = tileset.tilesPerRow or 16
+  local cacheKey = tostring(tileset.image) .. "#" .. tostring(perRow)
+  local cached = voidTileCache[cacheKey]
+  if cached ~= nil then return cached or nil end
+
+  local data = pixels(tileset)
+  if not data then
+    voidTileCache[cacheKey] = false
+    return nil
+  end
   local iw, ih = data:getDimensions()
   local set = {}
   for t = 0, (iw / 8) * (ih / 8) - 1 do
@@ -113,6 +1078,7 @@ local function voidTiles(tileset)
     local void = true
     for py = 0, 7 do
       for px = 0, 7 do
+        Budget.tick()
         local r, g, b, a = data:getPixel(ox + px, oy + py)
         if a > 0 and math.max(r, g, b) > 0.17 then
           void = false
@@ -123,6 +1089,7 @@ local function voidTiles(tileset)
     end
     if void then set[t] = true end
   end
+  voidTileCache[cacheKey] = set
   return set
 end
 
@@ -130,8 +1097,209 @@ end
 
 local DIRS4 = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
-local function keyOf(tx, ty)
-  return (ty + 64) * 4096 + (tx + 64)
+local function safariFootRepeat(S, map, tx, north, front)
+  local def = map and map.def
+  if not (map and SAFARI_FOOT_MAPS[map.id]
+          and def and def.tileset == "FOREST"
+          and type(map.tileAt) == "function") then
+    return false
+  end
+
+  local tw, th = def.width * 4, def.height * 4
+  -- Body only.  A streamed border repeats FOREST art too, but belongs to the
+  -- neighbouring-map backdrop and must retain the ordinary ring treatment.
+  if tx < 0 or tx >= tw or north < 0 or front >= th then return false end
+
+  -- At least two equal body rows immediately before both exact authored foot
+  -- rows.  One canonical West column has a different structural cap north of
+  -- that repeated body; it is still the same terminal foot spelling, and the
+  -- cap must not make the column tall.
+  if front - north + 1 < 4 then return false end
+  local body = map:tileAt(tx, front - 2)
+  local firstFoot = SAFARI_FOOT_TRIM[body]
+  if not firstFoot or map:tileAt(tx, front - 1) ~= firstFoot
+      or map:tileAt(tx, front) ~= 0x3e then
+    return false
+  end
+  local repeats = 0
+  for ty = front - 2, north, -1 do
+    if map:tileAt(tx, ty) ~= body then break end
+    repeats = repeats + 1
+  end
+  if repeats < 2 then return false end
+  -- Door folding is detection with gameplay-facing placement semantics.  A
+  -- trim must never override it, even if edited art happens to match.
+  for ty = north, front do
+    if S.doorFold[keyOf(tx, ty)] then return false end
+  end
+  return true
+end
+
+-- Route 20's Seafoam landmass is encircled by the same round 16px drawing
+-- as the decorative outer stop row. Unlike that outer row, this barrier is
+-- gameplay-significant: its native collision forces the intended route around
+-- the islands. A full-height cylinder is nevertheless the wrong 3D reading
+-- -- from the representative surf cell it becomes a row of person-height
+-- drums, and buildCylinders paints a synthetic mint plot underneath them.
+--
+-- Keep the raw tile ids and all gameplay data. Only the structure shape is a
+-- low reef: the four original quadrants lie flat just above the water, making
+-- the collision line visible without blocking the horizon. Detection stays
+-- data-based: complete canonical quartets, connected in a 3+ cell barrier,
+-- with at least one cell flanked by water on both sides. The already-normalized
+-- free map edge, island/slab blocks and every other map are excluded.
+local SEAFOAM_REEF_SHAPE = {
+  class = "reef", art = "top", h = 2, authored = true,
+}
+local REEF_CELL_KEY_STRIDE = 8192
+
+local function reefWaterCell(map, cx, cy)
+  if type(map.isWaterCell) == "function" then
+    return map:isWaterCell(cx, cy) == true
+  end
+  return map.waterTiles
+     and map.waterTiles[map:tileAt(cx * 2, cy * 2 + 1)] == true
+end
+
+local function seafoamReefCells(map, shapes)
+  local def = map and map.def
+  local id = tostring(map and (map.id or (def and def.id)) or "")
+  if not (id == "ROUTE_20" and def and def.tileset == "OVERWORLD"
+          and type(map.tileAt) == "function") then
+    return nil
+  end
+
+  local candidates = {}
+  local cw, ch = def.width * 2, def.height * 2
+  for cy = 0, ch - 1 do
+    for cx = 0, cw - 1 do
+      Budget.tick()
+      local ax, ay = cx * 2, cy * 2
+      local sx, sy = openSeaStopCell(map, ax, ay)
+      local tile = map:tileAt(ax, ay)
+      local shape = shapes and shapes[tile]
+      if sx == ax and sy == ay and shape and shape.art == "cylinder"
+          and openSeaVisualTile(map, shapes, tile, ax, ay)
+              ~= OPEN_SEA_WATER_TILE then
+        candidates[cy * REEF_CELL_KEY_STRIDE + cx] = true
+      end
+    end
+  end
+
+  local reefs, seen = {}, {}
+  local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+  for seed in pairs(candidates) do
+    if not seen[seed] then
+      local queue, component = { seed }, {}
+      local head, waterOpposed = 1, false
+      seen[seed] = true
+      while head <= #queue do
+        Budget.tick()
+        local ck = queue[head]
+        head = head + 1
+        component[#component + 1] = ck
+        local cy = math.floor(ck / REEF_CELL_KEY_STRIDE)
+        local cx = ck - cy * REEF_CELL_KEY_STRIDE
+        if (reefWaterCell(map, cx - 1, cy)
+            and reefWaterCell(map, cx + 1, cy))
+            or (reefWaterCell(map, cx, cy - 1)
+                and reefWaterCell(map, cx, cy + 1)) then
+          waterOpposed = true
+        end
+        for _, d in ipairs(dirs) do
+          local nk = (cy + d[2]) * REEF_CELL_KEY_STRIDE + cx + d[1]
+          if candidates[nk] and not seen[nk] then
+            seen[nk] = true
+            queue[#queue + 1] = nk
+          end
+        end
+      end
+      if waterOpposed and #component >= 3 then
+        for _, ck in ipairs(component) do reefs[ck] = true end
+      end
+    end
+  end
+  return next(reefs) and reefs or nil
+end
+
+-- Route 21's Pallet approach is a real, collision-significant lane, but its
+-- canonical round-stop quartet repeats as one uninterrupted 44-cell wall in
+-- the free camera.  V4 keeps that exact collision ring and its four source
+-- tiles, while lowering only the northern, fully audited component to the
+-- same two-pixel coastal profile as a reef.  The six independent Cinnabar-end
+-- stops, ordinary island scenery and every edited map retain their old hulls.
+local ROUTE21_LOW_BARRIER_SHAPE = {
+  class = "coastal_barrier", art = "top", h = 2, authored = true,
+}
+local ROUTE21_LOW_BARRIER = {
+  width = 10, height = 45, count = 44,
+  connections = {
+    north = { map = "PALLET_TOWN", offset = 0 },
+    south = { map = "CINNABAR_ISLAND", offset = 0 },
+  },
+  cells = {},
+}
+local function addRoute21Barrier(cx, cy)
+  ROUTE21_LOW_BARRIER.cells[cy * REEF_CELL_KEY_STRIDE + cx] = true
+end
+for _, cx in ipairs({ 2, 3, 8, 9, 10, 11, 12, 13,
+                       14, 15, 16, 17 }) do
+  addRoute21Barrier(cx, 0)
+end
+for cy = 1, 12 do
+  addRoute21Barrier(3, cy)
+  addRoute21Barrier(14, cy)
+end
+for _, cx in ipairs({ 2, 3, 14 }) do addRoute21Barrier(cx, 13) end
+addRoute21Barrier(14, 14)
+for _, cx in ipairs({ 14, 15, 16, 17 }) do addRoute21Barrier(cx, 15) end
+
+local function route21LowBarrierCells(map, shapes)
+  local def = map and map.def
+  if not (map and map.id == "ROUTE_21" and def
+      and def.id == "ROUTE_21" and def.tileset == "OVERWORLD"
+      and def.width == ROUTE21_LOW_BARRIER.width
+      and def.height == ROUTE21_LOW_BARRIER.height
+      and type(map.tileAt) == "function"
+      and exactMapConnections(def, ROUTE21_LOW_BARRIER.connections)) then
+    return nil
+  end
+
+  local out, count = {}, 0
+  for cy = 0, 15 do
+    for cx = 0, def.width * 2 - 1 do
+      Budget.tick()
+      local tx, ty = cx * 2, cy * 2
+      local ax, ay = openSeaStopCell(map, tx, ty)
+      local canonical = ax == tx and ay == ty
+      if canonical then
+        for dy = 0, 1 do
+          for dx = 0, 1 do
+            local tile = map:tileAt(tx + dx, ty + dy)
+            local shape = TileShape.at(map, shapes, tile, tx + dx, ty + dy)
+            canonical = canonical and shape and shape.art == "cylinder"
+          end
+        end
+      end
+      local retained = canonical
+        and openSeaVisualTile(map, shapes, map:tileAt(tx, ty), tx, ty)
+            ~= OPEN_SEA_WATER_TILE
+      if retained then
+        local ck = cy * REEF_CELL_KEY_STRIDE + cx
+        if not ROUTE21_LOW_BARRIER.cells[ck] then return nil end
+        local okWalk, walkable = safeMapCall(map, "isWalkableCell", cx, cy)
+        local okWater, water = safeMapCall(map, "isWaterCell", cx, cy)
+        if not (okWalk and walkable == false
+            and okWater and water == false) then return nil end
+        out[ck], count = true, count + 1
+      end
+    end
+  end
+  if count ~= ROUTE21_LOW_BARRIER.count then return nil end
+  for ck in pairs(ROUTE21_LOW_BARRIER.cells) do
+    if not out[ck] then return nil end
+  end
+  return out
 end
 
 function Structures.forMap(map)
@@ -147,6 +1315,10 @@ function Structures.forMap(map)
   local tw, th = def.width * 4, def.height * 4
   local x0, x1 = -RING, tw + RING - 1
   local y0, y1 = -RING, th + RING - 1
+  local reefCells = seafoamReefCells(map, shapes)
+  local route21BarrierCells = route21LowBarrierCells(map, shapes)
+  local saffronTurnTiles, saffronTurnUV =
+    saffronRoute8TurnTiles(map, shapes)
 
   -- resolve the whole grid once: shape + tile per key. Ring positions use
   -- the same border override the 2D renderer draws with
@@ -182,10 +1354,21 @@ function Structures.forMap(map)
   -- interior's border is black already.
   local hullRingOnly = borderBlk and def.tileset == "OVERWORLD"
                        and (TileRenderer.voidFill or "trees") == "trees"
+  -- In this one fail-closed path tileLookup's support ends at ROUND_RING:
+  -- every cell in the remaining eight-tile apron is guaranteed nil.  Keep
+  -- all analysis passes on that exact support instead of repeatedly scanning
+  -- a domain no pass can populate.  WATER, BLACK/interiors and any unknown
+  -- border policy retain the historical full RING bounds above.
+  if hullRingOnly then
+    x0, x1 = -ROUND_RING, tw + ROUND_RING - 1
+    y0, y1 = -ROUND_RING, th + ROUND_RING - 1
+  end
   local tw2, th2 = tw, th
   local function tileLookup(tx, ty)
     if tx >= 0 and ty >= 0 and tx < tw2 and ty < th2 then
-      return map:tileAt(tx, ty)
+      local tile = map:tileAt(tx, ty)
+      tile = openSeaVisualTile(map, shapes, tile, tx, ty)
+      return tile
     end
     if not borderBlk then return nil end
     if hullRingOnly and (tx < -ROUND_RING or ty < -ROUND_RING
@@ -193,9 +1376,10 @@ function Structures.forMap(map)
                          or ty >= th2 + ROUND_RING) then
       return nil
     end
-    return borderBlk[(ty % 4) * 4 + (tx % 4) + 1] or 0
+    local tile = borderBlk[(ty % 4) * 4 + (tx % 4) + 1] or 0
+    return tile
   end
-  local shapeAt, tileAt = {}, {}
+  local shapeAt, tileAt, topTileAt, topUVAt, coastalEdges = {}, {}, {}, {}, {}
   for ty = y0, y1 do
     for tx = x0, x1 do
       Budget.tick()
@@ -203,6 +1387,32 @@ function Structures.forMap(map)
       if tile then
         local k = keyOf(tx, ty)
         local s = TileShape.at(map, shapes, tile, tx, ty)
+        local topTile = route8ApproachVisualTile(map, tile, tx, ty)
+        if saffronTurnTiles and saffronTurnTiles[k] then
+          topTile = saffronTurnTiles[k]
+          topUVAt[k] = saffronTurnUV and saffronTurnUV[k] or nil
+        end
+        local coastalTile, coastalUV, coastalSide =
+          southSeaTopMaterial(map, tile, tx, ty)
+        if coastalTile ~= tile then
+          topTile, topUVAt[k] = coastalTile, coastalUV
+          coastalEdges[#coastalEdges + 1] = {
+            tx = tx, ty = ty, side = coastalSide, tile = coastalTile,
+            depth = coastalLipDepth(tx, ty, coastalSide),
+          }
+        end
+        if topTile ~= tile then topTileAt[k] = topTile end
+        s = route8VisualShape(map, s, tile, tx, ty)
+        if reefCells
+            and reefCells[math.floor(ty / 2) * REEF_CELL_KEY_STRIDE
+                          + math.floor(tx / 2)] then
+          s = SEAFOAM_REEF_SHAPE
+        elseif route21BarrierCells
+            and route21BarrierCells[math.floor(ty / 2)
+                                    * REEF_CELL_KEY_STRIDE
+                                    + math.floor(tx / 2)] then
+          s = ROUTE21_LOW_BARRIER_SHAPE
+        end
         if s and void and void[tile] and not s.authored then
           s = shapes.classes.void
         end
@@ -220,14 +1430,21 @@ function Structures.forMap(map)
   -- upright thing. Modelling the building first and claiming its tiles
   -- keeps every one of them off it.
   --
-  -- (grassQuads live apart from objectQuads: grass renders as its own mesh
+  -- (grassGroups live apart from objectQuads: grass renders as its own mesh
   -- AFTER the characters -- see VoxelScene -- so the southern tuft row
   -- still overdraws a walker's feet even though characters stamp over
-  -- terrain.)
-  S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
+  -- terrain. Each group retains one local template plus a flat placement
+  -- stream, never tens of thousands of translated quad tables.)
+  S = { shapeAt = shapeAt, tileAt = tileAt, topTileAt = topTileAt,
+        topUVAt = topUVAt, coastalEdges = coastalEdges,
+        outdoor = Map.isOutdoor(def),
         hideBareRing = hullRingOnly or nil,
         runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
-        grassQuads = {}, flowerQuads = {}, roundStamps = {}, figures = {} }
+        buildingStamps = {}, grassGroups = {}, flowerQuads = {},
+        roundStamps = {}, portalStamps = {}, portalCells = {}, quayEdges = {},
+        figures = {} }
+  buildCinnabarQuays(S, map)
+  buildOutdoorCavePortals(S, map)
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
@@ -249,7 +1466,8 @@ function Structures.forMap(map)
   -- silently did nothing and the flights stayed painted on the floor.
   for cy = math.floor(y0 / 2), math.floor(y1 / 2) do
     for cx = math.floor(x0 / 2), math.floor(x1 / 2) do
-      if map.doorTiles[map:cellTile(cx, cy)] then
+      if map.doorTiles[map:cellTile(cx, cy)]
+          and not S.portalCells[keyOf(cx * 2, cy * 2)] then
         local northK = keyOf(cx * 2, cy * 2 - 1)
         local ns = shapeAt[northK]
         if ns and ns.art == "upright" then
@@ -629,6 +1847,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   -- shade class of every canvas pixel, indexed py * NX + px
   local cls = {}
   for py = 0, NY - 1 do
+    Budget.check()
     for px = 0, NX - 1 do
       local ax, ay = texel(px, py)
       local r, g, b, a = data:getPixel(ax, ay)
@@ -650,9 +1869,11 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
       seed(y0 * NX + px); seed(y1 * NX + px)
     end
     for py = y0, y1 do
+      Budget.check()
       seed(py * NX); seed(py * NX + NX - 1)
     end
     while #stack > 0 do
+      Budget.tick()
       local i = table.remove(stack)
       local px, py = i % NX, math.floor(i / NX)
       if px > 0 then seed(i - 1) end
@@ -682,6 +1903,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
                                light = true, white = true }, y0, y1)
     local enclosed = 0
     for i = y0 * NX, (y1 + 1) * NX - 1 do
+      Budget.tick()
       if not out[i] then
         mask[i] = true
         if cls[i] ~= "black" then enclosed = enclosed + 1 end
@@ -690,12 +1912,16 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
     if enclosed < NX * NX / 8 then
       out = floodOutside({ off = true, light = true, white = true }, y0, y1)
       for i = y0 * NX, (y1 + 1) * NX - 1 do
+        Budget.tick()
         mask[i] = (not out[i] and cls[i] ~= "off") or nil
       end
     end
   end
   local any = nil
-  for i = 0, NX * NY - 1 do any = any or mask[i] end
+  for i = 0, NX * NY - 1 do
+    Budget.tick()
+    any = any or mask[i]
+  end
   if not any then return {} end
 
   -- a CAPPED hull (the stump): the top capRows rows of the mask are the
@@ -706,6 +1932,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   if capRows and capRows > 0 then
     local top = nil
     for iy = 0, NY - 1 do
+      Budget.check()
       for ix = 0, NX - 1 do
         if mask[iy * NX + ix] then top = iy break end
       end
@@ -715,10 +1942,14 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
       capY0 = top
       capY1 = math.min(top + capRows - 1, NY - 2)
       for iy = capY0, capY1 do
+        Budget.check()
         for ix = 0, NX - 1 do mask[iy * NX + ix] = nil end
       end
       any = nil
-      for i = 0, NX * NY - 1 do any = any or mask[i] end
+      for i = 0, NX * NY - 1 do
+        Budget.tick()
+        any = any or mask[i]
+      end
       if not any then return {} end
     end
   end
@@ -737,6 +1968,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   if baseRows and baseRows > 0 then
     local bot = nil
     for iy = NY - 1, 0, -1 do
+      Budget.check()
       for ix = 0, NX - 1 do
         if mask[iy * NX + ix] then bot = iy break end
       end
@@ -745,6 +1977,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
     if bot then
       baseArt = {}
       for iy = math.max(bot - baseRows + 1, (capY1 or -1) + 2), bot do
+        Budget.check()
         for ix = 0, NX - 1 do
           local i = iy * NX + ix
           if mask[i] then baseArt[i] = true end
@@ -752,7 +1985,10 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
         end
       end
       any = nil
-      for i = 0, NX * NY - 1 do any = any or mask[i] end
+      for i = 0, NX * NY - 1 do
+        Budget.tick()
+        any = any or mask[i]
+      end
       if not any then return {} end
     end
   end
@@ -772,6 +2008,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   if bodyRows and bodyRows > 0 then
     local body = {}
     for iy = 0, NY - 1 do
+      Budget.check()
       for ix = 0, NX - 1 do
         if mask[iy * NX + ix] then body[#body + 1] = iy break end
       end
@@ -780,6 +2017,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
     if nb > 0 then
       local top = body[1]
       for iy = top - 1, math.max(NY - bodyRows, 0), -1 do
+        Budget.check()
         -- the LOWEST surviving body row, repeated: it is the widest and
         -- plainest reading of the material (outline, shaded flank, lit
         -- face) and stacks into a clean metal cylinder. Cycling the whole
@@ -806,10 +2044,12 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   if groundTiles and #groundTiles > 0 then
     local bestScore = nil
     for _, t in ipairs(groundTiles) do
+      Budget.check()
       local ox = (t % perRow) * 8
       local oy = math.floor(t / perRow) * 8
       local score, n = 0, 0
       for py = 0, NY - 1 do
+        Budget.check()
         for px = 0, NX - 1 do
           local i = py * NX + px
           local c = cls[i]
@@ -842,6 +2082,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   local loRow, hiRow = {}, {}
   local yBot = nil
   for iy = 0, NY - 1 do
+    Budget.check()
     local lo, hi = nil, nil
     for ix = 0, NX - 1 do
       if mask[iy * NX + ix] then
@@ -889,6 +2130,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   -- open to the sky stay open and the silhouette keeps its notches.
   if spray then
     for iy = 1, math.min(spray.rows, NY) - 1 do
+      Budget.check()
       if loRow[iy] then
         for ix = loRow[iy], hiRow[iy] do
           local i = iy * NX + ix
@@ -912,6 +2154,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   -- drawn base rim lands on the model's base instead of being painted over
   -- by the body band above it
   for iy = yBot + 1, NY - 1 do
+    Budget.check()
     loRow[iy], hiRow[iy] = loRow[yBot], hiRow[yBot]
     for ix = loRow[yBot], hiRow[yBot] do
       local b = yBot * NX + ix
@@ -934,11 +2177,13 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   if taperVox and taperVox > 0 then
     local yTopRow = nil
     for iy = 0, NY - 1 do
+      Budget.check()
       if loRow[iy] then yTopRow = iy break end
     end
     local span = NY - 1 - (yTopRow or 0)
     if yTopRow and span > 0 then
       for iy = yTopRow, NY - 1 do
+        Budget.check()
         local inset = math.floor(taperVox / 2 * (iy - yTopRow) / span + 0.5)
         if inset > 0 and loRow[iy] then
           local lo = loRow[iy] + inset
@@ -993,10 +2238,12 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   local wellTop = nil
   if wellRows and wellRows > 0 then
     for iy = 0, NY - 1 do
+      Budget.check()
       if loRow[iy] then wellTop = iy break end
     end
     local wall = 2
     for iy = wellTop or 0, math.min((wellTop or 0) + wellRows - 1, NY - 1) do
+      Budget.check()
       if loRow[iy] then
         for ix = loRow[iy], hiRow[iy] do
           local i = iy * NX + ix
@@ -1014,6 +2261,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   local capTopRow, capZ0, capZ1 = nil, nil, nil
   if capY0 then
     for iy = 0, NY - 1 do
+      Budget.check()
       if loRow[iy] then capTopRow = iy break end
     end
     if capTopRow then
@@ -1087,6 +2335,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   local quads = {}
 
   for iy = 0, NY - 1 do
+    Budget.check()
     if loRow[iy] then
       local yB, yT = NY - 1 - iy, NY - iy
 
@@ -1095,6 +2344,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
       -- (its u range must interpolate inside one tile)
       local ix = loRow[iy]
       while ix <= hiRow[iy] do
+        Budget.tick()
         local i = iy * NX + ix
         if z0[i] then
           local ix2 = ix
@@ -1163,6 +2413,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
       -- sides, steps, undersides: constant-texel quads over the z runs a
       -- neighbour doesn't cover
       for ix = loRow[iy], hiRow[iy] do
+        Budget.tick()
         local i = iy * NX + ix
         if z0[i] then
           local ax, ay = texel(srcX[i] or ix, src[i])
@@ -1174,6 +2425,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
           local function chordPieces(nx, ny, emit, zLo, zHi)
             local iz = zLo
             while iz < zHi do
+              Budget.tick()
               if not solidAt(nx, ny, iz) then
                 local iz2 = iz
                 while iz2 + 1 < zHi and not solidAt(nx, ny, iz2 + 1) do
@@ -1223,6 +2475,7 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
               -- its top arc at the cap's north rim, its bottom arc at
               -- the south, the perspective the 2D art already implies
               for iz = izA, izB do
+                Budget.tick()
                 local t = capZ1 - 1 > capZ0
                           and (iz - capZ0) / (capZ1 - 1 - capZ0) or 0
                 local ry = capY0 + math.floor(t * (capY1 - capY0) + 0.5)
@@ -2197,16 +3450,24 @@ function Structures.buildVolume(S, map, tiles)
           unit = 2
           repeatRead = true
         end
+        -- Safari's two-row foot is a second, data-exact repeat spelling.
+        -- Keep it after the generic readers so it cannot alter an existing
+        -- classification; the helper also excludes ring and folded doors.
+        if not repeatRead and safariFootRepeat(S, map, tx, north, front) then
+          unit = 3
+          repeatRead = true
+        end
       end
-      local isDoor = false
+      local isDoor, doorNorth = false, nil
       for ty = north, front do
         if S.doorFold[keyOf(tx, ty)] then
           isDoor = true
-          break
+          doorNorth = math.min(doorNorth or ty, ty)
         end
       end
       local run = { front = front, north = north, extent = extent,
-                    unit = unit, fromRepeat = repeatRead, door = isDoor }
+                    unit = unit, fromRepeat = repeatRead, door = isDoor,
+                    doorNorth = doorNorth }
       runs[#runs + 1] = { tx = tx, run = run }
       local h = unit * 8
       heightVotes[h] = (heightVotes[h] or 0) + 1
@@ -2303,6 +3564,9 @@ end
 -- outline shade: a fence's mid browns are its body, and the outline
 -- rule would strip the posts to black skeletons.
 function Structures.extractObjects(S, map, region, data, perRow, force)
+  if route8VolumeRegionReceipt(S, map, region, data, perRow, force) then
+    return region.tiles
+  end
   local bw = (region.maxX - region.minX + 1) * 8
   local bh = (region.maxY - region.minY + 1) * 8
 
@@ -3460,8 +4724,8 @@ local function grassTemplate(map, data, tileId)
 end
 
 function Structures.buildGrass(S, map, x0, x1, y0, y1, data)
-  local templates = {}
-  local quads = S.grassQuads
+  S.grassGroups = S.grassGroups or {}
+  local groups = {}
   for ty = y0, y1 do
     for tx = x0, x1 do
       Budget.tick()
@@ -3474,21 +4738,18 @@ function Structures.buildGrass(S, map, x0, x1, y0, y1, data)
       if s and s.art == "grass"
          and map:isGrassCell(math.floor(tx / 2), math.floor(ty / 2)) then
         local tileId = S.tileAt[k]
-        local tpl = templates[tileId]
-        if not tpl then
-          tpl = grassTemplate(map, data, tileId)
-          templates[tileId] = tpl
+        local group = groups[tileId]
+        if not group then
+          group = {
+            quads = grassTemplate(map, data, tileId),
+            placements = {},
+          }
+          groups[tileId] = group
+          S.grassGroups[#S.grassGroups + 1] = group
         end
         local wx, wz = tx * 8, ty * 8
-        for _, q in ipairs(tpl) do
-          quads[#quads + 1] = {
-            { q[1][1] + wx, q[1][2], q[1][3] + wz },
-            { q[2][1] + wx, q[2][2], q[2][3] + wz },
-            { q[3][1] + wx, q[3][2], q[3][3] + wz },
-            { q[4][1] + wx, q[4][2], q[4][3] + wz },
-            uv = q.uv, shade = q.shade,
-          }
-        end
+        local p = group.placements
+        p[#p + 1], p[#p + 2] = wx, wz
       end
     end
   end
@@ -3737,7 +4998,9 @@ function Structures.invalidate(mapId)
   else
     cache = {}
     atlasData = {}
+    voidTileCache = {}
     roundCache = {}
+    route8VolumeAtlasCache = setmetatable({}, { __mode = "k" })
     Buildings.invalidate()
   end
 end

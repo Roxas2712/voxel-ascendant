@@ -79,6 +79,13 @@ end
 
 CamControl.battleLive = battleLive
 
+local function battleArena()
+  local ok, arena = pcall(function()
+    return V.require("OverworldBattle").arena()
+  end)
+  return ok and arena or nil
+end
+
 -- The free-roam overworld, with the 3D pass carrying it: the gate every
 -- zoom that is not a battle's answers to.
 local function roaming()
@@ -117,7 +124,7 @@ function CamControl.zoomBy(notches)
   if not notches or notches == 0 then return false end
   local target = CamControl.zoomTarget()
   if target == "battle" then
-    BattleCam.stepZoom(notches)
+    BattleCam.stepZoom(notches, battleArena())
     return true
   elseif target == "boom" then
     ThirdPerson.stepZoom(notches)
@@ -143,7 +150,7 @@ function CamControl.pinchBy(factor)
     -- and a phone has neither, so without it the lens would be the one
     -- control a touch screen could not work
     return BattleCam.stepZoom(math.log(1 / factor)
-                              / math.log(BattleCam.ZOOM_STEP))
+                              / math.log(BattleCam.ZOOM_STEP), battleArena())
   elseif target == "survey" then
     CamControl.surveyAccum = (CamControl.surveyAccum or 0)
       + math.log(factor) / math.log(2) * CamControl.SURVEY_PINCH
@@ -244,8 +251,9 @@ function CamControl.install()
   -- ------- the mouse
   --
   -- Battle only. The free-roam look already owns relative motion through
-  -- FirstPerson's own wrap (this one is outside it, so what is claimed here
-  -- never reaches it) and a fight is exactly when that look is not driving.
+  -- FirstPerson's own pointer hook. This hook has the higher priority, so a
+  -- battle reads the motion before FirstPerson can consume it; a fight is
+  -- exactly when that free-roam look is not driving.
   --
   -- Bare motion, no button held: moving the mouse moves the shot.
   --
@@ -261,19 +269,21 @@ function CamControl.install()
   local function clamp(v)
     return math.max(-MOUSE_STEP, math.min(MOUSE_STEP, v or 0))
   end
-  do
-    local inner = love.mousemoved
-    love.mousemoved = function(x, y, dx, dy, istouch)
-      if battleLive() and not istouch then
+  local hooks = V.mod and V.mod.hooks
+  if type(hooks) == "table" and type(hooks.wrap) == "function" then
+    hooks:wrap("input.pointer", function(nextInput, game, pointer)
+      if type(pointer) == "table" and pointer.source == "mouse"
+         and pointer.phase == "moved" and battleLive() then
         -- dy is NEGATED for the same reason the stick's is: moving the
         -- mouse away from you sends the camera up and over
+        local dx, dy = pointer.dx, pointer.dy
         if dx and dx ~= 0 then BattleCam.mouseOrbit(clamp(dx)) end
         if dy and dy ~= 0 then BattleCam.mousePitch(-clamp(dy)) end
         -- forwarded anyway: the cursor still has UI to point at, and the
         -- steer is a read of the motion rather than a claim on it
       end
-      if inner then return inner(x, y, dx, dy, istouch) end
-    end
+      return nextInput(game, pointer)
+    end, 20)
   end
 
   -- ------- the touch screen

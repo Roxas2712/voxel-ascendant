@@ -41,8 +41,8 @@
 -- billboard math that faces cards at this eye (VoxelScene, which owns
 -- every other card matrix too).
 --
--- Everything the module reaches -- the mouse's relative mode, the wrapped
--- love handlers, the touch overlay's hit test -- is pcall-guarded the same
+-- Everything the module reaches -- the mouse's relative mode, the public
+-- pointer hook, the touch overlay's hit test -- is pcall-guarded the same
 -- way the 3D pass is: headless runs and drivers without a mouse simply
 -- never see the input, and the rung falls back to holding the 75-degree
 -- orbit.
@@ -115,6 +115,7 @@ local mouseDX, mouseDY = 0, 0         -- relative counts since last update
 local lookTouch = nil                 -- { id, x, y } of the claimed finger
 local touchMove = nil                 -- the touch d-pad's analog deflection
 local captured = false                -- mouse relative mode engaged by us
+local captureArmed = true             -- false after focus loss until one click
 
 -- the placed-camera record this module last handed to Voxel3D, so passes
 -- that key behaviour off "is the first-person rig the one drawing" (the
@@ -445,6 +446,10 @@ function FirstPerson.update(dt)
   -- entering the rung: the head starts looking the way the sprite faces,
   -- pitched gently down -- the reading pose of the flat game
   if engagedNow and not wasEngaged then
+    -- Selecting 1ST/3RD explicitly is itself consent to capture. Focus loss
+    -- below is different: returning from a screenshot tool must leave the
+    -- pointer free until the player clicks back into the game.
+    captureArmed = true
     local ok, facing = pcall(function()
       local Game = require("src.core.Game")
       return Game.overworld and Game.overworld.player
@@ -452,6 +457,8 @@ function FirstPerson.update(dt)
     end)
     FirstPerson.yaw = (ok and FACING_ANGLE[facing]) or 0
     FirstPerson.pitch = FirstPerson.PITCH_DEFAULT
+  elseif not engagedNow and wasEngaged then
+    captureArmed = true
   end
   wasEngaged = engagedNow
 
@@ -481,11 +488,11 @@ function FirstPerson.update(dt)
   -- part of the dive in from the orbit, which carries the eye anyway
   ThirdPerson.update(dt, FirstPerson.blend)
 
-  -- mouse capture follows engagement: captured whenever the rung is on and
-  -- the window has focus, released the moment either ends. Checked against
-  -- the live mode rather than toggled on edges, so a capture lost to the
-  -- OS (alt-tab) re-arms itself on the next focused frame.
-  local wantCapture = engagedNow
+  -- Mouse capture follows engagement until the application loses focus.
+  -- Focus loss disarms it; focus regain alone does not steal the system
+  -- pointer back from Greenshot or another tool. One deliberate click in the
+  -- game re-arms it (in the pointer hook below) without also pressing A.
+  local wantCapture = engagedNow and captureArmed
   if wantCapture and love.window and love.window.hasFocus then
     local okF, focus = pcall(love.window.hasFocus)
     wantCapture = okF and focus or false
@@ -654,10 +661,10 @@ end
 
 -- ------- input capture
 --
--- The seams: relative mouse motion has no Game handler at all (the
--- engine's love.mousemoved only feeds the mouse-as-touch debug path), the
--- right stick's axes are explicitly ignored by Input, and a touch
--- anywhere off the overlay's controls dies in TouchControls. Each wrap
+-- The seams: relative mouse motion arrives through the engine's public
+-- input.pointer mod hook, the right stick's axes are explicitly ignored by
+-- Input, and a touch anywhere off the overlay's controls dies in
+-- TouchControls. Each wrap
 -- forwards everything it does not claim, and claims only while first
 -- person is actually driving -- so with the rung off, every byte flows
 -- exactly where it always did.
@@ -720,21 +727,6 @@ function FirstPerson.install()
 
   -- ------- mouse
   --
-  -- love.mousemoved rather than a Game method, because the engine has no
-  -- Game:mousemoved to wrap -- the callback in the project's main.lua is
-  -- the one place relative counts arrive. Claimed only while captured;
-  -- pass-through otherwise, including the mouse-as-touch path.
-  do
-    local inner = love.mousemoved
-    love.mousemoved = function(x, y, dx, dy, istouch)
-      if captured and not istouch then
-        mouseDX = mouseDX + (dx or 0)
-        mouseDY = mouseDY + (dy or 0)
-        return
-      end
-      if inner then return inner(x, y, dx, dy, istouch) end
-    end
-  end
   -- While the mouse is captured there is no cursor to click UI with, so
   -- the buttons become GB buttons: left is A, right is B -- through the
   -- overlay's own press path, which a rebind can never detach. What WE
@@ -744,29 +736,52 @@ function FirstPerson.install()
   --
   local mouseHeld = {}
   local MOUSE_BTN = { [1] = "a", [2] = "b" }
-  do
-    local inner = love.mousepressed
-    love.mousepressed = function(x, y, button, istouch, presses)
-      if captured and not istouch and MOUSE_BTN[button] then
+  local hooks = V.mod and V.mod.hooks
+  if type(hooks) == "table" and type(hooks.wrap) == "function" then
+    hooks:wrap("input.pointer", function(nextInput, game, pointer)
+      if type(pointer) ~= "table" or pointer.source ~= "mouse" then
+        return nextInput(game, pointer)
+      end
+      if pointer.phase == "pressed" and not captured and not captureArmed
+         and pointer.button == 1 and FirstPerson.driving() then
+        captureArmed = true
+        mouseDX, mouseDY = 0, 0
+        if love.mouse and love.mouse.setRelativeMode then
+          pcall(love.mouse.setRelativeMode, true)
+          captured = true
+        end
+        return true
+      end
+      if pointer.phase == "moved" and captured then
+        mouseDX = mouseDX + (pointer.dx or 0)
+        mouseDY = mouseDY + (pointer.dy or 0)
+        return true
+      end
+      local button = pointer.button
+      if pointer.phase == "pressed" and captured and MOUSE_BTN[button] then
         local Input = require("src.core.Input")
         mouseHeld[button] = true
         Input:overlayPressed(MOUSE_BTN[button])
-        return
+        return true
       end
-      if inner then return inner(x, y, button, istouch, presses) end
-    end
-  end
-  do
-    local inner = love.mousereleased
-    love.mousereleased = function(x, y, button, istouch, presses)
-      if mouseHeld[button] then
+      if pointer.phase == "released" and mouseHeld[button] then
         local Input = require("src.core.Input")
         mouseHeld[button] = nil
         Input:overlayReleased(MOUSE_BTN[button])
-        return
+        return true
       end
-      if inner then return inner(x, y, button, istouch, presses) end
-    end
+      if pointer.phase == "cancelled" and next(mouseHeld) ~= nil then
+        local Input = require("src.core.Input")
+        for held, mapped in pairs(MOUSE_BTN) do
+          if mouseHeld[held] then
+            mouseHeld[held] = nil
+            Input:overlayReleased(mapped)
+          end
+        end
+        return true
+      end
+      return nextInput(game, pointer)
+    end, 10)
   end
 
   -- ------- touch
@@ -851,6 +866,14 @@ function FirstPerson.install()
       lookTouch, touchMove = nil, nil
       stick.x, stick.y = 0, 0
       mouseDX, mouseDY = 0, 0
+      if f == false then
+        captureArmed, captured = false, false
+        if love.mouse and love.mouse.setRelativeMode then
+          pcall(love.mouse.setRelativeMode, false)
+        end
+      elseif not FirstPerson.engaged() then
+        captureArmed = true
+      end
       return inner(self, f)
     end
   end

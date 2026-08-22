@@ -111,12 +111,14 @@ OverworldBattle.LABEL = "3D-BTL"
 -- procedural pair of discs, or the original flat battle screen. MAP declines
 -- to the classic screen if a safe arena cannot be staged; DISCS needs no map
 -- geometry and therefore also works indoors and in caves.
+OverworldBattle.ARENA = "arena"
 OverworldBattle.FLAT_B = "flatB"
 
 OverworldBattle.setting =
   ModSetting.new(OverworldBattle.KEY, OverworldBattle.LABEL,
-                 { true, OverworldBattle.FLAT_B, false },
-                 { "MAP", "DISCS", "OFF" })
+                 { true, OverworldBattle.ARENA,
+                   OverworldBattle.FLAT_B, false },
+                 { "MAP", "ARENA", "DISCS", "OFF" })
 
 -- Whether the fight stands on the two carried DISCS rather than on the map
 -- -- the B column above, whichever row of it. Asked by stageFor (what to
@@ -131,12 +133,21 @@ function OverworldBattle.discs()
   return OverworldBattle.setting:get() == OverworldBattle.FLAT_B
 end
 
+function OverworldBattle.arenaMode()
+  return OverworldBattle.setting:get() == OverworldBattle.ARENA
+end
+
+function OverworldBattle.portable()
+  return OverworldBattle.discs() or OverworldBattle.arenaMode()
+end
+
 function OverworldBattle.enabled()
   return supported and OverworldBattle.setting:get() and true or false
 end
 
 function OverworldBattle.stadium()
-  return false
+  return OverworldBattle.arenaMode()
+         and BattleCam.arenaDirectorSelected()
 end
 
 -- ------- independent player-side back sprites
@@ -259,7 +270,7 @@ local function canStageFront()
   if not (ow and ow.map and ow.player) then return false end
   -- a B rung carries its own stage, so the answer is yes on every map and
   -- there is nothing to search or to cache
-  if OverworldBattle.discs() then return true end
+  if OverworldBattle.portable() then return true end
   if staged.mapId ~= ow.map.id then
     local ok, arena = pcall(BattleArena.find, ow.map,
                             ow.player.cellX, ow.player.cellY,
@@ -300,11 +311,28 @@ function OverworldBattle.routeTrainerSprite(next, path, ctx,
     return out
   end
 
-  local out = next(path, ctx)
-  if not wantsFront or out ~= path then return out end
+  if not wantsFront then return next(path, ctx) end
+
+  -- This must be a real FRONT request all the way down the chain, rather
+  -- than a back request whose result is replaced afterwards. Kanto Ascendant
+  -- 6.7 resolves character art in two player.sprite hooks: its inner hook
+  -- sees ctx.side and its outer hook preserves any already-selected result.
+  -- Sending the original back context therefore made TRAINER BACK = OFF
+  -- impossible to honour -- the inner hook selected battleBack and the outer
+  -- hook quite correctly kept it. Route a copy as side=front so every
+  -- character/art provider gets to select its own matching standing portrait.
   local ok, FieldDefaults = pcall(require, "src.world.FieldDefaults")
-  if not (ok and FieldDefaults and FieldDefaults.fieldValue) then return out end
-  return FieldDefaults.fieldValue(ctx.data, "playerPics", "front") or out
+  local front = ok and FieldDefaults and FieldDefaults.fieldValue
+                and FieldDefaults.fieldValue(ctx.data, "playerPics", "front")
+  if not front then return next(path, ctx) end
+
+  local routed = {}
+  for key, value in pairs(ctx) do routed[key] = value end
+  routed.side = "front"
+  routed.voxelTrainerFront = true
+  local out = next(front, routed)
+  if routed.trueColor ~= nil then ctx.trueColor = routed.trueColor end
+  return out or front
 end
 
 -- ------- where the engine's own pics stand
@@ -551,9 +579,16 @@ end
 -- the map has to have room for, so a fight in the tightest cave in Kanto is
 -- staged as readily as one on Route 1.
 function OverworldBattle.stageFor(state)
-  if OverworldBattle.discs() and Voxel3D.available() then
+  if OverworldBattle.portable() and Voxel3D.available() then
     local okStage, arena = pcall(function()
-      return V.require("VoxelBattleStage").arena(state.map)
+      local style
+      if OverworldBattle.arenaMode() then
+        local found = BattleArena.find(state.map, state.player.cellX,
+                                       state.player.cellY,
+                                       state.player.surfing)
+        style = V.require("BattleArenaStyle").resolve(state.map, found)
+      end
+      return V.require("VoxelBattleStage").arena(state.map, style)
     end)
     if okStage and arena then return arena end
     -- the discs could not be built; fall through to the map, which is a
@@ -662,7 +697,7 @@ function OverworldBattle.update(dt)
   session.battle = session.battle or (top ~= ow and top or nil)
   BattleCam.steerable = not OverworldBattle.playerBackPinned(session.battle)
   pcall(V.require("CamControl").tick, dt)
-  BattleCam.update(dt)
+  BattleCam.update(dt, session.arena, session.battle)
   -- the world pass is hidden behind the battle, so mesh builds get the wide
   -- slice: nothing visible can hitch on them
   ChunkMesher.pump(true)
