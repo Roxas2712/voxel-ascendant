@@ -39,6 +39,10 @@ for id, spec in pairs(reviewed) do
   eq(type(spec.outdoor), "boolean", id .. " outdoor receipt")
   eq(type(spec.actorScale), "number", id .. " actor scale receipt")
   eq(type(spec.clockTint), "boolean", id .. " clock tint receipt")
+  eq(spec.anchors.player.y, -8,
+     id .. " player foot stays above the text window")
+  eq(spec.anchors.enemy.y, -17,
+     id .. " opponent keeps the reviewed upper-right foot")
   if spec.clockTint then
     eq(type(spec.windows), "table", id .. " window region receipt")
     eq(#spec.windows > 0, true, id .. " owns at least one window region")
@@ -107,8 +111,9 @@ local modules = {
       drawReceipt={image=image,tint=tint}
       return true
     end,
-    backdropWindows=function(tint, regions, width, height)
-      windowReceipt={tint=tint,regions=regions,width=width,height=height}
+    backdropWindows=function(scene, regions, width, height)
+      windowReceipt={scene=scene,tint=scene.tint,
+                     regions=regions,width=width,height=height}
       return true
     end,
     seams=function() end, glass=function() end, draw=function() end,
@@ -126,7 +131,7 @@ local V = {
   data=function(name)
     if name ~= "arena_scenery" then return {} end
     local anchors = {
-      player={x=0,y=-8,z=0}, enemy={x=0,y=-16,z=0},
+      player={x=0,y=-8,z=0}, enemy={x=0,y=-17,z=0},
     }
     return {
       ROUTE_2={path="assets/battle/arena_route2.compact.png",
@@ -140,9 +145,11 @@ local V = {
       OAKS_LAB={path="assets/battle/arena_lab.compact.png",
                 width=1280,height=800,camera="3X",outdoor=false,
                 actorScale=2.1,clockTint=true,
-                windows={{shape="rect",x=700,y=20,w=100,h=160}},
+                windows={{shape="rect",x=700,y=20,w=100,h=160,
+                          tintScale=.55,alphaScale=.45,starsScale=.25,
+                          moon=false}},
                 anchors={player={x=-7,y=-8,z=0},
-                         enemy={x=7,y=-16,z=0}}},
+                         enemy={x=7,y=-17,z=0}}},
       ROUTE_3={path="assets/battle/arena_bad.compact.png",
                width=1280,height=800,camera="3X",outdoor=true,
                actorScale=1,clockTint=false,
@@ -166,7 +173,7 @@ eq(Stage.hasAuthoredBackdrop(nugget), true,
    "Nugget Bridge owns reviewed Arena Scenery")
 eq(Stage.presentationGroundY(nugget, "player", 12), 4,
    "player uses the reviewed dry-foreground anchor")
-eq(Stage.presentationGroundY(nugget, "enemy", 12), -4,
+eq(Stage.presentationGroundY(nugget, "enemy", 12), -5,
    "enemy uses the fixed authored 3X painterly-bank anchor")
 local px, py, pz = Stage.presentationPosition(nugget, "player", 12)
 eq(px, 8, "player keeps its reviewed horizontal anchor")
@@ -174,7 +181,7 @@ eq(py, 4, "player uses its reviewed vertical anchor")
 eq(pz, 24, "player keeps its reviewed depth anchor")
 local ex, ey, ez = Stage.presentationPosition(nugget, "enemy", 12)
 eq(ex, 24, "enemy keeps its reviewed horizontal anchor")
-eq(ey, -4, "enemy uses its reviewed vertical anchor")
+eq(ey, -5, "enemy uses its reviewed vertical anchor")
 eq(ez, 8, "enemy keeps its reviewed depth anchor")
 local art = assert(Stage.backdropFor(nugget, true))
 eq(reads[1],
@@ -191,7 +198,7 @@ eq(#reads, 1, "cache avoids repeated asset reads")
 local route2 = arena("route2_gate", profiles.route2_gate, "r2:1:0", "ROUTE_2")
 eq(Stage.hasAuthoredBackdrop(route2), true,
    "a reviewed map-id owns its selected Arena Scenery")
-eq(Stage.presentationGroundY(route2, "enemy", 12), -4,
+eq(Stage.presentationGroundY(route2, "enemy", 12), -5,
    "reviewed maps reuse the fixed authored 3X footing")
 local route2Art = assert(Stage.backdropFor(route2, true))
 eq(reads[2], "/reviewed-mod/assets/battle/arena_route2.compact.png",

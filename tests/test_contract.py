@@ -78,6 +78,7 @@ EXPECTED_ASSETS = {
     "assets/battle/arena_tower-lavender.compact.png",
     "assets/battle/arena_vermilion-gate-route11.compact.png",
     "assets/scenery/kanto_panorama.compact.png",
+    "assets/scenery/cinnabar_story_landmarks.compact.png",
     "assets/scenery/coastal_landmarks_v3.compact.png",
     "assets/scenery/forest_edge_a.compact.png",
     "assets/scenery/forest_edge_b.compact.png",
@@ -109,12 +110,32 @@ EXPECTED_ASSETS = {
     "assets/sky/spearow_flock.png",
     "assets/sky/zapdos.png",
 }
+OUTDOOR_ARENA_ASSETS = {
+    "assets/battle/arena_cape-route25.compact.png",
+    "assets/battle/arena_cerulean-canal.compact.png",
+    "assets/battle/arena_coast-cinnabar.compact.png",
+    "assets/battle/arena_coast-surf.compact.png",
+    "assets/battle/arena_forest-viridian.compact.png",
+    "assets/battle/arena_grass-kanto-open.compact.png",
+    "assets/battle/arena_grass-route1.compact.png",
+    "assets/battle/arena_indigo-gate-route22.compact.png",
+    "assets/battle/arena_indigo-road-route23.compact.png",
+    "assets/battle/arena_moon-approach-route3.compact.png",
+    "assets/battle/arena_moon-exit-route4.compact.png",
+    "assets/battle/arena_rock-water-route10.compact.png",
+    "assets/battle/arena_route2-forest-gate.compact.png",
+    "assets/battle/arena_safari-kanto.compact.png",
+    "assets/battle/arena_ship-bow.compact.png",
+    "assets/battle/arena_vermilion-gate-route11.compact.png",
+    "assets/battle/nugget_bridge_a.compact.png",
+}
 EXPECTED_REPO_ONLY_PNGS = {
     # Reviewed V1/V2 runtimes remain beside V3 for rollback/diff evidence but
     # are no longer read or shipped. High-resolution retained ImageGen masters
     # make both versioned builds reproducible and remain outside the ZIP.
     "assets/scenery/coastal_landmarks.compact.png",
     "assets/scenery/coastal_landmarks_v2.compact.png",
+    "qa-screenshots/vasc/cinnabar-story-landmarks-20260823/cinnabar-volcano-birth-island-headless.png",
     "tools/sources/coastal_landmarks_v2/01-rocky-island.imagegen.png",
     "tools/sources/coastal_landmarks_v2/02-lighthouse.imagegen.png",
     "tools/sources/coastal_landmarks_v2/03-archipelago.imagegen.png",
@@ -123,6 +144,8 @@ EXPECTED_REPO_ONLY_PNGS = {
     "tools/sources/coastal_landmarks_v3/02-lighthouse.imagegen.png",
     "tools/sources/coastal_landmarks_v3/03-archipelago.imagegen.png",
     "tools/sources/coastal_landmarks_v3/04-cinnabar.imagegen.png",
+    "tools/sources/cinnabar_story_landmarks/01-cinnabar-volcano.imagegen.png",
+    "tools/sources/cinnabar_story_landmarks/02-birth-island.imagegen.png",
     "tools/sources/kanto_panorama/kanto-panorama.imagegen.png",
     "tools/sources/arena_scenery/cave_cerulean_baseline_v1.imagegen.png",
     "tools/sources/arena_scenery/cave_diglett_baseline_v1.imagegen.png",
@@ -313,7 +336,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "2.0.0")
+        self.assertEqual(manifest["version"], "2.0.1")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
@@ -384,7 +407,7 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(runtime.read_bytes()).hexdigest(),
-            "612182212e0dc022abc860d5432964f3a5785440c7de53c071226ddfeabc1378",
+            "e86a1d07a4668139bd9afbe1668b0e0d81eeeceba2478cd8520ad029478b46a3",
         )
         with tempfile.TemporaryDirectory() as temp:
             rebuilt = Path(temp) / "nugget.png"
@@ -412,6 +435,177 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(set(alpha.crop((0, 799, 1280, 800)).getdata()),
                          {255})
         self.assertGreater(alpha.getextrema()[1], alpha.getextrema()[0])
+
+    def test_outdoor_arena_matte_repair_removes_only_detached_alpha(self) -> None:
+        """Live-sky repair keeps grounded scenery and removes black islands."""
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.png"
+            repaired = root / "repaired.png"
+            image = Image.new("RGBA", (40, 24), (0, 0, 0, 0))
+            # Grounded dark tree/terrain: legal despite its matte-like color.
+            for y in range(12, 24):
+                for x in range(40):
+                    image.putpixel((x, y), (72, 92, 64, 255))
+            for y in range(6, 12):
+                for x in range(10, 31):
+                    image.putpixel((x, y), (72, 92, 64, 255))
+            image.putpixel((10, 6), (0, 255, 0, 255))
+            image.putpixel((20, 10), (0, 0, 0, 255))
+            # Detached opaque core plus antialiased rim: both must disappear.
+            image.putpixel((20, 2), (0, 0, 0, 255))
+            image.putpixel((21, 2), (30, 30, 30, 120))
+            image.save(source)
+            result = subprocess.run(
+                ["python3",
+                 "tools/sources/arena_scenery/repair_outdoor_sky_matte.py",
+                 str(source), str(repaired)],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+            self.assertIn("floating_removed=1", result.stdout)
+            with Image.open(repaired) as output:
+                fixed = output.convert("RGBA")
+            self.assertEqual(fixed.getpixel((20, 2))[3], 0)
+            self.assertEqual(fixed.getpixel((21, 2))[3], 0)
+            self.assertEqual(fixed.getpixel((10, 6))[3], 255)
+            self.assertNotEqual(fixed.getpixel((10, 6))[:3], (0, 255, 0))
+            self.assertNotEqual(fixed.getpixel((20, 10))[:3], (0, 0, 0))
+            self.assertEqual(fixed.getpixel((20, 15)), (72, 92, 64, 255))
+            self.assertTrue(all(fixed.getpixel((x, 23))[3] == 255
+                                for x in range(40)))
+            second = root / "second.png"
+            subprocess.run(
+                ["python3",
+                 "tools/sources/arena_scenery/repair_outdoor_sky_matte.py",
+                 str(repaired), str(second)],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+            with Image.open(second) as second_image:
+                second_alpha = second_image.convert("RGBA").getchannel("A")
+            self.assertEqual(fixed.getchannel("A").tobytes(),
+                             second_alpha.tobytes(),
+                             "matte repair must preserve its fixed silhouette")
+
+    def test_every_outdoor_arena_has_clean_live_sky_edges(self) -> None:
+        """Every shipped outdoor painting is grounded and matte-free."""
+        from collections import deque
+        from PIL import Image
+        from statistics import median
+
+        for relative in sorted(OUTDOOR_ARENA_ASSETS):
+            with self.subTest(asset=relative):
+                with Image.open(ROOT / relative) as opened:
+                    image = opened.convert("RGBA")
+                self.assertEqual(image.size, (1280, 800))
+                width, height = image.size
+                pixels = list(image.getdata())
+                alpha = [pixel[3] for pixel in pixels]
+                self.assertTrue(all(alpha[(height - 1) * width + x] == 255
+                                    for x in range(width)))
+
+                sky = bytearray(width * height)
+                queue: deque[int] = deque()
+                for x in range(width):
+                    if alpha[x] == 0:
+                        sky[x] = 1
+                        queue.append(x)
+                while queue:
+                    index = queue.popleft()
+                    x, y = index % width, index // width
+                    for ny in range(max(0, y - 1), min(height, y + 2)):
+                        for nx in range(max(0, x - 1), min(width, x + 2)):
+                            neighbor = ny * width + nx
+                            if not sky[neighbor] and alpha[neighbor] == 0:
+                                sky[neighbor] = 1
+                                queue.append(neighbor)
+                sky_bottom = max((index // width for index, value
+                                  in enumerate(sky) if value), default=0)
+
+                grounded = bytearray(width * height)
+                queue.clear()
+                for x in range(width):
+                    index = (height - 1) * width + x
+                    grounded[index] = 1
+                    queue.append(index)
+                while queue:
+                    index = queue.popleft()
+                    x, y = index % width, index // width
+                    for ny in range(max(0, y - 1), min(height, y + 2)):
+                        for nx in range(max(0, x - 1), min(width, x + 2)):
+                            neighbor = ny * width + nx
+                            if (not grounded[neighbor]
+                                    and alpha[neighbor] > 0):
+                                grounded[neighbor] = 1
+                                queue.append(neighbor)
+                detached = sum(1 for index, value in enumerate(alpha)
+                               if value > 0 and not grounded[index])
+                self.assertEqual(detached, 0,
+                                 f"{relative} has detached sky pixels")
+
+                outliers: list[tuple[int, int]] = []
+                for y in range(min(height, sky_bottom + 49)):
+                    for x in range(width):
+                        red, green, blue, opacity = pixels[y * width + x]
+                        channels = sorted((red, green, blue))
+                        suspicious = (channels[2] <= 48
+                                      or (channels[0] <= 8
+                                          and channels[2] >= 70
+                                          and channels[2] - channels[0]
+                                          >= 70))
+                        if not opacity or not suspicious:
+                            continue
+                        local = []
+                        for ny in range(max(0, y - 3),
+                                        min(height, y + 4)):
+                            for nx in range(max(0, x - 3),
+                                            min(width, x + 4)):
+                                if nx == x and ny == y:
+                                    continue
+                                sample = pixels[ny * width + nx]
+                                if sample[3] >= 128:
+                                    local.append(sample[:3])
+                        if len(local) < 5:
+                            continue
+                        center = tuple(int(median(sample[channel]
+                                                  for sample in local))
+                                       for channel in range(3))
+                        if max(abs(red - center[0]),
+                               abs(green - center[1]),
+                               abs(blue - center[2])) >= 48:
+                            outliers.append((x, y))
+                self.assertFalse(outliers,
+                                 f"{relative} has sky-edge RGB specks "
+                                 f"at {outliers[:8]}")
+                if relative.endswith("arena_safari-kanto.compact.png"):
+                    dark = {
+                        (index % width, index // width)
+                        for index, pixel in enumerate(pixels)
+                        if index // width < min(height, sky_bottom + 49)
+                        and pixel[3] > 0 and max(pixel[:3]) <= 48
+                    }
+                    largest = 0
+                    while dark:
+                        seed = dark.pop()
+                        component = {seed}
+                        queue = deque([seed])
+                        while queue:
+                            x, y = queue.popleft()
+                            for ny in range(max(0, y - 1),
+                                            min(height, y + 2)):
+                                for nx in range(max(0, x - 1),
+                                                min(width, x + 2)):
+                                    point = (nx, ny)
+                                    if point in dark:
+                                        dark.remove(point)
+                                        component.add(point)
+                                        queue.append(point)
+                        largest = max(largest, len(component))
+                    self.assertLessEqual(
+                        largest, 64,
+                        "Safari has a reintroduced enclosed black matte mass",
+                    )
 
     def test_mountain_panorama_sector_edges_are_continuous(self) -> None:
         """The circular cardinal atlas must have pixel-exact corner joins."""
@@ -768,6 +962,61 @@ class ContractTests(unittest.TestCase):
             "coastal cadence low crop escaped the reviewed retro palette",
         )
 
+    def test_cinnabar_story_landmarks_are_compact_transparent_cutouts(self) -> None:
+        """The optional volcano/Birth-Island lane has no baked sky or matte."""
+        from PIL import Image
+
+        path = ROOT / "assets" / "scenery" / \
+            "cinnabar_story_landmarks.compact.png"
+        self.assertEqual(
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+            "ddbfeac791b1b35fa5571277f9a85da9d310e8082427cff1b751c53fb5fa84ba",
+        )
+        with Image.open(path) as source:
+            self.assertEqual(source.mode, "RGBA")
+            image = source.copy()
+        self.assertEqual(image.size, (512, 128))
+        self.assertEqual(image.getchannel("A").getextrema(), (0, 255))
+        expected_bounds = ((18, 15, 238, 119), (30, 35, 226, 119))
+        sample_limits = ((220, 110), (196, 98))
+        for index, (expected, limit) in enumerate(
+                zip(expected_bounds, sample_limits)):
+            module = image.crop((index * 256, 0, (index + 1) * 256, 128))
+            alpha = module.getchannel("A")
+            self.assertEqual(alpha.getbbox(), expected)
+            self.assertLessEqual(expected[2] - expected[0], limit[0])
+            self.assertLessEqual(expected[3] - expected[1], limit[1])
+            self.assertTrue(
+                any(0 < opacity < 255 for opacity in alpha.getdata()),
+                f"story module {index} lost its antialiased coast",
+            )
+            self.assertFalse(any(alpha.getpixel((x, 0)) for x in range(256)))
+            self.assertLessEqual(
+                len({pixel[:3] for pixel in module.getdata() if pixel[3] == 255}),
+                96,
+            )
+            self.assertTrue(all(
+                pixel[:3] == (0, 0, 0)
+                for pixel in module.getdata() if pixel[3] == 0
+            ), f"story module {index} retained a colored transparent matte")
+            self.assertLessEqual(
+                sum(alpha.getpixel((x, 127)) == 255 for x in range(256)),
+                24,
+            )
+
+    def test_cinnabar_story_landmarks_are_reproducible(self) -> None:
+        """The shipped two-island atlas rebuilds from hash-pinned masters."""
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "cinnabar-story.png"
+            subprocess.run(
+                ["python3", "tools/build_cinnabar_story_landmarks.py",
+                 "--output", str(output)],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+            shipped = ROOT / "assets" / "scenery" / \
+                "cinnabar_story_landmarks.compact.png"
+            self.assertEqual(output.read_bytes(), shipped.read_bytes())
+
     def test_coastal_landmarks_v2_is_reproducible(self) -> None:
         """The shipped V2 bitmap must rebuild solely from retained repo sources."""
         with tempfile.TemporaryDirectory() as temp:
@@ -1032,10 +1281,32 @@ class ContractTests(unittest.TestCase):
         self.assertIn('local Weather = V.require("Weather")', battle)
         self.assertIn("local weatherMode = BattleScene.weatherMode(host)",
                       battle)
-        self.assertIn("{ weather = weatherMode }", battle)
+        self.assertIn("weather = weatherMode", battle)
+        self.assertIn("arena = discs and arena.arenaStyle and true or false",
+                      battle)
         self.assertIn("BattleScene.applyWeather(rendered, rw, rh, host,",
                       battle)
         self.assertIn("local outdoor = Weather.isOutdoor(host)", battle)
+        self.assertIn("Weather.applyBattle or Weather.apply", battle)
+
+    def test_ios_battle_canvas_orientation_runtime(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run(
+            [str(lua), "tests/ios_canvas_presentation_test.lua"],
+            cwd=ROOT, check=True, text=True, capture_output=True,
+        )
+        voxel = (ROOT / "lib" / "Voxel3D.lua").read_text(encoding="utf-8")
+        weather = (ROOT / "lib" / "Weather.lua").read_text(encoding="utf-8")
+        self.assertIn("CanvasPresentation.imageDraw", voxel)
+        self.assertIn("CanvasPresentation.rectY", voxel)
+        self.assertIn("CanvasPresentation.pointY", voxel)
+        self.assertIn("CanvasPresentation.begin2D", weather)
 
     def test_water_sky_dither_runtime(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
@@ -1278,6 +1549,23 @@ class ContractTests(unittest.TestCase):
             [str(lua), "tests/sprite_pack_hooks_test.lua"],
             cwd=ROOT, check=True, text=True, capture_output=True,
         )
+        subprocess.run(
+            [str(lua), "tests/local_sprites_test.lua"],
+            cwd=ROOT, check=True, text=True, capture_output=True,
+        )
+
+    def test_warp_destination_prefetch_runtime(self) -> None:
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run(
+            [str(lua), "tests/warp_prefetch_test.lua"],
+            cwd=ROOT, check=True, text=True, capture_output=True,
+        )
 
     def test_battle_music_pack_runtime(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
@@ -1289,6 +1577,10 @@ class ContractTests(unittest.TestCase):
             self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
         subprocess.run(
             [str(lua), "tests/battle_music_pack_test.lua"],
+            cwd=ROOT, check=True, text=True, capture_output=True,
+        )
+        subprocess.run(
+            [str(lua), "tests/local_music_test.lua"],
             cwd=ROOT, check=True, text=True, capture_output=True,
         )
 
@@ -1484,14 +1776,16 @@ class ContractTests(unittest.TestCase):
             # absent in both optimized and historical object paths.
             "terrain_quads": "22953",
             "geometry_digest": "224994826",
-            "structures_digest": "179932056:2237769011",
-            "structure_nodes": "82181",
-            # Six retained scalar receipts describe the Y-only scale of the
-            # two compact gabled models; graph topology remains unchanged.
-            "structure_atoms": "584613",
+            # Runtime building faces are retained as one flat numeric record
+            # per quad instead of nine nested corner/UV tables. The rendered
+            # geometry digest above remains exact while the internal graph is
+            # intentionally much smaller.
+            "structures_digest": "2101816750:644595139",
+            "structure_nodes": "32159",
+            "structure_atoms": "484573",
             "collision_digest": "3573221619:841077224",
             "warps_digest": "3059780264:1422021758",
-            "budget_ticks": "179164",
+            "budget_ticks": "92973",
         }
         for field, expected in exact_route8.items():
             self.assertEqual(route8_optimized[field], expected,
@@ -1740,6 +2034,8 @@ class ContractTests(unittest.TestCase):
             self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
         subprocess.run([str(lua), "tests/kanto_ascendant_menu_test.lua"],
                        cwd=ROOT, check=True, text=True, capture_output=True)
+        subprocess.run([str(lua), "tests/vasc_menu_test.lua"],
+                       cwd=ROOT, check=True, text=True, capture_output=True)
 
     def test_building_rear_is_exterior_only(self) -> None:
         source = (ROOT / "lib" / "Buildings.lua").read_text(encoding="utf-8")
@@ -1979,6 +2275,39 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
                 self.assertTrue(EXPECTED_ASSETS.issubset(names))
                 self.assertTrue(EXPECTED_REPO_ONLY_PNGS.isdisjoint(names))
+                for guide in (
+                    "user/music/README.txt",
+                    "user/music/README_EN.txt",
+                    "user/music/README_DE.txt",
+                    "user/sprites/README.txt",
+                    "user/sprites/README_EN.txt",
+                    "user/sprites/README_DE.txt",
+                ):
+                    self.assertIn(guide, names,
+                                  f"customisation guide missing: {guide}")
+                guide_markers = {
+                    "user/music/README_EN.txt": (
+                        b"%APPDATA%", b"On My iPhone", b"Android/data",
+                        b"SHUFFLE", b"BACK TO GAME / KASC",
+                    ),
+                    "user/music/README_DE.txt": (
+                        b"WO LIEGT DER INSTALLIERTE ORDNER", b"Android/data",
+                        b"ALL TO GAME/KASC",
+                    ),
+                    "user/sprites/README_EN.txt": (
+                        b"CHARIZARD_MEGA_Y", b"SPRITE_KA_CRYSTAL_GREEN_BIKE",
+                        b"On My iPhone", b"Android/data",
+                    ),
+                    "user/sprites/README_DE.txt": (
+                        b"SPIEL/KASC WIEDERHERSTELLEN", b"Android/data",
+                        b"ALL TO GAME/KASC",
+                    ),
+                }
+                for guide, markers in guide_markers.items():
+                    payload = archive.read(guide)
+                    for marker in markers:
+                        self.assertIn(marker, payload,
+                                      f"{guide} lacks {marker!r}")
                 for name in EXPECTED_ASSETS:
                     self.assertEqual(archive.read(name), (ROOT / name).read_bytes(),
                                      f"packaged asset drifted: {name}")

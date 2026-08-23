@@ -103,6 +103,7 @@ local function newCache()
   }
 end
 local cache = newCache()
+local boundsCache = setmetatable({}, { __mode = "k" })
 
 -- What an enclosed hole is filled with when the pic itself offers nothing
 -- better. White, because white is what the battle field was: this restores the
@@ -181,6 +182,38 @@ local function inkBounds(data, w, h)
   end
   if x1 < x0 then return nil end
   return x0, y0, x1, y1
+end
+
+-- Visible alpha bounds for an already-rendered pic/canvas.  A companion may
+-- render several form images through one reusable canvas, so the caller also
+-- supplies the content identity; caching by the canvas alone would hand the
+-- next form the previous form's baseline.  The returned max coordinates are
+-- inclusive, matching inkBounds above.
+function BattlePics.inkBounds(img, identity)
+  if not img then return nil end
+  local slot = boundsCache[img]
+  if not slot then
+    slot = {}
+    boundsCache[img] = slot
+  end
+  local key = identity or false
+  local hit = slot[key]
+  if hit ~= nil then
+    if hit == false then return nil end
+    return hit[1], hit[2], hit[3], hit[4]
+  end
+  local result = false
+  local ok = pcall(function()
+    local data = readBack(img)
+    if not data then return end
+    local w, h = data:getDimensions()
+    local x0, y0, x1, y1 = inkBounds(data, w, h)
+    if x0 then result = { x0, y0, x1, y1 } end
+  end)
+  if not ok then result = false end
+  slot[key] = result
+  if result == false then return nil end
+  return result[1], result[2], result[3], result[4]
 end
 
 -- The colour the keyed-away shade would have had: the LIGHTEST colour still
@@ -342,6 +375,7 @@ end
 
 function BattlePics.invalidate()
   cache = newCache()
+  boundsCache = setmetatable({}, { __mode = "k" })
 end
 
 return BattlePics

@@ -627,7 +627,7 @@ for _, draw in ipairs(drawCalls) do
   end
 end
 eq(cropDraws, 1, "Forest gatehouse decoded/copied its source more than once")
-eq(Horizon.IMAGE_EXTRA_VRAM, 1992704,
+eq(Horizon.IMAGE_EXTRA_VRAM, 2254848,
    "Forest gatehouse VRAM is not the fixed budget plus exactly 10240 bytes")
 
 -- A missing/malformed shared PNG must fail the exact horizon key rather than

@@ -58,17 +58,18 @@ eq(Horizon.ROUTE8_VRAM, 960 * 96 * 4,
    "Route 8 retains one dedicated high-detail compact")
 eq(Horizon.ROUTE8_MIDGROUND_VRAM, 256 * 64 * 4,
    "Route 8 midground retains exactly one 64 KiB atlas")
-eq(Horizon.IMAGE_EXTRA_VRAM, 1992704,
+eq(Horizon.IMAGE_EXTRA_VRAM, 2254848,
    "optional horizon atlases plus the 10 KiB Forest gate facade retain an exact byte budget")
 local completeAuthoredVRAM = Horizon.REGIONAL_VRAM + Horizon.MOUNTAIN_VRAM
-  + Horizon.COASTAL_LANDMARK_VRAM + Horizon.MINI_TREE_VRAM
+  + Horizon.COASTAL_LANDMARK_VRAM
+  + Horizon.CINNABAR_STORY_LANDMARK_VRAM + Horizon.MINI_TREE_VRAM
   + Horizon.FUJI_VRAM
 eq(completeAuthoredVRAM + Horizon.ROUTE8_VRAM
-   + Horizon.ROUTE8_MIDGROUND_VRAM, 3053056,
+   + Horizon.ROUTE8_MIDGROUND_VRAM, 3315200,
    "complete authored horizon retained VRAM is exact")
 if completeAuthoredVRAM + Horizon.ROUTE8_VRAM
-   + Horizon.ROUTE8_MIDGROUND_VRAM > 3 * 1024 * 1024 then
-  error("complete authored horizon texture budget exceeds 3 MiB")
+   + Horizon.ROUTE8_MIDGROUND_VRAM > 13 * 256 * 1024 then
+  error("complete authored horizon texture budget exceeds 3.25 MiB")
 end
 
 local requiredMaps = {
@@ -84,6 +85,108 @@ local requiredMaps = {
   "ROUTE_19", "ROUTE_20", "ROUTE_21", "CINNABAR_ISLAND",
   "ROUTE_22", "ROUTE_23", "INDIGO_PLATEAU",
 }
+
+do
+-- KASC 6.7's optional Cinnabar fork remains completely absent until all four
+-- definitions and reciprocal offsets exist.  Once valid, one lane contains
+-- exactly the volcano (left) and Birth Island (right); a resident target body
+-- suppresses only its own distant card.
+local legacyCinnabar = fakeMap("CINNABAR_ISLAND", 10, 9)
+legacyCinnabar.def.connections = {
+  north = { map = "ROUTE_21", offset = 0 },
+  east = { map = "ROUTE_20", offset = 0 },
+}
+local legacyCinnabarGeometry = Horizon.geometry({
+  map = legacyCinnabar, neighbors = {}, worldMaps = {
+    CINNABAR_ISLAND = legacyCinnabar.def,
+  },
+})[1]
+eq(#legacyCinnabarGeometry.storyVertices, 0,
+   "legacy Cinnabar unexpectedly enabled future story landmarks")
+
+local storyDefs = {
+  CINNABAR_ISLAND = {
+    id = "CINNABAR_ISLAND", width = 10, height = 9,
+    tileset = "OVERWORLD", outdoor = true,
+    connections = {
+      north = { map = "ROUTE_21", offset = 0 },
+      east = { map = "ROUTE_20", offset = 0 },
+      south = { map = "CINNABAR_SOUTH_CHANNEL", offset = 4 },
+    },
+  },
+  CINNABAR_SOUTH_CHANNEL = {
+    id = "CINNABAR_SOUTH_CHANNEL", width = 2, height = 8,
+    tileset = "OVERWORLD", outdoor = true,
+    connections = {
+      north = { map = "CINNABAR_ISLAND", offset = -4 },
+      west = { map = "CINNABAR_VOLCANO", offset = 0 },
+      east = { map = "KA_HOENN_BIRTH_ISLAND", offset = 0 },
+    },
+  },
+  CINNABAR_VOLCANO = {
+    id = "CINNABAR_VOLCANO", width = 8, height = 8,
+    tileset = "OVERWORLD", outdoor = true,
+    connections = {
+      east = { map = "CINNABAR_SOUTH_CHANNEL", offset = 0 },
+    },
+  },
+  KA_HOENN_BIRTH_ISLAND = {
+    id = "KA_HOENN_BIRTH_ISLAND", width = 8, height = 8,
+    tileset = "OVERWORLD", outdoor = true,
+    connections = {
+      west = { map = "CINNABAR_SOUTH_CHANNEL", offset = 0 },
+    },
+  },
+}
+local function storyMap(id)
+  local map = fakeMap(id, storyDefs[id].width, storyDefs[id].height)
+  map.def = storyDefs[id]
+  return map
+end
+local storyCinnabar = storyMap("CINNABAR_ISLAND")
+local storyChannel = storyMap("CINNABAR_SOUTH_CHANNEL")
+local topology = Horizon.cinnabarStoryTopology(storyDefs)
+eq(topology ~= nil, true, "complete Cinnabar story topology was rejected")
+local storyState = {
+  map = storyCinnabar, worldMaps = storyDefs,
+  neighbors = { { map = storyChannel, ox = 128, oy = 288 } },
+}
+local storyBuilt = Horizon.geometry(storyState)[1]
+eq(storyBuilt.storyQuads, 9,
+   "Cinnabar story lane is not the exact 5+4 split-card batch")
+eq(#storyBuilt.storyVertices, 36,
+   "Cinnabar story lane vertex count drifted")
+local volcanoCentre = (storyBuilt.storyVertices[1][1]
+  + storyBuilt.storyVertices[18][1]) / 2
+local birthCentre = (storyBuilt.storyVertices[21][1]
+  + storyBuilt.storyVertices[34][1]) / 2
+if not (volcanoCentre < birthCentre) then
+  error("Cinnabar story destinations flipped right-to-left")
+end
+near(storyBuilt.storyVertices[1][4], 18 / 512, 1e-9,
+     "volcano sampled outside module zero's reviewed alpha box")
+near(storyBuilt.storyVertices[21][4], (256 + 30) / 512, 1e-9,
+     "Birth Island sampled outside module one's reviewed alpha box")
+
+local volcanoMap = storyMap("CINNABAR_VOLCANO")
+local oneCovered = Horizon.geometry({
+  map = storyCinnabar, worldMaps = storyDefs,
+  neighbors = {
+    { map = storyChannel, ox = 128, oy = 288 },
+    { map = volcanoMap, ox = -128, oy = 288 },
+  },
+})[1]
+eq(oneCovered.storyQuads, 4,
+   "resident volcano did not suppress only its own distant card")
+
+storyDefs.CINNABAR_VOLCANO.connections.east.offset = 1
+eq(Horizon.cinnabarStoryTopology(storyDefs), nil,
+   "wrong volcano reciprocal offset did not fail open")
+local malformedBuilt = Horizon.geometry(storyState)[1]
+eq(#malformedBuilt.storyVertices, 0,
+   "malformed story topology emitted a partial landmark lane")
+storyDefs.CINNABAR_VOLCANO.connections.east.offset = 0
+end
 for _, id in ipairs(requiredMaps) do
   local rules = Horizon.EDGE_PROFILES[id]
   if not rules then error(id .. " is missing a regional edge profile") end

@@ -372,7 +372,7 @@ local AUTHORED_BACKDROPS = {
       -- Pull the near/player card onto the broad foreground meadow rather
       -- than balancing it on the narrow blue/green riverbank boundary.
       player = { x=0, y=-8, z=0 },
-      enemy = { x=0, y=-16, z=0 },
+      enemy = { x=0, y=-17, z=0 },
     },
   },
 }
@@ -394,6 +394,13 @@ end
 
 local function validWindow(region, width, height)
   if type(region) ~= "table" then return false end
+  for _, key in ipairs({ "tintScale", "alphaScale", "starsScale" }) do
+    local value = region[key]
+    if value ~= nil and not (finite(value) and value >= 0 and value <= 1) then
+      return false
+    end
+  end
+  if region.moon ~= nil and type(region.moon) ~= "boolean" then return false end
   local shape = region.shape
   if shape == "rect" or shape == "ellipse" then
     return finite(region.x) and finite(region.y)
@@ -740,14 +747,28 @@ function VoxelBattleStage.presentationTint(arena)
 end
 
 function VoxelBattleStage.presentationWindowTint(arena)
+  local scene = VoxelBattleStage.presentationWindowScene(arena)
+  return scene and scene.tint or nil
+end
+
+function VoxelBattleStage.presentationWindowScene(arena)
   local spec = authoredSpec(arena)
   if not (spec and spec.clockTint) then return nil end
-  local clock = DayNight.tint(true)
+  local scene = DayNight.windowScene and DayNight.windowScene() or {
+    tint = DayNight.tint(true), sky = { 0, 0, 0 },
+    alpha = 0, stars = 0, moon = 0,
+  }
+  local clock = type(scene) == "table" and scene.tint
   if not (type(clock) == "table" and finite(clock[1])
-          and finite(clock[2]) and finite(clock[3])) then
+          and finite(clock[2]) and finite(clock[3])
+          and type(scene.sky) == "table" and finite(scene.sky[1])
+          and finite(scene.sky[2]) and finite(scene.sky[3])
+          and finite(scene.alpha) and scene.alpha >= 0 and scene.alpha <= 1
+          and finite(scene.stars) and scene.stars >= 0 and scene.stars <= 1
+          and finite(scene.moon) and scene.moon >= 0 and scene.moon <= 1) then
     return nil
   end
-  return clock
+  return scene
 end
 
 -- `image` is prepared before beginScene.  The draw itself is one alpha
@@ -761,11 +782,12 @@ function VoxelBattleStage.drawBackdrop(arena, outdoor, image)
     image, VoxelBattleStage.presentationTint(arena))
   if not drawn then return false end
   local spec = authoredSpec(arena)
-  local tint = VoxelBattleStage.presentationWindowTint(arena)
-  if spec and tint then
-    -- A white/day tint is a no-op inside Voxel3D.  Dawn, dusk and night are
-    -- multiplied only through the reviewed glass shapes, continuously.
-    Voxel3D.backdropWindows(tint, spec.windows, spec.width, spec.height)
+  local windowScene = VoxelBattleStage.presentationWindowScene(arena)
+  if spec and windowScene then
+    -- The room keeps its authored lamps. Only reviewed panes receive the
+    -- continuous outside sky, stars and moon.
+    Voxel3D.backdropWindows(windowScene, spec.windows,
+                            spec.width, spec.height)
   end
   return true
 end

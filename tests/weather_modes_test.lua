@@ -12,6 +12,8 @@ function V.require(name)
   if cache[name] then return cache[name] end
   if name == "ModSetting" then
     cache[name] = assert(loadfile("lib/ModSetting.lua"))(V)
+  elseif name == "CanvasPresentation" then
+    cache[name] = assert(loadfile("lib/CanvasPresentation.lua"))(V)
   else
     error("unexpected dependency " .. tostring(name))
   end
@@ -116,7 +118,8 @@ eq(Weather.clock, 13, "NaN cannot poison weather animation")
 local stats
 local oldLove = love
 local function resetGraphics()
-  stats = { rectangles = 0, pushes = 0, pops = 0, colors = {}, canvases = 0 }
+  stats = { rectangles = 0, lines = 0, circles = 0, ellipses = 0,
+            pushes = 0, pops = 0, colors = {}, canvases = 0 }
   local g = {}
   function g.push() stats.pushes = stats.pushes + 1 end
   function g.pop() stats.pops = stats.pops + 1 end
@@ -125,6 +128,10 @@ local function resetGraphics()
   function g.setShader() end
   function g.setDepthMode() end
   function g.setBlendMode() end
+  function g.translate() end
+  function g.scale() end
+  function g.setLineStyle() end
+  function g.setLineWidth() end
   function g.setColor(r, green, b, a)
     stats.colors[#stats.colors + 1] = { r, green, b, a }
   end
@@ -134,6 +141,25 @@ local function resetGraphics()
            and type(w) == "number" and type(h) == "number",
            "weather rectangle is numeric")
     stats.rectangles = stats.rectangles + 1
+  end
+  function g.line(x1, y1, x2, y2)
+    truthy(type(x1) == "number" and type(y1) == "number"
+           and type(x2) == "number" and type(y2) == "number",
+           "battle rain line is numeric")
+    stats.lines = stats.lines + 1
+  end
+  function g.circle(mode, x, y, radius)
+    eq(mode, "fill", "battle snow uses filled circles")
+    truthy(type(x) == "number" and type(y) == "number"
+           and type(radius) == "number", "battle snow circle is numeric")
+    stats.circles = stats.circles + 1
+  end
+  function g.ellipse(mode, x, y, rx, ry)
+    eq(mode, "fill", "battle fog uses filled ellipses")
+    truthy(type(x) == "number" and type(y) == "number"
+           and type(rx) == "number" and type(ry) == "number",
+           "battle fog ellipse is numeric")
+    stats.ellipses = stats.ellipses + 1
   end
   love = { graphics = g }
 end
@@ -164,6 +190,25 @@ Weather.apply(canvas, 320, 180, outside, 2, "rain")
 local rainDraws = stats.rectangles
 truthy(rainDraws > 100, "rain remains visibly populated")
 truthy(15 < rainDraws, "fog costs much less than rain")
+
+resetGraphics()
+Weather.applyBattle(canvas, 320, 180, outside, 2, "rain")
+eq(stats.rectangles, 1,
+   "battle rain uses one restrained atmospheric grade")
+eq(stats.lines, 88,
+   "battle rain uses three bounded perspective depth bands")
+truthy(stats.lines < rainDraws,
+       "battle rain is calmer than the overworld voxel staircase")
+
+resetGraphics()
+Weather.applyBattle(canvas, 320, 180, outside, 2, "snow")
+eq(stats.rectangles, 1, "battle snow uses one atmospheric grade")
+eq(stats.circles, 42, "battle snow uses bounded soft flakes")
+
+resetGraphics()
+Weather.applyBattle(canvas, 320, 180, outside, 2, "fog")
+eq(stats.rectangles, 1, "battle fog uses one subtle veil")
+eq(stats.ellipses, 6, "battle fog uses six soft depth wisps")
 
 -- Find one deterministic flash frame without waiting in real time.  Replaying
 -- it gives the same strength/key and the storm adds both rain and illumination.

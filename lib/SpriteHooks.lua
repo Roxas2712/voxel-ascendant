@@ -5,7 +5,14 @@
 local V = ...
 local Runtime = require("src.mods.Runtime")
 local SpritePacks = V.require("SpritePacks")
+local LocalSprites = V.require("LocalSprites")
 local SpriteHooks = {}
+
+local function overridesEnabled()
+  if LocalSprites.enabled and LocalSprites.enabled() then return true end
+  local _, selected = SpritePacks.active()
+  return selected ~= "base"
+end
 
 local function identity(value) return value end
 
@@ -16,7 +23,9 @@ local function publicPath(name, current, ctx)
 end
 
 local function path(kind, current, ctx, specific)
+  if not overridesEnabled() then return current end
   current = SpritePacks.resolve(kind, current, ctx)
+  current = LocalSprites.resolve(kind, current, ctx)
   current = publicPath("vasc.sprite." .. kind, current, ctx)
   if specific then current = publicPath("vasc.sprite." .. specific, current, ctx) end
   return current
@@ -27,6 +36,21 @@ local function validDef(def)
          and def.image ~= "" and type(def.frames) == "number"
          and def.frames == math.floor(def.frames)
          and def.frames >= 1 and def.frames <= 256
+end
+
+local function overworldContext(def, seed)
+  local spriteId = type(def) == "table" and def.id or nil
+  local upper = type(spriteId) == "string" and string.upper(spriteId) or ""
+  local state
+  if upper:find("BIKE", 1, true) then state = "bike"
+  elseif upper:find("FISH", 1, true) then state = "fishing"
+  elseif upper:find("SURF", 1, true) then state = "surf"
+  elseif upper:find("WALK", 1, true) then state = "walk" end
+  local character = upper:match("_CRYSTAL_([A-Z0-9]+)_[A-Z0-9]+$")
+  return {
+    kind="overworld", seed=seed, spriteDef=def, spriteId=spriteId,
+    player=seed == "player", playerState=state, playerCharacter=character,
+  }
 end
 
 local function publicDef(current, ctx)
@@ -53,16 +77,20 @@ local function installRenderer()
   if held then
     if current ~= held.wrapper then return false end
     held.resolve = function(def, seed)
-      local ctx = { kind="overworld", seed=seed, spriteDef=def }
+      if not overridesEnabled() then return def end
+      local ctx = overworldContext(def, seed)
       local chosen = SpritePacks.resolve("overworld", def, ctx)
+      chosen = LocalSprites.resolve("overworld", chosen, ctx)
       return publicDef(chosen, ctx)
     end
     return true
   end
   held = {}
   held.resolve = function(def, seed)
-    local ctx = { kind="overworld", seed=seed, spriteDef=def }
+    if not overridesEnabled() then return def end
+    local ctx = overworldContext(def, seed)
     local chosen = SpritePacks.resolve("overworld", def, ctx)
+    chosen = LocalSprites.resolve("overworld", chosen, ctx)
     return publicDef(chosen, ctx)
   end
   held.wrapper = function(def, seed)
@@ -71,6 +99,42 @@ local function installRenderer()
   end
   Renderer.new = held.wrapper
   Renderer.voxelAscendantSpriteRelay = held
+  return true
+end
+
+-- Enemy trainer portraits do not pass through player.sprite: exact engine
+-- builds resolve them through BattleState.trainerPicPath before decoding the
+-- image.  Relay that final path through the same live local/pack/public chain.
+-- The wrapper is identity-held so hot reload updates the resolver without
+-- stacking, and an unexpected foreign replacement is left untouched.
+local function installTrainerPictures()
+  local ok, BattleState = pcall(require, "src.battle.BattleState")
+  if not ok or type(BattleState) ~= "table"
+     or type(BattleState.trainerPicPath) ~= "function" then return false end
+  local current = BattleState.trainerPicPath
+  local held = rawget(BattleState, "voxelAscendantTrainerSpriteRelay")
+  if held then
+    if current ~= held.wrapper then return false end
+    held.resolve = function(value, ctx)
+      return path("trainer", value, ctx, nil)
+    end
+    return true
+  end
+  held = {}
+  held.resolve = function(value, ctx)
+    return path("trainer", value, ctx, nil)
+  end
+  held.wrapper = function(data, trainer, oppClass, partyIndex)
+    local value = current(data, trainer, oppClass, partyIndex)
+    local okResolve, chosen = pcall(held.resolve, value, {
+      kind="battle", trainer=trainer, trainerId=oppClass,
+      oppClass=oppClass, partyIndex=partyIndex, data=data,
+    })
+    return okResolve and type(chosen) == "string" and chosen ~= ""
+           and chosen or value
+  end
+  BattleState.trainerPicPath = held.wrapper
+  BattleState.voxelAscendantTrainerSpriteRelay = held
   return true
 end
 
@@ -93,7 +157,7 @@ function SpriteHooks.install(mod)
   mod.hooks:wrap("pokemon.icon", function(next, current, ctx)
     return path("icon", next(current, ctx), ctx, nil)
   end, 1000000)
-  return installRenderer()
+  return installRenderer() and installTrainerPictures()
 end
 
 return SpriteHooks

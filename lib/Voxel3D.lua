@@ -35,6 +35,7 @@ local Sky = V.require("Sky")
 local DayNight = V.require("DayNight")
 local GlassMask = V.require("GlassMask")
 local PixelCanvas = V.require("PixelCanvas")
+local CanvasPresentation = V.require("CanvasPresentation")
 
 local Voxel3D = {}
 
@@ -806,6 +807,14 @@ local discMesh = nil
 local function drawWorldDisc(w, h)
   local b = DayNight.body()
   if not (b and b.dy and b.dy > 0.005) then return end
+  -- A direction outside the camera fan must not contribute one enormous
+  -- perspective corner. That was the pale checkerboard arc seen at DUSK in
+  -- fixed battle shots. Cull by the body's centre before building its quad.
+  local ray = Voxel3D.skyRayLive
+  if ray then
+    local _, _, visible = Sky.projectDirection(ray, w, h, b)
+    if not visible then return end
+  end
   local amt = DayNight.glow()
   local img = Sky.discImage(b.moon, Sky.discLooming(amt, b.moon))
   if not img then return end
@@ -938,14 +947,16 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
                 nil, nil, skyRay, {
                   ray = atmosphereRay,
                   weather = skyContext and skyContext.weather or nil,
+                  arena = skyContext and skyContext.arena or nil,
                 })
-      drawWorldDisc(w, h)
+      if not (skyContext and skyContext.arena) then drawWorldDisc(w, h) end
     else
       Sky.paint(w, h, sky, hy, Voxel3D.cell,
                 sky.bands and Voxel3D.skyBody(w, h) or nil,
                 nil, nil, nil, {
                   ray = atmosphereRay,
                   weather = skyContext and skyContext.weather or nil,
+                  arena = skyContext and skyContext.arena or nil,
                 })
     end
   else
@@ -1043,8 +1054,9 @@ function Voxel3D.backdrop(image, tint)
   love.graphics.setDepthMode("always", false)
   local c = type(tint) == "table" and tint or { 1, 1, 1 }
   love.graphics.setColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
-  local ok = pcall(love.graphics.draw, image, 0, 0, 0,
-                   canvasW / iw, canvasH / ih)
+  local dx, dy, dr, dsx, dsy = CanvasPresentation.imageDraw(
+    canvasW, canvasH, iw, ih)
+  local ok = pcall(love.graphics.draw, image, dx, dy, dr, dsx, dsy)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setDepthMode("lequal", true)
   love.graphics.setShader(activeShader)
@@ -1055,8 +1067,9 @@ end
 -- room around it.  Regions are authored in the backdrop's source pixels and
 -- scaled to the active battle canvas.  Rectangles, porthole ellipses and
 -- simple convex panes cover the reviewed interiors without a mask texture.
-function Voxel3D.backdropWindows(tint, regions, sourceW, sourceH)
+function Voxel3D.backdropWindows(scene, regions, sourceW, sourceH)
   local gfx = love.graphics
+  local tint = type(scene) == "table" and (scene.tint or scene) or nil
   if not (active and activeShader and type(tint) == "table"
           and type(regions) == "table" and #regions > 0
           and type(sourceW) == "number" and sourceW > 0
@@ -1069,7 +1082,12 @@ function Voxel3D.backdropWindows(tint, regions, sourceW, sourceH)
   local r, g, b = tint[1], tint[2], tint[3]
   if not (type(r) == "number" and type(g) == "number"
           and type(b) == "number") then return false end
-  if r > .999 and g > .999 and b > .999 then return true end
+  local sky = type(scene) == "table" and scene.sky or nil
+  local skyAlpha = type(scene) == "table" and scene.alpha or 0
+  local stars = type(scene) == "table" and scene.stars or 0
+  local moon = type(scene) == "table" and scene.moon or 0
+  if not (type(skyAlpha) == "number" and type(stars) == "number"
+          and type(moon) == "number") then return false end
 
   local sx, sy = canvasW / sourceW, canvasH / sourceH
   local blend, alphaMode = "alpha", "alphamultiply"
@@ -1087,22 +1105,101 @@ function Voxel3D.backdropWindows(tint, regions, sourceW, sourceH)
     gfx.setShader()
     gfx.setDepthMode("always", false)
     gfx.setBlendMode("multiply", "premultiplied")
-    gfx.setColor(r, g, b, 1)
-    for _, region in ipairs(regions) do
+    local function pointIn(region, x, y)
       if region.shape == "rect" then
-        gfx.rectangle("fill", region.x * sx, region.y * sy,
-                      region.w * sx, region.h * sy)
+        return x >= region.x and x <= region.x + region.w
+               and y >= region.y and y <= region.y + region.h
+      elseif region.shape == "ellipse" then
+        local rx, ry = region.w * .5, region.h * .5
+        local dx = (x - region.x - rx) / rx
+        local dy = (y - region.y - ry) / ry
+        return dx * dx + dy * dy <= 1
+      end
+      local inside, j = false, #region.points - 1
+      for i = 1, #region.points, 2 do
+        local xi, yi = region.points[i], region.points[i + 1]
+        local xj, yj = region.points[j], region.points[j + 1]
+        if ((yi > y) ~= (yj > y))
+            and x < (xj - xi) * (y - yi) / (yj - yi) + xi then
+          inside = not inside
+        end
+        j = i
+      end
+      return inside
+    end
+    local function regionShape(region)
+      if region.shape == "rect" then
+        local rh = region.h * sy
+        gfx.rectangle("fill", region.x * sx,
+                      CanvasPresentation.rectY(region.y * sy, rh, canvasH),
+                      region.w * sx, rh)
       elseif region.shape == "ellipse" then
         gfx.ellipse("fill", (region.x + region.w * .5) * sx,
-                    (region.y + region.h * .5) * sy,
+                    CanvasPresentation.pointY(
+                      (region.y + region.h * .5) * sy, canvasH),
                     region.w * sx * .5, region.h * sy * .5, 48)
       else
         local points = {}
         for i=1,#region.points,2 do
           points[#points + 1] = region.points[i] * sx
-          points[#points + 1] = region.points[i + 1] * sy
+          points[#points + 1] = CanvasPresentation.pointY(
+            region.points[i + 1] * sy, canvasH)
         end
         gfx.polygon("fill", points)
+      end
+    end
+    for _, region in ipairs(regions) do
+      local scale = type(region.tintScale) == "number"
+                    and region.tintScale or 1
+      gfx.setColor(1 + (r - 1) * scale,
+                   1 + (g - 1) * scale,
+                   1 + (b - 1) * scale, 1)
+      regionShape(region)
+    end
+
+    -- Cover the painted daytime view progressively; at DAY alpha is zero.
+    if sky and skyAlpha > 0 then
+      gfx.setBlendMode("alpha")
+      for _, region in ipairs(regions) do
+        local scale = type(region.alphaScale) == "number"
+                      and region.alphaScale or 1
+        gfx.setColor(sky[1], sky[2], sky[3], skyAlpha * scale)
+        regionShape(region)
+      end
+    end
+
+    -- Deterministic irregular stars and one small moon, clipped by testing
+    -- their centres against each authored pane. No mask texture or RNG state.
+    if stars > 0 and gfx.circle then
+      gfx.setBlendMode("alpha")
+      for ri, region in ipairs(regions) do
+        local starScale = type(region.starsScale) == "number"
+                          and region.starsScale or 1
+        local bx = region.x or 0
+        local by = region.y or 0
+        local bw = region.w or sourceW
+        local bh = region.h or sourceH
+        for i = 1, 13 do
+          local x = bx + ((i * 47 + ri * 19) % 91) / 100 * bw
+          local y = by + ((i * 29 + ri * 31) % 83) / 100 * bh
+          if pointIn(region, x, y) then
+            local size = ((i + ri) % 5 == 0) and 1.7 or .8
+            gfx.setColor(1, .97, .78,
+                         stars * starScale * (.46 + (i % 4) * .12))
+            gfx.circle("fill", x * sx,
+                       CanvasPresentation.pointY(y * sy, canvasH),
+                       math.max(1, size * math.min(sx, sy)))
+          end
+        end
+        if ri == 1 and region.moon ~= false and moon > 0 then
+          local mx, my = bx + bw * .72, by + bh * .28
+          if pointIn(region, mx, my) then
+            gfx.setColor(.94, .95, .82, moon * .95)
+            gfx.circle("fill", mx * sx,
+                       CanvasPresentation.pointY(my * sy, canvasH),
+                       math.max(2, math.min(bw * sx, bh * sy) * .075))
+          end
+        end
       end
     end
   end)

@@ -51,11 +51,31 @@ local ChunkMesher = {
   end,
 }
 
+local seenMegaSource
+local BattlePics = {
+  inkBounds = function(canvas, source)
+    seenMegaSource = source
+    if type(source) == "string" and source:find("steelix", 1, true) then
+      return 0, 0, 95, 95
+    end
+    return 3, 7, 91, 88
+  end,
+}
+
 local modules = {
   VoxelScene = VoxelScene,
   HorizonWall = HorizonWall,
   ChunkMesher = ChunkMesher,
+  BattleBillboard = { FULL_W = 16, FULL_PIC = 56 },
   TerrainAtlas = { setLive = function() end },
+  BattlePics = BattlePics,
+  VoxelBattleStage = {
+    presentationScale = function() return 1 end,
+    presentationPosition = function(arena, side, groundY)
+      local p = arena[side]
+      return p[1], groundY or 0, p[2]
+    end,
+  },
 }
 
 local V = {}
@@ -77,6 +97,95 @@ local function eq(actual, expected, message)
 end
 
 local BattleScene = assert(loadfile("lib/BattleScene.lua"))(V)
+eq(BattleScene.textureBaseline({ ay = 96, canvas = {} }), 96,
+  "ordinary battle texture baseline changed")
+eq(BattleScene.textureBaseline({
+  ay = 96, canvas = {}, inkIdentity = "RATTATA",
+}), 89, "ordinary compact alpha bottom did not reach the ground")
+eq(BattleScene.textureBaseline({
+  ay = 96, canvas = {}, kantoAscendantMegaSupersampled = true,
+  kantoAscendantMegaSource = "assets/mega/mega_charizard_x_front.png",
+}), 89, "Mega alpha bottom did not replace transparent-frame baseline")
+eq(seenMegaSource, "assets/mega/mega_charizard_x_front.png",
+  "Mega baseline cache did not receive content identity")
+eq(BattleScene.speciesScale({ trainer = true, heightIn = 346 }), 1,
+  "trainer art inherited Pokemon height scaling")
+eq(BattleScene.speciesScale({ heightIn = 12 }),
+   BattleScene.SPECIES_SCALE_MIN,
+   "small Pokemon did not receive the readable minimum")
+eq(BattleScene.speciesScale({ heightIn = 346 }),
+   BattleScene.SPECIES_SCALE_MAX,
+   "very large Pokemon exceeded the indoor-safe maximum")
+local charizardScale = BattleScene.speciesScale({ heightIn = 67 })
+local rattataScale = BattleScene.speciesScale({ heightIn = 12 })
+if not (charizardScale > rattataScale * 1.7) then
+  error("canonical species height does not visibly separate Charizard/Rattata")
+end
+eq(BattleScene.speciesScale({ heightIn = 0 }), 1,
+  "malformed Pokemon height did not fail neutral")
+local retinaMetrics = BattleScene.presentationMetrics({
+  ay = 96, heightIn = 67,
+  canvas = { getDimensions = function() return 320, 288 end },
+  kantoAscendantMegaSupersampled = true,
+  kantoAscendantMegaSource = "assets/mega/mega_charizard_x_front.png",
+}, 1)
+eq(retinaMetrics.canvasWidth, 320,
+  "companion high-DPI canvas width was collapsed to the GB frame")
+eq(retinaMetrics.canvasHeight, 288,
+  "companion high-DPI canvas height was collapsed to the GB frame")
+eq(retinaMetrics.baseline, 89,
+  "companion high-DPI card lost its visible foot row")
+if not (retinaMetrics.combinedScale > 1
+        and retinaMetrics.worldInkHeight > 0) then
+  error("Mega presentation metrics lost canonical physical scale")
+end
+eq(retinaMetrics.densityScale,
+   (56 / retinaMetrics.inkHeight) * BattleScene.MEGA_SILHOUETTE_BONUS,
+  "Mega silhouette did not replace nominal-card density")
+eq(retinaMetrics.densityPolicy, "silhouette",
+  "ordinary Mega silhouette used the wrong density policy")
+if not (retinaMetrics.worldInkHeight > 23
+        and retinaMetrics.worldInkHeight < 24) then
+  error("Mega Charizard did not remain slightly larger than normal Charizard")
+end
+local steelixMetrics = BattleScene.presentationMetrics({
+  ay = 96, heightIn = 362,
+  canvas = { getDimensions = function() return 160, 144 end },
+  kantoAscendantMegaSupersampled = true,
+  kantoAscendantMegaSource = "assets/mega/mega_steelix_front.png",
+}, 1)
+eq(steelixMetrics.densityScale, 56 / 96,
+  "already-large Mega Steelix was enlarged again")
+eq(steelixMetrics.densityPolicy, "large-preserved",
+  "Mega Steelix did not use the protected large-footprint path")
+local spreadLayout = BattleScene.presentationLayout({
+  player = { 0, 48 }, enemy = { 0, 0 },
+}, 0, {
+  player = {
+    ay = 96, heightIn = 67, canvas = {},
+    kantoAscendantMegaSupersampled = true,
+    kantoAscendantMegaSource = "assets/mega/mega_charizard_x_front.png",
+  },
+  enemy = { ay = 96, heightIn = 346, canvas = {}, inkIdentity = "ONIX" },
+})
+if not (spreadLayout.spread and spreadLayout.spread > 0
+        and spreadLayout.player[1] < 0
+        and spreadLayout.enemy[1] == 0) then
+  error("large battle pair did not separate on the HUD-safe player side")
+end
+local compactLayout = BattleScene.presentationLayout({
+  player = { 0, 48 }, enemy = { 0, 0 },
+}, 0, {
+  player = { ay = 96, heightIn = 12, canvas = {}, inkIdentity = "RATTATA" },
+  enemy = { ay = 96, heightIn = 12, canvas = {}, inkIdentity = "RATTATA" },
+})
+eq(compactLayout.spread, nil,
+  "ordinary battle pair was moved by the large-pair guard")
+local indoorOnix = BattleScene.presentationMetrics({
+  heightIn = 346, canvas = {}, inkIdentity = "ONIX",
+}, 2.1)
+eq(indoorOnix.combinedScale, BattleScene.PRESENTATION_SCALE_MAX,
+  "large indoor Pokemon exceeded the reviewed actor envelope")
 local state = {
   map = current,
   neighbors = {

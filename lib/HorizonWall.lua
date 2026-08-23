@@ -360,6 +360,19 @@ HorizonWall.COASTAL_MODULES = {
   [3] = { x=28, y=60, w=72, h=29 }, -- Cinnabar
 }
 HorizonWall.COASTAL_LANDMARKS_PER_MAP = 1
+-- Future KASC 6.7 story destinations use a separate two-module lane.  The
+-- high-resolution sample rectangle is projected at a smaller authored world
+-- footprint; this keeps the distant landmark compact without shredding its
+-- painterly coast.  Transparent module padding is never sampled.
+HorizonWall.CINNABAR_STORY_MODULES = {
+  [0] = { x=18, y=15, w=220, h=104, worldW=144, worldH=68,
+          target="CINNABAR_VOLCANO" },
+  [1] = { x=30, y=35, w=196, h=84, worldW=112, worldH=48,
+          target="KA_HOENN_BIRTH_ISLAND" },
+}
+HorizonWall.CINNABAR_STORY_DISTANCE = HorizonWall.BELT
+  + math.floor(HorizonWall.SEA_DEPTH * 0.60)
+HorizonWall.CINNABAR_STORY_CLEARANCE = 64
 HorizonWall.BUILD_UNITS_PER_SLICE = 8
 HorizonWall.BUILD_RESUMES_PER_CALL = 1
 
@@ -423,6 +436,10 @@ HorizonWall.IMAGE_ASSETS = {
     path = "assets/scenery/coastal_landmarks_v3.compact.png",
     sourceW = 512, sourceH = 128, targetW = 512, targetH = 128,
   },
+  cinnabarStoryLandmarks = {
+    path = "assets/scenery/cinnabar_story_landmarks.compact.png",
+    sourceW = 512, sourceH = 128, targetW = 512, targetH = 128,
+  },
   mtMoonWall = {
     path = "assets/scenery/mt_moon_wall.compact.png",
     sourceW = 512, sourceH = 160, targetW = 512, targetH = 160,
@@ -462,6 +479,7 @@ HorizonWall.FOREST_GATE_FACADE_VRAM =
   HorizonWall.FOREST_GATE_FACADE_SOURCE.w
   * HorizonWall.FOREST_GATE_FACADE_SOURCE.h * 4
 HorizonWall.COASTAL_LANDMARK_VRAM = 512 * 128 * 4
+HorizonWall.CINNABAR_STORY_LANDMARK_VRAM = 512 * 128 * 4
 HorizonWall.MINI_TREE_VRAM = HorizonWall.FOREGROUND_ATLAS_W
                                * HorizonWall.FOREGROUND_ATLAS_H * 4
 HorizonWall.MT_MOON_VRAM = HorizonWall.MT_MOON_WALL_W
@@ -473,6 +491,7 @@ HorizonWall.IMAGE_EXTRA_VRAM = HorizonWall.REGIONAL_VRAM
                                + HorizonWall.ROUTE8_MIDGROUND_VRAM
                                + HorizonWall.FOREST_GATE_FACADE_VRAM
                                + HorizonWall.COASTAL_LANDMARK_VRAM
+                               + HorizonWall.CINNABAR_STORY_LANDMARK_VRAM
                                + HorizonWall.MINI_TREE_VRAM
 
 -- A terminal mesh-allocation failure is cached for the current scenery
@@ -1316,6 +1335,116 @@ local function exactConnections(actual, expected)
   return actualCount == count
 end
 
+local CINNABAR_STORY_IDS = {
+  cinnabar = "CINNABAR_ISLAND",
+  channel = "CINNABAR_SOUTH_CHANNEL",
+  volcano = "CINNABAR_VOLCANO",
+  birth = "KA_HOENN_BIRTH_ISLAND",
+}
+
+local function storyMapRegistry(maps)
+  if type(maps) == "table" then return maps end
+  local ok, Game = pcall(require, "src.core.Game")
+  return ok and Game and Game.data and Game.data.maps or nil
+end
+
+local function positiveInteger(value)
+  return type(value) == "number" and value > 0
+         and value == math.floor(value)
+end
+
+local function connectionOffset(connection)
+  if type(connection) ~= "table" or type(connection.offset) ~= "number" then
+    return nil
+  end
+  local offset = connection.offset
+  if offset ~= math.floor(offset) then return nil end
+  return offset
+end
+
+local function exactStoryTargets(def, expected)
+  local actual = def and def.connections
+  if type(actual) ~= "table" then return false end
+  local count = 0
+  for edge, target in pairs(expected) do
+    local connection = actual[edge]
+    if connectionTarget(connection) ~= target
+       or connectionOffset(connection) == nil then return false end
+    count = count + 1
+  end
+  local actualCount = 0
+  for edge in pairs(actual) do
+    if expected[edge] == nil then return false end
+    actualCount = actualCount + 1
+  end
+  return actualCount == count
+end
+
+local function validStoryDef(maps, id)
+  local def = maps and maps[id]
+  if type(def) ~= "table" or def.id ~= id
+     or not positiveInteger(def.width) or not positiveInteger(def.height)
+     or type(def.tileset) ~= "string" or not isOutdoor(def)
+     or type(def.connections) ~= "table" then return nil end
+  return def
+end
+
+-- Structural future-map contract.  Dimensions remain KASC-owned, but every
+-- identity, fork direction and reciprocal offset must already be complete.
+-- Missing/partial maps therefore preserve the byte-identical old coast.
+function HorizonWall.cinnabarStoryTopology(maps)
+  maps = storyMapRegistry(maps)
+  if not maps then return nil end
+  local ids = CINNABAR_STORY_IDS
+  local cinnabar = validStoryDef(maps, ids.cinnabar)
+  local channel = validStoryDef(maps, ids.channel)
+  local volcano = validStoryDef(maps, ids.volcano)
+  local birth = validStoryDef(maps, ids.birth)
+  if not (cinnabar and channel and volcano and birth)
+     or cinnabar.width ~= 10 or cinnabar.height ~= 9
+     or cinnabar.tileset ~= "OVERWORLD"
+     or not exactStoryTargets(cinnabar, {
+       north = "ROUTE_21", east = "ROUTE_20", south = ids.channel,
+     })
+     or not exactStoryTargets(channel, {
+       north = ids.cinnabar, west = ids.volcano, east = ids.birth,
+     }) then return nil end
+
+  local cSouth = cinnabar.connections.south
+  local chNorth = channel.connections.north
+  local chWest = channel.connections.west
+  local chEast = channel.connections.east
+  local vEast = volcano.connections.east
+  local bWest = birth.connections.west
+  local cSouthOffset, chNorthOffset = connectionOffset(cSouth),
+                                      connectionOffset(chNorth)
+  local chWestOffset, vEastOffset = connectionOffset(chWest),
+                                    connectionOffset(vEast)
+  local chEastOffset, bWestOffset = connectionOffset(chEast),
+                                    connectionOffset(bWest)
+  if connectionTarget(vEast) ~= ids.channel
+     or connectionTarget(bWest) ~= ids.channel
+     or cSouthOffset == nil or chNorthOffset == nil
+     or chWestOffset == nil or vEastOffset == nil
+     or chEastOffset == nil or bWestOffset == nil
+     or cSouthOffset ~= -chNorthOffset
+     or chWestOffset ~= -vEastOffset
+     or chEastOffset ~= -bWestOffset then return nil end
+
+  -- WorldPlacement rejects inconsistent cycles and supplies a stable anchor
+  -- across a current-map re-root.  All four story maps must share it.
+  local anchor
+  if WorldPlacement and type(WorldPlacement.position) == "function" then
+    for _, id in ipairs({ ids.cinnabar, ids.channel, ids.volcano, ids.birth }) do
+      local position = WorldPlacement.position(id, maps)
+      if not position or anchor and position.anchor ~= anchor then return nil end
+      anchor = anchor or position.anchor
+    end
+  end
+  return { ids = ids, maps = maps, cinnabar = cinnabar, channel = channel,
+           volcano = volcano, birth = birth }
+end
+
 local function verifiedSouthSeaLandFoot(entry, rects)
   local map, def = entry and entry.map, entry and entry.map and entry.map.def
   local id = tostring(map and (map.id or def and def.id) or "")
@@ -1641,7 +1770,7 @@ end
 
 local function geometryFor(entry, own, rects, cooperativeStep,
                            sharedGroundCells, sharedSeaCells,
-                           sharedRuralTerminals)
+                           sharedRuralTerminals, worldMaps)
   local class = HorizonWall.classFor(entry.map)
   if class == "interior" then return nil end
   local material = HorizonWall.materialFor(entry.map)
@@ -1661,6 +1790,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local groundVerts, groundIndices, quads = {}, {}, 0
   local seaVerts, seaIndices, seaQuads = {}, {}, 0
   local coastalVerts, coastalIndices, coastalQuads = {}, {}, 0
+  local storyVerts, storyIndices, storyQuads = {}, {}, 0
   local foregroundVerts, foregroundIndices = {}, {}
   local route8MidgroundVerts, route8MidgroundIndices = {}, {}
   local route8SeamPathVerts, route8SeamPathIndices = {}, {}
@@ -2879,6 +3009,97 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     end
   end
 
+  -- KASC 6.7's optional Cinnabar story fork: one stable transparent lane,
+  -- volcano left and Birth Island right.  Cinnabar owns the lane whenever it
+  -- is resident; the channel is only the cold/current-only fallback owner, so
+  -- a completed union can never contain duplicate cards.  Each target body
+  -- independently suppresses its distant card in the same geometry publish.
+  local topology = HorizonWall.cinnabarStoryTopology(worldMaps)
+  local storyOwner = id == CINNABAR_STORY_IDS.cinnabar
+                  or id == CINNABAR_STORY_IDS.channel
+  if topology and storyOwner then
+    local cinnabarResident = false
+    for _, rect in ipairs(rects or {}) do
+      local rectId = tostring(rect.map and (rect.map.id
+        or rect.map.def and rect.map.def.id) or "")
+      if rectId == CINNABAR_STORY_IDS.cinnabar then
+        cinnabarResident = true
+      end
+    end
+    if id == CINNABAR_STORY_IDS.channel and cinnabarResident then
+      storyOwner = false
+    end
+  end
+  if topology and storyOwner then
+    local expected = topology.maps[id]
+    local loaded = entry.map and entry.map.def
+    local loadedOK = entry.map.id == id and loaded and loaded.id == id
+      and loaded.width == expected.width and loaded.height == expected.height
+      and loaded.tileset == expected.tileset
+      and isOutdoor(loaded) == isOutdoor(expected)
+      and exactConnections(loaded.connections, expected.connections)
+    if loadedOK then
+      local resident = {}
+      for _, rect in ipairs(rects or {}) do
+        local rectId = tostring(rect.map and (rect.map.id
+          or rect.map.def and rect.map.def.id) or "")
+        resident[rectId] = true
+      end
+
+      local function clearanceFree(centre)
+        local half = HorizonWall.CINNABAR_STORY_CLEARANCE / 2
+        local start = math.floor((centre - half) / C) * C
+        local finish = math.ceil((centre + half) / C) * C - C
+        local worldZ = entry.oy + entry.h + 1
+        for along = start, finish, C do
+          local worldX = entry.ox + along + C / 2
+          if covered(rects, own, worldX, worldZ) then return false end
+        end
+        return true
+      end
+
+      local centres = id == CINNABAR_STORY_IDS.cinnabar
+        and { entry.w * 0.25, entry.w * 0.75 }
+        or { entry.w * 0.28, entry.w * 0.72 }
+      local distance = HorizonWall.CINNABAR_STORY_DISTANCE
+      for variant = 0, 1 do
+        local module = HorizonWall.CINNABAR_STORY_MODULES[variant]
+        local centre = centres[variant + 1]
+        if module and centre and clearanceFree(centre)
+           and not resident[module.target] then
+          local u0 = (variant * 256 + module.x) / 512
+          local u1 = (variant * 256 + module.x + module.w) / 512
+          local vTop = module.y / 128
+          local vBottom = (module.y + module.h) / 128
+          local landmarkW = module.worldW or module.w
+          local landmarkH = module.worldH or module.h
+          local x0, x1 = centre - landmarkW / 2,
+                         centre + landmarkW / 2
+          local z = entry.h + distance
+          local y0, y1 = HorizonWall.SEA_LEVEL,
+                         HorizonWall.SEA_LEVEL + landmarkH
+          local shade = Voxel3D.FACE_SHADE[5] or 0.90
+          local offset = 0
+          while offset < landmarkW do
+            local segmentW = math.min(C, landmarkW - offset)
+            local sx0, sx1 = x0 + offset, x0 + offset + segmentW
+            local t0, t1 = offset / landmarkW,
+                           (offset + segmentW) / landmarkW
+            pushQuad(storyVerts, storyIndices,
+              { { sx0, y0, z }, { sx1, y0, z },
+                { sx1, y1, z }, { sx0, y1, z } },
+              { { u0 + (u1 - u0) * t0, vBottom },
+                { u0 + (u1 - u0) * t1, vBottom },
+                { u0 + (u1 - u0) * t1, vTop },
+                { u0 + (u1 - u0) * t0, vTop } }, shade)
+            storyQuads = storyQuads + 1
+            offset = offset + segmentW
+          end
+        end
+      end
+    end
+  end
+
   -- The four long cap strips form a plus around an isolated map. Fill their
   -- outer quadrants when both adjoining edge arms exist; without these four
   -- quads an orbit camera looked straight through D-by-D holes at the corners.
@@ -2981,7 +3202,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     if group and #group.vertices > 0 then wallGroups[#wallGroups + 1] = group end
   end
   if #wallVerts == 0 and #seaVerts == 0 and ceilingQuads == 0
-     and #coastalVerts == 0 then return nil end
+     and #coastalVerts == 0 and #storyVerts == 0 then return nil end
   return { map = entry.map, ox = entry.ox, oy = entry.oy, class = class,
            material = material, groundPeriod = groundPeriod,
            wallVertices = wallVerts, wallIndices = wallIndices,
@@ -3020,7 +3241,10 @@ local function geometryFor(entry, own, rects, cooperativeStep,
            coastalWaterFootQuads = coastalWaterFootQuads,
            coastalVertices = coastalVerts, coastalIndices = coastalIndices,
            coastalQuads = coastalQuads,
+           storyVertices = storyVerts, storyIndices = storyIndices,
+           storyQuads = storyQuads,
            quads = quads + seaQuads + foregroundQuads + coastalQuads
+                   + storyQuads
                    + route8MidgroundQuads + route8SeamPathQuads
                    + forestGatePathQuads + forestGateFacadeQuads }
 end
@@ -3034,7 +3258,7 @@ function HorizonWall.geometry(state)
   local groundCells, seaCells, ruralTerminals = {}, {}, {}
   for i, e in ipairs(maps) do
     local g = geometryFor(e, i, maps, nil, groundCells, seaCells,
-                          ruralTerminals)
+                          ruralTerminals, state.worldMaps)
     if g then out[#out + 1] = g end
   end
   return out
@@ -3816,6 +4040,23 @@ local function coastalLandmarkTexture()
   return image
 end
 
+local function cinnabarStoryLandmarkTexture()
+  if not (love and love.graphics) then return nil end
+  local key = "asset:cinnabarStoryLandmarks"
+  if textures[key] then return textures[key] end
+  if textureFailures[key] then return nil end
+  local image = compactImage(love.graphics, "cinnabarStoryLandmarks")
+  if not image then textureFailures[key] = true return nil end
+  -- Unlike voxel tiles, these distant painterly silhouettes need linear
+  -- sampling.  Nearest-neighbour magnified individual transparent texels and
+  -- made the coast look like disconnected shards.
+  if image.setFilter then
+    pcall(image.setFilter, image, "linear", "linear", 1)
+  end
+  textures[key] = image
+  return image
+end
+
 local function groundTexture(class)
   if not (love and love.graphics and love.graphics.newCanvas) then return nil end
   local key = "ground:" .. class
@@ -4059,6 +4300,10 @@ function HorizonWall.prewarm(map)
                            or forestGateFacadeTexture()
   local coastal = not HorizonWall.COASTAL_LANDMARKS[id]
                   or coastalLandmarkTexture() ~= nil
+  local topology = HorizonWall.cinnabarStoryTopology()
+  local wantsStory = topology and (id == CINNABAR_STORY_IDS.cinnabar
+                                    or id == CINNABAR_STORY_IDS.channel)
+  if wantsStory then cinnabarStoryLandmarkTexture() end
   return wall == true and ground ~= nil and foreground ~= nil
          and midground ~= nil and forestGateFacade ~= nil and coastal
 end
@@ -4154,12 +4399,12 @@ local function canonicalAddress(state)
     maps, baseX, baseY = WorldPlacement.canonical(
       localMaps, state.map.id, state.worldMaps)
   end
-  if maps then return maps, baseX, baseY, true end
+  if maps then return maps, baseX, baseY, true, state.worldMaps end
 
   -- Missing/inconsistent mod map data: preserve the old root-local behaviour
   -- and make the root part of the address so two unrelated local frames can
   -- never alias. This can rebuild, but it cannot place a wall on the wrong map.
-  return localMaps, 0, 0, false
+  return localMaps, 0, 0, false, state.worldMaps
 end
 
 local function stateKey(state, maps, canonical)
@@ -4217,11 +4462,12 @@ local function trimReady(keepKey)
   end
 end
 
-local function newBuildJob(key, maps)
+local function newBuildJob(key, maps, worldMaps)
   local job = { key = key, maps = maps, meshes = {}, complete = true,
                 resumes = 0 }
   job.co = coroutine.create(function()
     local coastalVertices, coastalIndices = {}, {}
+    local storyVertices, storyIndices = {}, {}
     local seaVertices, seaIndices = {}, {}
     local route8MidgroundVertices, route8MidgroundIndices = {}, {}
     local route8SeamPathVertices, route8SeamPathIndices = {}, {}
@@ -4267,6 +4513,18 @@ local function newBuildJob(key, maps)
       end
       for _, index in ipairs(built.coastalIndices or {}) do
         coastalIndices[#coastalIndices + 1] = base + index
+      end
+    end
+    local function appendStory(built)
+      local base = #storyVertices
+      for _, v in ipairs(built.storyVertices or {}) do
+        storyVertices[#storyVertices + 1] = {
+          v[1] + built.ox, v[2], v[3] + built.oy,
+          v[4], v[5], v[6],
+        }
+      end
+      for _, index in ipairs(built.storyIndices or {}) do
+        storyIndices[#storyIndices + 1] = base + index
       end
     end
     local function appendSea(built)
@@ -4339,7 +4597,7 @@ local function newBuildJob(key, maps)
     for i, e in ipairs(maps) do
       local built = geometryFor(e, i, maps, function()
         coroutine.yield("geometry")
-      end, groundCells, seaCells, ruralTerminals)
+      end, groundCells, seaCells, ruralTerminals, worldMaps)
       coroutine.yield("geometry-ready")
       if built then
         -- Canvas/image decode is one bounded prewarm step. Never yield while a
@@ -4364,6 +4622,7 @@ local function newBuildJob(key, maps)
                 built.foregroundIndices, treeTexture, built.ox, built.oy)
         appendSea(built)
         appendCoastal(built)
+        appendStory(built)
         appendRoute8Midground(built)
         appendRoute8SeamPath(built)
         appendForestGatePath(built)
@@ -4421,6 +4680,17 @@ local function newBuildJob(key, maps)
       coroutine.yield("coastal-texture-ready")
       addPart("coastal", "coastal", coastalVertices, coastalIndices,
               texture, 0, 0)
+    end
+
+    -- The optional KASC story fork is a second one-draw lane, independent of
+    -- the established South Sea atlas. Missing/malformed art simply omits it.
+    if #storyVertices > 0 then
+      local texture = cinnabarStoryLandmarkTexture()
+      coroutine.yield("cinnabar-story-texture-ready")
+      if texture then
+        addPart("cinnabar-story", "cinnabar-story", storyVertices,
+                storyIndices, texture, 0, 0)
+      end
     end
   end)
   return job
@@ -4495,7 +4765,7 @@ function HorizonWall.meshes(state)
   if not HorizonWall.enabled() or not (state and state.map) then
     return {}, true, false
   end
-  local maps, baseX, baseY, canonical = canonicalAddress(state)
+  local maps, baseX, baseY, canonical, worldMaps = canonicalAddress(state)
   local key = stateKey(state, maps, canonical)
   local ready = readyCaches[key]
   if ready then
@@ -4508,7 +4778,7 @@ function HorizonWall.meshes(state)
   if failed(key) then return {}, false, true end
   local job = pendingJobs[key]
   if not job then
-    job = newBuildJob(key, maps)
+    job = newBuildJob(key, maps, worldMaps)
     pendingJobs[key] = job
   end
   useSerial = useSerial + 1

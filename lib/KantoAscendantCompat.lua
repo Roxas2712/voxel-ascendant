@@ -55,16 +55,15 @@ function Compat.row(mod, game)
     ascendantOrder = MENU_ORDER,
     ascendantKey = MENU_KEY,
     onSelect = function()
-      -- The normal Options screen remains the single settings authority.
-      -- Pushing it over KASC's list also makes CANCEL return to that list.
-      mod.ui.push(game, "OptionsMenu")
+      -- One hub in both configurations: KASC collects this descriptor into
+      -- ASCENDANT; without KASC it stays in the ordinary Start menu.
+      mod.ui.push(game, "VascMenu")
     end,
   }
 end
 
 function Compat.decorate(mod, game, items)
   if type(items) ~= "table" or alreadyPresent(items) then return items end
-  if not Compat.find(mod) then return items end
   return mod.ui.insertBefore(items, "SAVE", Compat.row(mod, game))
 end
 

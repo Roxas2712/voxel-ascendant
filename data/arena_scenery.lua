@@ -33,8 +33,17 @@ local function add(ids, file, outdoor, actorScale, actorSpread, windowRegions)
     clockTint = type(windowRegions) == "table" and #windowRegions > 0,
     windows = windowRegions,
     anchors = {
+      -- The arena cells already run from the near player's side toward the
+      -- far opponent.  The painted composition repeats that diagonal: player
+      -- lower-left, opponent upper-right.  These vertical offsets must not be
+      -- reversed, or a tall front card (most visibly a Mega) appears over the
+      -- distant scenery while the small foe drops into the foreground.
+      -- The near/player cell already projects lower than the far opponent.
+      -- Native 1710x1069 calibration puts the reviewed player foot below the
+      -- opponent but wholly above the text window at -8. The former -25 datum
+      -- hid normal and Mega cards; +1 over-corrected them into the far plane.
       player = { x = playerX, y = -8, z = 0 },
-      enemy = { x = enemyX, y = -16, z = 0 },
+      enemy = { x = enemyX, y = -17, z = 0 },
     },
   }
   for _, id in ipairs(ids) do specs[id] = spec end
@@ -46,7 +55,12 @@ end
 local OAK_LAB_WINDOWS = {
   { shape="rect", x=759, y=51, w=69, h=127 },
   { shape="rect", x=838, y=51, w=70, h=127 },
-  { shape="poly", points={ 969,20, 1155,18, 1152,269, 964,269 } },
+  -- The conservatory contains interior frames, hanging plants and glass.  It
+  -- receives the clock, but not the nearly-opaque night-sky sheet used by the
+  -- two unobstructed panes; otherwise the whole structure becomes one blue
+  -- polygon.  Moon/stars remain visible through the actual windows above.
+  { shape="poly", points={ 969,20, 1155,18, 1152,269, 964,269 },
+    tintScale=.72, alphaScale=0, starsScale=0, moon=false },
 }
 local MANSION_WINDOWS = {
   { shape="rect", x=54, y=91, w=106, h=190 },

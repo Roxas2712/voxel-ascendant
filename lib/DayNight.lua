@@ -101,9 +101,16 @@ local TH_RISE, TH_SET = -70, 250            -- north of east / north of west
 local TH_MRISE, TH_MMID, TH_MSET = -20, -90, -160
 local EL_MOON = 40
 
-DayNight.K_MAX = 2.0          -- shear clamp: a shadow at most twice its height
-DayNight.ALPHA_SUN = 0.40     -- the existing midday shadow weight
-DayNight.ALPHA_MOON = 0.26    -- moonlight is a softer press
+-- Voxel buildings are deliberately taller than their 16px map footprint.
+-- A physically literal low sun therefore painted whole city blocks with one
+-- dark polygon (the old 2.0 clamp allowed two building-heights of travel).
+-- Pokemon's field lighting reads as contact/shape information instead: keep
+-- the direction and the moving day/night rig, but cap the footprint below one
+-- caster-height and soften both lights.  The same values feed the shadow map
+-- and its decal fallback, so Metal and desktop cannot disagree here.
+DayNight.K_MAX = 0.70         -- compact: at most 70% of the caster's height
+DayNight.ALPHA_SUN = 0.30     -- readable without turning streets into masses
+DayNight.ALPHA_MOON = 0.18    -- moonlight stays present, never tar-black
 DayNight.FADE_DEG = 12        -- shadows fade out over the last degrees of a rise/set
 
 -- disc PLACEMENT only: the true elevation would put the noon sun far above
@@ -473,6 +480,41 @@ function DayNight.windowLight(t)
     lit = lit + (LAMPS[name] or 0) * w
   end
   return lit
+end
+
+-- What a painted interior window sees outside.  Multiplication alone left
+-- blue daytime clouds visible after midnight; this receipt gives the window
+-- compositor both the continuous light tint and an increasingly opaque live
+-- sky colour.  Stars and the moon are procedural screen-space details inside
+-- the reviewed panes, never painted over the room itself.
+local WINDOW_ALPHA = {
+  day = 0, golden = .12, dawn = .30, dusk = .38, violet = .64, night = .88,
+}
+local windowCache = { key = nil, value = nil }
+
+function DayNight.windowScene(t)
+  t = t or DayNight.time()
+  local key = math.floor(t % DayNight.CYCLE)
+  if windowCache.key == key then return windowCache.value end
+  local mix = DayNight.mix(t)
+  local sky, alpha, stars, moon = { 0, 0, 0 }, 0, 0, 0
+  for name, weight in pairs(mix) do
+    local c = DayNight.PALETTES[name][2]
+    sky[1] = sky[1] + c[1] / 255 * weight
+    sky[2] = sky[2] + c[2] / 255 * weight
+    sky[3] = sky[3] + c[3] / 255 * weight
+    alpha = alpha + (WINDOW_ALPHA[name] or 0) * weight
+    stars = stars + ((name == "night" and .92)
+                     or (name == "violet" and .28) or 0) * weight
+    moon = moon + ((name == "night" and 1)
+                   or (name == "violet" and .42) or 0) * weight
+  end
+  local value = {
+    tint = DayNight.tint(true, t), sky = sky, alpha = alpha,
+    stars = stars, moon = moon,
+  }
+  windowCache.key, windowCache.value = key, value
+  return value
 end
 
 -- The period name for the engine's world.tod hook (map.palette ctx.tod,

@@ -49,6 +49,14 @@ expect(declared.labels[5] == "AUTO" and declared.values[5] == "cycle",
        "AUTO label broke stored CYCLE-value compatibility")
 expect(DayNight.BLEND == 40,
        "dawn/dusk grew large enough to displace the day/night plateaus")
+expect(DayNight.K_MAX <= 0.70 and DayNight.ALPHA_SUN <= 0.30
+       and DayNight.ALPHA_MOON <= 0.18,
+       "city shadows can again grow into opaque multi-building masses")
+for t = 0, DayNight.CYCLE, 5 do
+  local kx, kz = DayNight.shearAt(t)
+  expect(math.sqrt(kx * kx + kz * kz) <= DayNight.K_MAX + 1e-9,
+         "a time-of-day shadow exceeded the compact footprint clamp")
+end
 expect(DayNight.mix(100).day == 1,
        "the long daytime plateau is not a pure DAY phase")
 expect(DayNight.mix(900).night == 1,
@@ -99,5 +107,14 @@ expect(not rawequal(first, changed),
        "a genuinely changed clock reused a stale phase answer")
 expect(changed.golden < first.golden and changed.dusk > first.dusk,
        "the exact sub-second blend stopped advancing")
+
+local nightWindow = DayNight.windowScene(DayNight.T.night)
+expect(nightWindow.alpha >= .85 and nightWindow.stars >= .9
+       and nightWindow.moon == 1,
+       "indoor windows still show a painted daytime exterior at night")
+local dayWindow = DayNight.windowScene(DayNight.T.day)
+expect(dayWindow.alpha == 0 and dayWindow.stars == 0
+       and dayWindow.moon == 0,
+       "daytime windows are needlessly painted over")
 
 print("day/night exact-time phase mix cache: ok")

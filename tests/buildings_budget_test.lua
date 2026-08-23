@@ -100,9 +100,11 @@ end
 
 -- Ordinary profiled buildings now derive their exact occupied depth intervals
 -- instead of materialising the invisible interior volume.  Active face rows
--- and interval differences still check the budget, so this lower yield count
--- proves less work rather than one coarse uninterruptible loop.
-if yields < 12 then
+-- and interval differences still check the budget.  Sorted active-row
+-- emission removes the remaining empty scans as well; eight deterministic
+-- slices continue to prove the optimized path is cooperative rather than one
+-- coarse uninterruptible loop.
+if yields < 8 then
   error("large building sparse shell was not sliced finely: " .. yields)
 end
 if #S.objectQuads ~= 0 then error("building build retained translated quads") end

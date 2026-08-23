@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.0.1 — 2026-08-23
+
+- Replace the broken one-pixel ARENA night marker with a cratered moon and a
+  varied, deterministic star field; remove black/coloured skyline matte
+  remnants and keep transparent outdoor scenery tied to the live sky.
+- Make reviewed interior windows follow the same smooth
+  dawn/day/dusk/night cycle while opaque rooms and greenhouse glazing retain
+  their authored materials.
+- Correct iOS ARENA canvas presentation, Mega/form sprite facing, grounding
+  and size, large-sprite separation, oversized city shadows and overly heavy
+  rain/fog presentation.
+- Add a standalone VASC settings layout with START help and retain the public
+  Kanto Ascendant menu integration when KASC is installed.
+- Add grouped local user folders for battle, world, result and scene music,
+  with per-category ORIGINAL/SHUFFLE/file selection and exact replacement of
+  any resolved Game/KASC song ID.
+- Add opt-in local PNG replacement for Pokemon forms/front/back/Dex/icons,
+  player art, enemy trainers and registered overworld sheets, including KASC
+  Mega and bicycle states. GAME/KASC is the protected default; per-section and
+  global reset actions bypass every VASC replacement. Ship detailed English
+  and German folder guides with platform-specific install paths. No third-party
+  music or sprite is bundled.
+- Keep the dynamic reveal gate, destination-specific Fly recovery, reviewed
+  ARENA anchors and the Route 8 build-budget optimization intact.
+- Add a fail-open KASC 6.7 Cinnabar story panorama contract: once the complete
+  reciprocal south-channel topology exists, a compact volcano appears left of
+  Birth Island on the approach horizon. Older/partial maps remain byte-for-byte
+  on the established coast; VASC never owns the quest gate, rocks or scientists.
+
 ## 2.0.0 — 2026-08-22
 
 - Add the reviewed ARENA battle presentation: 46 independent location masters

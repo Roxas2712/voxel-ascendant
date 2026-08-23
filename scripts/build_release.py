@@ -74,6 +74,7 @@ ASSET_FILES = (
     "assets/battle/arena_tower-lavender.compact.png",
     "assets/battle/arena_vermilion-gate-route11.compact.png",
     "assets/scenery/kanto_panorama.compact.png",
+    "assets/scenery/cinnabar_story_landmarks.compact.png",
     "assets/scenery/coastal_landmarks_v3.compact.png",
     "assets/scenery/forest_edge_a.compact.png",
     "assets/scenery/forest_edge_b.compact.png",
@@ -113,6 +114,9 @@ def release_files() -> list[Path]:
     files.extend(sorted((ROOT / "lib").glob("*.lua")))
     files.extend(sorted((ROOT / "data").glob("*.lua")))
     files.extend(ROOT / name for name in ASSET_FILES)
+    files.extend(sorted(
+        path for path in (ROOT / "user").rglob("*") if path.is_file()
+    ))
     missing = [path for path in files if not path.is_file()]
     if missing:
         raise SystemExit("missing release file(s): " + ", ".join(map(str, missing)))

@@ -239,9 +239,18 @@ local function newAsyncSink(job)
   local indexPieces, indexPage = {}, {}
   local vertices, indices, quads = 0, 0, 0
 
-  local function append(cc, t, shade)
-    page[#page + 1] = { cc[1], cc[2], cc[3], t[1], t[2], shade }
+  local function appendValues(x, y, z, u, v, shade)
+    page[#page + 1] = x
+    page[#page + 1] = y
+    page[#page + 1] = z
+    page[#page + 1] = u
+    page[#page + 1] = v
+    page[#page + 1] = shade
     vertices = vertices + 1
+  end
+
+  local function append(cc, t, shade)
+    appendValues(cc[1], cc[2], cc[3], t[1], t[2], shade)
   end
 
   local function sealPage()
@@ -249,16 +258,56 @@ local function newAsyncSink(job)
     if not (love and love.data and love.data.pack) then
       error("packed voxel index data is unavailable", 0)
     end
-    -- 256 quads are only 1,536 arguments: safely below LuaJIT's unpack limit,
-    -- while the resulting 6 KB string is cheap to concatenate at finish().
+    -- LÖVE 11.5 accepts vertex Data directly. Pack the same float32 stream
+    -- that its table converter would create, in argument-safe chunks, so a
+    -- 256-quad page retains one byte string instead of 1,024 nested tables.
+    -- A capability stub/older host that rejects float packing gets the exact
+    -- historical table page reconstructed below.
     Budget.check()
+    local vertexPieces, packedVertices = {}, true
+    local packValues = 1536
+    for at = 1, #page, packValues do
+      local last = math.min(at + packValues - 1, #page)
+      local ok, packed = pcall(love.data.pack, "string",
+        "=" .. string.rep("f", last - at + 1),
+        unpackArgs(page, at, last))
+      if not ok then packedVertices = false break end
+      vertexPieces[#vertexPieces + 1] = packed
+      Budget.check()
+    end
+    local upload = { count = #page / 6 }
+    if packedVertices then
+      upload.packed = table.concat(vertexPieces)
+    else
+      local rows = {}
+      for at = 1, #page, 6 do
+        rows[#rows + 1] = {
+          page[at], page[at + 1], page[at + 2],
+          page[at + 3], page[at + 4], page[at + 5],
+        }
+      end
+      upload.rows = rows
+    end
     local format = "=" .. string.rep("I4", #indexPage)
     local packed = love.data.pack("string", format,
                                   unpackArgs(indexPage, 1, #indexPage))
-    pages[#pages + 1] = page
+    pages[#pages + 1] = upload
     indexPieces[#indexPieces + 1] = packed
     page, indexPage = {}, {}
     Budget.check()
+  end
+
+  local function finishQuad()
+    local base = quads * 4
+    indexPage[#indexPage + 1] = base
+    indexPage[#indexPage + 1] = base + 1
+    indexPage[#indexPage + 1] = base + 2
+    indexPage[#indexPage + 1] = base
+    indexPage[#indexPage + 1] = base + 2
+    indexPage[#indexPage + 1] = base + 3
+    indices = indices + 6
+    quads = quads + 1
+    if quads % UPLOAD_QUADS == 0 then sealPage() end
   end
 
   return {
@@ -267,16 +316,34 @@ local function newAsyncSink(job)
       for i = 1, 4 do
         append(c[i], uv[i], flat and shade or shade[i])
       end
-      local base = quads * 4
-      indexPage[#indexPage + 1] = base
-      indexPage[#indexPage + 1] = base + 1
-      indexPage[#indexPage + 1] = base + 2
-      indexPage[#indexPage + 1] = base
-      indexPage[#indexPage + 1] = base + 2
-      indexPage[#indexPage + 1] = base + 3
-      indices = indices + 6
-      quads = quads + 1
-      if quads % UPLOAD_QUADS == 0 then sealPage() end
+      finishQuad()
+    end,
+    -- The terrain loop already owns all corner/UV scalars. Accept them
+    -- directly on the asynchronous path so a top or side face does not build
+    -- eight short-lived nested tables merely to unpack them again here. The
+    -- table sink intentionally has no such method: geometry() and all digest
+    -- probes continue through the historical representation unchanged.
+    pushValues = function(x1, y1, z1, u1, v1,
+                          x2, y2, z2, u2, v2,
+                          x3, y3, z3, u3, v3,
+                          x4, y4, z4, u4, v4, shade)
+      local flat = type(shade) ~= "table"
+      appendValues(x1, y1, z1, u1, v1, flat and shade or shade[1])
+      appendValues(x2, y2, z2, u2, v2, flat and shade or shade[2])
+      appendValues(x3, y3, z3, u3, v3, flat and shade or shade[3])
+      appendValues(x4, y4, z4, u4, v4, flat and shade or shade[4])
+      finishQuad()
+    end,
+    -- Buildings' runtime shell is a flat numeric record. Feed it directly
+    -- into the upload pages so no temporary corner/UV tables are rebuilt.
+    pushFlat = function(q, shade)
+      local flat = type(shade) ~= "table"
+      for i = 0, 3 do
+        local c, t = 1 + i * 3, 13 + i * 2
+        appendValues(q[c], q[c + 1], q[c + 2], q[t], q[t + 1],
+                     flat and shade or shade[i + 1])
+      end
+      finishQuad()
     end,
     finish = function()
       if vertices == 0 then return nil end
@@ -311,10 +378,27 @@ local function newAsyncSink(job)
       local pageCount = #pages
       for i = 1, pageCount do
         local upload = pages[i]
-        local uploadCount = #upload
+        local uploadCount = upload.count
+        local source, vertexData
+        if upload.packed then
+          local dataOK, value = pcall(love.data.newByteData, upload.packed)
+          if not dataOK then abandon(value) end
+          if not value then abandon("voxel vertex allocation returned nil") end
+          -- newByteData owns an independent native copy. Drop the Lua string
+          -- before the driver upload so incremental GC never retains both
+          -- representations across this yield-capable boundary.
+          upload.packed = nil
+          source, vertexData = value, value
+        else
+          source = upload.rows
+        end
         Budget.check()
-        local uploaded, uploadErr = pcall(mesh.setVertices, mesh, upload,
+        local uploaded, uploadErr = pcall(mesh.setVertices, mesh, source,
                                            first, uploadCount)
+        if vertexData and vertexData.release then
+          pcall(vertexData.release, vertexData)
+        end
+        vertexData, source = nil, nil
         if not uploaded then
           -- A split water build cannot safely land only its terrain half:
           -- water quads were removed from that mesh. Fail the whole job so
@@ -324,7 +408,7 @@ local function newAsyncSink(job)
         end
         first = first + uploadCount
         -- Do this before the yield-capable check: cancellation or a long
-        -- upload must not keep every already-consumed nested table alive.
+        -- upload must not keep consumed bytes/fallback tables alive.
         pages[i] = nil
         upload = nil
         -- Check after the driver call too: that is the expensive boundary,
@@ -388,7 +472,9 @@ end
 -- is what the headless geometry() below and the sun's own pass both want.
 local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   local push = sink.push
+  local pushValues = sink.pushValues
   local waterPush = waterSink and waterSink.push or nil
+  local waterPushValues = waterSink and waterSink.pushValues or nil
   local tileset = map.tileset
   local S = Structures.forMap(map)
   local elevation = elevationFor(map)
@@ -648,21 +734,35 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   -- surface is the only caller that ever does (see runGeometry's header).
   local function topQuad(x0, z0, h, tile, shade, to, transform)
     local u0, u1, v0, v1 = uvRect(tile, 0, 8)
-    local uv
+    local aU, aV, bU, bV, cU, cV, dU, dV
     if transform == "vflip" then
-      uv = { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }
+      aU, aV, bU, bV = u0, v1, u1, v1
+      cU, cV, dU, dV = u1, v0, u0, v0
     elseif transform == "ccw" then
       -- local (u,v) -> (1-v,u)
-      uv = { { u1, v0 }, { u1, v1 }, { u0, v1 }, { u0, v0 } }
+      aU, aV, bU, bV = u1, v0, u1, v1
+      cU, cV, dU, dV = u0, v1, u0, v0
     elseif transform == "cw" then
       -- local (u,v) -> (v,1-u)
-      uv = { { u0, v1 }, { u0, v0 }, { u1, v0 }, { u1, v1 } }
+      aU, aV, bU, bV = u0, v1, u0, v0
+      cU, cV, dU, dV = u1, v0, u1, v1
     else
-      uv = { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }
+      aU, aV, bU, bV = u0, v0, u1, v0
+      cU, cV, dU, dV = u1, v1, u0, v1
+    end
+    local shades = aoShades(x0 / 8, z0 / 8, h, shade)
+    local scalar = to and waterPushValues or pushValues
+    if scalar then
+      scalar(x0, h, z0, aU, aV,
+             x0 + 8, h, z0, bU, bV,
+             x0 + 8, h, z0 + 8, cU, cV,
+             x0, h, z0 + 8, dU, dV, shades)
+      return
     end
     ;(to or push)({ { x0, h, z0 }, { x0 + 8, h, z0 },
                     { x0 + 8, h, z0 + 8 }, { x0, h, z0 + 8 } },
-                  uv, aoShades(x0 / 8, z0 / 8, h, shade))
+                  { { aU, aV }, { bU, bV }, { cU, cV }, { dU, dV } },
+                  shades)
   end
 
   -- vertical quad for face direction `d` of the tile column at (x0, z0),
@@ -672,6 +772,23 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   -- never draws mirrored.
   local function sideQuad(d, x0, z0, y0, y1, tile, vTop, vBot, shade)
     local x1, z1 = x0 + 8, z0 + 8
+    local u0, u1, v0, v1 = uvRect(tile, vTop, vBot)
+    if pushValues then
+      if d == 5 then                                     -- south, at z1
+        pushValues(x0, y0, z1, u0, v1, x1, y0, z1, u1, v1,
+                   x1, y1, z1, u1, v0, x0, y1, z1, u0, v0, shade)
+      elseif d == 6 then                                 -- north, at z0
+        pushValues(x1, y0, z0, u0, v1, x0, y0, z0, u1, v1,
+                   x0, y1, z0, u1, v0, x1, y1, z0, u0, v0, shade)
+      elseif d == 1 then                                 -- east, at x1
+        pushValues(x1, y0, z1, u0, v1, x1, y0, z0, u1, v1,
+                   x1, y1, z0, u1, v0, x1, y1, z1, u0, v0, shade)
+      else                                               -- west, at x0
+        pushValues(x0, y0, z0, u0, v1, x0, y0, z1, u1, v1,
+                   x0, y1, z1, u1, v0, x0, y1, z0, u0, v0, shade)
+      end
+      return
+    end
     local c
     if d == 5 then                                       -- south, at z1
       c = { { x0, y0, z1 }, { x1, y0, z1 }, { x1, y1, z1 }, { x0, y1, z1 } }
@@ -682,7 +799,6 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     else                                                 -- west, at x0
       c = { { x0, y0, z0 }, { x0, y0, z1 }, { x0, y1, z1 }, { x0, y1, z0 } }
     end
-    local u0, u1, v0, v1 = uvRect(tile, vTop, vBot)
     push(c, { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
   end
 
@@ -1111,6 +1227,24 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     return scUV
   end
 
+  local function compactQuadUV(q)
+    for i = 0, 3 do
+      local at = 13 + i * 2
+      scUV[i + 1][1], scUV[i + 1][2] = q[at], q[at + 1]
+    end
+    return scUV
+  end
+
+  local function compactGroundShades(q)
+    local shade = q[21]
+    if math.min(q[2], q[5], q[8], q[11]) >= AO_RISE then return shade end
+    for i = 0, 3 do
+      local t = q[2 + i * 3] / AO_RISE
+      aoProp[i + 1] = shade * (t >= 1 and 1 or (1 - AO_GROUND * (1 - t)))
+    end
+    return aoProp
+  end
+
   -- Rigid scenery samples one placement cell and carries that datum as a
   -- single translation. A point exactly on a cell's south/east boundary is
   -- biased back into the footprint it closes (not into the next object).
@@ -1143,12 +1277,38 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   local function footprintOf(template)
     local hit = templateFootprints[template]
     if hit then return hit[1], hit[2], hit[3], hit[4] end
-    local x0, z0, x1, z1 = math.huge, math.huge, -math.huge, -math.huge
-    for _, q in ipairs(template) do
+    local meta = getmetatable(template)
+    local bounds = meta and rawget(meta, "buildingBounds") or nil
+    if type(bounds) == "table" and #bounds == 4 then
+      local valid = true
       for i = 1, 4 do
-        local c = q[i]
-        x0, z0 = math.min(x0, c[1]), math.min(z0, c[3])
-        x1, z1 = math.max(x1, c[1]), math.max(z1, c[3])
+        local value = bounds[i]
+        if type(value) ~= "number" or value ~= value
+           or value == math.huge or value == -math.huge then
+          valid = false
+          break
+        end
+      end
+      if valid and bounds[1] <= bounds[3] and bounds[2] <= bounds[4] then
+        hit = { bounds[1], bounds[2], bounds[3], bounds[4] }
+        templateFootprints[template] = hit
+        return hit[1], hit[2], hit[3], hit[4]
+      end
+    end
+    local x0, z0, x1, z1 = math.huge, math.huge, -math.huge, -math.huge
+    local compact = template.compact == true
+    for _, q in ipairs(template) do
+      for i = 0, 3 do
+        local x, z
+        if compact then
+          local at = 1 + i * 3
+          x, z = q[at], q[at + 2]
+        else
+          local c = q[i + 1]
+          x, z = c[1], c[3]
+        end
+        x0, z0 = math.min(x0, x), math.min(z0, z)
+        x1, z1 = math.max(x1, x), math.max(z1, z)
       end
     end
     if x0 == math.huge then x0, z0, x1, z1 = 0, 0, 0, 0 end
@@ -1209,22 +1369,39 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           group = { sink = variantSink, offsets = {}, quads = #template }
           variants[signature] = group
           stampPlan.groups[#stampPlan.groups + 1] = group
-          for _, q in ipairs(template) do
-            Budget.tick()
-            variantSink.push({ q[1], q[2], q[3], q[4] }, quadUV(q),
-                             groundShades(q, q.shade))
+          if template.compact == true then
+            for _, q in ipairs(template) do
+              Budget.tick()
+              variantSink.pushFlat(q, compactGroundShades(q))
+            end
+          else
+            for _, q in ipairs(template) do
+              Budget.tick()
+              variantSink.push({ q[1], q[2], q[3], q[4] }, quadUV(q),
+                               groundShades(q, q.shade))
+            end
           end
         end
         group.offsets[#group.offsets + 1] = { st.mx, base, st.mz }
       else
         for _, q in ipairs(template) do
           Budget.tick()
-          for i = 1, 4 do
-            local c, out = q[i], sc[i]
-            out[1], out[2], out[3] = c[1] + st.mx, c[2] + base,
-                                      c[3] + st.mz
+          if template.compact == true then
+            for i = 0, 3 do
+              local at, out = 1 + i * 3, sc[i + 1]
+              out[1], out[2], out[3] = q[at] + st.mx,
+                                        q[at + 1] + base,
+                                        q[at + 2] + st.mz
+            end
+            push(sc, compactQuadUV(q), groundShades(sc, q[21], base))
+          else
+            for i = 1, 4 do
+              local c, out = q[i], sc[i]
+              out[1], out[2], out[3] = c[1] + st.mx, c[2] + base,
+                                        c[3] + st.mz
+            end
+            push(sc, quadUV(q), groundShades(sc, q.shade, base))
           end
-          push(sc, quadUV(q), groundShades(sc, q.shade, base))
         end
       end
 
@@ -2336,6 +2513,19 @@ function ChunkMesher.pending()
   return #jobs
 end
 
+-- True when visible play is waiting on work that can affect the current map
+-- or the seam the player is approaching. Rank-0 jobs are deliberately absent:
+-- they are two-hop survey/return-cache work and may wait for a covered frame,
+-- PRELOAD background time, or promotion when the player approaches them.
+function ChunkMesher.hasPriorityWork()
+  for _, job in ipairs(jobs) do
+    local rank = type(job.priority) == "number"
+                 and job.priority or (job.priority and 2 or 0)
+    if job.live and (job.urgent or rank > 0) then return true end
+  end
+  return false
+end
+
 -- Advance queued builds inside a per-frame time budget. Urgent jobs (the
 -- current map) come first and get the larger slice -- the first voxel
 -- frame after a toggle is worth more milliseconds than a neighbour
@@ -2343,7 +2533,29 @@ end
 -- this frame (a warp's fade, a menu): nothing visible can hitch, so the
 -- slice opens up and a door fade swallows most of a destination build.
 local URGENT_SLICE = 0.012
-local IDLE_SLICE = 0.005
+-- Once the current scene is drawable, queued neighbours are speculative.
+-- Spend enough on smooth frames to drain the live union, but back off for the
+-- next few frames after a missed refresh. This keeps GC bursts from combining
+-- repeatedly with neighbour work while still finishing the cache before the
+-- formal route loop ends. Hosts without a frame-delta API use the conservative
+-- slice. Actual fallback loading retains the larger slices below.
+-- Four milliseconds leaves enough headroom for the engine/KASC update and
+-- the platform compositor to keep a 60-Hz presentation deadline.  Five was
+-- fast in isolation but one formal warm-route run crossed the VSync boundary
+-- in 7/120 otherwise idle frames while three distant neighbours were queued.
+-- Long approaches still provide more than enough aggregate work for the
+-- direct/approached seams this slice is now reserved for.
+local IDLE_SLICE = 0.004
+local IDLE_CONSERVATIVE_SLICE = 0.002
+local IDLE_RECOVERY_SLICE = 0.001
+-- Rank-zero two-hop survey/return-cache jobs must eventually drain (including
+-- the diagnostic final-GC gate), but they are never worth a missed refresh.
+-- Give them the same tiny slice used after a detected slow frame; promotion
+-- to a direct/approached seam automatically restores the normal idle slice.
+local SURVEY_SLICE = 0.001
+local IDLE_SLOW_FRAME = 0.020
+local IDLE_RECOVERY_FRAMES = 4
+local idleRecovery = 0
 -- A transition may cover the world, but it does not stop the engine's own
 -- fade/input/update work.  Spending 30ms here simply added that whole slice
 -- to an already expensive setMap frame (about 67ms in the cold-map QA), which
@@ -2351,10 +2563,45 @@ local IDLE_SLICE = 0.005
 -- extra work below one 60Hz frame; cold maps may need a few more fade frames,
 -- but no single one receives a large VASC-only spike.
 local COVERED_SLICE = 0.006
+-- A destination explicitly queued by WarpPrefetch gets two additional
+-- milliseconds while the engine's warp transition owns the screen.  This is
+-- narrower than COVERED_SLICE: menus and arbitrary overlays keep 6ms, and as
+-- soon as the destination is ready (or the transition ends) the hint clears.
+local WARP_PREFETCH_SLICE = 0.008
 local BACKGROUND_SLICE = 0.002
 local LOADING_SLICE = 0.008
+-- When both conditions are true the old precedence selected only the 6ms
+-- covered slice.  A cold city therefore spent several seconds showing its
+-- perfectly usable 2D fallback while the destination build advanced in tiny
+-- pieces.  This larger slice is deliberately limited to that hidden,
+-- not-yet-ready state: visible play, warm transitions and speculative work
+-- retain their historical budgets.  Native acceptance still caps boot p95
+-- and max gaps, so a host that cannot afford this work fails closed.
+-- Stay below a 60-Hz frame after the fully deferred map-entry frame. The
+-- optimized building shell now finishes in fewer slices; spending 19 ms in
+-- one pump only forced every covered loading frame onto a 30-Hz cadence and
+-- made wall time worse despite reducing the raw resume count.
+local COVERED_LOADING_SLICE = 0.012
 
-function ChunkMesher.pump(covered, background, loading)
+local function visibleIdleSlice()
+  local timer = love and love.timer
+  if not (timer and type(timer.getDelta) == "function") then
+    return IDLE_CONSERVATIVE_SLICE
+  end
+  local ok, dt = pcall(timer.getDelta)
+  if not ok or type(dt) ~= "number" or dt ~= dt
+     or dt < 0 or dt == math.huge then
+    return IDLE_CONSERVATIVE_SLICE
+  end
+  if dt > IDLE_SLOW_FRAME then idleRecovery = IDLE_RECOVERY_FRAMES end
+  if idleRecovery > 0 then
+    idleRecovery = idleRecovery - 1
+    return IDLE_RECOVERY_SLICE
+  end
+  return IDLE_SLICE
+end
+
+function ChunkMesher.pump(covered, background, loading, warpPrefetch, survey)
   if #jobs == 0 then return end
   local function nextJob()
     local firstPriority, firstPriorityRank, firstLive = nil, 0, nil
@@ -2373,10 +2620,22 @@ function ChunkMesher.pump(covered, background, loading)
     return firstPriority or firstLive or jobs[1]
   end
   local pick = nextJob()
+  -- The first encounter with a cold destination shares its frame with
+  -- setMap, Kanto's map-enter handlers and neighbour discovery.  Do not add
+  -- any VASC geometry work to that one-off spike.  Remember the deferral on
+  -- the queued job so the accelerated hidden fallback starts exactly one
+  -- frame later even though its coroutine has not yet been created.
+  if covered and loading and not pick.co and not pick.entryDeferred then
+    pick.entryDeferred = true
+    return
+  end
   local slice = background and BACKGROUND_SLICE
+                or (covered and loading) and COVERED_LOADING_SLICE
+                or (covered and warpPrefetch) and WARP_PREFETCH_SLICE
                 or covered and COVERED_SLICE
                 or loading and LOADING_SLICE
-                or (pick.urgent and URGENT_SLICE or IDLE_SLICE)
+                or survey and SURVEY_SLICE
+                or (pick.urgent and URGENT_SLICE or visibleIdleSlice())
   local deadline = clock() + slice
   while pick do
     if not pick.co then

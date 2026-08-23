@@ -146,7 +146,14 @@ do
     return table.remove(self.states)
   end
 
-  local currentGame = { overworld = { map = { id = "CURRENT_SOURCE" } } }
+  -- This is the reported save path: Fly leaves Viridian, swaps to a cold
+  -- Cinnabar destination at the opaque midpoint, then must return control
+  -- only after VASC can present that destination.  The transition class does
+  -- not expose `via`, so map identity + the real transitioning flag are the
+  -- observable Fly contract at this layer.
+  local currentGame = {
+    overworld = { map = { id = "VIRIDIAN_CITY" }, transitioning = true },
+  }
   currentGame.stack = stack
   local CurrentTransition = {}
   CurrentTransition.__index = CurrentTransition
@@ -179,14 +186,17 @@ do
   })
   eq(currentMode, "compat", "0.2.19 fixture did not select compatibility")
 
-  local source, target = currentGame.overworld.map, { id = "CURRENT_COLD" }
+  local source, target = currentGame.overworld.map, { id = "CINNABAR_ISLAND" }
   scene.ready, scene.map = true, source
   local midpointTop
   local cold = CurrentTransition.new(function()
     midpoint = midpoint + 1
     midpointTop = stack:top()
     currentGame.overworld.map = target
-  end, function() done = done + 1 end)
+  end, function()
+    done = done + 1
+    currentGame.overworld.transitioning = false
+  end)
   stack:push(cold)
   cold:update()
   eq(midpoint, 1, "0.2.19 midpoint did not run exactly once")
@@ -198,6 +208,8 @@ do
   eq(cold.phase, "out", "retained transition lost its opaque phase")
   eq(cold.t, cold.frames, "retained transition lost terminal fade pose")
   eq(done, 0, "cold 0.2.19 transition completed before readiness")
+  eq(currentGame.overworld.transitioning, true,
+     "cold Fly returned input before the destination was ready")
 
   cold:update()
   eq(midpoint, 1, "held 0.2.19 transition reran its midpoint")
@@ -207,6 +219,8 @@ do
   eq(pops, 2, "ready retained transition did not pop exactly once")
   eq(stack:top(), nil, "ready retained transition remained on stack")
   eq(done, 1, "ready retained transition lost its completion callback")
+  eq(currentGame.overworld.transitioning, false,
+     "ready Cinnabar Fly left overworld controls frozen")
   eq(cold.phase, "in", "ready retained transition finished in wrong phase")
   eq(cold.t, 0, "ready retained transition finished on wrong tick")
 
@@ -214,18 +228,24 @@ do
   -- completion. It must not be pushed back for even one frame.
   source, target = { id = "CURRENT_WARM_SOURCE" }, { id = "CURRENT_WARM" }
   currentGame.overworld.map = source
+  currentGame.overworld.transitioning = true
   scene.ready, scene.map = true, source
   local warm = CurrentTransition.new(function()
     midpoint = midpoint + 1
     currentGame.overworld.map = target
     scene.ready, scene.map = true, target
-  end, function() done = done + 1 end)
+  end, function()
+    done = done + 1
+    currentGame.overworld.transitioning = false
+  end)
   stack:push(warm)
   warm:update()
   eq(pops, 3, "warm 0.2.19 transition lost its engine pop")
   eq(pushes, 3, "warm 0.2.19 transition was unnecessarily requeued")
   eq(stack:top(), nil, "warm 0.2.19 transition remained active")
   eq(done, 2, "warm 0.2.19 transition lost same-tick completion")
+  eq(currentGame.overworld.transitioning, false,
+     "warm Fly left overworld controls frozen")
 end
 
 -- New engine path: include the schema field and leave Transition completely

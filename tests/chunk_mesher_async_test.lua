@@ -25,6 +25,12 @@ function love.data.pack(container, format, ...)
     error("async indices must use a native-endian packed string")
   end
   local values = { ... }
+  local floatFields = 0
+  for _ in format:gmatch("f") do floatFields = floatFields + 1 end
+  if floatFields > 0 then
+    if floatFields ~= #values then error("packed vertex format/value mismatch") end
+    return string.rep("\0", #values * 4)
+  end
   local fields = 0
   for _ in format:gmatch("I4") do fields = fields + 1 end
   if fields ~= #values then error("packed index format/value mismatch") end
@@ -43,6 +49,7 @@ function love.data.newByteData(bytes)
   if type(bytes) ~= "string" then error("packed indices were not bytes") end
   dataCreates = dataCreates + 1
   local data = { bytes = bytes, released = false }
+  function data:getSize() return #self.bytes end
   function data:release()
     if self.released then error("index data released twice") end
     self.released = true
@@ -75,8 +82,10 @@ function love.graphics.newMesh(_, vertices)
       failUpload = false
       error("simulated upload failure")
     end
+    local source = page.bytes and (#page.bytes / 24) or #page
+    if page.released then error("released vertex data reached driver") end
     uploads[#uploads + 1] = {
-      pump = pumpNo, count = count, source = #page, first = first,
+      pump = pumpNo, count = count, source = source, first = first,
     }
     uploadedPageRefs[page] = true
     now = now + 0.004
@@ -295,6 +304,7 @@ local map4 = {
 failVertexMap = true
 local beforeMapFailure = releases
 local beforeMapDataRelease = dataReleases
+local beforeMapDataCreate = dataCreates
 Mesher.request(map4, true, nil, true)
 guard = 0
 while Mesher.pending() > 0 and guard < 100 do
@@ -304,8 +314,10 @@ end
 expect(guard < 100, "failed vertex-map upload never left the queue")
 expect(releases == beforeMapFailure + 1,
        "failed vertex-map upload leaked its mesh allocation")
-expect(dataReleases == beforeMapDataRelease + 1,
-       "failed vertex-map upload leaked its temporary Data")
+expect(dataCreates > beforeMapDataCreate
+       and dataReleases - beforeMapDataRelease
+           == dataCreates - beforeMapDataCreate,
+       "failed vertex-map upload leaked temporary vertex/index Data")
 expect(Mesher.ready(map4, true) == false,
        "failed vertex-map upload became drawable terrain")
 
@@ -411,7 +423,7 @@ Mesher.invalidate(oldBackground.id)
 Mesher.invalidate(liveBackground.id)
 
 -- Current-map readiness is still urgent, but ordinary neighbours now have
--- two ranks inside the unchanged 5ms background slice: an approached seam
+-- two ranks inside the bounded 4ms visible slice: an approached seam
 -- must beat another direct connection, and every direct connection must beat
 -- a two-hop survey map even when the latter entered the FIFO first.
 local farSurvey = {
@@ -431,6 +443,7 @@ Mesher.setLive({
 Mesher.request(farSurvey, true, nil, false, 0)
 Mesher.request(directConnection, true, nil, false, 1)
 Mesher.request(approachedConnection, true, nil, false, 2)
+expect(Mesher.hasPriorityWork(), "ranked visible work was not advertised")
 guard = 0
 while Mesher.ready(approachedConnection, true) == false and guard < 100 do
   pump()
@@ -450,9 +463,34 @@ expect(guard < 100 and Mesher.ready(directConnection, true) ~= false,
        "direct connection did not finish after approached seam")
 expect(Mesher.ready(farSurvey, true) == false,
        "two-hop survey work ran before a direct connection")
+guard = 0
+while Mesher.hasPriorityWork() and guard < 100 do
+  pump()
+  guard = guard + 1
+end
+expect(guard < 100, "ranked seam finishing work did not drain")
+expect(not Mesher.hasPriorityWork(),
+       "rank-zero survey work kept the visible-frame gate open")
 Mesher.invalidate(farSurvey.id)
 Mesher.invalidate(directConnection.id)
 Mesher.invalidate(approachedConnection.id)
+
+-- Two-hop survey work still drains eventually, but its dedicated 1ms hint
+-- may cross at most one indivisible fake 4ms driver upload in a frame. It is
+-- never allowed to consume the normal direct-seam slice while unpromoted.
+local trickleMap = {
+  id = "ASYNC_SURVEY_TRICKLE", def = map.def, tileset = map.tileset,
+}
+Mesher.setLive({ [trickleMap.id] = true })
+Mesher.request(trickleMap, true, nil, false, 0)
+local beforeTrickleUploads = #uploads
+pumpNo = pumpNo + 1
+Mesher.pump(false, false, false, false, true)
+local trickleUploads = #uploads - beforeTrickleUploads
+expect(Mesher.pending() > 0, "survey trickle consumed the whole cold route")
+expect(trickleUploads <= 1,
+       "survey trickle crossed more than one indivisible upload")
+Mesher.invalidate(trickleMap.id)
 
 -- Even with the world hidden by a fade, VASC shares the main thread with the
 -- engine transition. The covered slice is deliberately 6ms: under this fake

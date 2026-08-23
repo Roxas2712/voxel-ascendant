@@ -13,6 +13,7 @@ Die Panorama-/Materialmaster wurden mit dem eingebauten ImageGen-Werkzeug für d
 | `assets/scenery/rural_edge.compact.png` | `35ae2571c1e0d33475ad666454e47cd9bd5b4153d673bc7e04d547734eb246c4` | `exec-33b2f4c3-be00-44d9-a56b-e2d3d37da25b.png` |
 | `assets/scenery/harbor_edge.compact.png` | `31ea5d0d9fd948b9ddf185e426548bdd4b3b713b05a9ec691c2bffabbf735edb` | `exec-60d8e200-a3d6-4da1-9966-af25fc87059d.png` |
 | `assets/scenery/coastal_landmarks_v3.compact.png` | `744a844ff400ea65599f44daed03f684f02e2e57bf2492845ac2f870052ee48c` | vier unten einzeln fixierte Built-in-ImageGen-Master |
+| `assets/scenery/cinnabar_story_landmarks.compact.png` | `ddbfeac791b1b35fa5571277f9a85da9d310e8082427cff1b751c53fb5fa84ba` | zwei unten einzeln fixierte Built-in-ImageGen-Master |
 | `assets/scenery/route8_horizon.compact.png` | `d6934895c00b78ae6375cfb05df10d213a0c766dee609bc5d74addd8dd021e0a` | `exec-63cee975-de2b-44f2-9b13-9a24aff1e671.png` |
 | `assets/scenery/route8_midground.compact.png` | `a35b4113ae878d3b4f9b69705e73de323cf58922ed9ce2f04cba2bd8ceb2455c` | `exec-4d7836a4-d45a-4e52-a80e-c5b56b97ff1a.png` |
 | `assets/scenery/viridian_forest_gate.compact.png` | `95a28a896892d538b2ff1f3bd0da93c81d7a8e441d5053a27e53ab2a8cad2977` | kanonisches Gen1Recomp-OVERWORLD-Spielasset, kein ImageGen |
@@ -90,6 +91,19 @@ Die Panorama-/Materialmaster wurden mit dem eingebauten ImageGen-Werkzeug für d
 - Runtime: `assets/scenery/coastal_landmarks_v3.compact.png`, 512×128 RGBA, SHA-256 `744a844ff400ea65599f44daed03f684f02e2e57bf2492845ac2f870052ee48c`. Runtime-UVs beschneiden das transparente Modul-Padding auf die vier fixierten BBoxen; die sichtbaren Weltmaße 88×39, 80×60, 96×33 und 72×29 entsprechen dadurch exakt den gesampelten Texeln (1 Texel = 1 World-Pixel, horizontal und vertikal). Atlasgröße, 256-KiB-VRAM-Budget, ein aggregierter Coastal-Draw, Kurven-Tessellation, Landmark-Zuordnung und ein Motiv pro Karte bleiben unverändert. Eine fehlende oder falsch dimensionierte V3-Datei wird über den bestehenden Compact-Asset-Vertrag verworfen; der V2-Pfad wird nie als Runtime-Fallback gelesen. Den exakten V3-Bytehash erzwingen Builder-, Provenienz- und Release-Tests vor der Auslieferung.
 - Statische Sichtgrenze: Im 128px-Compact bleiben Leuchtturmfenster, Vulkan/Stadt und drei getrennte Schären erkennbar. Die unterste Zeile belegt je Modul nur 8/5/5/4 Pixel. Native identische Retakes sind weiterhin erforderlich, bevor die South-Sea-Familie visuell freigegeben wird.
 
+## Zinnober-Südpfad – Vulkan und Birth Island
+
+- Erzeuger: eingebautes ImageGen-Werkzeug (Built-in ImageGen).
+- Promptkern Vulkan: eigenständig gestaltete, entfernte Vulkaninsel in sanfter 3/4-Seitenansicht mit breitem unregelmäßigem Felsfuß, einem klaren Krater, wenig Vegetation, zurückhaltenden warmen Schloten und kleiner heller Rauchfahne; handgemalte Aquarell-/Gouache-Routenillustration, transparent, ohne Himmel, Figuren, Pokémon, Schrift, Gebäude oder mittelalterliche Gestaltung.
+- Promptkern Birth Island: eigenständig gestaltete, deutlich niedrigere Forschungsinsel in Links-unten→Rechts-oben-Tiefe mit facettiertem meteoritenähnlichem Zentralstein, windgeformtem Grün, kleiner temporärer Plane und schmalem Messmast; transparent, ohne Deoxys/Pokémon, Figuren, Stadt, Vulkan, Schrift, Logo oder mittelalterliche/futuristische Basis.
+- Finale echte RGBA-Master und exakte SHA-256:
+  - `tools/sources/cinnabar_story_landmarks/01-cinnabar-volcano.imagegen.png` (ursprüngliche ImageGen-Source-ID `exec-0528dd96-d954-4642-86c2-bfcf3960b80e.png`) – 1774×887 RGBA – `cabb66307daf915e0a21e236769eed21ef2cbe7e1bc7601f42da14e74f21288b`.
+  - `tools/sources/cinnabar_story_landmarks/02-birth-island.imagegen.png` (ursprüngliche ImageGen-Source-ID `exec-40b4ef3b-90a0-490c-987c-5351d19938d8.png`) – 1774×887 RGBA – `cded987286560b4ebf4fbc52444ef639064e973babab82a23301b20839bc1b83`.
+- Nicht verwendete Bearbeitungsversuche `exec-af32169d-b0d8-46d1-94d3-8e9d95ea92a3.png` und `exec-458665ec-1427-475c-a67c-ef8ba07c1b46.png` wurden verworfen, weil ihr sichtbares Vorschau-Schachfeld als RGB eingebrannt war. Sie sind weder Workspace-Quelle noch Release-Bestandteil.
+- Reproduzierbarer Build: `tools/build_cinnabar_story_landmarks.py` pinnt Quelle, Hash, Maß und RGBA-Modus, beschneidet Alpha und reduziert proportional mit premultipliziertem Lanczos-Downsampling. Die zusammenhängenden gemalten Küsten- und Brandungsfüße bleiben erhalten; nur nahezu transparente Werte unter 8 und isolierte Compact-Komponenten unter 24 Pixeln werden entfernt. Sichtbare Farben werden ohne Dithering auf höchstens 96 Farben quantisiert. Transparente Runtime-Texel sind RGB `(0,0,0)`; weiches Alpha bleibt für saubere Baum-, Rauch-, Fels- und Wasserkanten erhalten.
+- Runtime: `assets/scenery/cinnabar_story_landmarks.compact.png`, exakt 512×128 RGBA, SHA-256 `ddbfeac791b1b35fa5571277f9a85da9d310e8082427cff1b751c53fb5fa84ba`. Modul 0 (Vulkan) sampelt BBox `(18,15,238,119)` mit 220×104 Texeln und wird auf 144×68 Weltpixel projiziert; Modul 1 (Birth Island) sampelt BBox `(30,35,226,119)` mit 196×84 Texeln und wird auf 112×48 Weltpixel projiziert. Die höhere Sample-Auflösung verhindert zerhackte Silhouetten, ohne die entfernten Landmarken zu vergrößern. Beide teilen einen zusätzlichen 256-KiB-Texturslot sowie einen aggregierten Draw und nutzen lineare Filterung.
+- Laufzeitvertrag: Erst die vollständige, outdoor und reziprok verbundene Vierkartenstruktur `CINNABAR_ISLAND` → `CINNABAR_SOUTH_CHANNEL` → links `CINNABAR_VOLCANO` / rechts `KA_HOENN_BIRTH_ISLAND` aktiviert die Spur. Vulkan bleibt links, Birth Island rechts. Ein bereits gestreamter Zielkörper unterdrückt nur seine eigene Fernkarte. Ältere KASC-Version, fehlende Karte, falsche ID/Richtung/Offset, unpassendes Asset oder fehlende GPU-Textur lassen die bestehende Küste unverändert; Kollision, Warps, Questflags, NPCs und klassisches 2D werden nie berührt.
+
 ## Route 8 – durchgehender Fernstrip
 
 - Master: ImageGen-Source-ID `exec-63cee975-de2b-44f2-9b13-9a24aff1e671.png`
@@ -154,7 +168,7 @@ Die Panorama-/Materialmaster wurden mit dem eingebauten ImageGen-Werkzeug für d
 - Ausgewählter ImageGen-Master: `tools/sources/arena_scenery/nugget_bridge_anchors_v2.imagegen.png`, 1548×1016 RGB, SHA-256 `101f1e7f86205a31d70d3acd98d7a994d017131272c1d9dcca54fa323ad910a5`.
 - Prompt-Ziel: eine eigenständig gezeichnete, breite Kanto-Aquarell-/Gouache-Kampfszene an einer langen goldenen Bogenbrücke über blauem Fluss. Die zwei auffälligen hellen Ovalflächen der vorigen Fassung wurden vollständig in eine zusammenhängende Wiese zurückgemalt. An den festen 3X-Figurenankern bleiben ausschließlich sehr subtile, überwiegend grüne Trittspuren; sie dürfen nie wie Plattformen oder aufgeklebte Kreise lesen. Bank, weißer Uferzaun, rechter Seilzaun, Brücke, Fluss, Vegetation und die Öffnung für den echten Spielhimmel bleiben erhalten. Keine Figuren, Pokémon, Schrift oder UI.
 - Reproduzierbarer Build: `tools/build_arena_scenery.py` pinnt Master-Hash und -Maß, entfernt ausschließlich das vom Bildrand aus zusammenhängende helle neutrale Vorschau-Schachfeld, erweitert diese Maske minimal gegen helle Säume und skaliert in premultipliziertem Alpha per Lanczos auf das Runtime-Maß. Oberkante muss vollständig transparent, Unterkante vollständig opak und die Silhouette antialiasiert bleiben.
-- Runtime: `assets/battle/nugget_bridge_a.compact.png`, 1280×800 RGBA, SHA-256 `612182212e0dc022abc860d5432964f3a5785440c7de53c071226ddfeabc1378`. Nur das exakt geprüfte Profil `nugget_bridge` darf es laden. Es wird hinter Pokémon und HUD linear gefiltert, mit derselben Tageszeitfarbe wie die Kämpfer getönt und lässt Wetter, Sonne, Mond und Sterne des Live-Himmels durch die Alphaöffnung sichtbar. Unbekannte Orte, Innenräume, fehlende oder falsch dimensionierte Dateien fallen geschlossen auf den normalen Kampf zurück; die verworfene prozedurale Pixelcollage wird nicht als Ersatz angezeigt.
+- Runtime: `assets/battle/nugget_bridge_a.compact.png`, 1280×800 RGBA, SHA-256 `e86a1d07a4668139bd9afbe1668b0e0d81eeeceba2478cd8520ad029478b46a3`. Nur das exakt geprüfte Profil `nugget_bridge` darf es laden. Es wird hinter Pokémon und HUD linear gefiltert, mit derselben Tageszeitfarbe wie die Kämpfer getönt und lässt Wetter, Sonne, Mond und Sterne des Live-Himmels durch die Alphaöffnung sichtbar. Unbekannte Orte, Innenräume, fehlende oder falsch dimensionierte Dateien fallen geschlossen auf den normalen Kampf zurück; die verworfene prozedurale Pixelcollage wird nicht als Ersatz angezeigt.
 - Auswahlstatus: Die flache erste Fassung und die geerdete Zwischenfassung bleiben als `nugget_bridge_a.imagegen.png` und `nugget_bridge_grounded.imagegen.png` für Rollback und Bildvergleich erhalten. `nugget_bridge_anchors_v2.imagegen.png` beseitigt deren zwei unnatürliche helle Standovale. Der native Lauf `nugget-arena-anchors-v7` bestätigt **RETAIN** in festem 3X und STADIUM: beide Figuren stehen auf derselben natürlichen Wiese, Bank und Zäune bleiben lesbar, und es gibt keine Plattform-, Wasser- oder HUD-Kollision. Beide zulässigen Kompositionen verwenden denselben verpflichtenden, bildspezifischen 3X-Ankersatz (`player x/y/z = 0/-8/0`, `enemy = 0/-16/0` relativ zu den kanonischen Kampfzellen); Rot und Gegner stehen auf der trockenen Wiese oberhalb des HUD. ARENA ignoriert die MAP/DISCS-Rungen 1X/2X und sperrt manuelles Orbit/Pitch/Zoom. Jede weitere veröffentlichte Arenenkulisse muss ebenfalls Kamera=`3X` sowie endliche Player-/Enemy-X/Y/Z-Anker deklarieren; fehlt ein Receipt, fällt der Ort geschlossen auf den normalen Kampf zurück.
 
 ## Freigabestatus
@@ -175,21 +189,32 @@ gespiegelt. Route 22 übernimmt in seiner C-Fassung Fels, Wasser, Pfeiler und
 Torarchitektur des Route-23-Anstiegs. Die jeweilige Preview ist der ausgewählte
 Projektmaster; alternative A/B/C-Fassungen bleiben nur im Audit.
 
+Die 17 Außenkulissen werden aus ihren unveränderten Projektmastern mit
+`tools/sources/arena_scenery/repair_outdoor_sky_matte.py` reproduzierbar
+nachbearbeitet. Der Schritt entfernt ausschließlich topologisch abgetrennte
+Matte-Inseln und ersetzt schwarze beziehungsweise Cyan-/Rot-/Grün-Fremdfarben
+an der Live-Himmel-Kante durch die robuste lokale Bildfarbe; die Alpha-Kontur,
+Abmessungen, Figurenanker und sämtliche Innenpixel außerhalb des schmalen
+Skyline-Prüfbereichs bleiben erhalten.
+Das Safari-Profil aktiviert zusätzlich `--fill-dark-matte`: Die dort im
+Projektmaster eingeschlossenen opaken Schwarzflächen werden mit benachbarter
+Laub-/Holzfarbe gefüllt, ohne die Alpha-Silhouette zu öffnen.
+
 | Runtime-Datei | SHA-256 | ausgewählter Projektmaster |
 |---|---|---|
-| `assets/battle/arena_cape-route25.compact.png` | `ae075d67103df038b066ee3401c11bf9b19b3fa84c0679097588d67407586879` | `previews/route25-cape-v1.png` |
+| `assets/battle/arena_cape-route25.compact.png` | `444da9c117ac0a25e953cf07fb12c69a8f4488cedd71cd1aa776d2af1575a1cd` | `previews/route25-cape-v1.png` |
 | `assets/battle/arena_cave-cerulean.compact.png` | `69fe69ab74f5d291fdec9c1966899087358b8eb4a07da5bf511a06df4c84b5ce` | `previews/profile-cave-cerulean-baseline-v1.png` |
 | `assets/battle/arena_cave-diglett.compact.png` | `a568da9855e38e22e35aac14a31864b78765ddbf36ac6c2d5ebb82b404f6b027` | `previews/profile-cave-diglett-baseline-v1.png` |
 | `assets/battle/arena_cave-mt-moon.compact.png` | `7217da25e804c321de02e398e1528143cf311f71bd28f244c026b91a8c102e8c` | `previews/profile-cave-mt-moon-baseline-v2.png` |
 | `assets/battle/arena_cave-rock-tunnel.compact.png` | `cd6b8d6767f57924039bc98ae71c89d8d43700cf5bd4b1b0e2fcd1a14f327ddf` | `previews/profile-cave-rock-tunnel-baseline-v1.png` |
 | `assets/battle/arena_cave-seafoam.compact.png` | `1fd37693394cf14c1f1ffb28fc34bca462c75f2edfb1dd1a1e189642732b3b42` | `previews/profile-cave-seafoam-baseline-v1.png` |
 | `assets/battle/arena_cave-victory-road.compact.png` | `c6b7b38cb7793df7019dbef62442d69b896397f42b2c88b1cc2ad533b85177eb` | `previews/profile-cave-victory-road-baseline-v1.png` |
-| `assets/battle/arena_cerulean-canal.compact.png` | `052bb4ed75cd5dcb3f6439542c855c20e88514948e2548432e27ac1b8cfbf606` | `previews/cerulean-rival-c1.png` |
-| `assets/battle/arena_coast-cinnabar.compact.png` | `3fcf5faa7c11ffd4e76684505597c0f2e13ef30d18a4b6b1152e392232fa6fc6` | `previews/profile-coast-cinnabar-baseline-v1.png` |
-| `assets/battle/arena_coast-surf.compact.png` | `89fcff9329c3ffe4db17df72761ce79877c7fb1c00ed776fc9329339438cc41f` | `previews/profile-coast-surf-baseline-v2.png` |
-| `assets/battle/arena_forest-viridian.compact.png` | `2a7f08397f3b72511c05fd838a071be81d6fd777ca5f459c8d4d3d148219cd0a` | `previews/profile-forest-viridian-baseline-v2.png` |
-| `assets/battle/arena_grass-route1.compact.png` | `ebfa162c25578bfd9ea045c49d9fd19288c2765fab4b67d37975bb8c07765ac1` | `previews/route1-pallet-v1.png` |
-| `assets/battle/arena_grass-kanto-open.compact.png` | `f215551f9c70517b553b947562dd026e74edc9ae11354987c5f11f29def7b65b` | `previews/profile-grass-kanto-open-baseline-v1.png` |
+| `assets/battle/arena_cerulean-canal.compact.png` | `bb9243b38c1ed0e146abd7afa3dd0c3ebc3c57bff1d31dc060a5ac0893175d99` | `previews/cerulean-rival-c1.png` |
+| `assets/battle/arena_coast-cinnabar.compact.png` | `c9e7faf6663a9a7592c70f719514b1c47b56ce597549bfe6e5dc9591fb2e0ba4` | `previews/profile-coast-cinnabar-baseline-v1.png` |
+| `assets/battle/arena_coast-surf.compact.png` | `1b641515d1c7bd34e31027f2d6917d7460052ded9749a0907c5b9ff44c612d6f` | `previews/profile-coast-surf-baseline-v2.png` |
+| `assets/battle/arena_forest-viridian.compact.png` | `5f2141d3f5e499aca586ffc36a73e30ef74684ec8501a6af023128e8ba463e6e` | `previews/profile-forest-viridian-baseline-v2.png` |
+| `assets/battle/arena_grass-route1.compact.png` | `da4d768ade44fae36537889f4b2f769975598f2b2e9d7c31856291cfc0dbe50c` | `previews/route1-pallet-v1.png` |
+| `assets/battle/arena_grass-kanto-open.compact.png` | `2a64cc54c6176e483bd80a2dad6b7d9032c968a424b3963129e6ba381f532957` | `previews/profile-grass-kanto-open-baseline-v1.png` |
 | `assets/battle/arena_gym-celadon.compact.png` | `938b1dbdf381bb2c8c5aa600fd4a1aa9cd921a4fcf3ae173b25a7517bc087ae8` | `previews/profile-gym-celadon-baseline-v2.png` |
 | `assets/battle/arena_gym-cerulean.compact.png` | `15c3740c6fb3051c83df96377cfa3d116950875d558f9468df953e7b4cad44e3` | `previews/profile-gym-cerulean-baseline-v2.png` |
 | `assets/battle/arena_gym-cinnabar.compact.png` | `c6b330bba2951bde94a4b1feab625fdee987703c31b65b4b2c32e9072475b586` | `previews/profile-gym-cinnabar-baseline-v2.png` |
@@ -199,8 +224,8 @@ Projektmaster; alternative A/B/C-Fassungen bleiben nur im Audit.
 | `assets/battle/arena_gym-saffron.compact.png` | `5aa1c1836b65826b792f780424474f947138ec89abe538b94efdb4287748299a` | `previews/profile-gym-saffron-baseline-v1.png` |
 | `assets/battle/arena_gym-vermilion.compact.png` | `95cbf52f3ff2f9ae34968eb8e94e536b7734e07333638d31a78f4f41f7ae6ac5` | `previews/profile-gym-vermilion-baseline-v1.png` |
 | `assets/battle/arena_gym-viridian.compact.png` | `15498f412b0a306ef761cdbb3ee91a050e1eaedc97b74870f54351348607cb19` | `previews/profile-gym-viridian-baseline-v2.png` |
-| `assets/battle/arena_indigo-gate-route22.compact.png` | `9bae8a1a6caea01d805fe4ab706d99bcc917fd6dd0d554156c5f323888014b2e` | `previews/profile-indigo-gate-route22-baseline-v3.png` |
-| `assets/battle/arena_indigo-road-route23.compact.png` | `7bdc61f13dcd30f646e54681d06ecc03a5c1005e858a0cda457d6e32cdeae469` | `previews/profile-indigo-road-route23-baseline-v1.png` |
+| `assets/battle/arena_indigo-gate-route22.compact.png` | `f97ce6226dfc7e5236bd65e6a5cfcd4312d820b711bd4d5d4149a27ed3aa3912` | `previews/profile-indigo-gate-route22-baseline-v3.png` |
+| `assets/battle/arena_indigo-road-route23.compact.png` | `c9b7fd2fd6d1c3b7e54a7efbc1e573d29644ae3ff5afdaa44eb7d68d15640e71` | `previews/profile-indigo-road-route23-baseline-v1.png` |
 | `assets/battle/arena_industrial-power-plant.compact.png` | `8cc53b683232903fc24dea8abbd2800dfbe77df6972bd7354ecc232dc834755d` | `previews/profile-industrial-power-plant-baseline-v2.png` |
 | `assets/battle/arena_industrial-silph.compact.png` | `af9670e6c595ccc241f5d91736dd772c5abd07009f92fec0747e6c786ba2c241` | `previews/profile-industrial-silph-baseline-v3.png` |
 | `assets/battle/arena_interior-oaks-lab.compact.png` | `169f6b12dde7493c8d446192a34981e311396d6582ff586eac58dc65785e8443` | `previews/profile-interior-oaks-lab-baseline-v3.png` |
@@ -210,18 +235,18 @@ Projektmaster; alternative A/B/C-Fassungen bleiben nur im Audit.
 | `assets/battle/arena_league-lance.compact.png` | `00816c8beb6c6a233eaead5736ba6703d88bf767bc3f5394e0bb4c2ea1368f3e` | `previews/profile-league-lance-baseline-v2.png` |
 | `assets/battle/arena_league-champion.compact.png` | `3e7b6137f22f8444efbf7dea68e2ca3433385fc64686adf9ef2a6c9b3eb6ea3f` | `previews/profile-league-champion-baseline-v2.png` |
 | `assets/battle/arena_mansion-cinnabar.compact.png` | `81f74e3196751592a59c10288fc5d03b5e32bb319038f54fb987ef29934251b3` | `previews/profile-mansion-cinnabar-baseline-v1.png` |
-| `assets/battle/arena_moon-approach-route3.compact.png` | `c1a43810d3b43ed5426bdbeb8d6ca7cf3a87e22f8800ff9a56c11e7c193628d1` | `previews/route3-mtmoon-v1.png` |
-| `assets/battle/arena_moon-exit-route4.compact.png` | `480359975f571a8cee1d8573e2e5ef1e53d1676f77cf70197c2f26475292ac2e` | `previews/profile-moon-exit-baseline-v2.png` |
-| `assets/battle/arena_rock-water-route10.compact.png` | `f4fdea34e54fb927e2466c23f5dd894768bef88135c6223589670588c8019107` | `previews/route10-canal-b1.png` |
+| `assets/battle/arena_moon-approach-route3.compact.png` | `aaf33f6ec0dc311fb021f1da0c1d4667086b8531dc77681c122ff0881c0f0912` | `previews/route3-mtmoon-v1.png` |
+| `assets/battle/arena_moon-exit-route4.compact.png` | `3831b93ab2091faaae60f2fb0b748f190e8a061ea28a9e9d727de22ce92b8e7b` | `previews/profile-moon-exit-baseline-v2.png` |
+| `assets/battle/arena_rock-water-route10.compact.png` | `04f7bf1c47804ace3abe96558a60e9c88d47e9698d49bb3832e4571356c82a71` | `previews/route10-canal-b1.png` |
 | `assets/battle/arena_rocket-game-corner.compact.png` | `73da751f53c7f75028878419c88866e010e9b094fd7fa6c983a628b82e44b955` | `previews/profile-rocket-game-corner-baseline-v2.png` |
 | `assets/battle/arena_rocket-hideout.compact.png` | `ca92c527c9a396c910e1050ea1aab866bb83964fa50d1f14365d70d19dd09128` | `previews/profile-rocket-hideout-baseline-v2.png` |
-| `assets/battle/arena_route2-forest-gate.compact.png` | `e29abe90c5bf35f838c2ede36858642b0b6442e08c4047ea8011e7e3c7900371` | `previews/route2-gate-c1.png` |
-| `assets/battle/arena_safari-kanto.compact.png` | `e969189be54715d683ee174edcae9c0983cb1d502048d43f4e1fcd447e03554b` | `previews/profile-safari-kanto-baseline-v1.png` |
+| `assets/battle/arena_route2-forest-gate.compact.png` | `00b932d766804d1b0c224fbddae852407a2149adbb6266ceaf8e22403cf2a17e` | `previews/route2-gate-c1.png` |
+| `assets/battle/arena_safari-kanto.compact.png` | `7085268246a0c911cfc04e12f8a8ffb371e1a4f0371cb3aa499dfeab5c4dca13` | `previews/profile-safari-kanto-baseline-v1.png` |
 | `assets/battle/arena_ship-cabins.compact.png` | `fff9b64e34bc644bc021c8ec71e0f7df568a6a5f843912bb8f8f2fe594081e1d` | `previews/profile-ship-cabins-baseline-v3.png` |
 | `assets/battle/arena_ship-corridor.compact.png` | `0b3289d0ceb2840dec0bc1ffa897b8029a0e055c48ec02aef9a1fdf1aec118c5` | `previews/profile-ship-corridor-baseline-v2.png` |
-| `assets/battle/arena_ship-bow.compact.png` | `653be5b276abb38c709a81daf016aa6696ce7ffeaa65d5571a6fabfb65d00534` | `previews/profile-ship-bow-baseline-v2.png` |
+| `assets/battle/arena_ship-bow.compact.png` | `5c98649c0c7688cc2e4c9d9ac1b77a4274c4d521e8c575ec4843bc94ae43e2d1` | `previews/profile-ship-bow-baseline-v2.png` |
 | `assets/battle/arena_tower-lavender.compact.png` | `2ceca440f8841294fdf0d2e794db5d3b858c3e4062ffbd375d768d7f6f099388` | `previews/profile-tower-lavender-baseline-v2.png` |
-| `assets/battle/arena_vermilion-gate-route11.compact.png` | `6a0e56bd38f43471ca5e2a2557a4c563719569a4a815d3b48ee620c20d3430f0` | `previews/profile-vermilion-gate-route11-baseline-v1.png` |
+| `assets/battle/arena_vermilion-gate-route11.compact.png` | `4ae449df419515b388a5794882c118f321bd3227de63cf00f2890d98e0719db6` | `previews/profile-vermilion-gate-route11-baseline-v1.png` |
 
 Runtime-Vertrag: `data/arena_scenery.lua` deckt exakt dieselben 95 Karten
 wie `data/battle_arenas.lua` und damit alle 111 Anker ab. Arena-Kämpfe nutzen

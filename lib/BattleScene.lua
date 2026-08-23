@@ -41,6 +41,7 @@ local TerrainAtlas = V.require("TerrainAtlas")
 local VoxelScene = V.require("VoxelScene")
 local BattleCam = V.require("BattleCam")
 local BattleBillboard = V.require("BattleBillboard")
+local BattlePics = V.require("BattlePics")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local AntiAlias = V.require("AntiAlias")
@@ -237,13 +238,176 @@ end
 -- one is a BACK view -- the player seen from behind, already turned to face
 -- up the field -- so it arrives pointing the right way and mirroring it would
 -- turn it around to face the camera it is standing in front of.
-local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale)
+-- A companion may return a high-DPI canvas while retaining the logical
+-- Gen-1 anchor (80,96).  Never assume that such a card is still 160x144:
+-- doing so maps only its upper-left quarter onto the billboard and makes the
+-- visible monster half-sized.  Unknown/malformed surfaces retain the native
+-- dimensions so an unrelated provider still fails neutral.
+function BattleScene.textureDimensions(tex)
+  local canvas = tex and tex.canvas
+  if canvas and type(canvas.getDimensions) == "function" then
+    local ok, w, h = pcall(canvas.getDimensions, canvas)
+    if ok and type(w) == "number" and type(h) == "number"
+        and w == w and h == h and w > 0 and h > 0
+        and w < math.huge and h < math.huge then
+      return w, h
+    end
+  end
+  return BattleScene.GB_W, BattleScene.GB_H
+end
+
+-- Visible bounds are meaningful only with a content identity.  The engine
+-- reuses one canvas per side, so caching by that canvas alone would make the
+-- next species inherit the previous species' silhouette.  KASC Megas provide
+-- their source path; VASC's ordinary path supplies the actual sprite object.
+function BattleScene.textureInkBounds(tex)
+  if not (tex and not tex.trainer and tex.canvas
+          and type(BattlePics.inkBounds) == "function") then return nil end
+  local identity = tex.kantoAscendantMegaSource or tex.inkIdentity
+  if identity == nil then return nil end
+  return BattlePics.inkBounds(tex.canvas, identity)
+end
+
+-- A sprite's feet are its last visible alpha row, not the bottom of its
+-- transparent card. This fixes both the differently padded 33 Mega masters
+-- and ordinary compact species such as Rattata. The reported engine anchor is
+-- still the hard lower bound, so an animation/provider can never push a card
+-- beneath the ground by extending ink outside its declared slot.
+function BattleScene.textureBaseline(tex)
+  local ay = tonumber(tex and tex.ay) or BattleScene.GB_H
+  if tex and tex.trainer then return ay end
+  local _, _, _, y1 = BattleScene.textureInkBounds(tex)
+  if type(y1) ~= "number" then return ay end
+  return math.min(ay, y1 + 1)
+end
+
+-- The engine's 160x144 battle cards deliberately normalise every species to
+-- nearly the same picture box. That is faithful in the Game Boy frame, but in
+-- a staged world it made a Rattata and a Charizard stand at the same physical
+-- height. Use the canonical Pokédex height carried by OverworldBattle, with a
+-- deliberately restrained curve: small species remain readable, enormous
+-- species still fit indoors, and authored scene scale continues to own the
+-- overall room/arena composition. Trainers have their own human-scale art and
+-- therefore stay exactly at the scene scale.
+BattleScene.SPECIES_HEIGHT_REFERENCE = 36
+BattleScene.SPECIES_SCALE_MIN = 0.72
+BattleScene.SPECIES_SCALE_MAX = 1.80
+-- Intimate painted rooms already enlarge every actor around the authored
+-- feet. Preserve their reviewed composition while still letting Onix read as
+-- larger than Charizard outdoors: the product of room and species scale may
+-- not exceed the largest previously accepted indoor actor envelope.
+BattleScene.PRESENTATION_SCALE_MAX = 2.75
+BattleScene.COMPANION_MASTER_CARD = 96
+BattleScene.MEGA_SILHOUETTE_BONUS = 1.06
+BattleScene.MEGA_LARGE_FOOTPRINT = 28
+BattleScene.MEGA_WORLD_WIDTH_MAX = 34
+BattleScene.MEGA_WORLD_HEIGHT_MAX = 30
+BattleScene.PAIR_SPREAD_WIDTH = 40
+BattleScene.PAIR_SPREAD_FACTOR = 0.75
+
+-- KASC redraws Mega/Gorochu art from a 96px master so it stays crisp. Those
+-- extra pixels are source density, not extra physical height. A fixed 56/96
+-- conversion was still wrong for low or broadly posed masters: their visible
+-- alpha could occupy only half of that nominal card, making Mega Charizard X
+-- smaller than ordinary Charizard and the Raichu forms smaller still.
+--
+-- Normalize an ordinary-sized Mega from its actual visible alpha height and
+-- give it one restrained six-percent presentation lift. Already-large
+-- silhouettes keep the reviewed legacy density (Mega Steelix is the guard
+-- case), while width/height envelopes stop a very broad pose from growing
+-- into the other combatant or the HUD. The envelopes scale with an authored
+-- room, so intimate ARENA paintings retain their reviewed actor scale.
+function BattleScene.textureDensityScale(tex, combinedScale)
+  local legacy = BattleBillboard.FULL_PIC
+    / BattleScene.COMPANION_MASTER_CARD
+  if tex and tex.kantoAscendantMegaSupersampled == true then
+    local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
+    if not (type(x0) == "number" and type(y0) == "number"
+            and type(x1) == "number" and type(y1) == "number"
+            and x1 >= x0 and y1 >= y0) then
+      return legacy, "legacy-no-ink"
+    end
+    local inkWidth, inkHeight = x1 - x0 + 1, y1 - y0 + 1
+    local canonical = BattleScene.speciesScale(tex)
+    local base = BattleBillboard.FULL_W / BattleBillboard.FULL_PIC
+    local legacyWidth = inkWidth * base * canonical * legacy
+    local legacyHeight = inkHeight * base * canonical * legacy
+    if legacyWidth >= BattleScene.MEGA_LARGE_FOOTPRINT
+        or legacyHeight >= BattleScene.MEGA_LARGE_FOOTPRINT then
+      return legacy, "large-preserved"
+    end
+
+    local combined = tonumber(combinedScale) or canonical
+    if not (combined == combined and combined > 0
+            and combined < math.huge) then combined = canonical end
+    local roomScale = canonical > 0 and combined / canonical or 1
+    local density = (BattleBillboard.FULL_PIC / inkHeight)
+      * BattleScene.MEGA_SILHOUETTE_BONUS
+    local widthCap = BattleScene.MEGA_WORLD_WIDTH_MAX * roomScale
+      / (inkWidth * base * combined)
+    local heightCap = BattleScene.MEGA_WORLD_HEIGHT_MAX * roomScale
+      / (inkHeight * base * combined)
+    local policy = "silhouette"
+    if widthCap < density then policy = "width-capped" end
+    if heightCap < math.min(density, widthCap) then
+      policy = "height-capped"
+    end
+    density = math.min(density, widthCap, heightCap)
+    return math.max(legacy, density), policy
+  end
+  if tex and tex.kantoAscendantGorochuSupersampled == true then
+    return legacy, "gorochu-legacy"
+  end
+  return 1, "native"
+end
+
+function BattleScene.speciesScale(tex)
+  if not tex or tex.trainer then return 1 end
+  local height = tonumber(tex.heightIn)
+  if not (height and height == height and height > 0
+          and height < math.huge) then
+    return 1
+  end
+  local scale = math.sqrt(height / BattleScene.SPECIES_HEIGHT_REFERENCE)
+  return math.max(BattleScene.SPECIES_SCALE_MIN,
+                  math.min(BattleScene.SPECIES_SCALE_MAX, scale))
+end
+
+function BattleScene.presentationMetrics(tex, actorScale)
+  local cw, ch = BattleScene.textureDimensions(tex)
+  local room = tonumber(actorScale) or 1
+  if not (room == room and room > 0 and room < math.huge) then room = 1 end
+  local combined = room
+  if not (tex and tex.trainer) then
+    combined = math.min(BattleScene.PRESENTATION_SCALE_MAX,
+                        room * BattleScene.speciesScale(tex))
+  end
+  local density, densityPolicy = BattleScene.textureDensityScale(tex, combined)
   local k = (BattleBillboard.FULL_W / BattleBillboard.FULL_PIC)
-            * (actorScale or 1)
-  local w = BattleScene.GB_W * k
-  local h = BattleScene.GB_H * k
-  local ox = -((tex.ax / BattleScene.GB_W) - 0.5) * w
-  local oy = -((BattleScene.GB_H - tex.ay) / BattleScene.GB_H) * h
+    * combined * density
+  local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
+  return {
+    canvasWidth = cw, canvasHeight = ch,
+    baseline = BattleScene.textureBaseline(tex),
+    scale = k, combinedScale = combined, densityScale = density,
+    densityPolicy = densityPolicy,
+    inkX0 = x0, inkY0 = y0, inkX1 = x1, inkY1 = y1,
+    inkWidth = x0 and (x1 - x0 + 1) or nil,
+    inkHeight = y0 and (y1 - y0 + 1) or nil,
+    worldInkWidth = x0 and (x1 - x0 + 1) * k or nil,
+    worldInkHeight = y0 and (y1 - y0 + 1) * k or nil,
+  }
+end
+
+local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale)
+  local metrics = BattleScene.presentationMetrics(tex, actorScale)
+  local k = metrics.scale
+  local w = metrics.canvasWidth * k
+  local h = metrics.canvasHeight * k
+  local ax = tonumber(tex and tex.ax) or metrics.canvasWidth / 2
+  local ox = -((ax / metrics.canvasWidth) - 0.5) * w
+  local oy = -((metrics.canvasHeight - metrics.baseline)
+               / metrics.canvasHeight) * h
   -- The visible card follows the camera. A caller may instead supply the
   -- object's own stable bearing for the sun pass; this keeps a shadow rooted
   -- to the combatant while the presentation camera drifts around it.
@@ -252,6 +416,42 @@ local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale)
   if mirror then card = Mat4.mul(Mat4.scale(-1, 1, 1), card) end
   return Mat4.mul(Mat4.mul(Mat4.translate(x, groundY, z), Mat4.rotateY(yaw)),
                   card)
+end
+
+-- The canonical arena cells are separated in depth, which is enough for the
+-- normal 56px cards. Two physically large silhouettes can still touch after
+-- that depth line is projected into the oblique battle camera. Keep every
+-- reviewed anchor unchanged for an ordinary pair; only the excess combined
+-- visible width is taken from the free lower-left/player side. The upper-right
+-- opponent remains on its authored mark and therefore cannot be pushed under
+-- its original right-side HUD. This preserves size (rather than shrinking a
+-- Mega/Onix), and it applies to the card, shadow and returned HUD/effect pins
+-- through one common layout.
+function BattleScene.presentationLayout(arena, groundY, textures)
+  local stage = V.require("VoxelBattleStage")
+  local layout = {}
+  for _, side in ipairs({ "player", "enemy" }) do
+    local x, y, z = stage.presentationPosition(arena, side, groundY)
+    if x then layout[side] = { x, y, z } end
+  end
+  if not (textures and layout.player and layout.enemy) then return layout end
+  local actorScale = stage.presentationScale(arena)
+  local playerMetrics = textures.player
+    and BattleScene.presentationMetrics(textures.player, actorScale)
+  local enemyMetrics = textures.enemy
+    and BattleScene.presentationMetrics(textures.enemy, actorScale)
+  local playerWidth = playerMetrics
+    and tonumber(playerMetrics.worldInkWidth)
+  local enemyWidth = enemyMetrics and tonumber(enemyMetrics.worldInkWidth)
+  if not (playerWidth and playerWidth > 0
+          and enemyWidth and enemyWidth > 0) then return layout end
+  local excess = playerWidth + enemyWidth
+    - BattleScene.PAIR_SPREAD_WIDTH * actorScale
+  if excess <= 0 then return layout end
+  local spread = excess * BattleScene.PAIR_SPREAD_FACTOR
+  layout.player[1] = layout.player[1] - spread
+  layout.spread = spread
+  return layout
 end
 
 -- Every mon that has something to show this frame. `model` is the
@@ -265,16 +465,18 @@ local function monCards(arena, groundY, textures)
   if not textures then return out end
   local stage = V.require("VoxelBattleStage")
   local actorScale = stage.presentationScale(arena)
+  local layout = BattleScene.presentationLayout(arena, groundY, textures)
   for _, side in ipairs({ "enemy", "player" }) do
     local tex = textures[side]
     local cell = (side == "player") and arena.player or arena.enemy
-    local cardX, cardY, cardZ = stage.presentationPosition(
-      arena, side, groundY)
+    local position = layout[side]
+    local cardX, cardY, cardZ = position and position[1],
+      position and position[2], position and position[3]
     if tex and tex.canvas and cell and cardX then
       local mirror = (side == "player") and not tex.trainer
       local otherSide = (side == "player") and "enemy" or "player"
-      local otherX, _, otherZ = stage.presentationPosition(
-        arena, otherSide, groundY)
+      local other = layout[otherSide]
+      local otherX, otherZ = other and other[1], other and other[3]
       local objectYaw = otherX
                         and BattleBillboard.yawToward(
                               cardX, cardZ, { otherX, 0, otherZ })
@@ -513,8 +715,9 @@ function BattleScene.weatherMode(host)
 end
 
 function BattleScene.applyWeather(canvas, w, h, host, cell, mode)
-  return Weather.apply(canvas, w, h, host, cell,
-                       mode or BattleScene.weatherMode(host))
+  local painter = Weather.applyBattle or Weather.apply
+  return painter(canvas, w, h, host, cell,
+                 mode or BattleScene.weatherMode(host))
 end
 
 -- ------- the tile clock, while the overworld is not the one drawing
@@ -691,8 +894,10 @@ function BattleScene.render(state, arena, textures, token)
     -- pw and ph, and why the HUDs and the depth of field, drawn onto the
     -- folded canvas afterwards, stay the chunky GB art they are.
     local rw, rh = AntiAlias.expand(pw, ph)
-    if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle",
-                              { weather = weatherMode }) then
+    if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle", {
+      weather = weatherMode,
+      arena = discs and arena.arenaStyle and true or false,
+    }) then
       return
     end
     if discs then
@@ -822,10 +1027,13 @@ function BattleScene.render(state, arena, textures, token)
 
     local vp = Voxel3D.vp
     local stage = V.require("VoxelBattleStage")
-    local playerX, playerY, playerZ = stage.presentationPosition(
-      arena, "player", groundY)
-    local enemyX, enemyY, enemyZ = stage.presentationPosition(
-      arena, "enemy", groundY)
+    local layout = BattleScene.presentationLayout(arena, groundY, textures)
+    local player = layout.player
+    local enemy = layout.enemy
+    local playerX, playerY, playerZ = player and player[1],
+      player and player[2], player and player[3]
+    local enemyX, enemyY, enemyZ = enemy and enemy[1],
+      enemy and enemy[2], enemy and enemy[3]
     if not (playerX and enemyX) then return end
     local pmx, pmy = BattleScene.toGB(vp, playerX, playerY,
                                       playerZ, lx, ly, s, pw, ph)

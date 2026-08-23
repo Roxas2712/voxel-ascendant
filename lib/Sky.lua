@@ -568,6 +568,16 @@ function Sky.discRadius(h, cell, body)
   cell = math.max(1, cell or 1)
   local r = math.max(Sky.DISC_MIN,
                      math.floor(h * Sky.DISC_FRAC / cell + 0.5))
+  -- Authored Arena Scenery may expose only a shallow live-sky aperture while
+  -- its battle canvas still uses a comparatively coarse diorama grid.  The
+  -- ordinary three-cell minimum can therefore collapse the moon into a tiny
+  -- plus sign at phone scale.  Arena bodies opt into a bounded enlargement of
+  -- the SAME cell-art disc; free cameras and the reflected world disc keep the
+  -- established apparent size.
+  local scale = body and tonumber(body.discScale) or 1
+  if scale ~= scale or scale == math.huge or scale == -math.huge then scale = 1 end
+  scale = math.max(1, math.min(2, scale))
+  r = math.max(r, math.floor(r * scale + 0.5))
   if body and looming(body) then r = r + math.max(1, math.floor(r * 0.4)) end
   return r * cell, r
 end
@@ -1017,7 +1027,7 @@ function Sky.shootingAngles(clock, trail)
   return az, el
 end
 
-local function paintStars(w, h, edge, cell, alpha, ray, strength)
+local function paintStars(w, h, edge, cell, alpha, ray, strength, context)
   if strength <= 0.03 then return end
   local g = love.graphics
   local function star(i, x, y, strengthScale)
@@ -1080,7 +1090,14 @@ local function paintStars(w, h, edge, cell, alpha, ray, strength)
     end
   end
 
-  if ray then
+  -- Full-picture Arena Scenery has a fixed, authored camera and a deliberately
+  -- transparent upper sky. World-fixed stars are correct for steerable
+  -- 1ST/3RD/MAP cameras, but an authored arena may face any bearing: at some
+  -- bearings the whole deterministic hemisphere can miss its narrow aperture.
+  -- Use the bounded screen composition for that one surface. It still
+  -- twinkles from the shared clock and remains behind the painting.
+  local screenArena = context and context.arena
+  if ray and not screenArena then
     for i = 1, Sky.STAR_COUNT do
       local x, y, visible = Sky.projectDirection(ray, w, h,
                                                  Sky.starDirection(i))
@@ -1139,7 +1156,7 @@ local function paintAtmosphere(w, h, edge, cell, alpha, ray, context)
   if rw <= 0 or rh <= 0 then return end
   g.setScissor(x, y, rw, rh)
   local night = nightStrength()
-  paintStars(w, h, edge, cell, alpha, ray, night)
+  paintStars(w, h, edge, cell, alpha, ray, night, context)
   local eventContext = {
     skyEnabled = Sky.banded(),
     g = g, w = w, h = h, edge = edge, cell = cell, alpha = alpha,
@@ -1206,6 +1223,33 @@ end
 -- disc (the same exaggeration paintDisc applies through discRadius).
 function Sky.discLooming(glowAmt, moon)
   return (glowAmt or 0) > 0.25 and not moon
+end
+
+-- A reviewed full-picture arena owns a fixed screen composition rather than
+-- a freely turning world camera. Keep its body inside the authored live-sky
+-- aperture: the moon is intentionally high-right, while the rising/setting
+-- sun follows its east/west world sign across a smaller central range. The
+-- existing cell-art painter supplies the shared palette, craters and size.
+function Sky.arenaBody(body, w, edge)
+  if not (type(body) == "table" and type(w) == "number" and w > 0
+          and type(edge) == "number" and edge > 0) then return nil end
+  local x
+  if body.moon then
+    x = w * .78
+  else
+    local east = math.max(-1, math.min(1, tonumber(body.dx) or 0))
+    x = w * (.50 + east * .30)
+  end
+  return {
+    x = x, y = edge * (body.moon and .18 or .22),
+    moon = body.moon and true or false,
+    glowAmt = body.glowAmt or 0,
+    glowColor = body.glowColor,
+    -- Five cells across the radius at the coarsest established Arena grid:
+    -- enough for a round rim, core and distinct craters instead of one white
+    -- pixel/cross, still well inside the authored upper-sky aperture.
+    discScale = 1.65,
+  }
 end
 
 -- Paint the sky into the bound canvas, filling it from the top edge down to
@@ -1277,6 +1321,12 @@ function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray, context)
   if g.setBlendMode then g.setBlendMode("alpha") end
 
   local glowAmt = body and not body.moon and (body.glowAmt or 0) or 0
+  -- The fixed Arena composition already paints its sun in screen space below.
+  -- Feeding that body's world glow into the rayed shader creates enormous,
+  -- weak checker arcs across the authored transparent opening.  Keep the
+  -- phase palette and the visible sun, but omit only this redundant Arena-only
+  -- glow field.  Steerable MAP/1ST/3RD skies retain their established glow.
+  if context and context.arena then glowAmt = 0 end
   -- the skybox glow needs the sun's world DIRECTION (skyBody carries it);
   -- a body without one has nothing to measure angles against, so no glow
   if ray and glowAmt > 0 and not (body and body.dx) then glowAmt = 0 end
@@ -1368,7 +1418,10 @@ function Sky.paint(w, h, sky, horizonY, cell, body, top, axis, ray, context)
   -- there whether or not the shader built. NOT under an axis or a ray fan:
   -- those cameras hang the baked disc in the world instead (drawWorldDisc,
   -- with Sky.discImage)
-  if not (axis or ray) then
+  if context and context.arena and body then
+    paintDisc(Sky.arenaBody(body, w, math.min(h, edge)),
+              math.min(h, edge), cell, w, h)
+  elseif not (axis or ray) then
     paintDisc(body, math.min(h, edge), cell, w, h)
   end
   g.setColor(1, 1, 1, 1)

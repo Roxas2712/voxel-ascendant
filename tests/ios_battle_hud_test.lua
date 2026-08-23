@@ -58,6 +58,9 @@ local function fixture(osName)
       getBlendMode = function() return "alpha", "alphamultiply" end,
       setBlendMode = function() end,
       setColor = function() end,
+      clear = function() end,
+      getColor = function() return 1, 1, 1, 1 end,
+      rectangle = function() end,
       newQuad = function(x, y, w, h, tw, th)
         calls.newQuad = calls.newQuad + 1
         return { x = x, y = y, w = w, h = h, tw = tw, th = th }
@@ -153,11 +156,15 @@ local function fixture(osName)
   }
   package.loaded["src.world.OverworldController"] = nil
   package.loaded["src.battle.BattleState"] = nil
+  package.loaded["src.core.Game"] = nil
   package.preload["src.world.OverworldController"] = function()
     return OverworldState
   end
   package.preload["src.battle.BattleState"] = function()
     return BattleState
+  end
+  package.preload["src.core.Game"] = function()
+    return { renderer = { setWorldOverride = function() end } }
   end
 
   local chunk = assert(loadfile("lib/OverworldBattle.lua"))
@@ -416,6 +423,39 @@ eq(unknownPlatform.BattleState.drawHUDs, unknownHUDs,
 -- the owner table and KASC can still select and install its established
 -- cooperative wide-HUD path.
 local desktop = fixture("OS X")
+eq(desktop.ownerOverworldBattle.battlerHeightIn({
+  enemy = { def = { dexEntry = { heightFt = 5, heightIn = 7 } } },
+}, "enemy"), 67, "canonical Charizard height is carried into its card")
+eq(desktop.ownerOverworldBattle.battlerHeightIn({
+  enemy = { def = { dexEntry = { heightFt = 1, heightIn = 0 } } },
+}, "enemy"), 12, "canonical Rattata height is carried into its card")
+eq(desktop.ownerOverworldBattle.battlerHeightIn({
+  enemy = { def = { dexEntry = { heightFt = 1, heightIn = 12 } } },
+}, "enemy"), nil, "malformed Pokédex height fails neutral")
+eq(desktop.ownerOverworldBattle.battlerHeightIn({
+  data = { pokemon = {
+    CHARIZARD = { dexEntry = { heightFt = 5, heightIn = 7 } },
+  } },
+  player = { mon = { species = "CHARIZARD" }, def = {} },
+}, "player"), 67,
+  "form-only battle definition did not fall back to canonical species height")
+local wrappedMega = desktop.ownerOverworldBattle.finalizeSideTexture({
+  data = { pokemon = {
+    CHARIZARD = { dexEntry = { heightFt = 5, heightIn = 7 } },
+  } },
+  player = { mon = { species = "CHARIZARD" }, sprite = "mega-sprite" },
+}, "player", {
+  trainer = true,
+  kantoAscendantMegaSupersampled = true,
+  kantoAscendantMegaSource = "assets/mega/mega_charizard_x_front.png",
+})
+eq(wrappedMega.trainer, false,
+  "companion Mega card retained a transitional trainer role")
+eq(wrappedMega.heightIn, 67,
+  "companion Mega card lost canonical physical height after wrapping")
+eq(wrappedMega.inkIdentity,
+  "assets/mega/mega_charizard_x_front.png",
+  "companion Mega card lost content-keyed alpha identity")
 eq(desktop.OverworldBattle, desktop.ownerOverworldBattle,
   "desktop public facade retains the owner module identity")
 eq(type(desktop.OverworldBattle.snapHUDs), "function",
@@ -449,5 +489,22 @@ eq(desktop.calls.layerTexture, 1, "desktop builds one HUD layer")
 check(desktop.calls.panel > 0, "desktop draws HUD/text panels")
 check(desktop.calls.draw > 0, "desktop composites HUD bands")
 check(desktop.calls.setCanvas > 0, "desktop visits its offscreen/world canvases")
+
+-- Kanto Ascendant's shared Mega renderer retains one historical staged-shot
+-- marker.  VASC must publish the exact same shot there for the duration of a
+-- staged frame, otherwise every Mega form paints a second classic rear sprite
+-- and its opaque white paper over the arena.  Losing the shot must clear both
+-- fields atomically so an ordinary 2D battle remains untouched.
+desktop.battle:draw()
+eq(desktop.battle.voxelAscendantShot, desktop.shot,
+  "VASC publishes its live staged-shot marker")
+eq(desktop.battle.dramaticShapeShot, desktop.shot,
+  "all Mega forms see the shared historical staged-shot marker")
+desktop.ownerOverworldBattle.shot = function() return nil end
+desktop.battle:draw()
+eq(desktop.battle.voxelAscendantShot, nil,
+  "VASC clears its staged-shot marker when the arena is unavailable")
+eq(desktop.battle.dramaticShapeShot, nil,
+  "Mega compatibility marker cannot outlive the staged shot")
 
 print("ok iOS companion capability gate and KASC 6.5.6 HUD isolation")

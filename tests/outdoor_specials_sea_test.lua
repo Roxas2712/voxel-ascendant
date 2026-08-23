@@ -429,6 +429,12 @@ eq(Horizon.IMAGE_ASSETS.coastalLandmarks.path,
    "South Sea runtime is fail-closed on the reviewed V3 atlas")
 eq(Horizon.COASTAL_LANDMARK_VRAM, 512 * 128 * 4,
    "coastal landmark draw has a 256 KiB retained texture cap")
+eq(Horizon.IMAGE_ASSETS.cinnabarStoryLandmarks.sourceW, 512,
+   "Cinnabar story landmark source width is fixed")
+eq(Horizon.IMAGE_ASSETS.cinnabarStoryLandmarks.sourceH, 128,
+   "Cinnabar story landmark source height is fixed")
+eq(Horizon.CINNABAR_STORY_LANDMARK_VRAM, 512 * 128 * 4,
+   "Cinnabar story landmark draw has a 256 KiB retained texture cap")
 
 Horizon.setting:sync("off")
 eq(Horizon.preferBody(safari), false, "SCENERY OFF restores normal borders")

@@ -7,13 +7,13 @@ local handle = mod.find("VOXEL_ASCENDANT")
 local exports = handle and handle.exports
 ```
 
-For `2.0.0`, the stable fields are:
+For `2.0.1`, the stable fields are:
 
 ```lua
-exports.version == "2.0.0"
+exports.version == "2.0.1"
 exports.apiVersion == 1
 exports.renderer.id == "VOXEL_ASCENDANT"
-exports.renderer.version == "2.0.0"
+exports.renderer.version == "2.0.1"
 exports.renderer.pipeline == "voxel"
 exports.renderer.cameraProfile == "orbit-only"
 exports.renderer.overworldCameraProfile == "orbit-first-third"

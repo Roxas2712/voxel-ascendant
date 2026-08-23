@@ -73,7 +73,7 @@ eq(rows[2].ascendantOrder, 990, "descriptor sorts after KASC gameplay pages")
 rows[2].onSelect()
 eq(#pushes, 1, "selecting VASC opens exactly one screen")
 eq(pushes[1].game, game, "settings use the active game")
-eq(pushes[1].screen, "OptionsMenu", "settings stay owned by VASC Options rows")
+eq(pushes[1].screen, "VascMenu", "the shared VASC hub owns the entry")
 
 -- Legacy KASC used the trainer_rematch id but exported the same menu facade.
 local legacy, legacyHook = fixture({
@@ -85,8 +85,8 @@ local legacyRows = legacyHook.callback(
 eq(legacyRows[2].ascendantKey, "voxel_ascendant",
   "legacy KASC receives the same descriptor")
 
--- An absent, disabled or lookalike mod leaves the ordinary Start menu byte-
--- for-byte equivalent: no standalone VASC row and no hard dependency.
+-- Without KASC the same descriptor remains in the ordinary Start menu, so
+-- VASC still has a complete standalone entry and no hard dependency.
 for _, handles in ipairs({
   {},
   { kanto_ascendant = { exports = {} } },
@@ -97,8 +97,10 @@ for _, handles in ipairs({
   local original = baseRows()
   local output = absentHook.callback(
     function(_, input) return input end, game, original)
-  eq(output, original, "unsupported KASC shapes are a no-op")
-  eq(#output, 3, "unsupported KASC shapes add no row")
+  eq(output, original, "the hook decorates the downstream table in place")
+  eq(#output, 4, "standalone VASC adds exactly one row")
+  eq(output[2].ascendantKey, "voxel_ascendant",
+    "standalone and KASC share one stable descriptor")
 end
 
 -- Future KASC can ship the same row itself without a duplicate from VASC.
@@ -124,4 +126,4 @@ eq(receipt.menuKey, "voxel_ascendant")
 eq(receipt.kantoAscendantIds[1], "kanto_ascendant")
 eq(receipt.kantoAscendantIds[2], "trainer_rematch")
 
-print("ok optional KASC menu integration uses public runtime hooks")
+print("ok standalone/KASC VASC menu integration uses public runtime hooks")

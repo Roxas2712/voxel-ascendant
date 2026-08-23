@@ -8,6 +8,7 @@
 local V = ...
 
 local ModSetting = V.require("ModSetting")
+local CanvasPresentation = V.require("CanvasPresentation")
 
 local Weather = { clock = 0 }
 
@@ -166,6 +167,49 @@ local function paintRain(g, w, h, cell, storm)
   end
 end
 
+-- Battles use a composed, painterly weather layer rather than the overworld's
+-- deliberately chunky voxel staircase. Three restrained depth bands read like
+-- a battle effect without hiding the authored scenery or either battler.
+local function battleRainBand(g, w, h, step, count, phase,
+                              speed, length, width, alpha)
+  if not g.line then return false end
+  if g.setLineStyle then g.setLineStyle("smooth") end
+  if g.setLineWidth then g.setLineWidth(width) end
+  g.setColor(0.76, 0.86, 1.0, alpha)
+  local tick = Weather.clock * speed
+  for i = 1, count do
+    local x = (i * (73 + phase * 11) + tick * (1.6 + phase * .2))
+              % (w + 80) - 40
+    local y = (i * (41 + phase * 7) + tick * (3.6 + phase * .35))
+              % (h + 100) - 50
+    local len = length * (0.82 + (i % 5) * .045)
+    g.line(x, y, x - step * (1.2 + phase * .35), y + len)
+  end
+  return true
+end
+
+local function paintBattleRain(g, w, h, cell, storm)
+  local step = math.max(1, cell)
+  -- A cool atmospheric grade replaces the old opaque storm blanket.
+  g.setColor(0.10, 0.18, 0.30, storm and 0.16 or 0.045)
+  g.rectangle("fill", 0, 0, w, h)
+  if not battleRainBand(g, w, h, step, 30, 1, 38,
+                        step * 2.0,
+                        math.max(1, math.min(1.5, step * .22)), .16) then
+    -- Old/minimal LOVE stubs fall back safely to the established primitives.
+    paintRain(g, w, h, step, storm)
+    return
+  end
+  battleRainBand(g, w, h, step, storm and 44 or 38, 2, 50,
+                 step * 3.2,
+                 math.max(1, math.min(2.1, step * .30)),
+                 storm and .34 or .24)
+  battleRainBand(g, w, h, step, storm and 26 or 20, 3, 64,
+                 step * 4.6,
+                 math.max(1, math.min(2.8, step * .40)),
+                 storm and .46 or .33)
+end
+
 local function paintSnow(g, w, h, cell)
   local step = math.max(1, cell)
   local tick = Weather.clock
@@ -177,6 +221,21 @@ local function paintSnow(g, w, h, cell)
     local s = step * (i % 7 == 0 and 2 or 1)
     g.rectangle("fill", math.floor(x / step) * step,
                 math.floor(y / step) * step, s, s)
+  end
+end
+
+local function paintBattleSnow(g, w, h, cell)
+  local step, tick = math.max(1, cell), Weather.clock
+  g.setColor(0.82, 0.90, 1.0, 0.055)
+  g.rectangle("fill", 0, 0, w, h)
+  g.setColor(1, 1, 1, 0.66)
+  for i = 1, 42 do
+    local drift = math.sin(tick * 1.25 + i * 1.73) * step * 6
+    local x = (i * 79 + drift + tick * (7 + i % 4)) % (w + 30) - 15
+    local y = (i * 43 + tick * (12 + i % 6)) % (h + 30) - 15
+    local radius = step * (i % 9 == 0 and .9 or .48)
+    if g.circle then g.circle("fill", x, y, math.max(1, radius))
+    else g.rectangle("fill", x, y, math.max(1, radius), math.max(1, radius)) end
   end
 end
 
@@ -208,6 +267,22 @@ local function paintFog(g, w, h, cell)
   end
 end
 
+local function paintBattleFog(g, w, h, cell)
+  local step, tick = math.max(1, cell), Weather.clock
+  g.setColor(0.77, 0.84, 0.86, 0.10)
+  g.rectangle("fill", 0, 0, w, h)
+  for i = 1, 6 do
+    local rx = w * (.25 + (i % 3) * .08)
+    local ry = h * (.055 + (i % 2) * .018)
+    local x = ((i * 173 + tick * (5 + i)) % (w + rx * 2)) - rx
+    local y = h * (.35 + i * .075)
+              + math.sin(tick * .16 + i * 1.4) * step * 3
+    g.setColor(0.88, 0.92, 0.92, .055 + (i % 3) * .012)
+    if g.ellipse then g.ellipse("fill", x, y, rx, ry, 40)
+    else g.rectangle("fill", x - rx, y - ry, rx * 2, ry * 2) end
+  end
+end
+
 local function paintLightning(g, w, h, map, cell, strength, occurrence)
   if strength <= 0 then return end
   g.setColor(0.84, 0.90, 1.0, 0.16 + strength * 0.42)
@@ -229,9 +304,30 @@ local function paintLightning(g, w, h, map, cell, strength, occurrence)
   end
 end
 
+
+local function paintBattleLightning(g, w, h, map, cell, strength, occurrence)
+  if strength <= 0 then return end
+  g.setColor(0.84, 0.90, 1.0, 0.10 + strength * 0.28)
+  g.rectangle("fill", 0, 0, w, h)
+  if strength < 0.38 or not g.line then return end
+  local step = math.max(1, cell)
+  local seed = hashText(mapId(map) .. ":" .. tostring(occurrence))
+  local x = w * (0.22 + (seed % 47) / 100)
+  local y = h * .04
+  if g.setLineStyle then g.setLineStyle("smooth") end
+  if g.setLineWidth then g.setLineWidth(math.max(1, step * .65)) end
+  g.setColor(0.94, 0.97, 1.0, 0.40 + strength * .42)
+  for i = 1, 6 do
+    local nx = x + ((((seed + i * 13) % 5) - 2) * step * 1.4)
+    local ny = y + h * .035
+    g.line(x, y, nx, ny)
+    x, y = nx, ny
+  end
+end
+
 -- Paint into and return the canvas supplied by VoxelScene. Failure is a
 -- visual fallback only: the already-finished world canvas remains valid.
-function Weather.apply(canvas, w, h, map, cell, resolvedMode)
+local function apply(canvas, w, h, map, cell, resolvedMode, battle)
   local mode = resolvedMode or Weather.mode(map)
   if mode == "clear" or mode == "off" or not canvas then return canvas end
   if mode ~= "rain" and mode ~= "snow"
@@ -248,21 +344,32 @@ function Weather.apply(canvas, w, h, map, cell, resolvedMode)
     pushed = true
     g.origin()
     g.setCanvas(canvas)
+    if CanvasPresentation and CanvasPresentation.begin2D then
+      CanvasPresentation.begin2D(g, h)
+    end
     if g.setShader then g.setShader() end
     if g.setDepthMode then g.setDepthMode("always", false) end
     if g.setBlendMode then g.setBlendMode("alpha") end
     cell = math.max(1, math.floor((cell or 1) + 0.5))
     if mode == "rain" then
-      paintRain(g, w, h, cell, false)
+      if battle then paintBattleRain(g, w, h, cell, false)
+      else paintRain(g, w, h, cell, false) end
     elseif mode == "snow" then
-      paintSnow(g, w, h, cell)
+      if battle then paintBattleSnow(g, w, h, cell)
+      else paintSnow(g, w, h, cell) end
     elseif mode == "fog" then
-      paintFog(g, w, h, cell)
+      if battle then paintBattleFog(g, w, h, cell)
+      else paintFog(g, w, h, cell) end
     else
-      g.setColor(0.04, 0.07, 0.13, 0.36)
-      g.rectangle("fill", 0, 0, w, h)
-      paintRain(g, w, h, cell, true)
-      paintLightning(g, w, h, map, cell, flash, occurrence)
+      if battle then
+        paintBattleRain(g, w, h, cell, true)
+        paintBattleLightning(g, w, h, map, cell, flash, occurrence)
+      else
+        g.setColor(0.04, 0.07, 0.13, 0.36)
+        g.rectangle("fill", 0, 0, w, h)
+        paintRain(g, w, h, cell, true)
+        paintLightning(g, w, h, map, cell, flash, occurrence)
+      end
     end
     g.setCanvas()
     g.pop()
@@ -278,6 +385,15 @@ function Weather.apply(canvas, w, h, map, cell, resolvedMode)
     pcall(thunderHook, map, flash, occurrence)
   end
   return canvas
+end
+
+
+function Weather.apply(canvas, w, h, map, cell, resolvedMode)
+  return apply(canvas, w, h, map, cell, resolvedMode, false)
+end
+
+function Weather.applyBattle(canvas, w, h, map, cell, resolvedMode)
+  return apply(canvas, w, h, map, cell, resolvedMode, true)
 end
 
 return Weather

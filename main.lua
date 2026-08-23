@@ -82,13 +82,16 @@ local Voxel3D = V.require("Voxel3D")
 local VoxelScene = V.require("VoxelScene")
 local TiltShift = V.require("TiltShift")
 local ChunkMesher = V.require("ChunkMesher")
+local WarpPrefetch = V.require("WarpPrefetch")
 local VoxelGrid = V.require("VoxelGrid")
 local Shadows = V.require("Shadows")
 local WorldCurve = V.require("WorldCurve")
 local OverworldBattle = V.require("OverworldBattle")
 local BattlePartyBalls = V.require("BattlePartyBalls")
 local BattleMusic = V.require("BattleMusic")
+local LocalMusic = V.require("LocalMusic")
 local SpritePacks = V.require("SpritePacks")
+local LocalSprites = V.require("LocalSprites")
 local SpriteHooks = V.require("SpriteHooks")
 local BattleCam = V.require("BattleCam")
 local BattleExit = V.require("BattleExit")
@@ -103,6 +106,7 @@ local DeviceProfile = V.require("DeviceProfile")
 local WallDecals = V.require("WallDecals")
 local PublicFacade = V.require("PublicFacade")
 local KantoAscendantCompat = V.require("KantoAscendantCompat")
+local VascMenu = V.require("VascMenu")
 local FirstPerson = V.require("FirstPerson")
 local FreeMove = V.require("FreeMove")
 local CamControl = V.require("CamControl")
@@ -223,6 +227,8 @@ local voxelPipeline = {
     voidFill.check()
     local Game = require("src.core.Game")
     local ow = Game and Game.overworld
+    local covered = Game and Game.stack and Game.stack:top() ~= ow
+    local warpWarm = WarpPrefetch.update(Game, covered)
     local warm = ChunkMesher.preloadSetting:get()
     if ow and ow.map and ow.camera and (Voxel.active() or warm) then
       pcall(VoxelScene.prefetch, ow)
@@ -233,12 +239,18 @@ local voxelPipeline = {
       end
       return
     end
-    local covered = Game and Game.stack and Game.stack:top() ~= ow
     -- A fade/menu still runs the engine's own animation and input work. Keep
     -- its covered build slice to 6ms; while the complete 2D fallback is
     -- visible, the bounded 8ms loading slice likewise keeps iPhone responsive
     -- until the atomic swap.
-    ChunkMesher.pump(covered, false, not Voxel.ready)
+    local loading = not Voxel.ready
+    -- Once the current scene and every relevant seam are complete, two-hop
+    -- survey maps receive only a 1ms trickle. They are promoted automatically
+    -- when approached. This still drains the bounded cache over long walks,
+    -- but removes distant speculative work from the normal 4ms visible slice.
+    local priorityWork = ChunkMesher.hasPriorityWork()
+    ChunkMesher.pump(covered, false, loading, warpWarm,
+                     not covered and not loading and not priorityWork)
   end,
 
   drawWorld = function(ctx)
@@ -510,11 +522,10 @@ local SETTINGS = {
     when = stagedBattles,
     full = true },
   { BattleMusic.setting,
-    "Battle music from separately installed companion packs. ORIGINAL keeps "
-    .. "the game/KASC cue; SHUFFLE chooses once per fight from every "
-    .. "compatible installed generation, while GEN 2-6 pins one generation. "
-    .. "Unavailable choices disappear and missing packs fall back to the "
-    .. "original cue. Voxel Ascendant includes and downloads no audio.",
+    "Optional companion-pack music. ORIGINAL keeps the game/KASC cue; "
+    .. "SHUFFLE chooses once per fight from installed packs, while GEN 2-6 "
+    .. "pins one available generation. USER MUSIC below is the simpler "
+    .. "choice for loose files you own. VASC includes no audio.",
     full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
@@ -841,6 +852,8 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   -- dynamic row can therefore only be built after every provider registered;
   -- it deliberately lives outside the static manager schema.
   extra[#extra + 1] = SpritePacks.row()
+  extra[#extra + 1] = LocalMusic.row(mod)
+  extra[#extra + 1] = LocalSprites.row(mod)
   return insertGrouped(out, extra)
 end)
 
@@ -1024,6 +1037,9 @@ end
 OverworldBattle.install()
 BattlePartyBalls.install()
 BattleMusic.install(mod)
+LocalMusic.install(mod)
+LocalSprites.install(mod)
+VascMenu.install(mod)
 SpriteHooks.install(mod)
 
 -- When Kanto Ascendant is present, contribute one descriptor through the
@@ -1108,6 +1124,7 @@ end, 100)
 mod.events:on("battle.ended", function()
   OverworldBattle.finish()
   BattleMusic.finish()
+  LocalMusic.finish()
 end)
 
 -- ------- and the way back out
@@ -1155,6 +1172,8 @@ mod.events:on("save.loaded", function()
   SkyEvents.restore()
   DeviceProfile.restore(require("src.core.Game"), false)
   SpritePacks.restore(require("src.core.Game"))
+  LocalMusic.restore(require("src.core.Game"))
+  LocalSprites.restore(require("src.core.Game"))
   -- a save written before this mod was installed can carry TILT or GBC FX
   -- switched on, and their rows are not there to switch them back off (see
   -- pinEngineFx). Answered here rather than only when the menu opens, so a
@@ -1167,6 +1186,8 @@ mod.events:on("save.created", function()
   SkyEvents.restore()
   DeviceProfile.restore(require("src.core.Game"), true)
   SpritePacks.restore(require("src.core.Game"))
+  LocalMusic.restore(require("src.core.Game"))
+  LocalSprites.restore(require("src.core.Game"))
   pinEngineFx()
 end)
 
@@ -1174,7 +1195,12 @@ end)
 -- no save.loaded event is guaranteed. Restore the selected pack here too;
 -- providers may register before or after this without losing the stored id.
 mod.events:on("game.ready", function()
-  SpritePacks.restore(require("src.core.Game"))
+  local Game = require("src.core.Game")
+  WarpPrefetch.install(Game)
+  SpritePacks.restore(Game)
+  LocalMusic.restore(Game)
+  LocalSprites.restore(Game)
+  LocalSprites.writeInventory(Game.data)
 end)
 
 -- The engine's own time-of-day seam. OverworldState:timeOfDay() is an
@@ -1188,11 +1214,11 @@ mod.hooks:wrap("world.tod", function(next, tod, ctx)
   return DayNight.tod()
 end)
 
-mod.exports.version = "2.0.0"
+mod.exports.version = "2.0.1"
 mod.exports.apiVersion = 1
 mod.exports.renderer = {
   id = "VOXEL_ASCENDANT",
-  version = "2.0.0",
+  version = "2.0.1",
   pipeline = "voxel",
   -- Stable staged-battle discriminator consumed by Kanto Ascendant's
   -- reviewed renderer facade. The staged battle camera is still orbit-only;
@@ -1219,6 +1245,20 @@ mod.exports.capabilities = {
     apiVersion=BattleMusic.API_VERSION, bundledAudio=false,
     networkDownloads=false, liveActivation=true,
   },
+  looseUserMusic = {
+    root=LocalMusic.ROOT, categories={
+      "wild", "trainer", "rival", "gym", "elite4", "champion", "field",
+      "bike", "surf", "victory", "evolution", "title", "halloffame",
+      "credits", "jingle", "scene",
+    }, exactSongReplacement="replace/<SONG_ID>.<ext>",
+       shuffle=true, bundledAudio=false, liveRescan=true,
+       default="GAME/KASC", explicitOptIn=true,
+  },
+  looseUserSprites = {
+    root=LocalSprites.ROOT, live=true, bundledAssets=false,
+    default="GAME/KASC", explicitOptIn=true,
+    roles={"pokemon", "player", "trainer", "dex", "icon", "overworld"},
+  },
   freeMovement = true,
   backgroundMeshCache = "memory",
   skyEvents = {
@@ -1239,6 +1279,13 @@ mod.exports.Voxel3D = Voxel3D
 mod.exports.WallDecals = WallDecals
 mod.exports.spritePacks = SpritePacks.public()
 mod.exports.battleMusic = BattleMusic.public()
+mod.exports.localMusic = { root=LocalMusic.ROOT, list=LocalMusic.list,
+                           enabled=LocalMusic.enabled }
+mod.exports.localSprites = { root=LocalSprites.ROOT,
+                             rescan=LocalSprites.rescan,
+                             inventory=LocalSprites.inventory,
+                             refreshInventory=LocalSprites.writeInventory,
+                             enabled=LocalSprites.enabled }
 
 -- Compatibility modules are selected eagerly into a closed table. Unknown
 -- names never reach the private owner-scoped loader, and the facade exposes

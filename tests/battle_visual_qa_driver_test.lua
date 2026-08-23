@@ -22,10 +22,15 @@ eq(config.root, "qa/visual-reset/battle-map", "default output root")
 eq(config.map, "PALLET_TOWN", "default map")
 eq(config.stage, "MAP", "default stage")
 eq(config.daytime, "AUTO", "default daytime")
+eq(config.weather, "CLEAR", "default weather")
+eq(config.megaForm, "", "default mega form")
+eq(config.megaCatalog, false, "default mega catalog")
+eq(config.monPhase, false, "default monster presentation phase")
 eq(config.hold, false, "default hold mode")
 eq(config.x, 10, "default x")
 eq(config.y, 12, "default y")
 eq(config.species, "RATTATA", "default species")
+eq(config.playerSpecies, "", "default player species")
 eq(config.level, 3, "default level")
 eq(config.stable, 30, "default stable frame count")
 eq(config.timeout, 1800, "default ready timeout")
@@ -38,17 +43,27 @@ config = QA.configFromEnv(env({
   VASC_BATTLE_QA_MAP = "ROUTE_13", VASC_BATTLE_QA_X = "14",
   VASC_BATTLE_QA_STAGE = "ARENA",
   VASC_BATTLE_QA_DAYTIME = "DUSK", VASC_BATTLE_QA_HOLD = "1",
+  VASC_BATTLE_QA_WEATHER = "RAIN",
+  VASC_BATTLE_QA_MEGA_FORM = "CHARIZARD_X",
+  VASC_BATTLE_QA_MEGA_CATALOG = "1",
+  VASC_BATTLE_QA_MON_PHASE = "1",
   VASC_BATTLE_QA_Y = "21", VASC_BATTLE_QA_SPECIES = "PIDGEY",
+  VASC_BATTLE_QA_PLAYER_SPECIES = "ONIX",
   VASC_BATTLE_QA_LEVEL = "7",
 }))
 eq(config.root, "qa/run/review-3x", "explicit output root")
 eq(config.map, "ROUTE_13", "explicit map")
 eq(config.stage, "ARENA", "explicit stage")
 eq(config.daytime, "DUSK", "explicit daytime")
+eq(config.weather, "RAIN", "explicit weather")
+eq(config.megaForm, "CHARIZARD_X", "explicit mega form")
+eq(config.megaCatalog, true, "explicit mega catalog")
+eq(config.monPhase, true, "explicit monster presentation phase")
 eq(config.hold, true, "explicit hold mode")
 eq(config.x, 14, "explicit x")
 eq(config.y, 21, "explicit y")
 eq(config.species, "PIDGEY", "explicit species")
+eq(config.playerSpecies, "ONIX", "explicit player species")
 eq(config.level, 7, "explicit level")
 eq(config.stable, 7, "explicit stable frame count")
 eq(config.timeout, 90, "explicit ready timeout")
@@ -148,6 +163,32 @@ eq(plan, nil, "unreconstructable active plan accepted")
 eq(planReason, "active-plan-member-unavailable",
   "wrong missing-plan-member reason")
 
+local authored = {
+  map = { id = "OAKS_LAB" },
+  arenaStyle = { mapId = "OAKS_LAB", id = "interior",
+                 variant = "OAKS_LAB:1:0" },
+}
+local Stage = { hasAuthoredBackdrop = function(value)
+  return value == authored
+end }
+plan, planReason = QA.authoredArenaReceipt(Stage, authored, "OAKS_LAB")
+eq(plan.maps, 1, "authored arena receipt map count")
+eq(plan.key, "authored:OAKS_LAB:interior:OAKS_LAB:1:0",
+  "authored arena receipt identity")
+eq(planReason, nil, "valid authored arena returned a reason")
+plan, planReason = QA.authoredArenaReceipt(Stage, {
+  arenaStyle = { mapId = "OAKS_LAB", id = "interior", variant = "v" },
+}, "OAKS_LAB")
+eq(plan, nil, "unverified authored backdrop accepted")
+eq(planReason, "authored-backdrop-unavailable",
+  "wrong unavailable-authored-backdrop reason")
+plan, planReason = QA.authoredArenaReceipt(Stage, {
+  arenaStyle = { mapId = "PALLET_TOWN", id = "interior", variant = "v" },
+}, "OAKS_LAB")
+eq(plan, nil, "wrong-map authored style accepted")
+eq(planReason, "authored-style-malformed",
+  "wrong malformed-authored-style reason")
+
 local lockedArena, lockedCanvas = {}, {}
 local locked = {
   arena = lockedArena, canvas = lockedCanvas, planKey = "exact-plan-a",
@@ -172,8 +213,18 @@ local function configFails(values, needle)
 end
 configFails({ VASC_BATTLE_QA_MAP = "../ROUTE_13" }, "unsafe-map")
 configFails({ VASC_BATTLE_QA_SPECIES = "Mr Mime" }, "unsafe-species")
+configFails({ VASC_BATTLE_QA_PLAYER_SPECIES = "Mr Mime" },
+  "unsafe-player-species")
 configFails({ VASC_BATTLE_QA_STAGE = "STADIUM" }, "unsafe-stage")
 configFails({ VASC_BATTLE_QA_DAYTIME = "SUNSET" }, "unsafe-daytime")
+configFails({ VASC_BATTLE_QA_WEATHER = "SAND" }, "unsafe-weather")
+configFails({ VASC_BATTLE_QA_MEGA_FORM = "CHARIZARD-X" },
+  "unsafe-mega-form")
+configFails({ VASC_BATTLE_QA_MEGA_CATALOG = "2" },
+  "invalid-mega-catalog")
+configFails({ VASC_BATTLE_QA_MEGA_CATALOG = "1" },
+  "mega-catalog-requires-mon-phase")
+configFails({ VASC_BATTLE_QA_MON_PHASE = "2" }, "invalid-mon-phase")
 configFails({ VASC_BATTLE_QA_HOLD = "2" }, "invalid-hold")
 configFails({ VASC_BATTLE_QA_X = "2.5" }, "invalid-number")
 configFails({ VASC_BATTLE_QA_LEVEL = "0" }, "invalid-number")
@@ -186,6 +237,16 @@ contains(source, 'selectValue("battles", config.stage)',
   "driver no longer selects its stage through the real option row")
 contains(source, 'selectValue("daytime", config.daytime)',
   "driver no longer selects the shared Overworld/Arena clock option")
+contains(source, 'selectValue("weather", config.weather)',
+  "driver no longer selects the requested battle-weather option")
+contains(source, "mega.rearOverlayAllowed, battle",
+  "driver no longer proves that staged Mega paper is suppressed")
+contains(source, "texture.kantoAscendantMegaSupersampled == true",
+  "driver no longer proves every Mega uses the supersampled card path")
+contains(source, "VASC_BATTLE_QA_MEGA_CATALOG forms=%d",
+  "driver lost its complete Mega catalog receipt")
+contains(source, "ground-anchor-mismatch form=",
+  "driver no longer validates every Mega's visible alpha baseline")
 contains(source, 'config.stage == "ARENA"',
   "driver no longer separates authored and map camera contracts")
 contains(source, 'arenaCameraRow = selectValue("arenaCamera", "3X")',

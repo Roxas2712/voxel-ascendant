@@ -300,6 +300,20 @@ if familyCount < 5 then error("night sky lost its five distinct star families") 
 if #Sky.CONSTELLATIONS ~= 3 or Sky.CONSTELLATION_MAX_LINES ~= 32 then
   error("Pokemon constellation set/count changed unexpectedly")
 end
+local arenaMoon = Sky.arenaBody({ moon = true, dx = 0 }, 800, 300)
+near(arenaMoon.x, 624, 1e-9, "arena moon keeps a visible high-right anchor")
+near(arenaMoon.y, 54, 1e-9, "arena moon keeps a visible upper-sky anchor")
+local _, ordinaryMoonCells = Sky.discRadius(600, 8, { moon = true })
+local _, arenaMoonCells = Sky.discRadius(600, 8, arenaMoon)
+if arenaMoon.discScale <= 1 or arenaMoonCells <= ordinaryMoonCells
+    or arenaMoonCells < 5 then
+  error("arena moon did not retain enough cells for a round cratered disc")
+end
+local arenaRise = Sky.arenaBody({ moon = false, dx = 1 }, 800, 300)
+local arenaSet = Sky.arenaBody({ moon = false, dx = -1 }, 800, 300)
+if not (arenaSet.x < 400 and arenaRise.x > 400) then
+  error("arena sun no longer follows its east/west sign")
+end
 local constellationNames = {}
 for ci, constellation in ipairs(Sky.CONSTELLATIONS) do
   constellationNames[constellation.id] = true
@@ -439,6 +453,18 @@ if not painted or projected < Sky.STAR_COUNT
 end
 if constellationLines == 0 then
   error("deep-night painter emitted no visible constellation connections")
+end
+
+-- Authored Arena Scenery is a fixed screen composition. It must receive the
+-- bounded 72-star fallback plus its on-screen moon even when its world-facing
+-- ray would put the astronomical body outside the narrow transparent aperture.
+local beforeArenaRects = rectangles
+Sky.paint(w, h, { 0.2, 0.3, 0.5, 1,
+  bands = { { 0.05, 0.08, 0.18 }, { 0.2, 0.3, 0.5 } } }, nil, 2,
+  nil, nil, nil, cameraRay(az, el), { arena = true,
+                                 ray = cameraRay(az, el) })
+if rectangles - beforeArenaRects < Sky.FALLBACK_STAR_COUNT then
+  error("authored arena did not receive its complete bounded night field")
 end
 
 projected, projectedAngles = 0, 0

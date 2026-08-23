@@ -16,6 +16,11 @@ from pathlib import Path
 
 from PIL import Image, ImageFilter
 
+try:
+    from tools.sources.arena_scenery.repair_outdoor_sky_matte import repair
+except ModuleNotFoundError:  # direct `python tools/build_arena_scenery.py`
+    from sources.arena_scenery.repair_outdoor_sky_matte import repair
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (
@@ -134,7 +139,9 @@ def build(source: Path, output: Path) -> Image.Image:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     result.save(output, format="PNG", optimize=False, compress_level=9)
-    return result
+    repair(output, output, 16, 72, 8, 48, False)
+    with Image.open(output) as repaired:
+        return repaired.convert("RGBA").copy()
 
 
 def main() -> None:

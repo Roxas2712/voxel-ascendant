@@ -27,7 +27,7 @@ end
 local function validProviders(value)
   if type(value) ~= "table" then return false end
   local found = false
-  for _, key in ipairs({ "pokemon", "player", "icon", "overworld" }) do
+  for _, key in ipairs({ "pokemon", "player", "trainer", "icon", "overworld" }) do
     if value[key] ~= nil and type(value[key]) ~= "function" then return false end
     found = found or type(value[key]) == "function"
   end

@@ -6,8 +6,14 @@ end
 local fakeMod = { id="VOXEL_ASCENDANT" }
 local V = { mod=fakeMod }
 local Packs = assert(loadfile("lib/SpritePacks.lua"))(V)
+local localEnabled = false
+local LocalSprites = {
+  resolve=function(_, value) return value end,
+  enabled=function() return localEnabled end,
+}
 function V.require(name)
   if name == "SpritePacks" then return Packs end
+  if name == "LocalSprites" then return LocalSprites end
   error("unexpected module " .. tostring(name))
 end
 
@@ -24,8 +30,13 @@ local unregister = assert(Packs.register({
   providers={
     pokemon=function(path) seen.pokemon=path return "pack-mon.png" end,
     player=function(path) seen.player=path return "pack-player.png" end,
+    trainer=function(path) seen.trainer=path return "pack-trainer.png" end,
     icon=function(path) seen.icon=path return "pack-icon.png" end,
-    overworld=function(def) seen.overworld=def.image return "pack-npc.png" end,
+    overworld=function(def, ctx)
+      seen.overworld=def.image
+      seen.overworldCtx=ctx
+      return "pack-npc.png"
+    end,
   },
 }))
 
@@ -60,6 +71,11 @@ package.loaded["src.mods.Runtime"] = Runtime
 local Renderer = {}
 function Renderer.new(def, seed) return { def=def, seed=seed } end
 package.loaded["src.render.SpriteRenderer"] = Renderer
+local BattleState = {}
+function BattleState.trainerPicPath()
+  return "base-enemy-trainer.png"
+end
+package.loaded["src.battle.BattleState"] = BattleState
 
 local hooks = {}
 local mod = { hooks={} }
@@ -71,6 +87,11 @@ local SpriteHooks = assert(loadfile("lib/SpriteHooks.lua"))(V)
 eq(SpriteHooks.install(mod), true, "hook install")
 
 local function downstream(path) return "kasc:" .. tostring(path) end
+Packs.select("base", game)
+local protected = hooks["pokemon.sprite"](downstream, "base-mon.png",
+                                           {kind="battle", species="PIKACHU"})
+eq(protected, "kasc:base-mon.png", "default did not protect KASC sprite")
+Packs.select("LEGAL_TEST", game)
 local mon = hooks["pokemon.sprite"](downstream, "base-mon.png",
                                     {kind="battle", species="PIKACHU"})
 eq(seen.pokemon, "kasc:base-mon.png", "pack did not see final KASC result")
@@ -87,14 +108,29 @@ local icon = hooks["pokemon.icon"](downstream, "base-icon.png", {})
 eq(seen.icon, "kasc:base-icon.png", "icon downstream order")
 eq(icon, "pack-icon.png|vasc.sprite.icon", "icon relay")
 
-local rendered = Renderer.new({image="base-npc.png", frames=4}, "npc-7")
+local trainer = BattleState.trainerPicPath({}, {}, "OPP_RIVAL2", 1)
+eq(seen.trainer, "base-enemy-trainer.png", "trainer provider input")
+eq(trainer, "pack-trainer.png|vasc.sprite.trainer", "enemy trainer relay")
+
+local rendered = Renderer.new({
+  id="SPRITE_KA_CRYSTAL_GREEN_BIKE", image="base-npc.png", frames=4,
+}, "player")
 eq(seen.overworld, "base-npc.png", "overworld provider input")
+eq(seen.overworldCtx.spriteId, "SPRITE_KA_CRYSTAL_GREEN_BIKE",
+   "overworld id context")
+eq(seen.overworldCtx.player, true, "overworld player context")
+eq(seen.overworldCtx.playerState, "bike", "overworld state context")
+eq(seen.overworldCtx.playerCharacter, "GREEN",
+   "overworld character context")
 eq(rendered.def.image, "pack-npc.png|public-overworld", "overworld relay")
 eq(rendered.def.frames, 4, "overworld shape preserved")
 
 local wrapper = Renderer.new
 eq(SpriteHooks.install(mod), true, "hot reload rebind")
 eq(Renderer.new, wrapper, "renderer wrapper stacked")
+eq(BattleState.trainerPicPath,
+   BattleState.voxelAscendantTrainerSpriteRelay.wrapper,
+   "trainer wrapper stacked")
 
 local list = Packs.list()
 eq(#list, 2, "pack inventory")

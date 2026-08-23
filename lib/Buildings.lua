@@ -1271,12 +1271,21 @@ local function model(sp, pr, t)
   -- materialising millions of invisible interior voxels first.  Material is
   -- still resolved by at() at every emitted face, so UVs, rear/side courses,
   -- pane recesses and merge order remain byte-for-byte the historical model.
+  -- A profile can return only these five interval shapes. Reuse immutable
+  -- model-local receipts instead of allocating the same two/four-number
+  -- table for every x/y cell of a high-rise.
+  local roofRange = { rz0, rz1 }
+  local frontRange = { 0, D - 1 }
+  local recessedRange = D - 2 >= 0 and { 0, D - 2 } or nil
+  local awningFrontRange = { -2, D + 1 }
+  local awningRecessedRange = D - 2 >= 0
+    and { -2, D - 2, D, D + 1 } or { -2, -1, D, D + 1 }
   local function ranges(x, y)
     if x < 0 or x >= W or y < 0 or y > ytop then return nil end
     local tx = T[x]
     if top[x] < roofRows
         and y > tx - slab and y <= tx then
-      return { rz0, rz1 }
+      return roofRange
     end
     if top[x] < roofRows and y > tx - slab then return nil end
 
@@ -1293,13 +1302,9 @@ local function model(sp, pr, t)
 
     local front = not pr.recess[i]
     if awning then
-      if front then return { -2, D + 1 } end
-      if D - 2 >= 0 then return { -2, D - 2, D, D + 1 } end
-      return { -2, -1, D, D + 1 }
+      return front and awningFrontRange or awningRecessedRange
     end
-    if front then return { 0, D - 1 } end
-    if D - 2 >= 0 then return { 0, D - 2 } end
-    return nil
+    return front and frontRange or recessedRange
   end
 
   return { at = at, W = W, ytop = ytop,
@@ -1318,10 +1323,15 @@ end
 -- every texel exactly where the sprite put it.
 local function emit(m, sp, atlasW, atlasH)
   local W = m.W
-  local quads = { voxels = 0, shell = diagnosticShell and 0 or nil }
+  local quads = { voxels = 0, shell = diagnosticShell and 0 or nil,
+                  compact = not diagnosticShell or nil }
   local cell = {}                        -- dense fallback for furniture sets
 
   local zmin, zmax, ytop = m.zmin, m.zmax, m.ytop
+  -- Placement needs the model's X/Z footprint once. Keep the analytical
+  -- bounds on the metatable so diagnostics/pairs and the canonical model
+  -- digest remain exactly the historical numeric structure.
+  setmetatable(quads, { buildingBounds = { 0, zmin, W, zmax + 1 } })
   local zn = zmax - zmin + 1
   local plane = zn * W
   -- Exact exposure indexes, populated while the volume is materialised.
@@ -1340,9 +1350,10 @@ local function emit(m, sp, atlasW, atlasH)
   end
   local rangeCache = type(m.ranges) == "function" and {} or nil
   local function rangesAt(x, y)
-    if not rangeCache or x < 0 or x >= W or y < 0 or y > ytop then
-      return nil
-    end
+    -- Every caller either iterates canonical in-range x/y coordinates or has
+    -- already performed the bounds check in occupied().  Avoid repeating four
+    -- comparisons on every face/run probe of a deep city shell.
+    if not rangeCache then return nil end
     local k = y * W + x
     local hit = rangeCache[k]
     if hit == nil then
@@ -1353,19 +1364,46 @@ local function emit(m, sp, atlasW, atlasH)
   end
   local function rangeContains(ranges, z)
     if not ranges then return false end
-    for at = 1, #ranges, 2 do
+    if z >= ranges[1] and z <= ranges[2] then return true end
+    if ranges[3] ~= nil and z >= ranges[3] and z <= ranges[4] then return true end
+    -- The canonical analytical model has at most two intervals. Preserve
+    -- fail-safe compatibility with a future/custom model that supplies more.
+    for at = 5, #ranges, 2 do
       if z >= ranges[at] and z <= ranges[at + 1] then return true end
     end
     return false
   end
-  local function ci(x, y, z)
+  local function occupied(x, y, z)
     if x < 0 or x >= W or y < 0 or y > ytop or z < zmin or z > zmax then
-      return nil
+      return false
     end
     if rangeCache then
-      if not rangeContains(rangesAt(x, y), z) then return nil end
-      return m.at(x, y, z)
+      -- This is the hottest predicate in a city build. Inline the cached
+      -- interval test instead of routing every face/run probe through two
+      -- additional Lua closures (rangesAt + rangeContains). The cache is
+      -- populated lazily exactly as before and still accepts future models
+      -- with more than the canonical two intervals.
+      local k = y * W + x
+      local ranges = rangeCache[k]
+      if ranges == nil then
+        ranges = m.ranges(x, y) or false
+        rangeCache[k] = ranges
+      end
+      if not ranges then return false end
+      if z >= ranges[1] and z <= ranges[2] then return true end
+      if ranges[3] ~= nil and z >= ranges[3] and z <= ranges[4] then
+        return true
+      end
+      for at = 5, #ranges, 2 do
+        if z >= ranges[at] and z <= ranges[at + 1] then return true end
+      end
+      return false
     end
+    return cell[(y * zn + (z - zmin)) * W + x] ~= nil
+  end
+  local function materialAt(x, y, z)
+    if not occupied(x, y, z) then return nil end
+    if rangeCache then return m.at(x, y, z) end
     return cell[(y * zn + (z - zmin)) * W + x]
   end
   if rangeCache then
@@ -1375,19 +1413,58 @@ local function emit(m, sp, atlasW, atlasH)
       for i = 1, #a do if a[i] ~= b[i] then return false end end
       return true
     end
+    local rangeSignatures = {}
+    local function rangeSignature(ranges)
+      if not ranges then return "-" end
+      local signature = rangeSignatures[ranges]
+      if not signature then
+        signature = table.concat(ranges, ",")
+        rangeSignatures[ranges] = signature
+      end
+      return signature
+    end
     local function hasOutside(a, b)
       if not a then return false end
       if sameRanges(a, b) then return false end
+      if not b then return true end
+      -- Each ordinary building column owns at most two sorted inclusive
+      -- depth intervals.  The former implementation visited every voxel in
+      -- `a` merely to ask whether one lay outside `b`; Silph Co.'s 151-deep
+      -- shell repeated that scan hundreds of thousands of times.  Compare
+      -- the interval endpoints directly instead.  This is the same set
+      -- predicate, with work bounded by the four interval endpoints.
       for at = 1, #a, 2 do
-        for z = a[at], a[at + 1] do
-          Budget.tick()
-          if not rangeContains(b, z) then return true end
+        local cursor, last = a[at], a[at + 1]
+        for bt = 1, #b, 2 do
+          local firstB, lastB = b[bt], b[bt + 1]
+          if lastB >= cursor then
+            if firstB > cursor then return true end
+            if lastB >= cursor then cursor = lastB + 1 end
+            if cursor > last then break end
+          end
         end
+        if cursor <= last then return true end
       end
       return false
     end
+    -- y/z exposure is a union over x.  Equal interval pairs on adjacent
+    -- columns therefore write the exact same active keys.  Memoizing that
+    -- union operation removes the repeated 128-column depth walk while
+    -- retaining the historical key set and subsequent emission order.
+    local markedReceipts = {}
+    local function firstReceipt(active, activeY, signature)
+      local byActive = markedReceipts[active]
+      if not byActive then byActive = {}; markedReceipts[active] = byActive end
+      local byY = byActive[activeY]
+      if not byY then byY = {}; byActive[activeY] = byY end
+      if byY[signature] then return false end
+      byY[signature] = true
+      return true
+    end
     local function markDifference(a, b, active, activeY)
       if not a or sameRanges(a, b) then return end
+      local signature = rangeSignature(a) .. ">" .. rangeSignature(b)
+      if not firstReceipt(active, activeY, signature) then return end
       for at = 1, #a, 2 do
         for z = a[at], a[at + 1] do
           Budget.tick()
@@ -1397,6 +1474,7 @@ local function emit(m, sp, atlasW, atlasH)
     end
     local function markAll(a, active, activeY)
       if not a then return end
+      if not firstReceipt(active, activeY, "*" .. rangeSignature(a)) then return end
       for at = 1, #a, 2 do
         for z = a[at], a[at + 1] do
           Budget.tick()
@@ -1494,6 +1572,31 @@ local function emit(m, sp, atlasW, atlasH)
     end
   end
 
+  -- Turn the sparse exposure sets into sorted per-height rows once.  The
+  -- face emitters historically walked every possible depth/width coordinate
+  -- merely to discover that most rows were empty.  Sorting the exact keys
+  -- preserves their former y/z and y/x traversal order byte-for-byte while
+  -- letting a cold high-rise enter only rows that can actually emit a face.
+  local function sortedActiveRows(active, width, offset)
+    local rows = {}
+    for key in pairs(active) do
+      Budget.tick()
+      local y = math.floor(key / width)
+      local value = key - y * width + offset
+      local row = rows[y]
+      if not row then row = {}; rows[y] = row end
+      row[#row + 1] = value
+    end
+    for _, row in pairs(rows) do table.sort(row) end
+    return rows
+  end
+  local zPosRows = sortedActiveRows(zPos, zn, zmin)
+  local zNegRows = sortedActiveRows(zNeg, zn, zmin)
+  local yPosRows = sortedActiveRows(yPos, zn, zmin)
+  local yNegRows = sortedActiveRows(yNeg, zn, zmin)
+  local xPosRows = sortedActiveRows(xPos, W, 0)
+  local xNegRows = sortedActiveRows(xNeg, W, 0)
+
   -- `shell` remains the exact number of occupied voxels with at least one
   -- exposed face (the reference methodology's Stage 5 number).  Mark those
   -- voxels while emitting the already-indexed faces instead of performing a
@@ -1511,12 +1614,10 @@ local function emit(m, sp, atlasW, atlasH)
   -- that one bounded footprint plane explicitly; all other shell voxels are
   -- reached by an emitted face below.
   if diagnosticShell then
-    for z = zmin, zmax do
+    for _, z in ipairs(yNegRows[0] or {}) do
       Budget.tick()
-      if yNeg[rowKey(0, z)] then
-        for x = 0, W - 1 do
-          if ci(x, 0, z) then markShell(x, 0, z) end
-        end
+      for x = 0, W - 1 do
+        if occupied(x, 0, z) then markShell(x, 0, z) end
       end
     end
   end
@@ -1531,21 +1632,41 @@ local function emit(m, sp, atlasW, atlasH)
            (y0 + 0.05) / atlasH, (y0 + 1 - 0.05) / atlasH
   end
 
-  local function put(c1, c2, c3, c4, uv, shade)
-    quads[#quads + 1] = { c1, c2, c3, c4, uv = uv, shade = shade }
+  local function put(x1, y1, z1, x2, y2, z2,
+                     x3, y3, z3, x4, y4, z4,
+                     u1, v1, u2, v2, u3, v3, u4, v4, shade)
+    if diagnosticShell then
+      quads[#quads + 1] = {
+        { x1, y1, z1 }, { x2, y2, z2 },
+        { x3, y3, z3 }, { x4, y4, z4 },
+        uv = { { u1, v1 }, { u2, v2 }, { u3, v3 }, { u4, v4 } },
+        shade = shade,
+      }
+    else
+      -- Runtime building shells are consumed immediately by ChunkMesher.
+      -- Retain one flat numeric record per quad instead of nine nested Lua
+      -- tables (four corners, four UVs and the outer record).  A Saffron
+      -- cold build emits 56k quads, so this removes roughly 448k short-lived
+      -- allocations without changing a coordinate, UV, shade or output
+      -- order. Diagnostic builds intentionally keep the historical shape.
+      quads[#quads + 1] = {
+        x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4,
+        u1, v1, u2, v2, u3, v3, u4, v4, shade,
+      }
+    end
   end
 
   -- How far a run of exposed faces reaches from `x`, and whether it is a
   -- strip (texels marching along the atlas) or flat (one texel repeated).
   local function runX(y, z, dx, dy, dz, x)
-    local i0 = ci(x, y, z)
+    local i0 = materialAt(x, y, z)
     local strip, n = nil, 1
     local cap = runCap(x)
     while n < cap do
       local nx = x + n
-      local i = ci(nx, y, z)
-      if not i or ci(nx + dx, y + dy, z + dz) then break end
-      local prev = ci(nx - 1, y, z)
+      local i = materialAt(nx, y, z)
+      if not i or occupied(nx + dx, y + dy, z + dz) then break end
+      local prev = materialAt(nx - 1, y, z)
       if sp.ay[i] ~= sp.ay[prev] then break end
       local d = sp.ax[i] - sp.ax[prev]
       if d == 1 then
@@ -1567,7 +1688,7 @@ local function emit(m, sp, atlasW, atlasH)
   -- constant roof/awning texels still take the historical flat run.  Both are
   -- capped at the 8px world lattice, preserving WorldCurve's watertight join.
   local function sideTexel(x, y, z)
-    local i = ci(x, y, z)
+    local i = materialAt(x, y, z)
     if i and m.sideAt then return m.sideAt(x, y, z, i) end
     return i
   end
@@ -1578,19 +1699,19 @@ local function emit(m, sp, atlasW, atlasH)
       local n, cap = 1, runCap(z)
       while n < cap and z + n <= zmax do
         local nz = z + n
-        if sideTexel(x, y, nz) ~= i0 or ci(x + d, y, nz) then break end
+        if sideTexel(x, y, nz) ~= i0 or occupied(x + d, y, nz) then break end
         n = n + 1
       end
       return i0, false, n
     end
 
     local strip, n = nil, 1
+    local prev = i0
     local cap = runCap(z)
     while n < cap and z + n <= zmax do
       local nz = z + n
       local i = sideTexel(x, y, nz)
-      if not i or ci(x + d, y, nz) then break end
-      local prev = sideTexel(x, y, nz - 1)
+      if not i or occupied(x + d, y, nz) then break end
       if sp.ay[i] ~= sp.ay[prev] then break end
       local delta = sp.ax[i] - sp.ax[prev]
       if delta == 1 then
@@ -1602,6 +1723,7 @@ local function emit(m, sp, atlasW, atlasH)
       else
         break
       end
+      prev = i
       n = n + 1
     end
     return i0, strip == true, n
@@ -1611,25 +1733,63 @@ local function emit(m, sp, atlasW, atlasH)
   for _, d in ipairs({ 1, -1 }) do
     local shade = d == 1 and SHADE.south or SHADE.north
     local active = d == 1 and zPos or zNeg
+    local activeRows = d == 1 and zPosRows or zNegRows
     for y = 0, ytop do
-      for z = zmin, zmax do
+      for _, z in ipairs(activeRows[y] or {}) do
         Budget.tick()
-        if active[rowKey(y, z)] then
+        Budget.check()
+        local x = 0
+        while x < W do
+          if occupied(x, y, z) and not occupied(x, y, z + d) then
+            local i, strip, n = runX(y, z, 0, 0, d, x)
+            local u0, u1, v0, v1 = uvOf(i, strip, n)
+            local zf = d == 1 and (z + 1) or z
+            if d == 1 then
+              put(x, y, zf, x + n, y, zf,
+                  x + n, y + 1, zf, x, y + 1, zf,
+                  u0, v1, u1, v1, u1, v0, u0, v0, shade)
+            else
+              put(x + n, y, zf, x, y, zf,
+                  x, y + 1, zf, x + n, y + 1, zf,
+                  u1, v1, u0, v1, u0, v0, u1, v0, shade)
+            end
+            if diagnosticShell then
+              for sx = x, x + n - 1 do markShell(sx, y, z) end
+            end
+            x = x + n
+          else
+            x = x + 1
+          end
+        end
+      end
+    end
+  end
+
+  -- ---- faces along +-Y (roof surfaces, undersides): merge along x ----
+  for _, d in ipairs({ 1, -1 }) do
+    local shade = d == 1 and SHADE.top or SHADE.bottom
+    local active = d == 1 and yPos or yNeg
+    local activeRows = d == 1 and yPosRows or yNegRows
+    for y = 0, ytop do
+      -- the underside of the bottom layer is the ground it stands on
+      if not (d == -1 and y == 0) then
+        for _, z in ipairs(activeRows[y] or {}) do
+          Budget.tick()
           Budget.check()
           local x = 0
           while x < W do
-            if ci(x, y, z) and not ci(x, y, z + d) then
-              local i, strip, n = runX(y, z, 0, 0, d, x)
+            if occupied(x, y, z) and not occupied(x, y + d, z) then
+              local i, strip, n = runX(y, z, 0, d, 0, x)
               local u0, u1, v0, v1 = uvOf(i, strip, n)
-              local zf = d == 1 and (z + 1) or z
+              local yf = d == 1 and (y + 1) or y
               if d == 1 then
-                put({ x, y, zf }, { x + n, y, zf },
-                    { x + n, y + 1, zf }, { x, y + 1, zf },
-                    { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
+                put(x, yf, z, x + n, yf, z,
+                    x + n, yf, z + 1, x, yf, z + 1,
+                    u0, v0, u1, v0, u1, v1, u0, v1, shade)
               else
-                put({ x + n, y, zf }, { x, y, zf },
-                    { x, y + 1, zf }, { x + n, y + 1, zf },
-                    { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }, shade)
+                put(x, yf, z + 1, x + n, yf, z + 1,
+                    x + n, yf, z, x, yf, z,
+                    u0, v1, u1, v1, u1, v0, u0, v0, shade)
               end
               if diagnosticShell then
                 for sx = x, x + n - 1 do markShell(sx, y, z) end
@@ -1644,81 +1804,42 @@ local function emit(m, sp, atlasW, atlasH)
     end
   end
 
-  -- ---- faces along +-Y (roof surfaces, undersides): merge along x ----
-  for _, d in ipairs({ 1, -1 }) do
-    local shade = d == 1 and SHADE.top or SHADE.bottom
-    local active = d == 1 and yPos or yNeg
-    for y = 0, ytop do
-      -- the underside of the bottom layer is the ground it stands on
-      if not (d == -1 and y == 0) then
-        for z = zmin, zmax do
-          Budget.tick()
-          if active[rowKey(y, z)] then
-            Budget.check()
-            local x = 0
-            while x < W do
-              if ci(x, y, z) and not ci(x, y + d, z) then
-                local i, strip, n = runX(y, z, 0, d, 0, x)
-                local u0, u1, v0, v1 = uvOf(i, strip, n)
-                local yf = d == 1 and (y + 1) or y
-                if d == 1 then
-                  put({ x, yf, z }, { x + n, yf, z },
-                      { x + n, yf, z + 1 }, { x, yf, z + 1 },
-                      { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, shade)
-                else
-                  put({ x, yf, z + 1 }, { x + n, yf, z + 1 },
-                      { x + n, yf, z }, { x, yf, z },
-                      { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
-                end
-                if diagnosticShell then
-                  for sx = x, x + n - 1 do markShell(sx, y, z) end
-                end
-                x = x + n
-              else
-                x = x + 1
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-
   -- ---- faces along +-X (the flanks): merge flat or adjacent z texels ----
   for _, d in ipairs({ 1, -1 }) do
     local active = d == 1 and xPos or xNeg
+    local activeRows = d == 1 and xPosRows or xNegRows
     for y = 0, ytop do
-      for x = 0, W - 1 do
+      for _, x in ipairs(activeRows[y] or {}) do
         Budget.tick()
-        if active[xKey(y, x)] then
-          Budget.check()
-          local z = zmin
-          while z <= zmax do
-            local occupied = ci(x, y, z)
-            if occupied and not ci(x + d, y, z) then
-              local i, strip, n = runZ(y, x, d, z)
-              local u0, u1, v0, v1 = uvOf(i, strip, n)
-              local xf = d == 1 and (x + 1) or x
-              if d == 1 then
-                local uv = strip
-                  and { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }
-                  or  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }
-                put({ xf, y, z + n }, { xf, y, z },
-                    { xf, y + 1, z }, { xf, y + 1, z + n },
-                    uv, SHADE.side)
+        Budget.check()
+        local z = zmin
+        while z <= zmax do
+          local present = occupied(x, y, z)
+          if present and not occupied(x + d, y, z) then
+            local i, strip, n = runZ(y, x, d, z)
+            local u0, u1, v0, v1 = uvOf(i, strip, n)
+            local xf = d == 1 and (x + 1) or x
+            if d == 1 then
+              if strip then
+                put(xf, y, z + n, xf, y, z,
+                    xf, y + 1, z, xf, y + 1, z + n,
+                    u1, v1, u0, v1, u0, v0, u1, v0, SHADE.side)
               else
-                put({ xf, y, z }, { xf, y, z + n },
-                    { xf, y + 1, z + n }, { xf, y + 1, z },
-                    { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } },
-                    SHADE.side)
+                put(xf, y, z + n, xf, y, z,
+                    xf, y + 1, z, xf, y + 1, z + n,
+                    u0, v1, u1, v1, u1, v0, u0, v0, SHADE.side)
               end
-              if diagnosticShell then
-                for sz = z, z + n - 1 do markShell(x, y, sz) end
-              end
-              z = z + n
             else
-              z = z + 1
+              put(xf, y, z, xf, y, z + n,
+                  xf, y + 1, z + n, xf, y + 1, z,
+                  u0, v1, u1, v1, u1, v0, u0, v0, SHADE.side)
             end
+            if diagnosticShell then
+              for sz = z, z + n - 1 do markShell(x, y, sz) end
+            end
+            z = z + n
+          else
+            z = z + 1
           end
         end
       end
@@ -1744,10 +1865,15 @@ local function applyHeightScale(quads, scale)
      or scale <= 1 or scale > 2 or scale == math.huge then
     return quads, false
   end
+  local compact = type(quads) == "table" and quads.compact == true
   for _, q in ipairs(quads or {}) do
     for corner = 1, 4 do
-      local c = q[corner]
-      local y = type(c) == "table" and c[2] or nil
+      local y
+      if compact then y = type(q) == "table" and q[2 + (corner - 1) * 3]
+      else
+        local c = q[corner]
+        y = type(c) == "table" and c[2] or nil
+      end
       if type(y) ~= "number" or y ~= y
          or y == math.huge or y == -math.huge then
         return quads, false
@@ -1755,7 +1881,14 @@ local function applyHeightScale(quads, scale)
     end
   end
   for _, q in ipairs(quads) do
-    for corner = 1, 4 do q[corner][2] = q[corner][2] * scale end
+    for corner = 1, 4 do
+      if compact then
+        local at = 2 + (corner - 1) * 3
+        q[at] = q[at] * scale
+      else
+        q[corner][2] = q[corner][2] * scale
+      end
+    end
   end
   quads.heightScale = scale
   return quads, true

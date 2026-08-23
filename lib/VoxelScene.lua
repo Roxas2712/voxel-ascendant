@@ -627,9 +627,10 @@ local function drawPlan(state, nbMesh, nbWater)
     end
   end
   return {
-    -- HorizonWall only reads map + neighbors. Keeping this deliberately
-    -- narrow prevents an accidental mutation of the live OverworldState.
-    state = { map = state.map, neighbors = neighbors },
+    -- HorizonWall additionally reads the immutable map-definition registry to
+    -- verify optional future-map scenery contracts. It never mutates it.
+    state = { map = state.map, neighbors = neighbors,
+              worldMaps = state.worldMaps },
     meshes = meshes,
     waters = waters,
     maps = maps,

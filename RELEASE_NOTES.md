@@ -1,4 +1,28 @@
-# Voxel Ascendant 2.0.0
+# Voxel Ascendant 2.0.1
+
+This corrective RC retains the full 2.0 presentation while closing the first
+device and community findings: ARENA presentation orientation is normalized,
+Mega and large battle sprites use form-aware grounding and separation, iOS
+canvas presentation is guarded, precipitation/fog are restrained, and city
+shadows are capped instead of producing oversized dark masses. Outdoor ARENA
+nights now show a real cratered moon and varied stars through the scenery's
+transparent skyline; reviewed interior windows follow the same smooth
+dawn/day/dusk/night state without tinting opaque walls or greenhouse panes as
+open sky.
+
+The VASC menu now includes START help even without Kanto Ascendant. Users can
+drop their own music into seven category folders and select ORIGINAL, SHUFFLE
+or an exact local file. PNG replacement folders cover Pokemon front/back/Dex/
+icons/overworld, the player, enemy trainer portraits and generic overworld
+sprites. No third-party music or replacement sprite is bundled.
+
+VASC 2.0.1 also contains the additive visual half of KASC 6.7's future
+Cinnabar south fork. Only a complete outdoor, reciprocal map graph activates
+it: the volcanic destination is fixed on the left and the Deoxys/Birth-Island
+research coast directly beside it on the right. The two transparent cut-outs
+share one compact 256-KiB atlas and one draw. Existing KASC builds, partial
+hot-patches, missing art and malformed offsets retain the current Cinnabar
+coast with no movement, collision, warp, NPC or quest change.
 
 This major update substantially expands the outdoor and enclosed-world presentation
 and shortens the long catch-up path when voxel maps become visible. Visual
@@ -143,10 +167,20 @@ When Kanto Ascendant is active, its public ASCENDANT collector now receives a
 single **VOXEL ASCENDANT** row that opens the normal VASC settings. Discovery
 is runtime-only: KASC remains optional and its bundle is not modified.
 
-An optional **BTL MUSIC** row can use songs registered by a separately
-installed companion pack. ORIGINAL remains the default; SHUFFLE makes one
-stable choice per fight, and GEN 2–6 pins an available generation. The second
-engine battle-music request reuses that choice, League and ordinary fight
-scopes remain distinct, and missing or malformed providers fail back to the
-game/KASC cue. Version 2.0.0 contains no MP3, soundtrack URL or network
-downloader.
+The opt-in **USER MUSIC** row scans local MP3, OGG, WAV and FLAC files live.
+KASC-style submenus group wild, trainer, rival, Gym, Elite Four, Champion,
+field, bicycle, surf, victory, evolution, title, Hall of Fame, credits,
+jingles and scripted scenes. `replace/<ORIGINAL_SONG_ID>.<ext>` can replace
+any additional resolved Game/KASC cue without adding another option row.
+ORIGINAL/SHUFFLE/exact-file choices remain independent by category.
+
+The opt-in **USER SPRITES** row resolves readable PNG names for every Pokémon
+front/back/Dex/icon/overworld role, KASC Mega aliases such as
+`CHARIZARD_MEGA_X`, player battle art, enemy trainers, and registered
+Game/KASC overworld sheets such as `SPRITE_KA_CRYSTAL_GREEN_BIKE`. Both user
+systems default to and can return immediately to **GAME/KASC**, bypassing all
+VASC replacement providers without deleting personal files. Version 2.0.1
+also adds one global **ALL TO GAME/KASC** action and detailed English/German
+guides inside both user folders, including the installed paths for Windows,
+macOS, Linux, iOS, Android, Switch and Xbox. It contains no third-party
+soundtrack, sprite pack or network downloader.

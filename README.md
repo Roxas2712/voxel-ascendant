@@ -18,7 +18,7 @@ third-party art are included.
   fail closed to the game's normal 2D renderer.
 - For an installed copy, use **Check for updates** in the launcher. Manual
   import intentionally does not overwrite a mod with the same ID.
-- For a first install, select `VOXEL_ASCENDANT-2.0.0.zip` in the mod manager.
+- For a first install, select `VOXEL_ASCENDANT-2.0.1.zip` in the mod manager.
   `manifest.json` is at the ZIP root; do not unpack or re-wrap it.
 
 Use the game's regular **OPTIONS** menu for the concise in-game controls. The
@@ -47,8 +47,14 @@ useful for recovery or advanced configuration.
 | **BTL CAM** | 1X, 2X, 3X | Saved MAP/DISCS battle view: close, middle, or the default wide 3X view; direct zoom remains available. ARENA uses its separately saved 3X/STADIUM director. |
 | **TRAINER BACK** | OFF, ON | OFF stands the trainer's front art in the 3D intro; ON keeps the trainer back in its classic slot. |
 | **PKMN BACK** | OFF, ON | Independently keeps the player's Pokemon back sprite in its classic battle slot. |
-| **BTL MUSIC** | ORIGINAL, SHUFFLE, GEN 2–6 | Uses only songs registered by a separately installed companion pack. The choice is locked per fight; missing packs fall back to the original game/KASC cue. No audio or downloader is bundled. |
+| **USER MUSIC** | GAME/KASC, SHUFFLE, FILE | Opt-in loose MP3/OGG/WAV/FLAC replacement with grouped battle, world, result and scene submenus. Exact `replace/<SONG_ID>` files cover additional Game/KASC cues; the default/back switch bypasses all VASC music replacements. English/German platform guides ship in the folder. |
+| **USER SPRITES** | GAME/KASC, ON | Opt-in PNG replacement for Pokémon forms/front/back/Dex/icons/overworld, player battle art, trainer portraits and every registered Game/KASC overworld sheet. The default/back switch bypasses all VASC sprite hooks; the VASC hub can restore every custom provider globally. |
 | **AA** | OFF, 2X, 4X | Supersamples the 3D pass. |
+
+When KASC 6.7 supplies the complete reciprocal `CINNABAR_SOUTH_CHANNEL`
+topology, SCENERY also shows the distant volcano left of Birth Island during
+the southern approach. The visual is strictly additive and remains disabled
+on older or incomplete map data.
 
 The 1ST and 3RD rungs use camera-relative movement with the engine's own cell
 collision, warp, encounter, ledge, boulder and step-completion paths. Mouse,

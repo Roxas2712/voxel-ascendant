@@ -957,6 +957,58 @@ local OFF = {
   player = { enemy = false, showEnemyTrainer = false },
 }
 
+-- Canonical physical height for staged presentation. Keep this pure and
+-- exported so the cross-engine fixtures can prove corrupt or partial data
+-- always falls back to neutral sizing rather than breaking a battle.
+function OverworldBattle.battlerHeightIn(battle, side)
+  local battler = battle and battle[side]
+  local entry = battler and battler.def and battler.def.dexEntry
+  -- Form providers may replace `battler.def` with a combat-only profile that
+  -- deliberately carries no Pokédex prose/measurements.  The underlying mon
+  -- still names its canonical species, and the battle's immutable registry
+  -- remains the authority for physical presentation.  This is particularly
+  -- important for Kanto Ascendant Megas: falling through to nil made every
+  -- form use neutral scale while the ordinary opponent used its real height.
+  if not entry and battler and battler.mon and battler.mon.species then
+    local data = battle and (battle.data or (battle.game and battle.game.data))
+    local def = data and data.pokemon and data.pokemon[battler.mon.species]
+    entry = def and def.dexEntry
+  end
+  local feet = tonumber(entry and entry.heightFt)
+  local inches = tonumber(entry and entry.heightIn) or 0
+  if not (feet and feet == math.floor(feet) and feet >= 0
+          and inches == math.floor(inches) and inches >= 0
+          and inches < 12) then
+    return nil
+  end
+  local total = feet * 12 + inches
+  return total > 0 and total or nil
+end
+
+-- Companion renderers wrap `sideTexture` after VASC has installed. Some of
+-- those wrappers replace the captured card with a high-resolution monster
+-- canvas while an engine trainer flag is still transitioning, or omit fields
+-- that were present on the inner card. Finalise the result only after the
+-- complete wrapper chain has returned. This is the authoritative production
+-- seam used by `textures`; it keeps ordinary cards unchanged and makes KASC's
+-- Mega/Gorochu cards unambiguously monster art with canonical physical size.
+function OverworldBattle.finalizeSideTexture(battle, side, texture)
+  if type(texture) ~= "table" then return texture end
+  local companionMon = texture.kantoAscendantMegaSupersampled == true
+    or texture.kantoAscendantGorochuSupersampled == true
+  if companionMon then texture.trainer = false end
+  if not texture.trainer then
+    texture.heightIn = OverworldBattle.battlerHeightIn(battle, side)
+      or texture.heightIn
+    local battler = battle and battle[side]
+    texture.inkIdentity = texture.kantoAscendantMegaSource
+      or texture.kantoAscendantGorochuSource
+      or texture.inkIdentity
+      or (battler and battler.sprite)
+  end
+  return texture
+end
+
 -- Render one side's pics layer into its canvas and report where the pic's
 -- feet ended up, in canvas coordinates.
 function OverworldBattle.sideTexture(battle, side)
@@ -1009,7 +1061,15 @@ function OverworldBattle.sideTexture(battle, side)
     -- standing in the scene, so it follows the regular player-card mirror.
     trainer = OverworldBattle.trainerBackPinned()
   end
-  return { canvas = canvas, ax = ax, ay = ay, trainer = trainer }
+  local heightIn = not trainer
+                   and OverworldBattle.battlerHeightIn(battle, side) or nil
+  return { canvas = canvas, ax = ax, ay = ay, trainer = trainer,
+           heightIn = heightIn,
+           -- The two side canvases are reused every frame.  Cache alpha
+           -- bounds by the actual art identity, never merely by the canvas,
+           -- or changing species/forms would inherit the previous feet.
+           inkIdentity = not trainer and battle[side]
+             and battle[side].sprite or nil }
 end
 
 -- Whether the hit flash is showing this frame.
@@ -1038,8 +1098,10 @@ function OverworldBattle.textures(battle)
   if not OverworldBattle.playerBackPinned(battle) then
     okP, player = pcall(OverworldBattle.sideTexture, battle, "player")
   end
-  out.enemy = okE and enemy or nil
-  out.player = okP and player or nil
+  out.enemy = okE and OverworldBattle.finalizeSideTexture(
+    battle, "enemy", enemy) or nil
+  out.player = okP and OverworldBattle.finalizeSideTexture(
+    battle, "player", player) or nil
   if not (out.enemy or out.player) then return nil end
   out.flash = OverworldBattle.flashing(battle)
   return out
@@ -1172,9 +1234,21 @@ function OverworldBattle.install()
       -- that loses its arena mid-fight goes back to white voids
       self.letterboxWhite = nil
       self.voxelAscendantShot = nil
+      -- Kanto Ascendant's Mega overlay still feature-detects the historical
+      -- staged-renderer marker.  Clear it together with the real VASC field;
+      -- a stale truthy marker would incorrectly suppress the ordinary 2D
+      -- Mega rear after a staged shot has genuinely gone away.
+      self.dramaticShapeShot = nil
       return innerDraw(self, ...)
     end
     self.voxelAscendantShot = shot
+    -- Compatibility marker only: the owner and every VASC/KASC wide-HUD seam
+    -- continue to use voxelAscendantShot.  KASC's shared Mega renderer checks
+    -- this historical field before deciding whether to paint its classic
+    -- white-paper rear overlay.  Pointing it at the exact same live shot keeps
+    -- all Mega forms on VASC's camera-facing billboards instead of laying a
+    -- second, misplaced 2D sprite and opaque paper over the arena.
+    self.dramaticShapeShot = shot
     -- The world reaches the screen through the seam a render pipeline's
     -- finished world image already uses: one window-resolution canvas,
     -- blitted a pixel to a pixel, with the 160x144 UI canvas composited over
