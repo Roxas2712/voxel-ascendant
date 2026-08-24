@@ -18,7 +18,7 @@ third-party art are included.
   fail closed to the game's normal 2D renderer.
 - For an installed copy, use **Check for updates** in the launcher. Manual
   import intentionally does not overwrite a mod with the same ID.
-- For a first install, select `VOXEL_ASCENDANT-2.0.1.zip` in the mod manager.
+- For a first install, select `VOXEL_ASCENDANT-2.0.2.zip` in the mod manager.
   `manifest.json` is at the ZIP root; do not unpack or re-wrap it.
 
 Use the game's regular **OPTIONS** menu for the concise in-game controls. The

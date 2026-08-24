@@ -1,4 +1,10 @@
-# Voxel Ascendant 2.0.1
+# Voxel Ascendant 2.0.2
+
+This compatibility hotfix restores startup on Gen1Recomp 0.2.22, where the
+engine replaced `src.render.GBCFX` with `src.render.ShaderFX`. VASC now detects
+either API once, disables the applicable final-frame effect while its voxel
+presentation is active, and preserves saved ShaderFX preset choices for use
+when VASC is disabled. Gen1Recomp 0.2.19 remains supported.
 
 This corrective RC retains the full 2.0 presentation while closing the first
 device and community findings: ARENA presentation orientation is normalized,
@@ -16,7 +22,7 @@ or an exact local file. PNG replacement folders cover Pokemon front/back/Dex/
 icons/overworld, the player, enemy trainer portraits and generic overworld
 sprites. No third-party music or replacement sprite is bundled.
 
-VASC 2.0.1 also contains the additive visual half of KASC 6.7's future
+VASC 2.0.2 also contains the additive visual half of KASC 6.7's future
 Cinnabar south fork. Only a complete outdoor, reciprocal map graph activates
 it: the volcanic destination is fixed on the left and the Deoxys/Birth-Island
 research coast directly beside it on the right. The two transparent cut-outs
@@ -179,7 +185,7 @@ front/back/Dex/icon/overworld role, KASC Mega aliases such as
 `CHARIZARD_MEGA_X`, player battle art, enemy trainers, and registered
 Game/KASC overworld sheets such as `SPRITE_KA_CRYSTAL_GREEN_BIKE`. Both user
 systems default to and can return immediately to **GAME/KASC**, bypassing all
-VASC replacement providers without deleting personal files. Version 2.0.1
+VASC replacement providers without deleting personal files. Version 2.0.2
 also adds one global **ALL TO GAME/KASC** action and detailed English/German
 guides inside both user folders, including the installed paths for Windows,
 macOS, Linux, iOS, Android, Switch and Xbox. It contains no third-party

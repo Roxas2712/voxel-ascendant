@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.2 — 2026-08-24
 
 - Restore Gen1Recomp 0.2.22 compatibility after the engine replaced
   `src.render.GBCFX` with `src.render.ShaderFX`. VASC now disables either

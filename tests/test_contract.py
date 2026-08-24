@@ -336,7 +336,7 @@ class ContractTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text())
         self.assertEqual(manifest["id"], "VOXEL_ASCENDANT")
         self.assertEqual(manifest["name"], "Voxel Ascendant")
-        self.assertEqual(manifest["version"], "2.0.1")
+        self.assertEqual(manifest["version"], "2.0.2")
         self.assertEqual(manifest["github"], "Roxas2712/voxel-ascendant")
         self.assertEqual(manifest["api"], 2)
         self.assertEqual(manifest["games"], ["gen1"])
