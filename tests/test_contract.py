@@ -1123,6 +1123,24 @@ class ContractTests(unittest.TestCase):
         subprocess.run([str(lua), "tests/voxel_shortcut_test.lua"], cwd=ROOT,
                        check=True, text=True, capture_output=True)
 
+    def test_engine_fx_compatibility_runtime(self) -> None:
+        main = (ROOT / "main.lua").read_text(encoding="utf-8")
+        compat = (ROOT / "lib" / "EngineFxCompat.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('local EngineFxCompat = V.require("EngineFxCompat")', main)
+        self.assertNotIn('require("src.render.GBCFX")', main)
+        self.assertIn('"shaderfx", "shaderfx2"', compat)
+        candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
+        lua = Path(candidate) if candidate else None
+        if not lua or not lua.is_file():
+            found = shutil.which("luajit") or shutil.which("lua")
+            lua = Path(found) if found else None
+        if not lua:
+            self.fail("set VOXEL_ASCENDANT_LUA to a Lua/LuaJIT executable")
+        subprocess.run([str(lua), "tests/engine_fx_compat_test.lua"], cwd=ROOT,
+                       check=True, text=True, capture_output=True)
+
     def test_player_camera_modes_runtime(self) -> None:
         candidate = os.environ.get("VOXEL_ASCENDANT_LUA")
         lua = Path(candidate) if candidate else None

@@ -114,6 +114,7 @@ local VoxelShortcut = V.require("VoxelShortcut")
 local HorizonWall = V.require("HorizonWall")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local TransitionReveal = V.require("TransitionReveal")
+local EngineFxCompat = V.require("EngineFxCompat")
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
 -- calls this, and it is defined further down with the settings it drives.
@@ -606,12 +607,12 @@ mod.options:define(schema)
 -- AND the engine's TILT on the same press.
 --
 -- Consequences worth being explicit about: while this mod is enabled, TILT
--- (3) and GBC FX (5) are unreachable by key -- and unreachable on the OPTIONS
--- menu too, where both rows are taken away and both values held at zero (see
+-- and the engine's final-frame screen FX are unreachable from OPTIONS (see
 -- pinEngineFx). Nothing is being hidden that still does something: TILT is the
 -- flat fake of what this mode does for real, the registry already forces it
--- off whenever a world pipeline takes the pass, and GBC FX is a full-screen
--- present pass over the top of the diorama. Uninstalling puts both back.
+-- off whenever a world pipeline takes the pass, and either engine FX API is a
+-- full-screen present pass over the diorama. ShaderFX preset choices stay
+-- saved and return when VASC is disabled.
 --
 -- Everything the engine does around a pipeline hotkey has to happen here
 -- too, so the work is DELEGATED rather than reimplemented: Pipelines.hotkey
@@ -629,7 +630,7 @@ local HOTKEYS = {
 
 -- One step of the VOXEL angle ladder: everything a "3" press does, named
 -- so the pad's SELECT button (below) can make exactly the same step. The
--- gate is the registry's own; the tilt/GBC FX clearing is the engine work
+-- gate is the registry's own; the tilt/screen-FX clearing is the engine work
 -- the key has always delegated (see the wrap below for why).
 local function cycleVoxel(game)
   local Pipelines = require("src.render.Pipelines")
@@ -638,13 +639,12 @@ local function cycleVoxel(game)
   Pipelines.setLevel("voxel", Voxel.nextHotkeyLevel(Pipelines.level("voxel")))
   Pipelines.syncOptions(game.save.options)
   -- 3 is the key that used to turn TILT on and sits next to the one that
-  -- used to turn GBC FX on, and this mod has taken both away. A player who
-  -- left either running before enabling the mod would otherwise have no
-  -- way back to off, and both fight the diorama -- so the VOXEL step
+  -- used to turn the engine's screen FX on, and this mod has taken both away.
+  -- A player who left either running before enabling the mod would otherwise
+  -- have no way back to off, and both fight the diorama -- so the VOXEL step
   -- clears them on EVERY press, not just the press that switches on.
   game.save.options.tilt = 0
-  game.save.options.gbcfx = 0
-  require("src.render.GBCFX").setLevel(0)
+  EngineFxCompat.disable(game.save.options)
   require("src.render.Tilt").setLevel(game.save.options.tilt or 0)
   game:writeOptions()
   return true
@@ -654,7 +654,6 @@ do
   local Game = require("src.core.Game")
   local Pipelines = require("src.render.Pipelines")
   local Tilt = require("src.render.Tilt")
-  local GBCFX = require("src.render.GBCFX")
   local inner = Game.keypressed
   local pipelineShape = type(Pipelines.canToggle) == "function"
                         and type(Pipelines.hotkey) == "function"
@@ -662,7 +661,6 @@ do
                         and type(Pipelines.setLevel) == "function"
                         and type(Pipelines.level) == "function"
                         and type(Tilt.setLevel) == "function"
-                        and type(GBCFX.setLevel) == "function"
 
   if pipelineShape and type(inner) == "function"
      and not Game.voxelAscendantKeyHook then
@@ -741,24 +739,27 @@ local function dropRow(out, id)
   return out
 end
 
--- ------- TILT and GBC FX are gone while this mod is installed
+-- ------- TILT and engine screen FX are gone while this mod is installed
 --
--- Both fight the diorama, and both were already half-taken: the mode's own key
+-- GBC FX through Gen1Recomp 0.2.19 and the Shader FX slots from 0.2.22 both
+-- fight the diorama. They were already half-taken: the mode's own key
 -- (3) forces them off on every press, and the registry switches TILT off
 -- whenever a world pipeline takes the pass. What was left was two rows the
 -- player could set and watch get reverted -- TILT is the flat fake of what
--- this mode does for real, and GBC FX is a full-screen present pass over the
--- top of the whole thing.
+-- this mode does for real, and either screen-FX implementation is a
+-- full-screen present pass over the top of the whole thing.
 --
--- So they come OFF the menu, and are HELD at zero rather than merely dropped.
+-- So they come OFF the menu and their live effects are held off rather than
+-- merely dropped. Current ShaderFX preset names remain persisted so the
+-- player's choices return when VASC is disabled.
 -- Hiding a live setting is a trap: a save written before the mod was installed
 -- can carry TILT 3, and a row that is not there is a row that cannot turn it
 -- back off. Pinned wherever the value could have arrived from -- the menu
 -- opening, a save being loaded or begun -- so there is no route by which one
 -- of them is on and unreachable.
 --
--- Everything they did is still reachable: uninstall the mod and both rows are
--- back, at whatever they were last set to.
+-- Everything they did is still reachable: disable the mod and the engine rows
+-- are back; current ShaderFX choices are restored from their saved names.
 -- BATTLE BG rides the same reasoning, and comes off for a reason of its own.
 -- The row picks what fills the screen AROUND the battle's 160x144 field --
 -- WHITE paper, BLACK bars, or the frozen overworld dimmed behind it -- and
@@ -776,13 +777,12 @@ end
 --
 -- So the value is pinned at WHITE, which is the one the mode was composed
 -- against, and the row comes off the menu on the same reasoning as TILT and
--- GBC FX: a row that no longer decides anything is worse than no row.
+-- screen FX: a row that no longer decides anything is worse than no row.
 -- Uninstall the mod and it is back, at whatever it was last set to.
 local function pinEngineFx(game)
   game = game or require("src.core.Game")
   local opts = game and game.save and game.save.options
   local Tilt = require("src.render.Tilt")
-  local GBCFX = require("src.render.GBCFX")
   local changed = false
   if opts then
     changed = (opts.tilt or 0) ~= 0 or (opts.gbcfx or 0) ~= 0
@@ -791,7 +791,7 @@ local function pinEngineFx(game)
     opts.battleBg = "white"
   end
   pcall(Tilt.setLevel, 0)
-  pcall(GBCFX.setLevel, 0)
+  if EngineFxCompat.disable(opts) then changed = true end
   if changed and game.writeOptions then pcall(game.writeOptions, game) end
 end
 
@@ -805,7 +805,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   -- off the menu whatever else this mod is or is not doing
   pinEngineFx(game)
   dropRow(out, "tilt")
-  dropRow(out, "gbcfx")
+  for _, id in ipairs(EngineFxCompat.ROW_IDS) do dropRow(out, id) end
   -- and BATTLE BG with them: this mode fills the window with the map, so
   -- the row's whole question -- what to put in the voids around the battle
   -- -- no longer has voids to be about (see pinEngineFx)
@@ -1196,6 +1196,9 @@ end)
 -- providers may register before or after this without losing the stored id.
 mod.events:on("game.ready", function()
   local Game = require("src.core.Game")
+  -- Hot reload does not guarantee a save.loaded event. Pin the current
+  -- engine generation's final-frame effect here as well as on save events.
+  pinEngineFx(Game)
   WarpPrefetch.install(Game)
   SpritePacks.restore(Game)
   LocalMusic.restore(Game)

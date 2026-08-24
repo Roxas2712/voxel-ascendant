@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Restore Gen1Recomp 0.2.22 compatibility after the engine replaced
+  `src.render.GBCFX` with `src.render.ShaderFX`. VASC now disables either
+  final-frame effect through a fail-open compatibility layer, keeps both
+  0.2.19 and 0.2.22 loadable, and preserves saved Shader FX preset choices so
+  they return when VASC is disabled.
+
 ## 2.0.1 — 2026-08-23
 
 - Replace the broken one-pixel ARENA night marker with a cratered moon and a
