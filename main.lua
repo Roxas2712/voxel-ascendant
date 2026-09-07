@@ -40,7 +40,7 @@ end
 -- a minimal mod handle without loader metadata; the release contract asserts
 -- that it matches manifest.json.
 local PACKAGE_VERSION = type(mod.version) == "string" and mod.version
-  or "3.0.0-rc.12"
+  or "3.0.0-rc.14"
 mod._vascPackageVersion = PACKAGE_VERSION
 
 local function callFlag(GameVersion, name)
