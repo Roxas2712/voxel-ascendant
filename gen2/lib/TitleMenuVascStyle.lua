@@ -167,7 +167,9 @@ local function drawTitleChoice(state, ww, wh)
     showArtwork=true,
     items=items,
     index=stateIndex(state),
-    footer="STEUERKREUZ: AUSWAHL   A: BESTÄTIGEN   B: ZURÜCK",
+    footer=interfaceLanguage(state) == "de"
+      and "STEUERKREUZ: AUSWAHL   A: BESTÄTIGEN   B: ZURÜCK"
+      or "D-PAD: SELECT   A: CONFIRM   B: BACK",
   }
   if TitleHub and type(TitleHub.drawPhysical) == "function" then
     return TitleHub.drawPhysical(spec, ww, wh)
@@ -193,7 +195,8 @@ local function drawContinueInfo(state, ww, wh)
           math.floor(seconds / 3600), math.floor(seconds / 60) % 60) },
     },
     index=1,
-    footer="A: WEITER   B: ZURÜCK",
+    footer=interfaceLanguage(state) == "de"
+      and "A: WEITER   B: ZURÜCK" or "A: CONTINUE   B: BACK",
   }
   if TitleHub and type(TitleHub.drawPhysical) == "function" then
     return TitleHub.drawPhysical(spec, ww, wh)

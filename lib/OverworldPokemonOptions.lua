@@ -125,6 +125,21 @@ end
 -- Native VASC pages always have a two-stop ladder. Preserve the stored SOFT
 -- intent and display its blocked state, but never cycle back into it.
 function M.decorateSetting(mod, setting)
+  if setting.key == "apo_hd_walking_sprites" and not setting._apoLivePeople then
+    -- VASC's own ModSetting writes do not emit the Manager's option event.
+    -- Refresh all bound people immediately, even while the player is still.
+    local original = setting.setIndex
+    setting.setIndex = function(self, index, game, silent)
+      local value = original(self, index, game, silent)
+      local api = mod.exports and mod.exports.overworldPokemon
+      local walking = api and api.walkingSprites
+      if walking and type(walking.refresh) == "function" then
+        walking.refresh(game)
+      end
+      return value
+    end
+    setting._apoLivePeople = true
+  end
   if german(mod) then
     for i, label in ipairs(setting.labels or {}) do
       setting.labels[i] = valuesDe[label] or label

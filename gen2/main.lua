@@ -1325,8 +1325,12 @@ local function gen2AnimationStatus()
   if not receipt.installed then
     return {
       right="PENDING",
-      help="Der gemeinsame VASC-Animationskatalog wartet auf die geladenen Crystal-Kampfdaten ("
-        .. tostring(receipt.reason or "game data") .. ").",
+      help={
+        en="The shared VASC animation catalog is waiting for Crystal battle data ("
+          .. tostring(receipt.reason or "game data") .. ").",
+        de="Der gemeinsame VASC-Animationskatalog wartet auf die geladenen Crystal-Kampfdaten ("
+          .. tostring(receipt.reason or "game data") .. ").",
+      },
     }
   end
   local authored = (tonumber(receipt.gen1) or 0)
@@ -1337,7 +1341,20 @@ local function gen2AnimationStatus()
   return {
     right=(coverage.complete and "251/251" or tostring(
       coverage.reviewedMoves or 0) .. "/251"),
-    help=("Johto: %d geprüfte Attackenrouten mit smarten Anwender-/Zielankern; "
+    help={
+      en=("Johto: %d reviewed move routes with smart user/target anchors; "
+        .. "%d VASC HD programs from the shared Kanto catalog. "
+        .. "Catalog check: %s (%d sheets, %d frames, %d invalid). "
+        .. "An individual missing frame falls back to the native Crystal animation.")
+        :format(tonumber(coverage.reviewedMoves) or 0, authored,
+          valid and ((tonumber(receipt.invalidFrames) or 0) == 0
+            and "OK" or "OK / QUARANTINED") or "ERROR",
+          tonumber(receipt.sheets) or 0,
+          tonumber(receipt.frames) or 0,
+          (tonumber(receipt.invalidSheets) or 0)
+            + (tonumber(receipt.invalidPrograms) or 0)
+            + (tonumber(receipt.invalidFrames) or 0)),
+      de=("Johto: %d geprüfte Attackenrouten mit smarten Anwender-/Zielankern; "
       .. "%d VASC-HD-Programme aus dem gemeinsamen Kanto-Katalog. "
       .. "Katalogprüfung: %s (%d Sheets, %d Frames, %d ungültig). "
       .. "Ein einzelner fehlender Frame fällt auf die native Crystal-Animation zurück.")
@@ -1349,6 +1366,7 @@ local function gen2AnimationStatus()
         (tonumber(receipt.invalidSheets) or 0)
           + (tonumber(receipt.invalidPrograms) or 0)
           + (tonumber(receipt.invalidFrames) or 0)),
+    },
   }
 end
 

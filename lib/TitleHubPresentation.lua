@@ -455,7 +455,7 @@ local function drawLogical(spec)
   pokeball(47, 40, palette)
   drawText(lang == "de" and "SPIEL STARTEN" or "START GAME",
     70, 29, WHITE, 2)
-  local editionLabel = palette.label or edition:upper()
+  local editionLabel = (lang == "de" and palette.label) or edition:upper()
   local right = "VOXEL ASCENDANT / " .. editionLabel
   drawText(right, 474 - width(right, 1), 37, palette.glow, 1)
 

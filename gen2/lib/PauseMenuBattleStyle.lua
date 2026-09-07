@@ -14,6 +14,17 @@ local SharedMenus = V and V.SharedMenuPresentation
 local Diagnostics = V and V.Diagnostics
 local CanvasPresentation = V and V.CanvasPresentation
 
+local function german()
+  if not (mod and type(mod.find) == "function") then return false end
+  local ok, handle = pcall(mod.find, "translation-german-universal")
+  if not ok or not handle then
+    ok, handle = pcall(mod.find, mod, "translation-german-universal")
+  end
+  return ok and type(handle) == "table" and type(handle.exports) == "table"
+    and handle.exports.bootLanguage == "de"
+end
+local function tr(en, de) return german() and de or en end
+
 local M = {
   installed = false,
   draws = 0,
@@ -395,6 +406,32 @@ local START_META_DE = {
   quit="Zum Titelbild zurückkehren",
 }
 
+local START_LABEL_EN = {
+  pokedex="POKéDEX", pokemon="POKéMON", pack="BAG",
+  pokegear="POKéGEAR", status="TRAINER CARD", save="SAVE",
+  option="OPTIONS", mods="MODS", quit="EXIT",
+}
+local START_HELP_EN = {
+  pokedex="Open the modern Johto Pokédex with seen and caught Pokémon.",
+  pokemon="Open the full ORAS team view. Switching, field moves and items keep Gen 2 rules.",
+  pack="Open the ORAS bag with all four Gold/Silver/Crystal pockets.",
+  pokegear="Open the clock, Johto map, phone, radio and unlocked flight destinations.",
+  status="Show the modern trainer card and your current progress.",
+  save="Save using the unchanged native Gold/Silver/Crystal save routine.",
+  option="Open game settings.", mods="Open installed mods and the Voxel Ascendant hub.",
+  quit="Return to the title screen after confirmation.",
+}
+local START_META_EN = {
+  pokedex="Modern Johto Pokédex", pokemon="View and manage your team",
+  pack="Items and key items", pokegear="Clock, map, phone and radio",
+  status="Trainer card and progress", save="Save your progress",
+  option="Open game settings", mods="Installed extensions",
+  quit="Return to the title screen",
+}
+local function localized(en, de, id, fallback)
+  return (german() and de or en)[id] or fallback
+end
+
 local function drawSharedPause(menu, ww, wh)
   if not (SharedMenus and type(SharedMenus.draw) == "function") then
     return false
@@ -403,32 +440,32 @@ local function drawSharedPause(menu, ww, wh)
   if not (menu and list and type(menu.items) == "table") then return false end
   if menu.phase == "confirm" then
     return SharedMenus.draw(menu, {
-      title="SPIEL BEENDEN?",
+    title=tr("EXIT GAME?", "SPIEL BEENDEN?"),
       items={
-        { label="JA", help="Ungespeicherter Fortschritt geht verloren." },
-        { label="NEIN", help="Zum Spiel zurückkehren." },
+        { label=tr("YES", "JA"), help=tr("Unsaved progress will be lost.", "Ungespeicherter Fortschritt geht verloren.") },
+        { label=tr("NO", "NEIN"), help=tr("Return to the game.", "Zum Spiel zurückkehren.") },
       },
       index=tonumber(menu.confirmChoice) or 2,
-      footer="A: BESTÄTIGEN   B: ZURÜCK",
+    footer=tr("A: CONFIRM   B: BACK", "A: BESTÄTIGEN   B: ZURÜCK"),
     }, ww, wh)
   end
   local items = {}
   for _, item in ipairs(menu.items) do
     local id = tostring(item.value or "")
     items[#items + 1] = {
-      label=START_LABEL_DE[id] or rowLabel(item),
-      help=START_HELP_DE[id] or rowDescription(item),
+    label=localized(START_LABEL_EN, START_LABEL_DE, id, rowLabel(item)),
+    help=localized(START_HELP_EN, START_HELP_DE, id, rowDescription(item)),
     }
   end
   local save = menu.save or (menu.game and menu.game.save) or {}
   local player = save.player or {}
   return SharedMenus.draw(menu, {
-    title="START-MENÜ",
+    title=tr("START MENU", "START-MENÜ"),
     header="VOXEL ASCENDANT / " .. cleanText(player.name or "TRAINER"),
     items=items,
     index=tonumber(list.index) or 1,
     scroll=tonumber(list.scroll) or 0,
-    footer="STEUERKREUZ: AUSWAHL   A: ÖFFNEN   B: ZURÜCK   SELECT: RAND",
+    footer=tr("A: OPEN  B: BACK  SELECT: EDGE", "A: ÖFFNEN  B: ZURÜCK  SELECT: RAND"),
   }, ww, wh)
 end
 
@@ -487,9 +524,9 @@ local function drawRows(menu, x, y, w, rowH, gap, headerH, r, wh, s, rows)
       G.circle("fill", cx, cy, math.max(0.8 * s, radius * 0.15))
     end
     local itemId = tostring(item.value or ""):lower()
-    local meta = START_META_DE[itemId] or rowDescription(item)
+    local meta = localized(START_META_EN, START_META_DE, itemId, rowDescription(item))
     local nameY = meta ~= "" and (ry + rowH * 0.14) or (ry + rowH * 0.31)
-    local displayLabel = START_LABEL_DE[itemId] or rowLabel(item)
+    local displayLabel = localized(START_LABEL_EN, START_LABEL_DE, itemId, rowLabel(item))
     G.print(clipped(displayLabel, G.getFont(), maxW), lx, nameY)
 
     if meta ~= "" and rowH >= 34 * s then
@@ -534,11 +571,11 @@ local function drawConfirm(menu, ww, wh)
   local G = love.graphics
   local x, y, w, h, rowH, gap, headerH, _, r, s = selectorGeometry(ww, wh, 2)
   panel(x, y, w, h, r, 0.82, s)
-  selectorHeader(G, "RETURN TO TITLE?", "UNSAVED PROGRESS WILL BE LOST",
+  selectorHeader(G, tr("RETURN TO TITLE?", "ZUM TITELBILD?"), tr("UNSAVED PROGRESS WILL BE LOST", "UNGESPEICHERTER FORTSCHRITT GEHT VERLOREN"),
                  x, y, w, headerH, wh, s)
 
   local nameFont = font(math.max(15 * s, wh * 0.019))
-  local choices = { "YES", "NO" }
+  local choices = { tr("YES", "JA"), tr("NO", "NEIN") }
   local selected = math.max(1, math.min(2, tonumber(menu.confirmChoice) or 2))
   for i = 1, 2 do
     local ry = y + headerH + gap + (i - 1) * (rowH + gap)
@@ -556,7 +593,7 @@ local function drawConfirm(menu, ww, wh)
   end
 
   selectorFooter(G,
-    "STEUERKREUZ: AUSWAHL    A: BESTÄTIGEN    B: ZURÜCK",
+    tr("D-PAD: SELECT    A: CONFIRM    B: BACK", "STEUERKREUZ: AUSWAHL    A: BESTÄTIGEN    B: ZURÜCK"),
     x, y, w, h, gap, wh, s)
 
   local margin = math.max(18 * s, wh * 0.025)
@@ -570,7 +607,7 @@ local function drawConfirm(menu, ww, wh)
     local f = font(math.max(15 * s, wh * 0.020))
     if f then G.setFont(f) end
     G.setColor(1, 1, 1, 0.96)
-    G.printf("Return to the title screen?", mx + mh * 0.22, my + mh * 0.29,
+    G.printf(tr("Return to the title screen?", "Zum Titelbild zurückkehren?"), mx + mh * 0.22, my + mh * 0.29,
              mw - mh * 0.44, "left")
   end
 end
@@ -627,10 +664,10 @@ local function drawPause(menu, fallbackW, fallbackH)
     if #menu.items > rows then
       subtitle = subtitle .. "    " .. index .. "/" .. #menu.items
     end
-    selectorHeader(G, "START-MENÜ", subtitle, x, y, w, headerH, wh, s)
+  selectorHeader(G, tr("START MENU", "START-MENÜ"), subtitle, x, y, w, headerH, wh, s)
     drawRows(menu, x, y, w, rowH, gap, headerH, r, wh, s, rows)
     selectorFooter(G,
-      "A: ÖFFNEN   B: ZURÜCK   SELECT: VOLLBILD",
+    tr("A: OPEN   B: BACK   SELECT: FULLSCREEN", "A: ÖFFNEN   B: ZURÜCK   SELECT: VOLLBILD"),
       x, y, w, h, gap, wh, s)
     -- Match Kanto's ordinary START behavior: a compact selector over the live
     -- world.  Detailed help belongs to the Ascendant/options hub, not to a

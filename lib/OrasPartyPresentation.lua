@@ -2110,12 +2110,18 @@ local function updatePartyGrid(menu, nativeUpdate, ...)
     end
   end
 
-  -- Host-v1's forced replacement surface never accepts B. The 0.5.3 view
-  -- delegates the rest of PartyMenu behavior to the engine, but consumes this
-  -- one forbidden frame so a forced picker cannot briefly close/reopen or run
-  -- an onCancel callback while the battle is waiting for a valid replacement.
+  -- Gen1 also marks optional trainer SHIFT pickers forceSwitch=true to
+  -- select immediately with A. Their living active owner may decline with B;
+  -- only the genuine replacement surface must keep that input masked.
+  local battle = menu.battle
+  local active = battle and battle.player
+  local mon = active and active.mon
+  local voluntaryShift = battle and battle.kind == "trainer"
+    and battle.enemy and battle.enemy.fainted == true
+    and active and not active.fainted
+    and mon and tonumber(mon.hp) and tonumber(mon.hp) > 0
   local forcedCancel = not direction and menu.context == "battle"
-    and menu.forceSwitch == true and input
+    and menu.forceSwitch == true and not voluntaryShift and input
     and type(input.wasPressed) == "function" and input:wasPressed("b")
 
   if not direction and not forcedCancel then

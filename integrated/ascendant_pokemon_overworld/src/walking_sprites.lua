@@ -570,7 +570,7 @@ end
 function WalkingSprites:refreshPlayer(game)
   game = game or self.activeGame
   if game then self.activeGame = game end
-  if not self:enabled() then return 0 end
+  if not self:enabled() then return self:restore() end
   local world = worldFor(game)
   local player = world and world.player
   if not player then return 0 end

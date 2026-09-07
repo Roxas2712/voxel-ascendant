@@ -103,17 +103,10 @@ local function universalBootLanguage()
 end
 
 local function language()
-  local options = mod and mod.options
-  if options and type(options.get) == "function" then
-    local ok, value = pcall(options.get, options, "hud_language")
-    value = ok and tostring(value or ""):lower() or ""
-    if value == "de" or value == "german" or value == "deutsch" then
-      return "de"
-    elseif value == "en" or value == "english" then
-      return "en"
-    end
-  end
-  return universalBootLanguage() or "de"
+  -- The battle-HUD language is not a global menu-language preference.
+  -- In particular, an old saved HUD setting must not translate START when
+  -- the optional translation package is absent or boots in English.
+  return universalBootLanguage() or "en"
 end
 
 -- Native labels are kept untouched because Gen I owns their callbacks and

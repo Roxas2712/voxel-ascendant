@@ -1816,6 +1816,15 @@ local function vascPatch(self)
     local def = sprite and sprite.def or nil
     local identity = identityFromDef(def)
     local heroRole = heroRoleFromIdentity(self.generation, identity)
+    -- Identity recovery must not override HD PEOPLE = OFF. Pokemon have
+    -- separate context switches and must keep their own selected artwork.
+    local pokemonDex = type(def) == "table"
+      and (tonumber(def.ascendantPokemonDex) or tonumber(def.pokemonDex)
+        or tonumber(tostring(def.image or ""):match("follower_0*(%d+)")))
+    if image and not pokemonDex and not option(self.mod, "hd_walking_sprites", true) then
+      imageDefs[image] = nil
+      return image
+    end
     local hasAtlas = type(def) == "table"
       and type(def.ascendantAtlasImage) == "string"
       and def.ascendantAtlasImage ~= ""
@@ -2030,7 +2039,7 @@ local function vascPatch(self)
       if not results[1] then error(results[2], 0) end
       return unpack(results, 2)
     end
-    if def then
+    if def and (record.dex or option(self.mod, "hd_walking_sprites", true)) then
       local frame = frameFromCard(mesh, def, texture)
         local cardSource = record.flameSources and record.flameSources.on
           or record.animationSources and record.animationSources.idle

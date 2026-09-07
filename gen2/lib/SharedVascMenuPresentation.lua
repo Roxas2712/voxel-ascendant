@@ -27,13 +27,17 @@ local function qaLog(line)
 end
 
 local function language()
-  local options = mod and mod.options
-  if options and type(options.get) == "function" then
-    local ok, value = pcall(options.get, options, "hud_language")
-    value = ok and tostring(value or ""):lower() or ""
-    if value == "en" or value == "english" then return "en" end
+  if not (mod and type(mod.find) == "function") then return "en" end
+  local ok, handle = pcall(mod.find, "translation-german-universal")
+  if not ok or not handle then
+    ok, handle = pcall(mod.find, mod, "translation-german-universal")
   end
-  return "de"
+  local boot = ok and type(handle) == "table" and handle.exports
+  return type(boot) == "table" and boot.bootLanguage == "de" and "de" or "en"
+end
+
+local function defaultFooter()
+  return language() == "de" and "A: AUSWAHL   B: ZURÜCK" or "A: SELECT   B: BACK"
 end
 
 local function regionHeader(owner)
@@ -86,7 +90,7 @@ local function adapterFor(owner)
     game=owner and owner.game,
     title="VOXEL ASCENDANT",
     items={}, index=1, scroll=0, rows=9,
-    footer="A: AUSWAHL   B: ZURÜCK",
+    footer=defaultFooter(),
     draw=function() end,
     update=function() end,
   }
@@ -113,7 +117,7 @@ function M.draw(owner, spec, winW, winH)
     math.floor(tonumber(spec.index) or 1)))
   adapter.scroll = math.max(0, math.floor(tonumber(spec.scroll) or 0))
   adapter.rows = math.max(1, math.floor(tonumber(spec.rows) or 9))
-  adapter.footer = tostring(spec.footer or "A: AUSWAHL   B: ZURÜCK")
+  adapter.footer = tostring(spec.footer or defaultFooter())
   adapter.__vascLanguage = language()
   adapter.__vascHeaderLabel = tostring(spec.header
     or regionHeader(owner))

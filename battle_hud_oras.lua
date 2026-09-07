@@ -1210,43 +1210,59 @@ local function textWidth(s)
   return (ok and tonumber(w)) or (#s * 8)
 end
 
-local function splitBattleMessageText(text)
+local function splitBattleMessageText(text, revealedEnd)
   text = tostring(text or "")
-  local out = {}
+  local out, raw = {}, {}
   local pos = 1
   while true do
     local a, b = text:find("[\n\v]", pos)
-    -- PROMPT terminates a ROM text page, not necessarily the entire queued
-    -- message. A following newline/CONT left it on a non-final source line.
     local line = a and text:sub(pos, a - 1) or text:sub(pos)
-    -- RomExtractor:textGlyph serializes control glyphs with BRACES. Keep
-    -- this ahead of Font.split: unknown braces render blank, leaving the
-    -- misleading visible word PROMPT even though the raw token is {PROMPT}.
-    line = line:gsub("%s*{PROMPT}%s*$", "")
-      :gsub("%s*<PROMPT>%s*$", "")
-      :gsub("%s*%[PROMPT%]%s*$", ""):gsub("%s+PROMPT%s*$", "")
-    if line == "PROMPT" then line = "" end
-    out[#out + 1] = line
-    if not a then
-      break
+    raw[#raw + 1] = line
+    local ranges = {}
+    -- ROM controls are not ink, even when another fragment follows them.
+    -- Keep their original byte positions so typewriter counts cannot reveal
+    -- later text early, or expose a partially revealed control token.
+    for _, pattern in ipairs({ "{PROMPT}", "<PROMPT>", "%[PROMPT%]",
+        "%s+PROMPT%s*$", "^PROMPT%s*$" }) do
+      local cursor = 1
+      while true do
+        local first, last = line:find(pattern, cursor)
+        if not first then break end
+        ranges[#ranges + 1] = { first, last }
+        cursor = last + 1
+      end
     end
+    table.sort(ranges, function(left, right) return left[1] < right[1] end)
+    local pieces, cursor = {}, 1
+    local limit = math.min(#line, revealedEnd or #line)
+    for _, range in ipairs(ranges) do
+      if cursor <= limit and range[1] > cursor then
+        pieces[#pieces + 1] = line:sub(cursor, math.min(limit, range[1] - 1))
+      end
+      cursor = math.max(cursor, range[2] + 1)
+    end
+    if cursor <= limit then pieces[#pieces + 1] = line:sub(cursor, limit) end
+    local clean = table.concat(pieces)
+    local final = ranges[#ranges]
+    if final and line:sub(final[2] + 1):match("^%s*$") then
+      clean = clean:gsub("%s+$", "")
+    end
+    out[#out + 1] = clean
+    if not a then break end
     pos = b + 1
   end
-  return out
+  return out, raw
 end
 
 local function revealedGlyphText(source, count)
   source = tostring(source or "")
   count = math.max(0, tonumber(count) or 0)
   if count == 0 then return "" end
-
   local ok, spans = pcall(Font.split, source)
-  if not (ok and type(spans) == "table") then
-    return source:sub(1, count)
-  end
-  if count >= #spans then return source end
-  local last = spans[count]
-  return last and source:sub(1, last.to) or ""
+  local last = ok and type(spans) == "table" and spans[count] or nil
+  local limit = ok and type(spans) == "table"
+    and (count >= #spans and #source or (last and last.to or 0)) or count
+  return splitBattleMessageText(source, limit)[1] or ""
 end
 
 -- Gen1Recomp already owns the typewriter/CONT state in battle.shown. Reuse that
@@ -1263,7 +1279,7 @@ local function visibleBattleMessageLines(battle)
     battle._floatingBattleMessageFullLines = nil
   end
   if shown and source and #shown > 0 then
-    local sourceLines = splitBattleMessageText(source)
+    local _, rawLines = splitBattleMessageText(source)
     local lineIndex = math.max(1, tonumber(battle.lineIndex) or 1)
     local firstSource = math.max(1, lineIndex - #shown + 1)
     local complete = battle.msgWaiting or battle.msgPrompt or battle.msgHold
@@ -1272,14 +1288,19 @@ local function visibleBattleMessageLines(battle)
 
     for visibleIndex, codes in ipairs(shown) do
       local sourceIndex = firstSource + visibleIndex - 1
-      local full = sourceLines[sourceIndex] or ""
+      local nativeLine = battle.lines and battle.lines[sourceIndex]
+      local rawLine = type(nativeLine) == "table" and nativeLine.text
+      if type(rawLine) ~= "string" then rawLine = rawLines[sourceIndex] or "" end
+      -- Newer engines remove ROM controls before counting their glyphs.
+      -- Prefer that exact prepared line; older engines retain raw glyphs.
+      local full = splitBattleMessageText(rawLine)[1] or ""
       -- splitBattleMessageText has already removed page control markers,
       -- before both glyph slicing and the complete-page hold cache.
       fullOut[#fullOut + 1] = full
       if complete then
         out[#out + 1] = full
       else
-        out[#out + 1] = revealedGlyphText(full, #(codes or {}))
+        out[#out + 1] = revealedGlyphText(rawLine, #(codes or {}))
       end
     end
 
@@ -1315,9 +1336,10 @@ local function visibleTextBoxMessageLines(box)
   local out = {}
   for i = 1, math.min(2, #full) do
     local codes = shown[i]
-    local line = splitBattleMessageText(full[i] or "")[1] or ""
+    local lines, rawLines = splitBattleMessageText(full[i] or "")
+    local line = lines[1] or ""
     if type(codes) == "table" then
-      out[#out + 1] = revealedGlyphText(line, #codes)
+      out[#out + 1] = revealedGlyphText(rawLines[1] or "", #codes)
     else
       out[#out + 1] = line
     end
@@ -2572,7 +2594,8 @@ function FloatingHud.proposeStatusLatch(
   -- frames are different: trainer intros may have no live billboard and wild
   -- send-out may have one, so each exact first owner can latch independently.
   if atomic and not initial and not (battle and battle.safari)
-      and not (live.player and live.enemy) then
+      and not ((live.player or (battle.player and battle.player.fainted))
+        and (live.enemy or (battle.enemy and battle.enemy.fainted))) then
     return { battle=battle, shot=shot, viewportKey=key, state=state,
       slots=slots, changed=changed, pending={player=live.player,enemy=live.enemy},
       live=live, ready=false, safe=false, complete=false,
@@ -2683,7 +2706,9 @@ function FloatingHud.commitStatusLatch(proposal)
     end
   end
   for _, side in ipairs({ "player", "enemy" }) do
-    if proposal.changed[side] then
+    if not proposal.live[side] then
+      state[side] = nil
+    elseif proposal.changed[side] then
       state.serial = state.serial + 1
       state.generations[side] = (state.generations[side] or 0) + 1
       state.lastMismatch[side] = proposal.atomic and "viewport"
@@ -6071,9 +6096,11 @@ local function floatingHudLive(battle, slide)
 
   local growing = type(battle.growIn) == "table"
     and battle.growIn.battler or nil
-  local enemy = battle.enemy and not battle.showEnemyTrainer
+  local enemy = battle.enemy and not battle.enemy.fainted
+                and not battle.showEnemyTrainer
                 and not battle.enemySendingOut and growing ~= battle.enemy
-  local player = battle.player and not (battle.safari or battle.demo)
+  local player = battle.player and not battle.player.fainted
+                 and not (battle.safari or battle.demo)
                  and not battle.showPlayerBack and not battle.sendingOut
                  and growing ~= battle.player
   return enemy and true or false, player and true or false

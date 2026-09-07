@@ -16,16 +16,8 @@ local function findMod(id)
 end
 
 local function germanActive()
-  local options = mod and mod.options
-  if options and type(options.get) == "function" then
-    local ok, value = pcall(options.get, options, "hud_language")
-    value = ok and tostring(value or ""):lower() or ""
-    if value == "de" or value == "deutsch" or value == "german" then
-      return true
-    elseif value == "en" or value == "english" then
-      return false
-    end
-  end
+  -- Save/load notices follow the translation package, not a saved battle-HUD
+  -- preference. A HUD-only language change must never translate native menus.
   local universal = findMod("translation-german-universal")
   local boot = type(universal) == "table" and universal.exports
     and universal.exports.bootLanguage

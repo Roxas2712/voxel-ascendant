@@ -130,7 +130,8 @@ local function specFor(state)
         math.floor(seconds / 3600), math.floor(seconds / 60) % 60)},
     }
     common.index = 1
-    common.footer = "A: WEITER   B: ZURÜCK"
+    common.footer = common.language == "de"
+      and "A: WEITER   B: ZURÜCK" or "A: CONTINUE   B: BACK"
     return common
   end
 end
