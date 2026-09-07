@@ -5670,6 +5670,32 @@ function HudRuntime.messageRectFor(shot)
       local gutter = math.max(6, math.floor(math.min(shot.pw, shot.ph) * 0.015))
       y = math.min(y, controlTop - gutter - h)
       y = math.max(safe, y)
+      -- Raising the mobile dialog above START/SELECT can overlap an actor
+      -- and permanently retire the 3D battle. Fit its proportional plate in
+      -- the clear gap below exact visible ink, without moving the controls.
+      -- Keep at least native-size text (or the smaller user-selected scale)
+      -- and at least 60% of the desired scale. If that cannot clear the actors,
+      -- the unchanged camera-safety evaluator must still reject the seat.
+      local bottom = y + h
+      local minimumScale = math.min(drawScale, math.max(1, drawScale * .60))
+      local padding = math.max(8, math.floor(math.min(shot.pw, shot.ph) * .012))
+      for _=1,2 do
+        local ceiling = y
+        for _, side in ipairs({ "player", "enemy" }) do
+          local visual = shot.actorVisuals and shot.actorVisuals[side]
+          local hull = visual and visual.hull
+          if hull and hull[1] < x + w + padding
+              and hull[1] + hull[3] + padding > x
+              and hull[2] < bottom + padding then
+            ceiling = math.max(ceiling, hull[2] + hull[4] + padding + 1)
+          end
+        end
+        local fitted = math.max(minimumScale,
+          math.min(drawScale, (bottom - ceiling) / logicalH))
+        drawScale = fitted
+        w, h = logicalW * drawScale, logicalH * drawScale
+        x, y = left + (availableW - w) * .5, bottom - h
+      end
     end
     return { x, y, w, h }, drawScale, logicalW, logicalH
   end
@@ -8360,6 +8386,18 @@ local hudProvider = {
     -- rectangles would successfully draw the effect and then discard every
     -- pixel around the projected battler.
     if battle and battle._ascendantBattleHudMegaTransformation then
+      return nil
+    end
+    -- Pushed choices/pickers extend beyond ordinary status/message damage
+    -- rectangles. A regional commit otherwise clips their rendered pixels
+    -- (SHIFT YES/NO became only a thin border on mobile). Use a complete
+    -- transaction for these temporary foregrounds; ordinary frames retain
+    -- the regional optimization and the same allocated provider canvas.
+    local choice = battle and battle._floatingBattleChoice
+    if (choice and HudRuntime.stateInStack(battle.game, choice))
+        or HudRuntime.partyOverlayActiveForBattle(battle)
+        or HudRuntime.moveLearnOverlayActiveForBattle(battle)
+        or HudRuntime.nicknameOverlayActiveForBattle(battle) then
       return nil
     end
     local bounds = FloatingHud.cameraBounds(battle, shot)

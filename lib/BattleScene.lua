@@ -130,6 +130,20 @@ function BattleScene.letterbox()
   local Renderer = require("src.render.Renderer")
   local pw, ph = BattleScene.pixelSize()
   local s = Renderer:fitScale()
+  local uw, uh
+  if type(Renderer.uiSize) == "function" then uw, uh = Renderer:uiSize() end
+  if uw and uh and (uw ~= BattleScene.GB_W or uh ~= BattleScene.GB_H) then
+    -- A pushed full-size party/bag screen temporarily changes Renderer.uiSize.
+    -- Its fit must not resize the battle projection/HUD underneath it: on
+    -- return during send-out, that invented viewport change can deadlock the
+    -- atomic owner-card latch and retire an otherwise healthy 3D battle.
+    s = math.max(1, math.floor(math.min(
+      pw / BattleScene.GB_W, ph / BattleScene.GB_H)))
+    local ok, faithful = pcall(require, "src.core.FaithfulRes")
+    local cap = ok and faithful and type(faithful.scaleCap) == "function"
+      and faithful.scaleCap() or nil
+    if cap and cap < s then s = cap end
+  end
   return math.floor((pw - BattleScene.GB_W * s) / 2),
          math.floor((ph - BattleScene.GB_H * s) / 2),
          s, pw, ph

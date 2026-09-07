@@ -4361,6 +4361,12 @@ end
 local function sideVisible(battle, side)
   local function effectHidden(battler)
     if not battler then return false end
+    -- Native send-out starts with three deliberately empty frames; recall
+    -- similarly ends at zero scale. These are absence, not broken textures.
+    if type(battle.growInScale) == "function"
+        and battle:growInScale(battler) == 0 then return true end
+    if type(battle.shrinkOutScale) == "function"
+        and battle:shrinkOutScale(battler) == 0 then return true end
     if type(battle.fxHidden) == "function" and battle:fxHidden(battler) then
       return true
     end
@@ -4801,6 +4807,11 @@ function OverworldBattle.textures(battle)
     battle, "enemy", enemy) or nil
   out.player = okP and OverworldBattle.finalizeSideTexture(
     battle, "player", player) or nil
+  -- A legacy art wrapper may turn an intentional nil into an empty Canvas.
+  -- Reapply native visibility after the complete wrapper chain so send-out
+  -- covers remain pending, rather than claiming an actor with no receipt.
+  if not sideVisible(battle, "enemy") then out.enemy = nil end
+  if not sideVisible(battle, "player") then out.player = nil end
   local standing = false
   if stadiumModelsEnabled() then
     local okStanding, value = pcall(function()
