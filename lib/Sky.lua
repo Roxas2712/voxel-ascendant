@@ -60,6 +60,12 @@ local PaletteFX = require("src.render.PaletteFX")
 
 local Sky = {}
 
+local okPresentation, CanvasPresentation = pcall(V.require,
+  "CanvasPresentation")
+local MOBILE_RUNTIME = okPresentation and CanvasPresentation
+  and (CanvasPresentation.OS == "iOS"
+       or CanvasPresentation.OS == "Android") or false
+
 -- How much sky the voxel renderer paints. This is deliberately separate
 -- from DAYTIME: DAYTIME chooses the hour and therefore the colours, while
 -- SKY chooses whether Kanto has a full banded sky, a cheap flat backdrop,
@@ -74,6 +80,9 @@ Sky.clock = 0
 
 function Sky.update(dt)
   if dt and dt > 0 then Sky.clock = (Sky.clock + dt) % 65521 end
+  -- Mobile world-core paints no semantic sky. Keep its deterministic clock,
+  -- but never decode/upload the unused cloud atlas on the phone update path.
+  if MOBILE_RUNTIME then return end
   -- Decode the one compact cloud atlas outside paint(). Graphics may not exist
   -- during module construction, so the update seam is the first safe prewarm.
   -- CLOUDS OFF deliberately avoids even this one-time I/O/allocation.
@@ -164,6 +173,8 @@ Sky.ELEV_SPAN = math.rad(55)
 local cache = {
   bands = nil, anchors = nil, key = {}, ramp = nil, anchorCount = nil,
 }
+local weatherCache = { source = nil, mode = nil, bands = nil, anchors = nil }
+local frameWeather = "clear"
 
 -- Expand the few authored/display-mode key colours into the fine ramp without
 -- adding a texture filter. Interpolation happens only when the tiny palette is
@@ -232,6 +243,55 @@ function Sky.bands()
   return bands
 end
 
+-- Weather owns the actual sky palette, not a translucent screen rectangle.
+-- These are intentionally close greys: STORM should read as one heavy soup,
+-- with only enough vertical variation to retain the horizon's depth. The
+-- ninety-six-step native ramp keeps the change continuous in every camera and
+-- automatically feeds the exact same colours to Water.ramp().
+local WEATHER_ANCHORS = {
+  rain = {
+    { .16, .19, .21 }, { .24, .27, .28 }, { .38, .41, .41 },
+  },
+  snow = {
+    { .31, .34, .36 }, { .47, .50, .51 }, { .66, .68, .68 },
+  },
+  fog = {
+    { .39, .42, .42 }, { .50, .53, .53 }, { .61, .63, .62 },
+  },
+  storm = {
+    { .105, .115, .125 }, { .145, .155, .165 },
+    { .205, .215, .220 }, { .285, .295, .295 },
+  },
+  heat = {
+    { .42, .17, .13 }, { .64, .29, .20 },
+    { .88, .50, .31 }, { 1.0, .72, .48 },
+  },
+}
+
+function Sky.weatherBands(mode)
+  local source = Sky.bands()
+  local anchors = WEATHER_ANCHORS[mode]
+  if not anchors then return source end
+  if weatherCache.source == source and weatherCache.mode == mode
+      and weatherCache.bands then
+    return weatherCache.bands
+  end
+  weatherCache.source = source
+  weatherCache.mode = mode
+  weatherCache.anchors = anchors
+  weatherCache.bands = densify(anchors, Sky.GRADIENT_BANDS)
+  return weatherCache.bands
+end
+
+function Sky.frameWeather()
+  return frameWeather
+end
+
+function Sky.setFrameWeather(weather)
+  frameWeather = WEATHER_ANCHORS[weather] and weather or "clear"
+  return frameWeather
+end
+
 -- The hour's haze -- the palest band, in 0..1 -- which is both the sky's
 -- bottom edge and the right flat fill for any outdoor void that wants to
 -- match the clock without painting bands (the battle arena's backdrop).
@@ -247,13 +307,14 @@ end
 -- cannot paint the bands is a hazy sky rather than a wrong one.
 --
 -- Mutates the descriptor, which is a fresh table per frame from its caller.
-function Sky.dress(sky)
+function Sky.dress(sky, weather)
+  Sky.setFrameWeather(weather)
   if not Sky.enabled() then return nil end
   if not Sky.banded() then
     if sky then sky.bands = nil end
     return sky
   end
-  local bands = Sky.bands()
+  local bands = Sky.weatherBands(frameWeather)
   local haze = bands and bands[#bands]
   if not (sky and haze) then return sky end
   sky[1], sky[2], sky[3] = haze[1], haze[2], haze[3]
@@ -458,7 +519,7 @@ Sky._rampFor = rampFor            -- named for the suite
 -- reflected gradient with it rather than showing two different skies.
 function Sky.ramp()
   if not Sky.banded() then return nil end
-  local bands = Sky.bands()
+  local bands = Sky.weatherBands(frameWeather)
   if not (bands and bands[1]) then return nil end
   local img = rampFor(bands)
   if not img then return nil end
@@ -499,7 +560,8 @@ Sky._getShader = getShader        -- named for the suite
 -- fine ramp above; this path is also what headless contract runs exercise.
 local function paintFlat(w, h, bands, edge, alpha, cell, top)
   local g = love.graphics
-  local paintBands = (bands == cache.bands and cache.anchors) or bands
+  local paintBands = (bands == cache.bands and cache.anchors)
+    or (bands == weatherCache.bands and weatherCache.anchors) or bands
   local n = #paintBands
   local span = edge - (top or 0)
   local prev = 0
@@ -656,6 +718,15 @@ local function wrapPi(a)
   return (a + math.pi) % TAU - math.pi
 end
 
+local function hashText(value)
+  local text = tostring(value or "")
+  local hash = 7
+  for i = 1, #text do
+    hash = (hash * 31 + text:byte(i)) % 65521
+  end
+  return hash
+end
+
 -- A bearing/elevation pair as a unit direction in the voxel world's axes.
 -- Bearing zero is +Z, matching FirstPerson's yaw. DayNight.body uses its own
 -- astronomical bearing convention and already returns an explicit vector.
@@ -749,7 +820,18 @@ local function nightStrength()
 end
 
 Sky.CLOUD_COUNT = 18
-Sky.CLOUD_MAX_DRAWS = Sky.CLOUD_COUNT
+Sky.CLOUD_HORIZON_COUNT = 10
+Sky.CLOUD_STATIC_RAIN_COUNT = 8
+Sky.CLOUD_STATIC_STORM_COUNT = 12
+Sky.CLOUD_STATIC_WEATHER_MAX_DRAWS = Sky.CLOUD_STATIC_STORM_COUNT
+Sky.CLOUD_CLEAR_MAX_DRAWS = Sky.CLOUD_COUNT + Sky.CLOUD_HORIZON_COUNT
+Sky.CLOUD_WEATHER_MAX_DRAWS = Sky.CLOUD_COUNT
+                              + Sky.CLOUD_STATIC_WEATHER_MAX_DRAWS
+Sky.CLOUD_MAX_DRAWS = math.max(Sky.CLOUD_CLEAR_MAX_DRAWS,
+                               Sky.CLOUD_WEATHER_MAX_DRAWS)
+Sky.CLOUD_EVENT_MAX_DRAWS = 4
+Sky.CLOUD_COMBINED_MAX_DRAWS = Sky.CLOUD_MAX_DRAWS
+                               + Sky.CLOUD_EVENT_MAX_DRAWS
 Sky.CLOUD_DRIFT = math.rad(0.22) -- world radians per second, a slow high wind
 
 -- Four authored 128x128 transparent sprites in one row. The atlas is a single
@@ -869,7 +951,77 @@ function Sky.cloudVisual(i, cell)
   return variant, size, size
 end
 
-local function paintClouds(w, h, edge, cell, alpha, ray, night)
+-- A second, explicitly distant bank only appears under a bright clear sky.
+-- Its low elevation keeps it on the horizon; no player/world position enters
+-- the address, so these can never become nearby map objects. Each layer drifts
+-- at a slightly different slow speed to keep clear days alive without churn.
+function Sky.horizonCloudAngles(i, clock)
+  i = math.max(1, math.floor(i or 1))
+  local speed = Sky.CLOUD_DRIFT * (0.34 + (i % 5) * 0.055)
+  local az = wrapPi(1.7 + i * GOLDEN_ANGLE + (clock or Sky.clock) * speed)
+  local el = math.rad(4.5 + ((i * 7) % 6) * 0.85)
+  return az, el
+end
+
+function Sky.horizonCloudVisual(i, cell)
+  i = math.max(1, math.floor(i or 1))
+  cell = math.max(1, cell or 1)
+  local variant = ((i * 5 + math.floor(i / 3)) % Sky.CLOUD_ASSET.frames) + 1
+  local size = (14 + ((i * 3) % 7)) * cell
+  return variant, size, size
+end
+
+-- RAIN/STORM receive a second, map-fixed bank in addition to the ordinary
+-- drifting atmosphere.  Its address is deliberately a pure function of
+-- (mapId, index): neither Sky.clock, camera/player coordinates nor a weather
+-- occurrence can move it.  Direct settings, AUTO and optional providers all
+-- arrive here as the same already-resolved weather string.
+local STATIC_WEATHER_CLOUDS = {
+  rain = {
+    count = Sky.CLOUD_STATIC_RAIN_COUNT,
+    scale = 1.28, alpha = .62,
+    red = .53, green = .56, blue = .57,
+  },
+  storm = {
+    count = Sky.CLOUD_STATIC_STORM_COUNT,
+    scale = 1.72, alpha = .82,
+    red = .34, green = .36, blue = .37,
+  },
+}
+
+function Sky.staticWeatherCloudProfile(weather)
+  local profile = STATIC_WEATHER_CLOUDS[weather]
+  if not profile then return nil end
+  return profile.count, profile.scale, profile.alpha,
+         profile.red, profile.green, profile.blue
+end
+
+function Sky.staticWeatherCloudAngles(i, mapId)
+  i = math.max(1, math.floor(i or 1))
+  local seed = hashText(mapId)
+  local mapBearing = (seed % 4096) / 4096 * TAU
+  local az = wrapPi(mapBearing + i * GOLDEN_ANGLE)
+  local el = math.rad(7 + ((seed + i * 11) % 13) * .78)
+  return az, el
+end
+
+function Sky.staticWeatherCloudVisual(i, cell, mapId)
+  i = math.max(1, math.floor(i or 1))
+  cell = math.max(1, cell or 1)
+  local seed = hashText(mapId)
+  local variant = ((seed + i * 5 + math.floor(i / 3))
+                   % Sky.CLOUD_ASSET.frames) + 1
+  local size = (15 + ((seed + i * 7) % 7)) * cell
+  return variant, size, size
+end
+
+local CLOUD_FLYOVER_OFFSETS = {
+  { 0.00, 0.00, 1.22 }, { -0.075, 0.025, 0.92 },
+  { 0.070, -0.018, 1.03 }, { 0.008, 0.050, 0.78 },
+}
+
+local function paintClouds(w, h, edge, cell, alpha, ray, night, weather,
+                           shadowPolicy, mapId)
   if Sky.cloudSetting:get() == "off" then return end
   if cloudAtlas.state ~= "ready" then return end
   local g = love and love.graphics or nil
@@ -877,15 +1029,34 @@ local function paintClouds(w, h, edge, cell, alpha, ray, night)
     return
   end
   local shade = 1 - night * 0.55
+  local scale, cloudAlpha = 1, alpha * 0.88
+  local red, green, blue = shade, shade, math.min(1, shade + 0.04)
+  if weather == "storm" then
+    scale, cloudAlpha = 2.15, alpha * 0.96
+    red, green, blue = .34, .36, .37
+  elseif weather == "fog" then
+    scale, cloudAlpha = 1.72, alpha * 0.78
+    red, green, blue = .70, .72, .72
+  elseif weather == "rain" then
+    scale, cloudAlpha = 1.42, alpha * 0.90
+    red, green, blue = .53, .56, .57
+  elseif weather == "snow" then
+    scale, cloudAlpha = 1.25, alpha * 0.82
+    red, green, blue = .78, .80, .80
+  elseif weather == "heat" then
+    scale, cloudAlpha = .92, alpha * .48
+    red, green, blue = 1.0, .78, .62
+  end
   -- Use the same bearing/elevation projection in every camera. The nil-ray
   -- projector is the north-facing compatibility/orbit view, not a new set of
   -- canvas coordinates, so no cloud can follow a turn of the camera.
   local project = Sky.projector(ray, w, h, edge)
   -- Every cloud shares the hour/weather tint, so bind it once rather than
   -- creating eighteen redundant graphics-state changes in the worst case.
-  g.setColor(shade, shade, math.min(1, shade + 0.04), alpha * 0.88)
+  g.setColor(red, green, blue, cloudAlpha)
   for i = 1, Sky.CLOUD_COUNT do
     local variant, width, height = Sky.cloudVisual(i, cell)
+    width, height = width * scale, height * scale
     local az, el = Sky.cloudAngles(i, Sky.clock)
     local x, y = project(az, el)
     -- Admit an off-canvas centre only while transparent atlas bounds can still
@@ -897,6 +1068,86 @@ local function paintClouds(w, h, edge, cell, alpha, ray, night)
              height / Sky.CLOUD_ASSET.frameHeight,
              Sky.CLOUD_ASSET.frameWidth * 0.5,
              Sky.CLOUD_ASSET.frameHeight * 0.5)
+    end
+  end
+
+
+  -- The low weather bank is intentionally static in world space.  It uses
+  -- the same atlas/projector as every other VASC cloud, but no clock or local
+  -- position enters its address. STORM is both darker and denser than RAIN.
+  local staticCount, staticScale, staticAlpha,
+        staticRed, staticGreen, staticBlue =
+    Sky.staticWeatherCloudProfile(weather)
+  if staticCount then
+    g.setColor(staticRed, staticGreen, staticBlue, alpha * staticAlpha)
+    for i = 1, staticCount do
+      local variant, width, height =
+        Sky.staticWeatherCloudVisual(i, cell, mapId)
+      width, height = width * staticScale, height * staticScale
+      local az, el = Sky.staticWeatherCloudAngles(i, mapId)
+      local x, y = project(az, el)
+      local mx, my = width * 0.5, height * 0.5
+      if x and x >= -mx and x <= w + mx and y >= -my and y <= edge + my then
+        g.draw(cloudAtlas.image, cloudAtlas.quads[variant], x, y, 0,
+               width / Sky.CLOUD_ASSET.frameWidth,
+               height / Sky.CLOUD_ASSET.frameHeight,
+               Sky.CLOUD_ASSET.frameWidth * 0.5,
+               Sky.CLOUD_ASSET.frameHeight * 0.5)
+      end
+    end
+  end
+
+
+  -- Clear daytime receives an extra low, slow bank. It is deliberately drawn
+  -- from the same prewarmed atlas and projector, adding neither allocations
+  -- nor player-local entities. Night and non-clear weather stay unchanged.
+  if weather == "clear" and night < 0.38 then
+    local daylight = math.max(0, math.min(1, 1 - night / 0.38))
+    g.setColor(red, green, blue, cloudAlpha * 0.62 * daylight)
+    for i = 1, Sky.CLOUD_HORIZON_COUNT do
+      local variant, width, height = Sky.horizonCloudVisual(i, cell)
+      local az, el = Sky.horizonCloudAngles(i, Sky.clock)
+      local x, y = project(az, el)
+      local mx, my = width * 0.5, height * 0.5
+      if x and x >= -mx and x <= w + mx and y >= -my and y <= edge + my then
+        g.draw(cloudAtlas.image, cloudAtlas.quads[variant], x, y, 0,
+               width / Sky.CLOUD_ASSET.frameWidth,
+               height / Sky.CLOUD_ASSET.frameHeight,
+               Sky.CLOUD_ASSET.frameWidth * 0.5,
+               Sky.CLOUD_ASSET.frameHeight * 0.5)
+      end
+    end
+  end
+
+  -- When the policy sends a ground-cloud crossing, hang a matching formation
+  -- from VASC's real clouds.png atlas on the same progress and direction. It
+  -- is an event layer in addition to the ambient eighteen-cloud sky, not a
+  -- procedural stand-in, and disappears with the paired ground shadow.
+  local eventOpacity = shadowPolicy and shadowPolicy.cloudOpacity or 0
+  local progress = shadowPolicy and shadowPolicy.cloudProgress or nil
+  if eventOpacity > 0 and type(progress) == "number" then
+    local seed = shadowPolicy.cloudSeed or 0
+    local forward = ((seed * 0.233) % 1) >= 0.5
+    local lane = (((seed * 0.417) % 1) - 0.5) * 0.20
+    local path = -0.66 + progress * 1.32
+    local centre = math.pi + lane + (forward and path or -path)
+    local eventAlpha = math.min(1, eventOpacity / 0.20)
+    g.setColor(red, green, blue, alpha * 0.96 * eventAlpha)
+    local base = math.max(16, cell * 20)
+    for i, offset in ipairs(CLOUD_FLYOVER_OFFSETS) do
+      local variant = ((math.floor(seed) + i * 3) %
+                       Sky.CLOUD_ASSET.frames) + 1
+      local width = base * offset[3]
+      local height = width
+      local x, y = project(centre + offset[1], 0.25 + offset[2])
+      local mx, my = width * 0.5, height * 0.5
+      if x and x >= -mx and x <= w + mx and y >= -my and y <= edge + my then
+        g.draw(cloudAtlas.image, cloudAtlas.quads[variant], x, y, 0,
+               width / Sky.CLOUD_ASSET.frameWidth,
+               height / Sky.CLOUD_ASSET.frameHeight,
+               Sky.CLOUD_ASSET.frameWidth * 0.5,
+               Sky.CLOUD_ASSET.frameHeight * 0.5)
+      end
     end
   end
   g.setColor(1, 1, 1, 1)
@@ -1028,6 +1279,9 @@ function Sky.shootingAngles(clock, trail)
 end
 
 local function paintStars(w, h, edge, cell, alpha, ray, strength, context)
+  local weather = context and context.weather
+  if weather == "storm" or weather == "fog" or weather == "rain"
+      or weather == "snow" then return end
   if strength <= 0.03 then return end
   local g = love.graphics
   local function star(i, x, y, strengthScale)
@@ -1162,13 +1416,20 @@ local function paintAtmosphere(w, h, edge, cell, alpha, ray, context)
     g = g, w = w, h = h, edge = edge, cell = cell, alpha = alpha,
     project = Sky.projector(ray, w, h, edge),
     weather = context and context.weather or nil,
+    mapId = context and context.mapId or nil,
+    shadowPolicy = context and context.shadowPolicy or nil,
+    battleView = context and context.battleView == true,
   }
   -- Rainbow is distant atmosphere; clouds can pass in front of it. Flyers
   -- are nearer silhouettes and cross over both. Both layers use the same
   -- world projector and their own zero-draw performance gate.
-  SkyEvents.paint(eventContext, "back")
-  paintClouds(w, h, edge, cell, alpha, ray, night)
-  SkyEvents.paint(eventContext, "front")
+  local weather = context and context.weather
+  local opaqueWeather = weather == "storm" or weather == "fog"
+  if not opaqueWeather then SkyEvents.paint(eventContext, "back") end
+  paintClouds(w, h, edge, cell, alpha, ray, night, weather,
+              context and context.shadowPolicy or nil,
+              context and context.mapId or nil)
+  if not opaqueWeather then SkyEvents.paint(eventContext, "front") end
   if sx then g.setScissor(sx, sy, sw, sh) else g.setScissor() end
 end
 

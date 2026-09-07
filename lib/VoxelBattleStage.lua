@@ -150,7 +150,53 @@ local TOP_ALT = { 0.67, 0.64, 0.57 }
 
 local texture = nil
 local arenaTextures, arenaOrder = {}, {}
+local diskTextures, diskOrder = {}, {}
 local backdropTextures, backdropOrder = {}, {}
+local customBackdropTextures, customBackdropOrder = {}, {}
+local customChoiceTextures = setmetatable({}, {__mode="k"})
+-- Compositions belong to the decoded bitmap, while their use belongs to the
+-- exact arena/session object that selected it.  Keeping those two identities
+-- separate lets equal custom bytes share one GPU upload without allowing a
+-- different choice (or a later owner) to inherit a stale placement receipt.
+local backdropCompositions = setmetatable({}, {__mode="k"})
+local backdropCompositionOwners = setmetatable({}, {__mode="k"})
+
+-- A GPU upload can fail while the graphics context is being restored or
+-- while the first covered battle frame is still settling.  `false` is the
+-- permanent negative-cache sentinel, but treating the very first transient
+-- failure as permanent made an ARENA stay unavailable for the rest of the
+-- process; only a restart cleared it.  This private marker grants exactly one
+-- retry on the next request.  A second failure becomes `false`, so a broken
+-- or missing asset is still never decoded/uploaded every frame.
+local RETRY_IMAGE = {}
+
+local function cachedImage(cache, key)
+  local cached = cache[key]
+  if cached == RETRY_IMAGE then return nil, true, true end
+  if cached ~= nil then return cached or nil, false, false end
+  return nil, true, false
+end
+
+local function cacheImageFailure(cache, key, retryable, retrying)
+  cache[key] = (retryable and not retrying) and RETRY_IMAGE or false
+end
+
+-- A new battle is a fresh recovery boundary.  Drop only negative entries;
+-- successful GPU images remain shared and no unrelated renderer cache is
+-- invalidated.  This also lets a later fight recover if the context needed
+-- more than the in-frame retry above to become usable.
+function VoxelBattleStage.retryFailedImages()
+  for _, cache in ipairs({
+    diskTextures, backdropTextures, customChoiceTextures,
+  }) do
+    for key, image in pairs(cache) do
+      if image == false or image == RETRY_IMAGE then cache[key] = nil end
+    end
+  end
+  -- This is a battle-owner boundary.  Successful image/composition work may
+  -- stay shared, but the next owner must bind its own exact selected image.
+  backdropCompositionOwners = setmetatable({}, {__mode="k"})
+end
 
 -- A small deterministic scatter, for the surface itself. Not a random one: an
 -- authored constant that happens to look unpatterned is worth more here than
@@ -371,8 +417,12 @@ local AUTHORED_BACKDROPS = {
     anchors = {
       -- Pull the near/player card onto the broad foreground meadow rather
       -- than balancing it on the narrow blue/green riverbank boundary.
-      player = { x=0, y=-8, z=0 },
-      enemy = { x=0, y=-17, z=0 },
+      player = { x=-26, y=-8, z=-20 },
+      enemy = { x=-4, y=-10, z=20 },
+    },
+    trainerAnchors = {
+      player = { x=-18, y=-8, z=-20 },
+      enemy = { x=26, y=-10, z=20 },
     },
   },
 }
@@ -388,8 +438,154 @@ if not okReviewed or type(REVIEWED_BACKDROPS) ~= "table" then
   REVIEWED_BACKDROPS = {}
 end
 
+local okDisks, DISK_ART = pcall(function()
+  return V.data("battle_disks")
+end)
+if not okDisks or type(DISK_ART) ~= "table" then DISK_ART = {} end
+
 local function finite(v)
   return type(v) == "number" and v == v and v > -math.huge and v < math.huge
+end
+
+-- Pick two conservative screen-space foot marks from the exact decoded
+-- ARENA image.  The scan is deliberately image-only: preset rules may choose
+-- a different painting for a route or encounter without knowing anything
+-- about the ROM map.  Opaque, locally calm lower-middle patches rank above
+-- noisy foliage/architecture; transparent support, frame edges and cramped
+-- pairs are rejected.  A malformed decoder/pixel never makes an otherwise
+-- valid backdrop fail -- it simply produces no automatic placement receipt.
+local function analyseBackdropComposition(data, width, height)
+  if not (data and type(data.getPixel) == "function"
+      and finite(width) and finite(height) and width > 0 and height > 0) then
+    return nil
+  end
+
+  local ok, result = pcall(function()
+    -- Every supported custom size has the authored 16:10 aspect ratio.  Scale
+    -- the 1280x800 support probe so a 640px ADD and a 4K REPLACE inspect the
+    -- same normalized patch rather than radically different-sized ground.
+    local scaleX, scaleY = width / 1280, height / 800
+
+    local function pixel(x, y)
+      x = math.max(0, math.min(width - 1, floor(x + .5)))
+      y = math.max(0, math.min(height - 1, floor(y + .5)))
+      local r, g, b, a = data:getPixel(x, y)
+      if not (finite(r) and finite(g) and finite(b) and finite(a)) then
+        return nil
+      end
+      return .2126 * r + .7152 * g + .0722 * b, a
+    end
+
+    local function candidate(nx, ny, targetX, targetY)
+      local cx, cy = nx * (width - 1), ny * (height - 1)
+      local opaque, rough, count = 0, 0, 0
+      -- The band straddles the feet and extends below them.  A mark on sky or
+      -- transparent paint fails, while grass, boards and paths retain a
+      -- continuous support patch.  The fixed grid bounds the one-time cost.
+      for oy = -12, 28, 8 do
+        for ox = -56, 56, 16 do
+          local light, alpha = pixel(cx + ox * scaleX, cy + oy * scaleY)
+          local rightLight, rightAlpha = pixel(
+            cx + (ox + 5) * scaleX, cy + oy * scaleY)
+          local downLight, downAlpha = pixel(
+            cx + ox * scaleX, cy + (oy + 5) * scaleY)
+          if light == nil or rightLight == nil or downLight == nil then
+            return nil
+          end
+          count = count + 1
+          if alpha >= .72 and rightAlpha >= .72 and downAlpha >= .72 then
+            opaque = opaque + 1
+          end
+          rough = rough + math.abs(light - rightLight)
+                        + math.abs(light - downLight)
+        end
+      end
+      local coverage = opaque / math.max(1, count)
+      if coverage < .86 then return nil end
+      rough = rough / math.max(1, count)
+      local targetPenalty = math.abs(nx - targetX) * 1.7
+                          + math.abs(ny - targetY) * 1.2
+      local score = coverage * 4 - rough * 3.2 - targetPenalty
+      return finite(score) and score or nil
+    end
+
+    local function ranked(x0, x1, targetX, targetY)
+      local out = {}
+      -- Integer loop counters avoid a platform-dependent final iteration at
+      -- the decimal boundaries and give equal scores an explicit stable tie.
+      local xSteps = floor((x1 - x0) / .035 + 1e-7)
+      for xi = 0, xSteps do
+        local nx = x0 + xi * .035
+        for yi = 0, 6 do
+          local ny = .52 + yi * .03
+          local score = candidate(nx, ny, targetX, targetY)
+          if score then out[#out + 1] = {x=nx, y=ny, score=score} end
+        end
+      end
+      table.sort(out, function(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.y < b.y
+      end)
+      while #out > 12 do table.remove(out) end
+      return out
+    end
+
+    -- The ORAS outside status plates may consume 30% of a 4:3 viewport. Keep
+    -- automatic Pokemon marks inside the remaining middle band so projecting
+    -- an exact bitmap mark cannot make every camera seat owner-unsafe. Trainer
+    -- intro marks are derived below and may still use the wider edge band while
+    -- no Pokemon status plates are present.
+    local players = ranked(.34, .47, .34, .63)
+    local enemies = ranked(.53, .66, .66, .59)
+    local best, bestScore
+    for _, player in ipairs(players) do
+      for _, enemy in ipairs(enemies) do
+        local separation = enemy.x - player.x
+        if separation >= .27 then
+          local score = player.score + enemy.score
+                      + math.min(.48, separation) * 1.25
+                      - math.abs((player.y - enemy.y) - .04) * .8
+          if finite(score) and (not bestScore or score > bestScore) then
+            bestScore = score
+            best = {
+              player={x=player.x, y=player.y},
+              enemy={x=enemy.x, y=enemy.y},
+              trainerPlayer={x=math.max(.18, player.x - .035), y=player.y},
+              trainerEnemy={x=math.min(.82, enemy.x + .035), y=enemy.y},
+              source="auto-open-ground/v1",
+            }
+          end
+        end
+      end
+    end
+    return best
+  end)
+  return ok and result or nil
+end
+
+local function forgetBackdropComposition(image)
+  if not image then return end
+  backdropCompositions[image] = nil
+  for owner, binding in pairs(backdropCompositionOwners) do
+    if type(binding) == "table" and binding.image == image then
+      backdropCompositionOwners[owner] = nil
+    end
+  end
+end
+
+local function bindBackdropComposition(arena, choice, selection, image)
+  if type(arena) ~= "table" then return end
+  if not image then
+    backdropCompositionOwners[arena] = nil
+    return
+  end
+  backdropCompositionOwners[arena] = {
+    choice=choice,
+    selection=selection,
+    image=image,
+    composition=backdropCompositions[image],
+  }
 end
 
 local function validWindow(region, width, height)
@@ -430,6 +626,8 @@ local function authoredSpec(arena)
                           or AUTHORED_BACKDROPS[style.id])
   if not (spec and spec.camera == "3X" and type(spec.outdoor) == "boolean"
           and type(spec.path) == "string" and spec.path ~= ""
+          and (spec.frlgPath == nil
+               or (type(spec.frlgPath) == "string" and spec.frlgPath ~= ""))
           and spec.width == VoxelBattleStage.BACKDROP_W
           and spec.height == VoxelBattleStage.BACKDROP_H
           and finite(spec.actorScale) and spec.actorScale >= 1
@@ -445,6 +643,16 @@ local function authoredSpec(arena)
       return nil
     end
   end
+  if spec.trainerAnchors ~= nil then
+    if type(spec.trainerAnchors) ~= "table" then return nil end
+    for _, side in ipairs({ "player", "enemy" }) do
+      local anchor = spec.trainerAnchors[side]
+      if not (type(anchor) == "table" and finite(anchor.x)
+              and finite(anchor.y) and finite(anchor.z)) then
+        return nil
+      end
+    end
+  end
   if spec.clockTint then
     if type(spec.windows) ~= "table" or #spec.windows == 0 then return nil end
     for _, region in ipairs(spec.windows) do
@@ -453,7 +661,203 @@ local function authoredSpec(arena)
   elseif spec.windows ~= nil then
     return nil
   end
+  if spec.frlgWindows ~= nil then
+    if type(spec.frlgWindows) ~= "table" or #spec.frlgWindows == 0 then
+      return nil
+    end
+    for _, region in ipairs(spec.frlgWindows) do
+      if not validWindow(region, spec.width, spec.height) then return nil end
+    end
+  elseif spec.frlgPath and spec.clockTint then
+    -- Paired windowed rooms must own masks for both independent paintings.
+    return nil
+  end
   return spec
+end
+
+local function authoredPath(arena, spec)
+  local style = arena and arena.arenaStyle
+  local frlg = spec and spec.frlgPath
+  if not frlg then return spec and spec.path or nil end
+  local mode = style and style.arenaArtMode or "mix"
+  if mode == "frlg" then return frlg end
+  if mode == "mix" and style and style.arenaArtPick == "frlg" then
+    return frlg
+  end
+  return spec.path
+end
+
+local function diskKey(arena)
+  local style = arena and arena.diskStyle
+  if not style then return nil end
+  local mode = style.diskArtMode or "mix"
+  if mode == "vasc" or (mode == "mix" and style.diskArtPick ~= "frlg") then
+    return nil
+  end
+  local maps = type(DISK_ART.maps) == "table" and DISK_ART.maps or nil
+  local profiles = type(DISK_ART.profiles) == "table"
+                   and DISK_ART.profiles or nil
+  return maps and maps[style.mapId] or (profiles and profiles[style.id])
+end
+
+local function diskPath(arena)
+  local key = diskKey(arena)
+  local assets = type(DISK_ART.assets) == "table" and DISK_ART.assets or nil
+  local path = assets and assets[key]
+  if type(path) ~= "string" or path == ""
+      or DISK_ART.width ~= VoxelBattleStage.TEX
+      or DISK_ART.height ~= VoxelBattleStage.TEX then
+    return nil
+  end
+  return path
+end
+
+local function diskImage(arena)
+  local path = diskPath(arena)
+  if not (path and type(V.path) == "string") then return nil end
+  local cached, shouldLoad, retrying = cachedImage(diskTextures, path)
+  if not shouldLoad then return cached end
+  local retryable = false
+  local ok, image = pcall(function()
+    local okData, data = pcall(Assets.imageData, V.path .. "/" .. path)
+    if not okData then
+      retryable = true
+      error(data)
+    end
+    if not (data and type(data.getDimensions) == "function") then
+      retryable = true
+      error("missing FRLG-like disk ImageData")
+    end
+    local w, h = data:getDimensions()
+    if w ~= VoxelBattleStage.TEX or h ~= VoxelBattleStage.TEX then
+      if data.release then pcall(data.release, data) end
+      error("FRLG-like disk dimensions changed")
+    end
+    local okImage, out = pcall(love.graphics.newImage, data)
+    if data.release then pcall(data.release, data) end
+    if not okImage or not out then
+      retryable = true
+      error("FRLG-like disk upload failed")
+    end
+    pcall(out.setFilter, out, "nearest", "nearest")
+    pcall(out.setWrap, out, "clampzero", "clampzero")
+    return out
+  end)
+  if not (ok and image) then
+    cacheImageFailure(diskTextures, path, retryable, retrying)
+    return nil
+  end
+  diskTextures[path] = image
+  diskOrder[#diskOrder + 1] = path
+  if #diskOrder > 4 then
+    local old = table.remove(diskOrder, 1)
+    local victim = diskTextures[old]
+    if victim and victim.release then pcall(victim.release, victim) end
+    diskTextures[old] = nil
+  end
+  return image
+end
+
+local function authoredWindows(arena, spec)
+  if not spec then return nil end
+  if spec.frlgPath and authoredPath(arena, spec) == spec.frlgPath then
+    return spec.frlgWindows
+  end
+  return spec.windows
+end
+
+local CUSTOM_BACKDROP_DIMENSIONS = {
+  ["640x400"]=true, ["1280x800"]=true, ["1920x1200"]=true,
+  ["2560x1600"]=true, ["3840x2400"]=true,
+}
+
+local function customBackdropChoice(arena)
+  local choice = arena and arena.presentationMode == "ARENA"
+    and arena._vascPresetArenaBackdrop or nil
+  if type(choice) ~= "table" or choice.surface ~= "arena.backdrop"
+      or choice.slot ~= "ARENA_BACKDROP"
+      or (choice.action ~= "add" and choice.action ~= "replace") then
+    return nil
+  end
+  return choice
+end
+
+local function customBackdropImage(arena)
+  local choice = customBackdropChoice(arena)
+  if not choice then return nil end
+  local cached, shouldLoad, retrying = cachedImage(customChoiceTextures, choice)
+  if not shouldLoad then return cached end
+
+  local okRuntime, PresetRuntime = pcall(V.require, "PresetRuntime")
+  local receipt = okRuntime and type(PresetRuntime.arenaBackdropAsset) == "function"
+    and PresetRuntime.arenaBackdropAsset(choice) or nil
+  if type(receipt) ~= "table"
+     or not CUSTOM_BACKDROP_DIMENSIONS[
+       tostring(receipt.width) .. "x" .. tostring(receipt.height)]
+     or type(receipt.digest) ~= "string" or type(receipt.path) ~= "string" then
+    cacheImageFailure(customChoiceTextures, choice, false, retrying)
+    return nil
+  end
+
+  local key = table.concat({
+    receipt.digest, tostring(receipt.width), tostring(receipt.height),
+    tostring(receipt.size),
+  }, ":")
+  local shared = customBackdropTextures[key]
+  if shared then
+    customChoiceTextures[choice] = shared
+    return shared
+  end
+
+  local retryable = false
+  local ok, image, composition = pcall(function()
+    local okData, data = pcall(Assets.imageData, receipt.path)
+    if not okData then
+      retryable = true
+      error(data)
+    end
+    if not (data and type(data.getDimensions) == "function") then
+      retryable = true
+      error("missing custom ARENA ImageData")
+    end
+    local width, height = data:getDimensions()
+    if width ~= receipt.width or height ~= receipt.height
+       or not CUSTOM_BACKDROP_DIMENSIONS[
+         tostring(width) .. "x" .. tostring(height)] then
+      if data.release then pcall(data.release, data) end
+      error("custom ARENA dimensions changed")
+    end
+    local analysed = analyseBackdropComposition(data, width, height)
+    local okImage, out = pcall(love.graphics.newImage, data)
+    if data.release then pcall(data.release, data) end
+    if not okImage or not out then
+      retryable = true
+      error("custom ARENA image upload failed")
+    end
+    pcall(out.setFilter, out, "linear", "linear")
+    pcall(out.setWrap, out, "clamp", "clamp")
+    return out, analysed
+  end)
+  if not (ok and image) then
+    cacheImageFailure(customChoiceTextures, choice, retryable, retrying)
+    return nil
+  end
+
+  customBackdropTextures[key] = image
+  customBackdropOrder[#customBackdropOrder + 1] = key
+  customChoiceTextures[choice] = image
+  backdropCompositions[image] = composition or false
+  if #customBackdropOrder > VoxelBattleStage.BACKDROP_CACHE then
+    local old = table.remove(customBackdropOrder, 1)
+    local victim = customBackdropTextures[old]
+    forgetBackdropComposition(victim)
+    if victim and victim.release then pcall(victim.release, victim) end
+    customBackdropTextures[old] = nil
+    for boundChoice, boundImage in pairs(customChoiceTextures) do
+      if boundImage == victim then customChoiceTextures[boundChoice] = nil end
+    end
+  end
+  return image
 end
 
 local function clamp01(v)
@@ -665,20 +1069,36 @@ local function outdoorPixel(style, x, y)
 end
 
 local function backdropImage(arena, outdoor)
+  local choice = customBackdropChoice(arena)
+  local custom = customBackdropImage(arena)
+  if custom then
+    bindBackdropComposition(arena, choice, choice, custom)
+    return custom
+  end
   local style = arena and arena.arenaStyle
   local spec = authoredSpec(arena)
   outdoor = outdoor and true or false
   if not (spec and spec.outdoor == outdoor and type(V.path) == "string") then
+    bindBackdropComposition(arena, choice, nil, nil)
     return nil
   end
-  local key = style.id .. ":" .. spec.path
-  if backdropTextures[key] ~= nil then
-    return backdropTextures[key] or nil
+  local selectedPath = authoredPath(arena, spec)
+  local key = style.id .. ":" .. selectedPath
+  local cached, shouldLoad, retrying = cachedImage(backdropTextures, key)
+  if not shouldLoad then
+    bindBackdropComposition(arena, choice, key, cached)
+    return cached
   end
-  local ok, image = pcall(function()
-    local path = V.path .. "/" .. spec.path
-    local data = Assets.imageData(path)
+  local retryable = false
+  local ok, image, composition = pcall(function()
+    local path = V.path .. "/" .. selectedPath
+    local okData, data = pcall(Assets.imageData, path)
+    if not okData then
+      retryable = true
+      error(data)
+    end
     if not (data and type(data.getDimensions) == "function") then
+      retryable = true
       error("missing Arena Scenery ImageData")
     end
     local w, h = data:getDimensions()
@@ -686,39 +1106,134 @@ local function backdropImage(arena, outdoor)
       if data.release then pcall(data.release, data) end
       error("Arena Scenery dimensions changed")
     end
+    local analysed = analyseBackdropComposition(data, w, h)
     local okImage, out = pcall(love.graphics.newImage, data)
     if data.release then pcall(data.release, data) end
-    if not okImage or not out then error("Arena Scenery image upload failed") end
+    if not okImage or not out then
+      retryable = true
+      error("Arena Scenery image upload failed")
+    end
     pcall(out.setFilter, out, "linear", "linear")
     pcall(out.setWrap, out, "clamp", "clamp")
-    return out
+    return out, analysed
   end)
   if not (ok and image) then
-    backdropTextures[key] = false
+    cacheImageFailure(backdropTextures, key, retryable, retrying)
+    bindBackdropComposition(arena, choice, nil, nil)
     return nil
   end
   backdropTextures[key] = image
   backdropOrder[#backdropOrder + 1] = key
+  backdropCompositions[image] = composition or false
   if #backdropOrder > VoxelBattleStage.BACKDROP_CACHE then
     local old = table.remove(backdropOrder, 1)
     local victim = backdropTextures[old]
+    forgetBackdropComposition(victim)
     if victim and victim.release then pcall(victim.release, victim) end
     backdropTextures[old] = nil
   end
+  bindBackdropComposition(arena, choice, key, image)
   return image
+end
+
+-- Suggested normalized screen-space feet for the exact bitmap selected by
+-- `backdropFor`.  This never resolves a preset, loads an image or guesses from
+-- reviewed map metadata: callers receive a receipt only while the current
+-- arena owner, custom-choice identity, authored-path selection and GPU image
+-- still match the binding made by the actual backdrop request.  Imported
+-- Battle Layout positions remain authoritative in their later scene layer.
+function VoxelBattleStage.presentationComposition(arena, trainer)
+  local binding = type(arena) == "table"
+    and backdropCompositionOwners[arena] or nil
+  if type(binding) ~= "table" then return nil end
+
+  local choice = customBackdropChoice(arena)
+  if binding.choice ~= choice then return nil end
+  local selectedImage, selection
+  if choice then
+    local custom = customChoiceTextures[choice]
+    if custom and custom ~= RETRY_IMAGE then
+      selectedImage, selection = custom, choice
+    end
+  end
+  if not selectedImage then
+    local style, spec = arena.arenaStyle, authoredSpec(arena)
+    local path = spec and authoredPath(arena, spec) or nil
+    selection = style and path and (style.id .. ":" .. path) or nil
+    selectedImage = selection and backdropTextures[selection] or nil
+    if selectedImage == false or selectedImage == RETRY_IMAGE then
+      selectedImage = nil
+    end
+  end
+  if not selectedImage
+      or binding.selection ~= selection or binding.image ~= selectedImage
+      or backdropCompositions[selectedImage] ~= binding.composition
+      or type(binding.composition) ~= "table" then
+    return nil
+  end
+
+  local composition = binding.composition
+  local player = trainer
+    and (composition.trainerPlayer or composition.player)
+    or composition.player
+  local enemy = trainer
+    and (composition.trainerEnemy or composition.enemy)
+    or composition.enemy
+  if not (type(player) == "table" and type(enemy) == "table"
+      and finite(player.x) and finite(player.y)
+      and finite(enemy.x) and finite(enemy.y)
+      and enemy.x - player.x >= .27
+      and player.x >= .14 and player.x <= .86
+      and enemy.x >= .14 and enemy.x <= .86
+      and player.y >= .46 and player.y <= .74
+      and enemy.y >= .46 and enemy.y <= .74) then
+    return nil
+  end
+  -- Do not expose the mutable cache record to scene/profile consumers.
+  return {
+    player={x=player.x, y=player.y},
+    enemy={x=enemy.x, y=enemy.y},
+    source=composition.source,
+  }
 end
 
 function VoxelBattleStage.hasAuthoredBackdrop(arena)
   return authoredSpec(arena) ~= nil
 end
 
-function VoxelBattleStage.presentationPosition(arena, side, groundY)
+-- A verified v1 ADD is optional artwork over the portable ARENA stage.  If
+-- its final decode/upload fails, the renderer must keep that already-selected
+-- provider alive and draw the established generated stage instead.  REPLACE
+-- never enters this lane: its authored painting remains the fallback.
+function VoxelBattleStage.customAddPortableFallback(arena)
+  if not (type(arena) == "table" and arena.presentationMode == "ARENA"
+      and authoredSpec(arena) == nil) then
+    return false
+  end
+  local choice = arena._vascPresetArenaBackdrop
+  return type(choice) == "table"
+    and choice.surface == "arena.backdrop"
+    and choice.slot == "ARENA_BACKDROP"
+    and choice.action == "add"
+end
+
+
+-- Public read-only receipt used by tests and compatibility probes. Returning
+-- the chosen path makes the three-mode contract auditable without uploading
+-- a texture or exposing the mutable reviewed table.
+function VoxelBattleStage.authoredBackdropPath(arena)
+  local spec = authoredSpec(arena)
+  return spec and authoredPath(arena, spec) or nil
+end
+
+function VoxelBattleStage.presentationPosition(arena, side, groundY, trainer)
   local cell = arena and arena[side]
   if not (type(cell) == "table" and finite(cell[1]) and finite(cell[2])) then
     return nil
   end
   local spec = authoredSpec(arena)
-  local anchor = spec and spec.anchors[side]
+  local family = trainer and spec and spec.trainerAnchors or nil
+  local anchor = family and family[side] or (spec and spec.anchors[side])
   return cell[1] + (anchor and anchor.x or 0),
          (groundY or 0) + (anchor and anchor.y or 0),
          cell[2] + (anchor and anchor.z or 0)
@@ -753,7 +1268,7 @@ end
 
 function VoxelBattleStage.presentationWindowScene(arena)
   local spec = authoredSpec(arena)
-  if not (spec and spec.clockTint) then return nil end
+  if not (spec and authoredWindows(arena, spec)) then return nil end
   local scene = DayNight.windowScene and DayNight.windowScene() or {
     tint = DayNight.tint(true), sky = { 0, 0, 0 },
     alpha = 0, stars = 0, moon = 0,
@@ -771,6 +1286,12 @@ function VoxelBattleStage.presentationWindowScene(arena)
   return scene
 end
 
+
+function VoxelBattleStage.presentationWindowRegions(arena)
+  local spec = authoredSpec(arena)
+  return spec and authoredWindows(arena, spec) or nil
+end
+
 -- `image` is prepared before beginScene.  The draw itself is one alpha
 -- composited screen quad behind the depth buffer, tinted by the same clock
 -- value as the platform and Pokemon.
@@ -778,23 +1299,64 @@ function VoxelBattleStage.drawBackdrop(arena, outdoor, image)
   if not (arena and arena.arenaStyle) then return false end
   image = image or backdropImage(arena, outdoor and true or false)
   if not image then return false end
-  local drawn = Voxel3D.backdrop(
+  local customChoice = arena._vascPresetArenaBackdrop
+  local custom = type(customChoice) == "table"
+    and customChoiceTextures[customChoice] == image
+  local okDraw, drawn = pcall(Voxel3D.backdrop,
     image, VoxelBattleStage.presentationTint(arena))
+  drawn = okDraw and drawn == true
+  if not drawn and custom then
+    -- Do not re-enter a broken custom draw during this battle. Mark the
+    -- selection failed, but do not resolve or draw its fallback while a scene
+    -- computed for the custom bitmap is active. The caller discards this
+    -- transaction; the next backdropFor request binds the complete ADD or
+    -- REPLACE fallback before the next scene begins.
+    customChoiceTextures[customChoice] = false
+    return false, "backdrop-selection-changed"
+  end
   if not drawn then return false end
+  if custom then
+    -- Custom v1 assets carry no authored clock/window-mask metadata.
+    return true
+  end
   local spec = authoredSpec(arena)
+  local regions = authoredWindows(arena, spec)
   local windowScene = VoxelBattleStage.presentationWindowScene(arena)
-  if spec and windowScene then
+  if spec and regions and windowScene then
     -- The room keeps its authored lamps. Only reviewed panes receive the
     -- continuous outside sky, stars and moon.
-    Voxel3D.backdropWindows(windowScene, spec.windows,
+    Voxel3D.backdropWindows(windowScene, regions,
                             spec.width, spec.height)
   end
   return true
 end
 
 function VoxelBattleStage.textureFor(arena)
-  return arena and arena.arenaStyle and arenaTexture(arena.arenaStyle)
-         or VoxelBattleStage.texture()
+  if arena and arena.arenaStyle then return arenaTexture(arena.arenaStyle) end
+  if arena and arena.diskStyle then
+    return diskImage(arena) or VoxelBattleStage.texture()
+  end
+  return VoxelBattleStage.texture()
+end
+
+-- Public audit receipt: nil means the established neutral VASC disk is used.
+function VoxelBattleStage.diskTexturePath(arena)
+  return diskPath(arena)
+end
+
+-- A pale renderer colour selected by the exact same receipt as the disk.
+-- No full-frame bitmap is involved; nil keeps VASC's historical sky/void.
+function VoxelBattleStage.diskBackgroundColor(arena)
+  local colors = type(DISK_ART.backgrounds) == "table"
+                 and DISK_ART.backgrounds or nil
+  local color = colors and colors[diskKey(arena)]
+  if type(color) ~= "table" or #color ~= 3 then return nil end
+  for i=1,3 do
+    if not (finite(color[i]) and color[i] >= 0 and color[i] <= 1) then
+      return nil
+    end
+  end
+  return { color[1], color[2], color[3] }
 end
 
 -- ------- the mesh
@@ -832,11 +1394,22 @@ function VoxelBattleStage.invalidate()
   for _, image in pairs(arenaTextures) do
     if image and image.release then pcall(image.release, image) end
   end
+  for _, image in pairs(diskTextures) do
+    if image and image.release then pcall(image.release, image) end
+  end
   for _, image in pairs(backdropTextures) do
     if image and image.release then pcall(image.release, image) end
   end
+  for _, image in pairs(customBackdropTextures) do
+    if image and image.release then pcall(image.release, image) end
+  end
   texture, mesh, arenaTextures, arenaOrder = nil, nil, {}, {}
+  diskTextures, diskOrder = {}, {}
   backdropTextures, backdropOrder = {}, {}
+  customBackdropTextures, customBackdropOrder = {}, {}
+  customChoiceTextures = setmetatable({}, {__mode="k"})
+  backdropCompositions = setmetatable({}, {__mode="k"})
+  backdropCompositionOwners = setmetatable({}, {__mode="k"})
 end
 
 -- How far under the ground plane the disc actually sits. A hair, and only so
@@ -884,7 +1457,7 @@ end
 -- months.
 VoxelBattleStage.ORIGIN = { 16, 16 }
 
-function VoxelBattleStage.arena(map, style)
+function VoxelBattleStage.arena(map, style, diskStyle)
   local BattleArena = V.require("BattleArena")
   local arena = BattleArena.at(VoxelBattleStage.ORIGIN[1], VoxelBattleStage.ORIGIN[2],
                                "wide")
@@ -894,6 +1467,7 @@ function VoxelBattleStage.arena(map, style)
   arena.map = map
   arena.discs = true
   arena.arenaStyle = style
+  arena.diskStyle = diskStyle
   arena.portableStage = style and "arena" or "discs"
   return arena
 end

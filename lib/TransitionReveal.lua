@@ -1,5 +1,7 @@
 -- Keep a cold voxel destination behind the engine's real warp midpoint until
--- its first complete 3D frame exists.
+-- its first complete 3D frame exists. Desktop keeps that atomic contract;
+-- iOS/Android fail open to the engine's native 2D world after a bounded wait
+-- so an unfinished mobile voxel frame can never strand the loading screen.
 --
 -- New engines expose render_pipelines.revealReady directly.  Gen1Recomp
 -- 0.1.90 predates that optional field, so adding it unconditionally would make
@@ -13,7 +15,34 @@ local V = ...
 local TransitionReveal = {}
 
 local MARKER = "__voxelAscendantRevealGateV1"
-local COMPAT_VERSION = 3
+local ENGINE_MARKER = "__voxelAscendantRevealEngineGateV1"
+local COMPAT_VERSION = 4
+local ENGINE_GATE_VERSION = 1
+local MOBILE_TIMEOUT_SECONDS = 2.5
+local MOBILE_TIMEOUT_FRAMES = 150
+
+local function runtimeOS()
+  local loveRuntime = rawget(_G, "love")
+  if type(loveRuntime) ~= "table" then return nil end
+  if type(loveRuntime._os) == "string" then return loveRuntime._os end
+  local getOS = loveRuntime.system and loveRuntime.system.getOS
+  if type(getOS) ~= "function" then return nil end
+  local ok, value = pcall(getOS)
+  if ok and type(value) == "string" then return value end
+  return nil
+end
+
+local RUNTIME_OS = runtimeOS()
+local MOBILE_RUNTIME = RUNTIME_OS == "iOS" or RUNTIME_OS == "Android"
+
+local MobileDiagnostic = V and V.mod and V.mod._vascMobileDiagnostic or nil
+local function mobileDiagnostic(name, ...)
+  local fn = MobileDiagnostic and MobileDiagnostic[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if ok then return a, b end
+  return nil
+end
 
 local function pack(...)
   return { n = select("#", ...), ... }
@@ -27,19 +56,140 @@ local function ownsWorld(Pipelines)
   return ok and id == "voxel"
 end
 
-local function readyNow(Pipelines, Game, requireOwner)
+local function clockNow()
+  local loveRuntime = rawget(_G, "love")
+  local getTime = type(loveRuntime) == "table" and loveRuntime.timer
+                  and loveRuntime.timer.getTime
+  if type(getTime) ~= "function" then return nil end
+  local ok, value = pcall(getTime)
+  if ok and type(value) == "number" and value == value then return value end
+  return nil
+end
+
+local function newMobileGate()
+  return {
+    map = nil,
+    startedAt = nil,
+    probes = 0,
+    released = false,
+    marked = false,
+  }
+end
+
+local directMobileGate = newMobileGate()
+
+local function resetMobileGate(gate, map, now)
+  gate.map = map
+  gate.startedAt = now
+  gate.probes = 0
+  gate.released = false
+  gate.marked = false
+end
+
+local function mapLabel(map)
+  if type(map) == "table" then
+    for _, key in ipairs({ "id", "name", "mapId" }) do
+      local value = rawget(map, key)
+      if value ~= nil then return tostring(value) end
+    end
+  end
+  return tostring(map)
+end
+
+local function markMobileFailOpen(gate, map, elapsed, route, fallbackBy)
+  if gate.marked then return end
+  gate.marked = true
+  local caller = "gen1-TransitionReveal." .. tostring(route or "unknown")
+  local fields = {
+    caller = caller,
+    context = "world",
+    reason = "mobile-transition-reveal-timeout",
+    status = "FALLBACK",
+    mapId = mapLabel(map),
+    elapsedSeconds = elapsed,
+    probeCount = gate.probes,
+    timeoutSeconds = MOBILE_TIMEOUT_SECONDS,
+    timeoutFrames = MOBILE_TIMEOUT_FRAMES,
+    fallbackBy = fallbackBy,
+    fallback = "native-2d",
+  }
+  -- fallback() preserves the ordinary mobile diagnostic classification;
+  -- the following named boundary leaves an unambiguous last checkpoint for
+  -- screenshots/snapshots from a phone with no filesystem access.
+  mobileDiagnostic("fallback", caller, fields.reason, "native-2d", fields)
+  mobileDiagnostic("checkpoint", "transition-reveal-mobile-fail-open", {
+    code = "D11",
+    caller = caller,
+    context = fields.context,
+    reason = fields.reason,
+    status = fields.status,
+    mapId = fields.mapId,
+    elapsedSeconds = fields.elapsedSeconds,
+    probeCount = fields.probeCount,
+    timeoutSeconds = fields.timeoutSeconds,
+    timeoutFrames = fields.timeoutFrames,
+    fallbackBy = fields.fallbackBy,
+    fallback = fields.fallback,
+  })
+end
+
+local function mobileRevealReady(gate, map, sceneReady, route)
+  gate = gate or directMobileGate
+  local now = clockNow()
+  if gate.map ~= map then resetMobileGate(gate, map, now) end
+
+  -- A successful atomic scene handoff is final for this exact map. If a
+  -- later hot reload invalidates its meshes while the same transition is
+  -- completing, never put an already-approved destination back behind black.
+  if sceneReady then
+    gate.released = true
+    return true
+  end
+  if gate.released then return true end
+
+  gate.probes = gate.probes + 1
+  if gate.startedAt == nil and now ~= nil then gate.startedAt = now end
+
+  local elapsed
+  if now ~= nil and gate.startedAt ~= nil then
+    if now < gate.startedAt then
+      -- A reset/replaced timer is a new trustworthy origin, not an instant
+      -- timeout. The frame counter remains available if the clock disappears.
+      gate.startedAt = now
+    end
+    elapsed = now - gate.startedAt
+  end
+  local timedOut = elapsed ~= nil and elapsed >= MOBILE_TIMEOUT_SECONDS
+  local frameTimedOut = elapsed == nil
+                        and gate.probes >= MOBILE_TIMEOUT_FRAMES
+  if not timedOut and not frameTimedOut then return false end
+
+  gate.released = true
+  markMobileFailOpen(gate, map, elapsed, route,
+    timedOut and "timer" or "frame-fallback")
+  return true
+end
+
+local function readyNow(Pipelines, Game, requireOwner, gate, route)
   -- The compatibility wrapper lives on the shared Transition class, so it
   -- must explicitly leave every other renderer's fade untouched.  The native
   -- engine hook already dispatches only the selected pipeline's callback.
   if requireOwner and not ownsWorld(Pipelines) then return true end
   local ow = Game and Game.overworld
-  if not (ow and ow.map) then return true end
+  if not (ow and ow.map) then
+    if MOBILE_RUNTIME and gate then resetMobileGate(gate, nil, nil) end
+    return true
+  end
+  local map = ow.map
   local okScene, Scene = pcall(V.require, "VoxelScene")
-  if not okScene then return true end
-  if type(Scene.readyForReveal) ~= "function" then return true end
-  local okReady, ready = pcall(Scene.readyForReveal, ow)
-  if not okReady then return true end
-  return ready == true
+  local ready = true
+  if okScene and type(Scene) == "table"
+      and type(Scene.readyForReveal) == "function" then
+    local okReady, value = pcall(Scene.readyForReveal, ow)
+    if okReady then ready = value == true end
+  end
+  if not MOBILE_RUNTIME then return ready end
+  return mobileRevealReady(gate, map, ready, route)
 end
 
 local function supportsEngineHook(Pipelines, Schemas)
@@ -56,6 +206,7 @@ local function installCompat(Pipelines, Game, Transition)
     error("VOXEL_ASCENDANT: Gen1Recomp Transition.update is unavailable", 0)
   end
 
+  local inheritedPending, inheritedMobileGate
   local state = rawget(Transition, MARKER)
   if type(state) == "table" and state.owner == V.mod.id then
     -- Hot reload may create a new V/Scene closure. Update only the predicate;
@@ -64,9 +215,10 @@ local function installCompat(Pipelines, Game, Transition)
       return ownsWorld(Pipelines)
     end
     state.ready = function()
-      return readyNow(Pipelines, Game, true)
+      return readyNow(Pipelines, Game, true, state.mobileGate, "compat")
     end
-    if state.version == COMPAT_VERSION and type(state.pending) == "table" then
+    if state.version == COMPAT_VERSION and type(state.pending) == "table"
+        and type(state.mobileGate) == "table" then
       return state.wrapper
     end
     -- Upgrade an older compatibility wrapper without stacking it. Every
@@ -74,6 +226,9 @@ local function installCompat(Pipelines, Game, Transition)
     if Transition.update ~= state.wrapper or type(state.original) ~= "function" then
       error("VOXEL_ASCENDANT: cannot safely upgrade Transition reveal gate", 0)
     end
+    inheritedPending = type(state.pending) == "table" and state.pending or nil
+    inheritedMobileGate = type(state.mobileGate) == "table"
+                          and state.mobileGate or nil
     Transition.update = state.original
     Transition[MARKER] = nil
   end
@@ -87,13 +242,14 @@ local function installCompat(Pipelines, Game, Transition)
     -- without retaining completed instances across GC. Gen1Recomp 0.2.19
     -- additionally pops that Transition before its midpoint; the cold path
     -- below requeues the same state until the destination is ready.
-    pending = setmetatable({}, { __mode = "k" }),
+    pending = inheritedPending or setmetatable({}, { __mode = "k" }),
+    mobileGate = inheritedMobileGate or newMobileGate(),
   }
   state.owns = function()
     return ownsWorld(Pipelines)
   end
   state.ready = function()
-    return readyNow(Pipelines, Game, true)
+    return readyNow(Pipelines, Game, true, state.mobileGate, "compat")
   end
   state.wrapper = function(self, ...)
     local pending = state.pending[self]
@@ -189,6 +345,22 @@ local function installCompat(Pipelines, Game, Transition)
   return state.wrapper
 end
 
+local function engineMobileGate(Pipelines)
+  local state = rawget(Pipelines, ENGINE_MARKER)
+  if type(state) == "table" and state.owner == V.mod.id
+      and state.version == ENGINE_GATE_VERSION
+      and type(state.gate) == "table" then
+    return state.gate
+  end
+  state = {
+    owner = V.mod.id,
+    version = ENGINE_GATE_VERSION,
+    gate = newMobileGate(),
+  }
+  rawset(Pipelines, ENGINE_MARKER, state)
+  return state.gate
+end
+
 -- Returns the callback to add to the voxel pipeline record on a new engine,
 -- or nil after installing the 0.1.90 compatibility wrapper.  Optional
 -- dependency injection exists solely for the headless contract test.
@@ -199,8 +371,9 @@ function TransitionReveal.configure(deps)
   local Schemas = deps.Schemas or require("src.mods.Schemas")
 
   if supportsEngineHook(Pipelines, Schemas) then
+    local gate = MOBILE_RUNTIME and engineMobileGate(Pipelines) or nil
     return function()
-      return readyNow(Pipelines, Game, false)
+      return readyNow(Pipelines, Game, false, gate, "engine")
     end, "engine"
   end
 
@@ -211,5 +384,7 @@ end
 
 TransitionReveal._supportsEngineHook = supportsEngineHook
 TransitionReveal._readyNow = readyNow
+TransitionReveal._MOBILE_TIMEOUT_SECONDS = MOBILE_TIMEOUT_SECONDS
+TransitionReveal._MOBILE_TIMEOUT_FRAMES = MOBILE_TIMEOUT_FRAMES
 
 return TransitionReveal

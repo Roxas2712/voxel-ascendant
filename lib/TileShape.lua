@@ -213,6 +213,7 @@ local cache = {}          -- tileset id -> resolved shape list
 local figCache = {}       -- tileset id -> parsed figure masks, or false
 local mntCache = {}       -- tileset id -> parsed mounted masks, or false
 local bgCache = {}        -- tileset id -> prop background shades, or false
+local mapBlockCache = {}  -- map id -> block id -> { class, tiles }, or false
 
 -- The shape profile ships with the mod (data/voxel_heights.lua) and is read
 -- through the mod's own file loader rather than package.path: a mod's
@@ -225,6 +226,45 @@ local function load()
     spec = (ok and type(s) == "table") and s or false
   end
   return spec or nil
+end
+
+-- A handful of original maps reuse one complete block drawing for a different
+-- object.  Per-tileset pins cannot express that safely: changing the tile id
+-- globally fixes the local object but corrupts every other use of the atlas.
+-- Normalize the small data-owned `map_blocks` table once per map id and probe
+-- the live block id at the requested tile coordinate.  This remains render
+-- geometry only; generated blocks, collision and warps are never rewritten.
+local function mapBlockClass(map, tile, tx, ty)
+  local id = map and (map.id or map.def and map.def.id)
+  if type(id) ~= "string" then return nil end
+  local cached = mapBlockCache[id]
+  if cached == nil then
+    local s = load()
+    local source = s and s.map_blocks and s.map_blocks[id]
+    local normalized, any = {}, false
+    if type(source) == "table" then
+      for blockId, rule in pairs(source) do
+        if type(blockId) == "number" and type(rule) == "table"
+           and FALLBACK_HEIGHTS[rule.class]
+           and type(rule.tiles) == "table" then
+          local set = {}
+          for _, value in ipairs(rule.tiles) do
+            if type(value) == "number" then set[value] = true end
+          end
+          if next(set) then
+            normalized[blockId] = { class = rule.class, tiles = set }
+            any = true
+          end
+        end
+      end
+    end
+    cached = any and normalized or false
+    mapBlockCache[id] = cached
+  end
+  if not cached or type(map.blockAt) ~= "function" then return nil end
+  local blockId = map:blockAt(math.floor(tx / 4), math.floor(ty / 4))
+  local rule = cached[blockId]
+  return rule and rule.tiles[tile] and rule.class or nil
 end
 
 function TileShape.heights()
@@ -375,9 +415,13 @@ function TileShape.forMap(map)
     end
   end
 
-  local shapes = { classes = {}, cond = authoredConditions(id, heights) }
+  local shapes = {
+    classes = {}, authoredClasses = {},
+    cond = authoredConditions(id, heights),
+  }
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
+    shapes.authoredClasses[class] = shapeFor(class, heights, true)
   end
   -- a conditional pin's own AUTHORED shape per class it can resolve to,
   -- kept apart from the shared canonical ones above (see TileShape.at)
@@ -418,6 +462,11 @@ end
 -- `shapes` is the table forMap returned for this map; `tile` is
 -- map:tileAt(tx, ty), passed in because every caller already has it.
 function TileShape.at(map, shapes, tile, tx, ty)
+  local blockClass = mapBlockClass(map, tile, tx, ty)
+  if blockClass and shapes.authoredClasses
+     and shapes.authoredClasses[blockClass] then
+    return shapes.authoredClasses[blockClass]
+  end
   local s = shapes[tile]
   -- conditional pins first: they are authored answers that need the
   -- POSITION to resolve, so they outrank both the flat pin on the same
@@ -708,6 +757,7 @@ function TileShape.invalidate()
   figCache = {}
   mntCache = {}
   bgCache = {}
+  mapBlockCache = {}
 end
 
 return TileShape

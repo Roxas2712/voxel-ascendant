@@ -18,7 +18,7 @@ exports.renderer.pipeline == "voxel"
 exports.renderer.cameraProfile == "orbit-only"
 exports.renderer.overworldCameraProfile == "orbit-first-third"
 exports.capabilities.voxelWorld == true
-exports.capabilities.battleCards == { "MAP", "DISCS", "ARENA" }
+exports.capabilities.battleCards == { "MAP", "DISCS" }
 exports.capabilities.wallDecals == 1
 exports.capabilities.cameraModes == { "ORBIT", "FIRST_PERSON", "THIRD_PERSON" }
 exports.capabilities.freeMovement == true

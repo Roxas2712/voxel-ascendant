@@ -264,7 +264,17 @@ local function occupied(ow, wx, y, wz)
   gh = (okG and gh) or 0
   if y < gh + ThirdPerson.PAD then return true end
   local okW, walkable = pcall(function() return map:isWalkableCell(cx, cy) end)
-  if okW and not walkable and collisionClass(map, cx, cy) ~= "ledge"
+  -- Water is unwalkable to a trainer on foot, but it is a transparent ground
+  -- surface, never a wall or prop.  The 3RD boom used the land-passability bit
+  -- as geometry and therefore collapsed into the rider's head as soon as SURF
+  -- put water behind the player, making 3RD look like 1ST.  Preserve the real
+  -- height-field test above and exempt only cells the map itself identifies as
+  -- water; buildings, trees and every other unwalkable prop remain blocking.
+  local okWater, water = pcall(function()
+    return type(map.isWaterCell) == "function" and map:isWaterCell(cx, cy)
+  end)
+  if okW and not walkable and not (okWater and water == true)
+     and collisionClass(map, cx, cy) ~= "ledge"
      and y < gh + ThirdPerson.CLEAR then
     return true
   end

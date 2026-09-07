@@ -56,6 +56,22 @@ track intentionally takes precedence over an exact replacement in the same
 category. Open EXACT SONG REPLACEMENTS after a rescan to verify which files
 VASC accepted.
 
+AUDITIONING ORIGINAL AND CUSTOM MUSIC
+-------------------------------------
+Open a category and choose MUSIC A/B PREVIEW. VASC can play each custom
+file and the last Game/KASC cue it actually observed for that category without
+changing the saved ORIGINAL / SHUFFLE / file selection. STOP + RESTORE, or
+leaving the preview screen, stops the audition and resumes the song that was
+playing beforehand.
+
+An ORIGINAL row remains unavailable until that kind of cue has really resolved
+in the current game session. A category can represent many map or trainer songs,
+so VASC deliberately shows LAST ORIGINAL rather than inventing one fixed song.
+In EXACT SONG REPLACEMENTS, choose an accepted song ID to open the same original
+versus custom A/B preview. Its original also remains unavailable until that exact
+Game/KASC ID has been observed. ROM and synthesized chip songs are previewed by
+the normal game music engine; they do not need an external audio file.
+
 RESTORING THE ORIGINAL GAME/KASC MUSIC
 --------------------------------------
 - In one category, choose ORIGINAL.

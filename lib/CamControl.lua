@@ -89,7 +89,8 @@ end
 -- The free-roam overworld, with the 3D pass carrying it: the gate every
 -- zoom that is not a battle's answers to.
 local function roaming()
-  return Voxel.active() and Voxel3D.available() and FirstPerson.onTop()
+  return Voxel.active()
+         and Voxel3D.available("CamControl.active") and FirstPerson.onTop()
 end
 
 -- Which camera a zoom is aimed at: "battle", "boom", "survey", or nil for
@@ -225,8 +226,8 @@ function CamControl.install()
   --
   -- Q and E, on the pad: the left stick's click pulls the camera out and the
   -- right stick's pulls it in. A controller has no wheel and no number row,
-  -- and the two clicks are the only buttons a Gen 1 pad layout leaves free
-  -- (SELECT already walks the angle ladder).
+  -- and the two clicks are the only dedicated zoom inputs on that layout.
+  -- The camera ladder stays on 3/V/ZR; SELECT remains game/KASC-owned.
   --
   -- Claimed for the two cameras a pad player can actually be looking at
   -- while pressing them -- the third-person boom and a staged battle's lens
@@ -266,12 +267,16 @@ function CamControl.install()
   -- delivers its travel as a stream of small events and is unaffected; a
   -- teleport delivers it as one and is cut down to the size of a flick.
   local MOUSE_STEP = 40
+  local touchPointer
   local function clamp(v)
     return math.max(-MOUSE_STEP, math.min(MOUSE_STEP, v or 0))
   end
   local hooks = V.mod and V.mod.hooks
   if type(hooks) == "table" and type(hooks.wrap) == "function" then
     hooks:wrap("input.pointer", function(nextInput, game, pointer)
+      if type(pointer) == "table" and pointer.source == "touch" and touchPointer then
+        return touchPointer(nextInput, game, pointer)
+      end
       if type(pointer) == "table" and pointer.source == "mouse"
          and pointer.phase == "moved" and battleLive() then
         -- dy is NEGATED for the same reason the stick's is: moving the
@@ -353,9 +358,55 @@ function CamControl.install()
     return battleLive() or CamControl.zoomTarget() ~= nil
   end
 
+  -- Same supported pointer lifecycle as FirstPerson, including cancellation.
+  -- Priority 20 keeps pinch ahead of the priority-10 single-finger look.
+  if type(hooks) == "table" and type(hooks.wrap) == "function" then
+    local width, height
+    touchPointer = function(nextInput, game, p)
+      local w, h = 1280, 720
+      pcall(function() w, h = love.graphics.getWidth(), love.graphics.getHeight() end)
+      if (width and (width ~= w or height ~= h)) or not wantsTouch() then
+        free, pinch = {}, nil
+        CamControl.surveyAccum = 0
+        -- FirstPerson owns 1ST look, even though that rung cannot zoom.
+        if width and (width ~= w or height ~= h) then FirstPerson.dropLook() end
+      end
+      width, height = w, h
+      if p.phase == "pressed" and wantsTouch() and not onControl(p.x, p.y) then
+        free[p.id] = {x = p.x, y = p.y}
+        if CamControl.zoomTarget() then startPinch() end
+        if pinch then return true end
+      elseif p.phase == "moved" and free[p.id] then
+        local f = free[p.id]
+        local px, py = f.x, f.y
+        f.x, f.y = p.x, p.y
+        if pinch then
+          if p.id == pinch.a or p.id == pinch.b then
+            local gap = gapOf(pinch.a, pinch.b)
+            local factor = gap / math.max(1, pinch.gap)
+            if math.abs(factor - 1) > CamControl.PINCH_SLACK then
+              CamControl.pinchBy(factor)
+              pinch.gap = gap
+            end
+          end
+          return true
+        elseif battleLive() then
+          BattleCam.dragOrbit((p.x - px) / math.max(320, w))
+          BattleCam.dragPitch(-(p.y - py) / math.max(240, h))
+          return true
+        end
+      elseif p.phase == "released" or p.phase == "cancelled" then
+        if pinch and (p.id == pinch.a or p.id == pinch.b) then endPinch(p.id) end
+        free[p.id] = nil
+      end
+      return nextInput(game, p)
+    end
+  end
+
   do
     local inner = Game.touchpressed
     function Game:touchpressed(id, x, y)
+      if touchPointer then return inner(self, id, x, y) end
       if wantsTouch() and not onControl(x, y) then
         free[id] = { x = x, y = y }
         if CamControl.zoomTarget() then startPinch() end
@@ -370,6 +421,7 @@ function CamControl.install()
   do
     local inner = Game.touchmoved
     function Game:touchmoved(id, x, y)
+      if touchPointer then return inner(self, id, x, y) end
       local f = free[id]
       if f then
         local px, py = f.x, f.y
@@ -402,6 +454,7 @@ function CamControl.install()
   do
     local inner = Game.touchreleased
     function Game:touchreleased(id, x, y)
+      if touchPointer then return inner(self, id, x, y) end
       if free[id] then
         if pinch and (id == pinch.a or id == pinch.b) then endPinch(id) end
         free[id] = nil

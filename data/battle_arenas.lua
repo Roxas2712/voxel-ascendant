@@ -38,6 +38,10 @@
 
 return {
   -- ------- routes
+  -- A route's camera anchor is part of the route contract too. Entries marked
+  -- WIDE below are the reviewed spots whose telephoto eye would stand beyond
+  -- the map border; BattleArena also enforces this invariant dynamically so
+  -- edited maps and future anchors fall back to an in-route shot.
   -- narrow, deliberately: the route's interior is a 3-cell-wide lane and the
   -- wide shape only fits in the western connection border, which staged every
   -- fight at the edge of the world instead of on the road.
@@ -51,11 +55,11 @@ return {
   ["ROUTE_1"] = { x = 4, y = 14, shape = "narrow" },
   ["ROUTE_2"] = { x = 1, y = 49, shape = "wide" },
   -- Route 3 is the long Mt Moon approach. Its former single eastern wide
-  -- point was terrain-obstructed and every fight teleported there. These
-  -- three independently clear narrow lanes cover west/middle/east; the wide
-  -- southern overlook is retained through its short lens as a fourth view.
+  -- point was terrain-obstructed and every fight teleported there. The later
+  -- west lane at (27,4) also let a low voxel edge cross the opponent's feet
+  -- in the real battle camera, so only the three visually reviewed clear
+  -- lanes remain: middle/east plus the short-lens southern overlook.
   ["ROUTE_3"] = { spots = {
-    { x = 27, y = 4, shape = "narrow" },
     { x = 49, y = 6, shape = "narrow" },
     { x = 59, y = 4, shape = "narrow" },
     { x = 44, y = 8, shape = "wide", cam = "wide" },
@@ -65,23 +69,23 @@ return {
     { x = 47, y = 3, shape = "wide" },
     { x = 47, y = 4, shape = "narrow" },
   } },
-  ["ROUTE_5"] = { x = 13, y = 24, shape = "wide" },
+  ["ROUTE_5"] = { x = 13, y = 24, shape = "wide", cam = "wide" },
   ["ROUTE_6"] = { x = 5, y = 17, shape = "narrow" },
-  ["ROUTE_7"] = { x = 8, y = 8, shape = "narrow" },
-  ["ROUTE_8"] = { x = 25, y = 7, shape = "wide" },
+  ["ROUTE_7"] = { x = 8, y = 8, shape = "narrow", cam = "wide" },
+  ["ROUTE_8"] = { x = 25, y = 7, shape = "wide", cam = "wide" },
   -- the whole route admits six bare wide arenas, all in the west cliff
   -- corridor; this is the best of them. A flower cluster crosses the far
   -- mon's hind legs, which the brief allows -- every alternative put a
   -- terrace through the near mon's waist, which it does not.
   ["ROUTE_9"] = { x = 1, y = 11, shape = "wide", cam = "wide" },
   ["ROUTE_10"] = { x = 7, y = 40, shape = "wide" },
-  ["ROUTE_11"] = { x = 9, y = 6, shape = "wide" },
+  ["ROUTE_11"] = { x = 9, y = 6, shape = "wide", cam = "wide" },
   ["ROUTE_12"] = { x = 0, y = 73, shape = "wide" },
-  ["ROUTE_13"] = { x = 50, y = 8, shape = "narrow" },
+  ["ROUTE_13"] = { x = 50, y = 8, shape = "narrow", cam = "wide" },
   ["ROUTE_14"] = { x = 11, y = 25, shape = "wide" },
-  ["ROUTE_15"] = { x = 9, y = 10, shape = "wide" },
-  ["ROUTE_16"] = { x = 6, y = 10, shape = "wide" },
-  ["ROUTE_17"] = { x = 14, y = 70, shape = "wide" },
+  ["ROUTE_15"] = { x = 9, y = 10, shape = "wide", cam = "wide" },
+  ["ROUTE_16"] = { x = 6, y = 10, shape = "wide", cam = "wide" },
+  ["ROUTE_17"] = { x = 14, y = 70, shape = "wide", cam = "wide" },
   ["ROUTE_18"] = { x = 11, y = 4, shape = "wide" },
 
   -- ------- buildings and caves
@@ -180,9 +184,9 @@ return {
   ["ROUTE_19"] = { x = 8, y = 6, shape = "narrow" },
   -- the two surf routes fight AFLOAT, in the middle of their own sea rather
   -- than on the rim of beach the land search would otherwise find
-  ["ROUTE_20"] = { x = 23, y = 7, shape = "wide" },
+  ["ROUTE_20"] = { x = 23, y = 7, shape = "wide", cam = "wide" },
   ["ROUTE_21"] = { x = 8, y = 46, shape = "wide" },
-  ["ROUTE_22"] = { x = 35, y = 7, shape = "wide" },
+  ["ROUTE_22"] = { x = 35, y = 7, shape = "wide", cam = "wide" },
   ["ROUTE_23"] = { x = 4, y = 36, shape = "wide" },
   ["ROUTE_24"] = { x = 13, y = 15, shape = "wide" },
   ["ROUTE_25"] = { x = 32, y = 2, shape = "wide", cam = "wide" },
@@ -207,7 +211,10 @@ return {
   ["DIGLETTS_CAVE"] = { x = 19, y = 16, shape = "wide" },
   ["FIGHTING_DOJO"] = { x = 4, y = 1, shape = "narrow" },
   ["LANCES_ROOM"] = { x = 5, y = 15, shape = "wide" },
-  ["LORELEIS_ROOM"] = { x = 5, y = 2, shape = "narrow" },
+  -- The player approaches Lorelei from the west and talks east. Preserve
+  -- that encounter axis instead of rotating the fight north/south merely
+  -- because the room itself is narrow.
+  ["LORELEIS_ROOM"] = { x = 3, y = 2, shape = "narrow_east" },
   ["MT_MOON_1F"] = { spots = {
     { x = 7, y = 3, shape = "wide" },
     { x = 14, y = 3, shape = "wide" },

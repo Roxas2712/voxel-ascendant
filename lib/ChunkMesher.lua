@@ -60,6 +60,18 @@ local ModSetting = V.require("ModSetting")
 
 local ChunkMesher = {}
 
+local MOBILE_RUNTIME = type(Voxel3D.mobileRuntime) == "function"
+  and Voxel3D.mobileRuntime() == true
+
+local MobileDiagnostic = V and V.mod and V.mod._vascMobileDiagnostic or nil
+local function mobileDiagnostic(name, ...)
+  local fn = MobileDiagnostic and MobileDiagnostic[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if ok then return a, b end
+  return nil
+end
+
 -- Build the current map and its connected neighbours quietly while voxel mode
 -- is still off. This is an in-memory, generation-checked cache: map edits and
 -- option changes already invalidate it, and nothing stale survives a restart.
@@ -183,6 +195,30 @@ end
 
 -- ------------------------------------------------------------ vertex sinks
 
+-- VertexShade has one spare, safely out-of-range magnitude band. Encode a
+-- genuine horizontal/sloped surface there so the shader never has to guess
+-- "roof" from lighting values that facades may legitimately share. The XZ
+-- projected area is non-zero for ground, roofs and crowns, and exactly zero
+-- for every vertical wall regardless of how its top edge slopes. Hidden
+-- undersides may carry the bit too, which is harmless because they never win
+-- the depth test. The sign remains the existing map-object caster receipt.
+local function weatherFacingValues(x1, z1, x2, z2, x3, z3)
+  local ax, az = x2 - x1, z2 - z1
+  local bx, bz = x3 - x1, z3 - z1
+  return math.abs(az * bx - ax * bz) > 0.0001
+end
+
+local function weatherFacing(c)
+  return weatherFacingValues(c[1][1], c[1][3],
+                             c[2][1], c[2][3],
+                             c[3][1], c[3][3])
+end
+
+local function weatherShade(value, facing)
+  if not facing then return value end
+  return value < 0 and value - 2 or value + 2
+end
+
 -- A sink accepts quads (4 corners, 4 uv pairs, flat or per-corner shade)
 -- and finishes into a drawable mesh. The TABLE sink reproduces the
 -- historical pure-Lua output -- geometry() returns its arrays for the
@@ -194,10 +230,11 @@ local function newTableSink()
   return {
     push = function(c, uv, shade)
       local flat = type(shade) ~= "table"
+      local facing = weatherFacing(c)
       for i = 1, 4 do
         local cc, t = c[i], uv[i]
         verts[#verts + 1] = { cc[1], cc[2], cc[3], t[1], t[2],
-                              flat and shade or shade[i] }
+                              weatherShade(flat and shade or shade[i], facing) }
       end
       Voxel3D.pushQuad(indices, quads)
       quads = quads + 1
@@ -233,6 +270,7 @@ end
 local UPLOAD_QUADS = 256
 local UPLOAD_VERTICES = UPLOAD_QUADS * 4
 local unpackArgs = table.unpack or unpack
+local TRIANGLE_CORNERS = { 0, 6, 12, 0, 12, 18 }
 
 local function newAsyncSink(job)
   local pages, page = {}, {}
@@ -256,7 +294,39 @@ local function newAsyncSink(job)
   local function sealPage()
     if #page == 0 then return end
     if not (love and love.data and love.data.pack) then
-      error("packed voxel index data is unavailable", 0)
+      error("packed voxel data is unavailable", 0)
+    end
+    -- Mobile follows the proven GLES-safe layout used by the original
+    -- DramaticShape renderer: two explicit triangles per quad. This removes
+    -- the one route-sized uint32 vertex map and its uninterruptible native
+    -- allocation/copy. Desktop keeps four unique corners plus the compact
+    -- index buffer. The phone trade is bounded: 20% more total GPU geometry
+    -- bytes per quad (144 instead of 120), paid one 256-quad page at a time.
+    if MOBILE_RUNTIME then
+      mobileDiagnostic("checkpoint", "unindexed-page-expand-start", {
+        caller="ChunkMesher.sealPage", context="mesh-upload",
+        quads=#page / 24,
+      })
+      local unique = page
+      local expanded = {}
+      for at = 1, #unique, 24 do
+        for _, corner in ipairs(TRIANGLE_CORNERS) do
+          local source = at + corner
+          expanded[#expanded + 1] = unique[source]
+          expanded[#expanded + 1] = unique[source + 1]
+          expanded[#expanded + 1] = unique[source + 2]
+          expanded[#expanded + 1] = unique[source + 3]
+          expanded[#expanded + 1] = unique[source + 4]
+          expanded[#expanded + 1] = unique[source + 5]
+        end
+        if ((at - 1) / 24) % 32 == 31 then Budget.check() end
+      end
+      page = expanded
+      unique = nil
+      mobileDiagnostic("checkpoint", "unindexed-page-expand-ready", {
+        caller="ChunkMesher.sealPage", context="mesh-upload",
+        vertices=#page / 6,
+      })
     end
     -- LÖVE 11.5 accepts vertex Data directly. Pack the same float32 stream
     -- that its table converter would create, in argument-safe chunks, so a
@@ -288,23 +358,27 @@ local function newAsyncSink(job)
       end
       upload.rows = rows
     end
-    local format = "=" .. string.rep("I4", #indexPage)
-    local packed = love.data.pack("string", format,
-                                  unpackArgs(indexPage, 1, #indexPage))
     pages[#pages + 1] = upload
-    indexPieces[#indexPieces + 1] = packed
+    if not MOBILE_RUNTIME then
+      local format = "=" .. string.rep("I4", #indexPage)
+      local packed = love.data.pack("string", format,
+                                    unpackArgs(indexPage, 1, #indexPage))
+      indexPieces[#indexPieces + 1] = packed
+    end
     page, indexPage = {}, {}
     Budget.check()
   end
 
   local function finishQuad()
-    local base = quads * 4
-    indexPage[#indexPage + 1] = base
-    indexPage[#indexPage + 1] = base + 1
-    indexPage[#indexPage + 1] = base + 2
-    indexPage[#indexPage + 1] = base
-    indexPage[#indexPage + 1] = base + 2
-    indexPage[#indexPage + 1] = base + 3
+    if not MOBILE_RUNTIME then
+      local base = quads * 4
+      indexPage[#indexPage + 1] = base
+      indexPage[#indexPage + 1] = base + 1
+      indexPage[#indexPage + 1] = base + 2
+      indexPage[#indexPage + 1] = base
+      indexPage[#indexPage + 1] = base + 2
+      indexPage[#indexPage + 1] = base + 3
+    end
     indices = indices + 6
     quads = quads + 1
     if quads % UPLOAD_QUADS == 0 then sealPage() end
@@ -313,8 +387,9 @@ local function newAsyncSink(job)
   return {
     push = function(c, uv, shade)
       local flat = type(shade) ~= "table"
+      local facing = weatherFacing(c)
       for i = 1, 4 do
-        append(c[i], uv[i], flat and shade or shade[i])
+        append(c[i], uv[i], weatherShade(flat and shade or shade[i], facing))
       end
       finishQuad()
     end,
@@ -328,20 +403,26 @@ local function newAsyncSink(job)
                           x3, y3, z3, u3, v3,
                           x4, y4, z4, u4, v4, shade)
       local flat = type(shade) ~= "table"
-      appendValues(x1, y1, z1, u1, v1, flat and shade or shade[1])
-      appendValues(x2, y2, z2, u2, v2, flat and shade or shade[2])
-      appendValues(x3, y3, z3, u3, v3, flat and shade or shade[3])
-      appendValues(x4, y4, z4, u4, v4, flat and shade or shade[4])
+      local facing = weatherFacingValues(x1, z1, x2, z2, x3, z3)
+      appendValues(x1, y1, z1, u1, v1,
+                   weatherShade(flat and shade or shade[1], facing))
+      appendValues(x2, y2, z2, u2, v2,
+                   weatherShade(flat and shade or shade[2], facing))
+      appendValues(x3, y3, z3, u3, v3,
+                   weatherShade(flat and shade or shade[3], facing))
+      appendValues(x4, y4, z4, u4, v4,
+                   weatherShade(flat and shade or shade[4], facing))
       finishQuad()
     end,
     -- Buildings' runtime shell is a flat numeric record. Feed it directly
     -- into the upload pages so no temporary corner/UV tables are rebuilt.
     pushFlat = function(q, shade)
       local flat = type(shade) ~= "table"
+      local facing = weatherFacingValues(q[1], q[3], q[4], q[6], q[7], q[9])
       for i = 0, 3 do
         local c, t = 1 + i * 3, 13 + i * 2
         appendValues(q[c], q[c + 1], q[c + 2], q[t], q[t + 1],
-                     flat and shade or shade[i + 1])
+                     weatherShade(flat and shade or shade[i + 1], facing))
       end
       finishQuad()
     end,
@@ -359,14 +440,32 @@ local function newAsyncSink(job)
       -- geometry may have consumed the rest of this slice afterwards, and a
       -- driver allocation must never begin on an already-expired budget.
       Budget.check()
-      local ok, mesh = pcall(love.graphics.newMesh, Voxel3D.FORMAT, vertices,
+      local meshVertices = MOBILE_RUNTIME and quads * 6 or vertices
+      mobileDiagnostic("checkpoint", "chunk-mesh-create-start", {
+        caller="love.graphics.newMesh", vertices=meshVertices,
+        sourceVertices=vertices, indices=indices,
+        layout=MOBILE_RUNTIME and "unindexed-triangles" or "uint32-indexed",
+      })
+      local ok, mesh = pcall(love.graphics.newMesh, Voxel3D.FORMAT,
+                             meshVertices,
                              "triangles", "static")
-      if not ok then error(mesh, 0) end
-      if not mesh then error("voxel mesh allocation returned nil", 0) end
+      if not ok or not mesh then
+        mobileDiagnostic("capability", "D09", "mesh-create", false,
+          mesh or "voxel-mesh-allocation-returned-nil", {
+            caller="ChunkMesher.finish", vertices=meshVertices,
+            indices=indices,
+          })
+        error(mesh or "voxel mesh allocation returned nil", 0)
+      end
       job.partialMeshes = job.partialMeshes or {}
       job.partialMeshes[#job.partialMeshes + 1] = mesh
 
-      local function abandon(message)
+      local function abandon(message, checkpoint)
+        mobileDiagnostic("capability", "D09",
+          checkpoint or "mesh-upload", false, message, {
+            caller="ChunkMesher.finish", vertices=meshVertices,
+            indices=indices,
+          })
         if mesh.release then pcall(mesh.release, mesh) end
         for i, partial in ipairs(job.partialMeshes) do
           if partial == mesh then table.remove(job.partialMeshes, i) break end
@@ -381,9 +480,14 @@ local function newAsyncSink(job)
         local uploadCount = upload.count
         local source, vertexData
         if upload.packed then
+          mobileDiagnostic("checkpoint", "vertex-bytedata-create-start", {
+            caller="love.data.newByteData", page=i,
+            uploadCount=uploadCount,
+          })
           local dataOK, value = pcall(love.data.newByteData, upload.packed)
-          if not dataOK then abandon(value) end
-          if not value then abandon("voxel vertex allocation returned nil") end
+          if not dataOK then abandon(value, "vertex-data-allocation") end
+          if not value then abandon("voxel vertex allocation returned nil",
+            "vertex-data-allocation") end
           -- newByteData owns an independent native copy. Drop the Lua string
           -- before the driver upload so incremental GC never retains both
           -- representations across this yield-capable boundary.
@@ -393,6 +497,13 @@ local function newAsyncSink(job)
           source = upload.rows
         end
         Budget.check()
+        -- Keep the diagnostic key stable. The page stays in the payload, but
+        -- making it part of the key defeated per-key sampling and forced one
+        -- filesystem snapshot before and after every upload on a phone.
+        mobileDiagnostic("checkpoint", "vertex-buffer-upload-start", {
+            caller="Mesh.setVertices", context="mesh-upload",
+            page=i, uploadCount=uploadCount,
+          })
         local uploaded, uploadErr = pcall(mesh.setVertices, mesh, source,
                                            first, uploadCount)
         if vertexData and vertexData.release then
@@ -404,8 +515,12 @@ local function newAsyncSink(job)
           -- water quads were removed from that mesh. Fail the whole job so
           -- finishJob releases any sibling allocation and caches one failure
           -- sentinel instead of presenting a map with holes.
-          abandon(uploadErr)
+          abandon(uploadErr, "vertex-buffer-upload")
         end
+        mobileDiagnostic("checkpoint", "vertex-buffer-upload-ready", {
+            caller="Mesh.setVertices", context="mesh-upload",
+            page=i, uploadCount=uploadCount,
+          })
         first = first + uploadCount
         -- Do this before the yield-capable check: cancellation or a long
         -- upload must not keep consumed bytes/fallback tables alive.
@@ -416,6 +531,15 @@ local function newAsyncSink(job)
         Budget.check()
       end
 
+      if MOBILE_RUNTIME then
+        mobileDiagnostic("checkpoint", "unindexed-triangle-stream-ready", {
+          caller="ChunkMesher.finish", vertices=meshVertices,
+          triangles=indices / 3, indexFormat="none",
+        })
+        Budget.check()
+        return mesh
+      end
+
       -- Unlike the old Lua index table this is a compact native byte stream.
       -- Concatenation + Data construction are linear memcpy operations (the
       -- 100k-quad QA case measured below 1ms together on LOVE 11.5), and are
@@ -423,15 +547,30 @@ local function newAsyncSink(job)
       Budget.check()
       local packed = table.concat(indexPieces)
       indexPieces = {}
+      mobileDiagnostic("checkpoint", "index-bytedata-create-start", {
+        caller="love.data.newByteData", indices=indices,
+        indexFormat="uint32",
+      })
       local dataOK, indexData = pcall(love.data.newByteData, packed)
       packed = nil
-      if not dataOK then abandon(indexData) end
-      if not indexData then abandon("voxel index allocation returned nil") end
+      if not dataOK then abandon(indexData, "index-data-allocation") end
+      if not indexData then abandon("voxel index allocation returned nil",
+        "index-data-allocation") end
+      mobileDiagnostic("checkpoint", "uint32-index-map-start", {
+        caller="mesh.setVertexMap", indices=indices,
+        indexFormat="uint32",
+      })
       local mapped, mapErr = pcall(mesh.setVertexMap, mesh, indexData,
                                     "uint32", indices)
       if indexData.release then pcall(indexData.release, indexData) end
       indexData = nil
-      if not mapped then abandon(mapErr) end
+      if not mapped then
+        abandon(mapErr, "uint32-index-map")
+      end
+      mobileDiagnostic("checkpoint", "uint32-index-map-ready", {
+        caller="ChunkMesher.finish", vertices=vertices,
+        indices=indices, indexFormat="uint32",
+      })
       Budget.check()
       return mesh
     end,
@@ -478,6 +617,11 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   local tileset = map.tileset
   local S = Structures.forMap(map)
   local elevation = elevationFor(map)
+  local flatTerrain = elevation and elevation.terrainMode == "flat"
+  -- FLAT removes navigational elevation, not the map's visual language. A
+  -- one-pixel curb keeps authored jump/hedge boundaries readable without
+  -- reopening the six-pixel pits the safety mode is meant to eliminate.
+  local flatLedgeMarker = 1
   local perRow = tileset.tilesPerRow or 16
   local atlasW = tileset.imageWidth or (perRow * 8)
   local atlasH = tileset.imageHeight or 48
@@ -579,7 +723,15 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     local run = S.runs[k]
     if run then return base + run.h end
     local s = S.shapeAt[k]
-    return base + (s and s.h or 0)
+    local intrinsic = s and s.h or 0
+    -- The support plane remains level, but the authored boundary keeps a
+    -- shallow marker. Gen-I hedge separators often reuse ledge collision art;
+    -- retaining the full 6px lip while suppressing the terrace behind it
+    -- creates open green niches in towns.
+    if flatTerrain and s and s.class == "ledge" then
+      intrinsic = flatLedgeMarker
+    end
+    return base + intrinsic
   end
 
   local function route4PortalV2(st, base)
@@ -705,6 +857,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   -- light reaches it -- which is what plants a prop on the floor instead
   -- of leaving it looking pasted over the top.
   local aoProp = { 0, 0, 0, 0 }
+  local objectAO = { 0, 0, 0, 0 }
   local function groundShades(c, shade, groundY)
     if type(shade) == "table" then return shade end
     groundY = groundY or 0
@@ -716,6 +869,15 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
       aoProp[i] = shade * (t >= 1 and 1 or (1 - AO_GROUND * (1 - t)))
     end
     return aoProp
+  end
+
+  -- The visible shader uses the magnitude; ShadowMap uses the sign as an
+  -- object-caster bit when a companion requests the narrow pass. Both sinks
+  -- copy immediately, so this scratch row is safe to reuse like aoProp.
+  local function objectShade(shade)
+    if type(shade) ~= "table" then return -math.abs(shade or 1) end
+    for i = 1, 4 do objectAO[i] = -math.abs(shade[i] or 1) end
+    return objectAO
   end
 
   local AO_CORNER = math.max(AO_FLOOR, AO_EDGE * AO_EDGE)  -- crease AND flank
@@ -730,9 +892,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     return aoSide
   end
 
-  -- `to` routes the quad somewhere other than the main sink -- the water
-  -- surface is the only caller that ever does (see runGeometry's header).
-  local function topQuad(x0, z0, h, tile, shade, to, transform)
+  local function topUV(tile, transform)
     local u0, u1, v0, v1 = uvRect(tile, 0, 8)
     local aU, aV, bU, bV, cU, cV, dU, dV
     if transform == "vflip" then
@@ -750,6 +910,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
       aU, aV, bU, bV = u0, v0, u1, v0
       cU, cV, dU, dV = u1, v1, u0, v1
     end
+    return aU, aV, bU, bV, cU, cV, dU, dV
+  end
+
+  -- `to` routes the quad somewhere other than the main sink -- the water
+  -- surface is the only caller that ever does (see runGeometry's header).
+  local function topQuad(x0, z0, h, tile, shade, to, transform)
+    local aU, aV, bU, bV, cU, cV, dU, dV = topUV(tile, transform)
     local shades = aoShades(x0 / 8, z0 / 8, h, shade)
     local scalar = to and waterPushValues or pushValues
     if scalar then
@@ -763,6 +930,66 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                     { x0 + 8, h, z0 + 8 }, { x0, h, z0 + 8 } },
                   { { aU, aV }, { bU, bV }, { cU, cV }, { dU, dV } },
                   shades)
+  end
+
+  -- A walkable opening synthesized between two real pieces of one ledge is a
+  -- plateau stair, not another vertical cliff tooth. Its high 8px atlas half
+  -- tilts down to the gameplay cell centre; the low half remains ordinary flat
+  -- ground. Collision/map data stay untouched. The four values follow
+  -- topQuad's NW, NE, SE, SW corner order.
+  local function rampCorners(direction, high, low)
+    if direction == "down" then return high, high, low, low end
+    if direction == "up" then return low, low, high, high end
+    if direction == "right" then return high, low, low, high end
+    if direction == "left" then return low, high, high, low end
+    return high, high, high, high
+  end
+
+  local function rampTopQuad(x0, z0, tile, direction, high, low, transform)
+    local h1, h2, h3, h4 = rampCorners(direction, high, low)
+    local aU, aV, bU, bV, cU, cV, dU, dV = topUV(tile, transform)
+    if pushValues then
+      pushValues(x0, h1, z0, aU, aV,
+                 x0 + 8, h2, z0, bU, bV,
+                 x0 + 8, h3, z0 + 8, cU, cV,
+                 x0, h4, z0 + 8, dU, dV, 1)
+      return
+    end
+    push({ { x0, h1, z0 }, { x0 + 8, h2, z0 },
+           { x0 + 8, h3, z0 + 8 }, { x0, h4, z0 + 8 } },
+         { { aU, aV }, { bU, bV }, { cU, cV }, { dU, dV } }, 1)
+  end
+
+  -- Close only the triangular/trapezoid side exposed beside a ramp. Ordinary
+  -- flat neighbours still use the existing banded side path; this helper owns
+  -- the difference between their scalar surface and the ramp's two endpoints.
+  local function rampSideQuad(d, x0, z0, tile, ours1, ours2,
+                              neighbour1, neighbour2)
+    local ceiling = math.max(ours1, ours2)
+    neighbour1, neighbour2 = math.min(neighbour1, ceiling),
+                             math.min(neighbour2, ceiling)
+    local low1, high1 = math.min(ours1, neighbour1),
+                        math.max(ours1, neighbour1)
+    local low2, high2 = math.min(ours2, neighbour2),
+                        math.max(ours2, neighbour2)
+    if low1 == high1 and low2 == high2 then return end
+    local u0, u1, v0, v1 = uvRect(tile, 0, 8)
+    local shade = Voxel3D.FACE_SHADE[d]
+    local c
+    if d == 5 then
+      c = { { x0, low1, z0 + 8 }, { x0 + 8, low2, z0 + 8 },
+            { x0 + 8, high2, z0 + 8 }, { x0, high1, z0 + 8 } }
+    elseif d == 6 then
+      c = { { x0 + 8, low2, z0 }, { x0, low1, z0 },
+            { x0, high1, z0 }, { x0 + 8, high2, z0 } }
+    elseif d == 1 then
+      c = { { x0 + 8, low2, z0 + 8 }, { x0 + 8, low1, z0 },
+            { x0 + 8, high1, z0 }, { x0 + 8, high2, z0 + 8 } }
+    else
+      c = { { x0, low1, z0 }, { x0, low2, z0 + 8 },
+            { x0, high2, z0 + 8 }, { x0, high1, z0 } }
+    end
+    push(c, { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }, shade)
   end
 
   -- vertical quad for face direction `d` of the tile column at (x0, z0),
@@ -895,8 +1122,16 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         local run = S.runs[k]
         local base = baseAtTile(tx, ty)
         local localH = run and run.h or s.h
+        if flatTerrain and not run and s.class == "ledge" then
+          localH = flatLedgeMarker
+        end
         local h = base + localH
         local x0, z0 = tx * 8, ty * 8
+        local rampDirection, rampHigh, rampLow
+        if not run and localH == 0 and s.art == "flat"
+           and s.class ~= "water" and type(elevation.rampAtTile) == "function" then
+          rampDirection, rampHigh, rampLow = elevation:rampAtTile(tx, ty)
+        end
 
         -- top face. A roofed volume gets a GABLE segment: the roof rises
         -- from the facade top at the south eave to a ridge across the
@@ -909,7 +1144,12 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- drops toward the eave, rounding the drawn corner tiles into 45
         -- degree corners. Flat-topped volumes wear their top rows;
         -- everything else its own art.
-        if run and run.rise > 0 then
+        if rampDirection then
+          local topTile = S.topTileAt and S.topTileAt[k] or tile
+          if s.topTile ~= nil then topTile = s.topTile end
+          rampTopQuad(x0, z0, topTile, rampDirection, rampHigh, rampLow,
+                      S.topUVAt and S.topUVAt[k] or nil)
+        elseif run and run.rise > 0 then
           local mid = run.extent / 2
           local function gableH(d)     -- d = rows north of the south eave
             local t = d <= mid and d / mid or (run.extent - d) / (run.extent - mid)
@@ -1009,6 +1249,29 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- sides: 8px bands wherever the neighbour is lower. Band k spans
         -- heights [8k, 8k+8) and shows one full tile of art; a partial
         -- band crops the art rows to match, so nothing ever stretches.
+        if rampDirection then
+          local h1, h2, h3, h4 = rampCorners(rampDirection,
+                                             rampHigh, rampLow)
+          local function surfaceCorners(nx, ny)
+            local direction, high, low
+            if type(elevation.rampAtTile) == "function" then
+              direction, high, low = elevation:rampAtTile(nx, ny)
+            end
+            if direction then return rampCorners(direction, high, low) end
+            local neighbour = heightAt(nx, ny)
+            return neighbour, neighbour, neighbour, neighbour
+          end
+          -- endpoint order follows each side as viewed from outside, matching
+          -- sideQuad's texture orientation.
+          local sn1, sn2 = surfaceCorners(tx, ty + 1)
+          rampSideQuad(5, x0, z0, tile, h4, h3, sn1, sn2)
+          local _, _, nn2, nn1 = surfaceCorners(tx, ty - 1)
+          rampSideQuad(6, x0, z0, tile, h1, h2, nn1, nn2)
+          local en1, _, _, en2 = surfaceCorners(tx + 1, ty)
+          rampSideQuad(1, x0, z0, tile, h2, h3, en1, en2)
+          local _, wn1, wn2 = surfaceCorners(tx - 1, ty)
+          rampSideQuad(2, x0, z0, tile, h1, h4, wn1, wn2)
+        else
         for _, side in ipairs(SIDES) do
           local nh = heightAt(tx + side[1], ty + side[2])
           if nh < h then
@@ -1096,6 +1359,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
               end
             end
           end
+        end
         end
       end
     end
@@ -1372,13 +1636,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           if template.compact == true then
             for _, q in ipairs(template) do
               Budget.tick()
-              variantSink.pushFlat(q, compactGroundShades(q))
+              variantSink.pushFlat(q, objectShade(compactGroundShades(q)))
             end
           else
             for _, q in ipairs(template) do
               Budget.tick()
               variantSink.push({ q[1], q[2], q[3], q[4] }, quadUV(q),
-                               groundShades(q, q.shade))
+                               objectShade(groundShades(q, q.shade)))
             end
           end
         end
@@ -1393,14 +1657,16 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                                         q[at + 1] + base,
                                         q[at + 2] + st.mz
             end
-            push(sc, compactQuadUV(q), groundShades(sc, q[21], base))
+            push(sc, compactQuadUV(q),
+                 objectShade(groundShades(sc, q[21], base)))
           else
             for i = 1, 4 do
               local c, out = q[i], sc[i]
               out[1], out[2], out[3] = c[1] + st.mx, c[2] + base,
                                         c[3] + st.mz
             end
-            push(sc, quadUV(q), groundShades(sc, q.shade, base))
+            push(sc, quadUV(q),
+                 objectShade(groundShades(sc, q.shade, base)))
           end
         end
       end
@@ -1444,7 +1710,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                                            0, 8)
             local uv = { { u0, v1 }, { u1, v1 },
                          { u1, v0 }, { u0, v0 } }
-            push(c, uv, groundShades(c, Voxel3D.FACE_SHADE[6], base))
+            push(c, uv,
+                 objectShade(groundShades(c, Voxel3D.FACE_SHADE[6], base)))
           end
         end
       end
@@ -1738,7 +2005,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         local c, out = q[i], sc[i]
         out[1], out[2], out[3] = c[1], c[2] + base, c[3]
       end
-      push(sc, quadUV(q), groundShades(sc, q.shade, base))
+      push(sc, quadUV(q), objectShade(groundShades(sc, q.shade, base)))
     end
   end
 
@@ -1824,7 +2091,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
             if keepAll or flags[qi] == "\1" then
               Budget.tick()
               variantSink.push({ q[1], q[2], q[3], q[4] }, quadUV(q),
-                               groundShades(q, q.shade))
+                               objectShade(groundShades(q, q.shade)))
             end
           end
         end
@@ -1848,7 +2115,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           ok = keepQuad(x0, z0, x1, z1)
         end
         if ok then
-          push(sc, quadUV(q), groundShades(sc, q.shade, base))
+          push(sc, quadUV(q), objectShade(groundShades(sc, q.shade, base)))
         end
       end
     end
@@ -1912,10 +2179,16 @@ local function instanceSource(job, offsets)
   local count = #offsets
   if count == 0 then error("empty instance placement stream", 0) end
   Budget.check()
+  mobileDiagnostic("checkpoint", "instance-mesh-create-start", {
+    caller="love.graphics.newMesh", context="mesh-instancing", count=count,
+  })
   local ok, source = pcall(love.graphics.newMesh, INSTANCE_FORMAT, count,
                            "points", "static")
   if not ok then error(source, 0) end
   if not source then error("instance offset allocation returned nil", 0) end
+  mobileDiagnostic("checkpoint", "instance-mesh-ready", {
+    caller="love.graphics.newMesh", context="mesh-instancing", count=count,
+  })
   trackPartial(job, source)
   if type(source.setVertices) ~= "function" then
     instancingUnsupported("instance offset uploads are unavailable")
@@ -1929,10 +2202,20 @@ local function instanceSource(job, offsets)
       offsets[i] = nil
     end
     Budget.check()
+    mobileDiagnostic("checkpoint",
+      "instance-vertex-upload-start:first=" .. tostring(first), {
+        caller="Mesh.setVertices", context="mesh-instancing",
+        first=first, count=#upload,
+      })
     local uploaded, uploadErr = pcall(source.setVertices, source, upload,
                                        first, #upload)
     upload = nil
     if not uploaded then error(uploadErr, 0) end
+    mobileDiagnostic("checkpoint",
+      "instance-vertex-upload-ready:first=" .. tostring(first), {
+        caller="Mesh.setVertices", context="mesh-instancing",
+        first=first,
+      })
     Budget.check()
     first = last + 1
   end
@@ -1953,10 +2236,18 @@ local function finishStampPlan(job, base, plan)
     if type(mesh.attachAttribute) ~= "function" then
       instancingUnsupported("per-instance attributes are unavailable")
     end
+    mobileDiagnostic("checkpoint", "instance-attribute-attach-start", {
+      caller="Mesh.attachAttribute", context="mesh-instancing",
+      attribute="InstanceOffset", count=count,
+    })
     local attached, attachErr = pcall(mesh.attachAttribute, mesh,
                                       "InstanceOffset", source,
                                       "perinstance")
     if not attached then instancingUnsupported(attachErr) end
+    mobileDiagnostic("checkpoint", "instance-attribute-ready", {
+      caller="Mesh.attachAttribute", context="mesh-instancing",
+      attribute="InstanceOffset", count=count,
+    })
     instances[#instances + 1] = {
       mesh = mesh,
       source = source,
@@ -1983,9 +2274,18 @@ function ChunkMesher.geometry(map, bodyOnly, masks, split)
   local sink = newTableSink()
   local waterSink = split and newTableSink() or nil
   runGeometry(map, bodyOnly, masks, sink, waterSink)
-  if not waterSink then return sink.results() end
   local v, i, n = sink.results()
+  -- Caster sign and the +2 upward-surface band are GPU-only receipts.
+  -- Headless callers compare visible output, so decode both and expose the
+  -- historical positive light value used by reference geometry digests.
+  local function visibleShade(vertex)
+    local shade = math.abs(vertex[6])
+    vertex[6] = shade > 1.5 and shade - 2 or shade
+  end
+  for _, vertex in ipairs(v) do visibleShade(vertex) end
+  if not waterSink then return v, i, n end
   local wv, wi, wn = waterSink.results()
+  for _, vertex in ipairs(wv) do visibleShade(vertex) end
   return v, i, n, wv, wi, wn
 end
 
@@ -2064,11 +2364,12 @@ local function quadsMesh(quads, job, elevation)
   for _, q in ipairs(quads) do
     Budget.tick()
     local base = baseForWorldQuad(elevation, q)
+    local facing = weatherFacing(q)
     for i = 1, 4 do
       local c = q[i]
       local uv = q.uv and q.uv[i] or { q.u, q.v }
       verts[#verts + 1] = { c[1], c[2] + base, c[3],
-                            uv[1], uv[2], q.shade }
+                            uv[1], uv[2], weatherShade(q.shade, facing) }
     end
     Voxel3D.pushQuad(indices, n)
     n = n + 1

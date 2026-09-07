@@ -34,6 +34,7 @@ local function arm(state, game, mapId)
   -- immediately to the engine's unmodified transition implementation.
   state.pending = { game = game, mapId = mapId }
   state.warmingMap = nil
+  state.warmingBodyOnly = nil
 end
 
 function WarpPrefetch.install(game)
@@ -83,9 +84,14 @@ function WarpPrefetch.update(game, covered)
   end
   if not covered then
     state.warmingMap = nil
+    state.warmingBodyOnly = nil
   elseif state.warmingMap and type(ChunkMesher.ready) == "function" then
-    local readyOK, ready = pcall(ChunkMesher.ready, state.warmingMap, true)
-    if readyOK and ready then state.warmingMap = nil end
+    local readyOK, ready = pcall(ChunkMesher.ready, state.warmingMap,
+      state.warmingBodyOnly == true)
+    if readyOK and ready then
+      state.warmingMap = nil
+      state.warmingBodyOnly = nil
+    end
   end
   local pending = state.pending
   if not pending or not covered then return state.warmingMap ~= nil end
@@ -98,13 +104,29 @@ function WarpPrefetch.update(game, covered)
   end)
   if not ok or not map then return false end
 
-  local bodyOK, body = pcall(HorizonWall.preferBody, map)
-  if not bodyOK or not body then return false end
-  -- Urgent + body-only is the exact atomic current-map request VoxelScene
-  -- would issue after the midpoint.  Starting it here lets the fade frames do
-  -- useful bounded work and makes that later request an idempotent cache hit.
-  local requestOK = pcall(ChunkMesher.request, map, true, nil, true)
-  if requestOK then state.warmingMap = map end
+  local bodyOK, bodyOnly = pcall(HorizonWall.preferBody, map)
+  if not bodyOK then return false end
+  bodyOnly = bodyOnly == true
+  if not bodyOnly then
+    -- Ordinary interiors need their complete border ring, but most of them
+    -- (including Oak's Lab) are closed maps with no streamed neighbours. They
+    -- can be built exactly during the door fade instead of dropping their
+    -- cold structure analysis into the first visible frames. A non-semantic
+    -- destination with connections still waits for VoxelScene, which owns the
+    -- neighbour masks required by its full-ring cache key.
+    local connections = map.def and map.def.connections
+    if type(connections) == "table" and next(connections) ~= nil then
+      return false
+    end
+  end
+  -- This is the exact current-map slot VoxelScene requests after the warp:
+  -- body-only under semantic scenery, otherwise the complete unmasked ring of
+  -- a closed interior. Starting it here makes the later request a cache hit.
+  local requestOK = pcall(ChunkMesher.request, map, bodyOnly, nil, true)
+  if requestOK then
+    state.warmingMap = map
+    state.warmingBodyOnly = bodyOnly
+  end
   return requestOK
 end
 

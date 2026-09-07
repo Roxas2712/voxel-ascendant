@@ -118,14 +118,17 @@ ShadowMap.slack = ShadowMap.BIAS
 
 local SHADER = [[
   varying float vDepth;
+  varying float vObjectCaster;
 #ifdef VERTEX
   uniform mat4 lightVP;
   uniform mat4 model;
   attribute vec3 InstanceOffset;
+  attribute float VertexShade;
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
     vec4 placed = vertex_position;
     placed.xyz += InstanceOffset;
     vec4 c = lightVP * (model * placed);
+    vObjectCaster = step(VertexShade, -0.0001);
     // the projection is orthographic, so w is 1 and clip z IS the depth,
     // linear in world units along the sun line
     vDepth = c.z * 0.5 + 0.5;
@@ -134,10 +137,12 @@ local SHADER = [[
 #endif
 #ifdef PIXEL
   uniform float sprite;   // 1 while the CAST is being drawn; see ShadowMap.sprites
+  uniform float objectOnly;
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // the same alpha discard the main pass uses: a sprite card casts its
     // silhouette, not its 16x16 bounding box
     if (Texel(tex, tc).a < 0.5) discard;
+    if (objectOnly > 0.5 && vObjectCaster < 0.5 && sprite < 0.5) discard;
     // pack into two channels: the high byte in red, the low in green.
     // Blue says WHAT cast this, which costs a channel that was zero anyway
     // and lets a surface decline one kind of caster -- water does, for the
@@ -158,6 +163,64 @@ local drawing = false
 local ready = false
 local lastSig = nil
 local prevBlend, prevAlphaMode = nil, nil
+local savedGraphicsState = nil
+
+local unpackValues = table.unpack or unpack
+
+local function protectedResults(fn)
+  if type(fn) ~= "function" then return nil end
+  local packed = { n=0 }
+  local function collect(...)
+    packed.n = select("#", ...)
+    for i = 1, packed.n do packed[i] = select(i, ...) end
+  end
+  collect(pcall(fn))
+  if not packed[1] then return nil end
+  local out = { n=packed.n - 1 }
+  for i = 2, packed.n do out[i - 1] = packed[i] end
+  return out
+end
+
+local function captureGraphicsState()
+  local graphics = love and love.graphics or {}
+  return {
+    canvas = protectedResults(graphics.getCanvas),
+    shader = protectedResults(graphics.getShader),
+    depth = protectedResults(graphics.getDepthMode),
+    cull = protectedResults(graphics.getMeshCullMode),
+    blend = protectedResults(graphics.getBlendMode),
+    color = protectedResults(graphics.getColor),
+  }
+end
+
+local function restoreOne(errors, setter, values, fallback)
+  if type(setter) ~= "function" then return end
+  local ok, err
+  if values then
+    ok, err = pcall(setter, unpackValues(values, 1, values.n))
+  elseif fallback then
+    ok, err = pcall(setter, unpackValues(fallback, 1, fallback.n))
+  else
+    return
+  end
+  if not ok then errors[#errors + 1] = tostring(err) end
+end
+
+local function restoreGraphicsState(state)
+  local graphics = love and love.graphics or {}
+  local errors = {}
+  restoreOne(errors, graphics.setShader, state and state.shader, { n=0 })
+  restoreOne(errors, graphics.setDepthMode, state and state.depth, { n=0 })
+  restoreOne(errors, graphics.setMeshCullMode, state and state.cull,
+             { n=1, "none" })
+  restoreOne(errors, graphics.setCanvas, state and state.canvas, { n=0 })
+  restoreOne(errors, graphics.setBlendMode, state and state.blend,
+             { n=2, "alpha", "alphamultiply" })
+  restoreOne(errors, graphics.setColor, state and state.color,
+             { n=4, 1, 1, 1, 1 })
+  if #errors > 0 then return false, table.concat(errors, "; ") end
+  return true
+end
 
 local IDENTITY = Mat4.identity()
 
@@ -251,6 +314,14 @@ end
 -- True while the map holds a frame the main pass can read.
 function ShadowMap.active()
   return ready and canvas ~= nil and canvas ~= false
+end
+
+-- Stop sampling the previous sunny frame without releasing its GPU storage.
+-- Weather/policy changes can therefore remove every shadow immediately and a
+-- later clear frame simply refills the retained canvas. Merely skipping the
+-- cast pass is not sufficient: `ready` would otherwise keep the old map live.
+function ShadowMap.deactivate()
+  drawing, ready, lastSig = false, false, nil
 end
 
 -- The direction the light TRAVELS, normalized. The shear is the shadow a
@@ -440,28 +511,42 @@ function ShadowMap.begin(cx, cy, vw, vh)
   fit(cx, cy, vw, vh)
   local c = getCanvas(ShadowMap.res)
   if not c then return false end
-  local ok = pcall(love.graphics.setCanvas, { c, depth = true })
+  savedGraphicsState = captureGraphicsState()
+  local ok = pcall(function()
+    love.graphics.setCanvas({ c, depth = true })
+    prevBlend, prevAlphaMode = love.graphics.getBlendMode()
+    -- white clears to depth 1 + 1/255, past the far plane: a texel nothing
+    -- was drawn into can never shadow anything
+    love.graphics.clear(1, 1, 0, 1, true, true)
+    love.graphics.setDepthMode("lequal", true)
+    love.graphics.setMeshCullMode("none")
+    -- replace, not alpha blend: these are packed numbers, not colors
+    love.graphics.setBlendMode("replace", "premultiplied")
+    love.graphics.setShader(sh)
+    love.graphics.setColor(1, 1, 1, 1)
+    pcall(sh.send, sh, "lightVP", "row", ShadowMap.clipVP)
+    -- the world until a cast pass says otherwise, reset per pass so one that
+    -- forgot to put it back cannot leak into the next map's terrain
+    pcall(sh.send, sh, "sprite", 0)
+    pcall(sh.send, sh, "objectOnly", 0)
+  end)
   if not ok then
-    pcall(love.graphics.setCanvas)
+    drawing, ready, lastSig = false, false, nil
+    restoreGraphicsState(savedGraphicsState)
+    savedGraphicsState = nil
     return false
   end
-  prevBlend, prevAlphaMode = love.graphics.getBlendMode()
-  -- white clears to depth 1 + 1/255, past the far plane: a texel nothing
-  -- was drawn into can never shadow anything
-  love.graphics.clear(1, 1, 0, 1, true, true)
-  love.graphics.setDepthMode("lequal", true)
-  love.graphics.setMeshCullMode("none")
-  -- replace, not alpha blend: these are packed numbers, not colors
-  love.graphics.setBlendMode("replace", "premultiplied")
-  love.graphics.setShader(sh)
-  love.graphics.setColor(1, 1, 1, 1)
-  pcall(sh.send, sh, "lightVP", "row", ShadowMap.clipVP)
-  -- the world until a cast pass says otherwise, reset per pass so one that
-  -- forgot to put it back cannot leak into the next map's terrain
-  pcall(sh.send, sh, "sprite", 0)
   drawing = true
   ready = false
   return true
+end
+
+-- Select whether the terrain draw contributes every quad or only geometry
+-- carrying ChunkMesher's negative-shade map-object marker.
+function ShadowMap.objectOnly(on)
+  if not drawing then return end
+  local sh = getShader()
+  if sh then pcall(sh.send, sh, "objectOnly", on and 1 or 0) end
 end
 
 -- Draw one caster. Same signature as Voxel3D.draw minus the camera-ward
@@ -507,21 +592,41 @@ end
 
 -- Close the pass and stamp it with the signature it was drawn for.
 function ShadowMap.finish(sig)
-  if not drawing then return end
+  if not drawing then return true end
   drawing = false
-  love.graphics.setShader()
-  love.graphics.setDepthMode()
-  love.graphics.setCanvas()
-  love.graphics.setBlendMode(prevBlend or "alpha", prevAlphaMode)
-  love.graphics.setColor(1, 1, 1, 1)
+  local ok, err = restoreGraphicsState(savedGraphicsState)
+  savedGraphicsState = nil
+  if not ok then
+    ready, lastSig = false, nil
+    error("shadow graphics restore failed: " .. tostring(err), 0)
+  end
   lastSig = sig
   ready = true
+  return true
+end
+
+-- Cancel a pass that threw while drawing.  One bad caster must not leave the
+-- shadow canvas, depth mode or shader bound while the battle falls back to
+-- native 2D.
+function ShadowMap.abort()
+  if not drawing then
+    ready, lastSig = false, nil
+    return true
+  end
+  drawing, ready, lastSig = false, false, nil
+  local ok, err = restoreGraphicsState(savedGraphicsState)
+  savedGraphicsState = nil
+  if not ok then
+    error("shadow graphics restore failed: " .. tostring(err), 0)
+  end
+  return true
 end
 
 -- Drop the GPU objects (window resize, hot reload).
 function ShadowMap.invalidate()
   canvas, canvasRes, blank = nil, 0, nil
   drawing, ready, lastSig = false, false, nil
+  savedGraphicsState = nil
 end
 
 return ShadowMap

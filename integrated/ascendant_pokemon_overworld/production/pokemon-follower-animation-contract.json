@@ -1,0 +1,185 @@
+{
+  "blink": {
+    "fallbackWhenNoExactSidecar": "no-blink",
+    "interpolationForbidden": true,
+    "paintedOrInferredPixelsForbidden": true,
+    "policy": "source-exact-sidecar-only",
+    "readyEntries": [
+      {
+        "dex": 25,
+        "manifest": {
+          "file": "idle-events/pikachu/four-direction-sidecar-manifest.source.json",
+          "sha256": "3965396c0600768c2613eeb3883fecf65b0e41b49ea06ff144e361231f1a326f",
+          "sourceWorkspaceFile": "reference-assets/generated-3d-sprites/pokemon-go-complete/production-work/current-unity-animation-sources/pikachu-exact-blink-pilot/four-direction-sidecar-manifest.json"
+        },
+        "palette": "normal",
+        "prefix": "pm0025_00",
+        "sheet": {
+          "file": "idle-events/pikachu/pm0025_00__normal__idle-blink__4-directions__4x4.png",
+          "height": 3072,
+          "sha256": "60a91a0019b8e1b232f0cdabf7868160f8a177d403c529d6dceffeeab3d2372f",
+          "sourceWorkspaceFile": "reference-assets/generated-3d-sprites/pokemon-go-complete/production-work/current-unity-animation-sources/pikachu-exact-blink-pilot/pm0025_00__normal__idle-blink__4-directions__4x4.png",
+          "width": 3072
+        },
+        "species": "Pikachu"
+      },
+      {
+        "dex": 25,
+        "manifest": {
+          "file": "idle-events/pikachu/four-direction-sidecar-manifest.source.json",
+          "sha256": "3965396c0600768c2613eeb3883fecf65b0e41b49ea06ff144e361231f1a326f",
+          "sourceWorkspaceFile": "reference-assets/generated-3d-sprites/pokemon-go-complete/production-work/current-unity-animation-sources/pikachu-exact-blink-pilot/four-direction-sidecar-manifest.json"
+        },
+        "palette": "shiny",
+        "prefix": "pm0025_00",
+        "sheet": {
+          "file": "idle-events/pikachu/pm0025_00__shiny__idle-blink__4-directions__4x4.png",
+          "height": 3072,
+          "sha256": "ba3abd418867e1c0f26274897528c5844cb98f2bbaedd8665e2de0eb99f2385f",
+          "sourceWorkspaceFile": "reference-assets/generated-3d-sprites/pokemon-go-complete/production-work/current-unity-animation-sources/pikachu-exact-blink-pilot/pm0025_00__shiny__idle-blink__4-directions__4x4.png",
+          "width": 3072
+        },
+        "species": "Pikachu"
+      }
+    ],
+    "schedule": {
+      "overlapAllowed": false,
+      "randomIntervalSeconds": [
+        3.5,
+        7.5
+      ],
+      "stationaryOnly": true
+    },
+    "sidecarLayout": {
+      "directionRows": [
+        "front",
+        "left",
+        "back",
+        "right"
+      ],
+      "oneShot": true,
+      "returnToOpen": true,
+      "sourceTimelineSeconds": [
+        0.0,
+        0.06666666666666667,
+        0.2,
+        0.23333333333333334
+      ],
+      "stateColumns": [
+        "open",
+        "closed",
+        "intermediate",
+        "open"
+      ],
+      "steppedStates": [
+        0,
+        2,
+        1,
+        0
+      ]
+    },
+    "syntheticLidsForbidden": true
+  },
+  "contractId": "pokemon-follower-runtime-animation-dex001-411-v1",
+  "motionProfiles": {
+    "authority": "per-variant delivered animation.stateMachine.moving plus provenance.locomotionProfile and provenance.locomotionEvidence",
+    "inventMissingSpeciesMotion": false,
+    "syntheticFramesAllowed": false,
+    "useDeliveredStepAAndStepB": true
+  },
+  "schemaVersion": 1,
+  "scope": {
+    "dexEnd": 411,
+    "dexStart": 1,
+    "genderVariantsRequired": false,
+    "megaIncluded": false,
+    "palettes": [
+      "normal",
+      "shiny"
+    ],
+    "variantCount": 822
+  },
+  "snapshotMaterialization": {
+    "pathsAreRelativeToSnapshotRoot": true,
+    "semanticOrPixelChanges": false,
+    "sourceContract": "source-contracts/runtime-animation-contract.source.json",
+    "sourceContractSha256": "aa33f49d5e1bed7587e4be286e39ba0deb0230e3611a190376672b374339e178"
+  },
+  "stationaryIdle": {
+    "basePhase": "idle",
+    "durationSeconds": 2.0,
+    "keyframes": [
+      {
+        "normalizedTime": 0.0,
+        "rotationDegrees": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "translateInCellFractions": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "normalizedTime": 0.5,
+        "rotationDegrees": 0.0,
+        "scale": [
+          0.998,
+          1.006
+        ],
+        "translateInCellFractions": [
+          0.0,
+          -0.002
+        ]
+      },
+      {
+        "normalizedTime": 1.0,
+        "rotationDegrees": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "translateInCellFractions": [
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "loop": true,
+    "note": "This subtle breathing/idle effect transforms the complete delivered sprite at runtime; it does not paint, infer, resample, or replace asset pixels.",
+    "pivot": "bottom-center",
+    "preserveDeliveredPixels": true,
+    "speciesSpecificFramesAdded": false,
+    "transformType": "whole-sprite-transform-only"
+  },
+  "walksheet": {
+    "advanceOnlyWhileActorMoves": true,
+    "directionRows": {
+      "back": 2,
+      "front": 0,
+      "left": 1,
+      "right": 3
+    },
+    "directions": [
+      "front",
+      "left",
+      "back",
+      "right"
+    ],
+    "movingSequence": [
+      "idle",
+      "step-a",
+      "idle",
+      "step-b"
+    ],
+    "phaseColumns": {
+      "idle": 0,
+      "step-a": 1,
+      "step-b": 2
+    },
+    "pixelSynthesisAllowed": false,
+    "resamplingAllowed": false,
+    "useDeliveredProfilePhasesExactly": true
+  }
+}

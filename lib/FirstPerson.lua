@@ -146,7 +146,8 @@ end
 -- inputs, both walk free, and both turn the cards; how far behind the head
 -- the eye ends up is ThirdPerson's business alone.
 function FirstPerson.engaged()
-  return Voxel.isFreeCam(Voxel.level) and Voxel3D.available()
+  return Voxel.isFreeCam(Voxel.level)
+         and Voxel3D.available("FirstPerson.engaged")
 end
 
 -- Whether the overworld is what the player is looking at: nothing pushed
@@ -307,6 +308,20 @@ FirstPerson.bodyYaw = nil
 function FirstPerson.pointBody(wx, wz)
   FirstPerson.bodyYaw = FirstPerson.bodyBearing(wx, wz)
   return facingOf(FirstPerson.bodyYaw)
+end
+
+-- A stopped third-person actor keeps the last direction it actually walked.
+-- Re-pointing it at the camera every idle frame made walking toward the lens
+-- end with an immediate 180-degree snap in Gen 1.  First person still uses the
+-- live look bearing because the actor is the camera there, while a freshly
+-- entered third-person rung (no recorded travel yet) also starts from the
+-- camera bearing.  This mirrors GoldCameraControls' established Gen-2 policy
+-- without moving interaction, collision or camera ownership into this helper.
+function FirstPerson.standingBodyFacing(facing)
+  if ThirdPerson.extended() and FirstPerson.bodyYaw ~= nil then
+    return facingOf(FirstPerson.bodyYaw)
+  end
+  return FirstPerson.pointBody(0, 0) or facing
 end
 
 -- Hand the body back to whatever else is turning it.
@@ -736,9 +751,13 @@ function FirstPerson.install()
   --
   local mouseHeld = {}
   local MOUSE_BTN = { [1] = "a", [2] = "b" }
+  local touchPointer
   local hooks = V.mod and V.mod.hooks
   if type(hooks) == "table" and type(hooks.wrap) == "function" then
     hooks:wrap("input.pointer", function(nextInput, game, pointer)
+      if type(pointer) == "table" and pointer.source == "touch" and touchPointer then
+        return touchPointer(nextInput, game, pointer)
+      end
       if type(pointer) ~= "table" or pointer.source ~= "mouse" then
         return nextInput(game, pointer)
       end
@@ -806,9 +825,55 @@ function FirstPerson.install()
     return ok and v or nil
   end
 
+  -- Let the engine register free-screen contacts before claiming them. A
+  -- Game callback that returns before pointerEvent hides the contact from
+  -- cancelPointers, leaving lookTouch stranded after mobile input recovery.
+  if type(hooks) == "table" and type(hooks.wrap) == "function" then
+    local width, height
+    touchPointer = function(nextInput, game, p)
+      local w, h = 1280, 720
+      pcall(function() w, h = love.graphics.getWidth(), love.graphics.getHeight() end)
+      if width and (width ~= w or height ~= h) then lookTouch = nil end
+      width, height = w, h
+      if p.phase == "pressed" and FirstPerson.driving() and not lookTouch then
+        local hit
+        pcall(function() hit = TouchControls:hitTest(p.x, p.y) end)
+        if not hit then
+          FirstPerson.reseatLook(p.id, p.x, p.y)
+          return true
+        end
+      elseif lookTouch and lookTouch.id == p.id then
+        if p.phase == "released" or p.phase == "cancelled" then
+          lookTouch = nil
+          return true
+        elseif p.phase == "moved" then
+          if FirstPerson.driving() then
+            local per = FirstPerson.TOUCH_TURN / math.max(320, w)
+            FirstPerson.lookBy(-(p.x - lookTouch.x) * per,
+                               (p.y - lookTouch.y) * per)
+            lookTouch.x, lookTouch.y = p.x, p.y
+          else
+            lookTouch = nil
+          end
+          return true
+        end
+      end
+      return nextInput(game, p)
+    end
+  end
+
   do
     local inner = Game.touchpressed
     function Game:touchpressed(id, x, y)
+      if touchPointer then
+        -- The engine consumes d-pad contacts before input.pointer; only
+        -- observe their analog deflection here, never claim a look contact.
+        local result = inner(self, id, x, y)
+        if FirstPerson.driving() and TouchControls.dpadTouch == id then
+          touchMove = dpadVector(x, y)
+        end
+        return result
+      end
       if FirstPerson.driving() then
         local onControl = nil
         pcall(function() onControl = TouchControls:hitTest(x, y) end)
@@ -828,6 +893,12 @@ function FirstPerson.install()
   do
     local inner = Game.touchmoved
     function Game:touchmoved(id, x, y)
+      if touchPointer then
+        if touchMove and TouchControls.dpadTouch == id then
+          touchMove = dpadVector(x, y) or touchMove
+        end
+        return inner(self, id, x, y)
+      end
       if lookTouch and lookTouch.id == id then
         local w = 1280
         pcall(function() w = love.graphics.getWidth() end)
@@ -850,6 +921,10 @@ function FirstPerson.install()
   do
     local inner = Game.touchreleased
     function Game:touchreleased(id, x, y)
+      if touchPointer then
+        if TouchControls.dpadTouch == id then touchMove = nil end
+        return inner(self, id, x, y)
+      end
       if lookTouch and lookTouch.id == id then
         lookTouch = nil
         return

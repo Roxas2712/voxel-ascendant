@@ -1,0 +1,3 @@
+local V=...
+local source=assert(V.mod:read("shared/HdResidencyPlan.lua"))
+return assert((loadstring or load)(source,"@VOXEL_ASCENDANT/shared/HdResidencyPlan.lua"))(V)

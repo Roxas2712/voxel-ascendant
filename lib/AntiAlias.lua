@@ -45,8 +45,32 @@
 local V = ...
 
 local ModSetting = V.require("ModSetting")
+local CanvasPresentation = V.require("CanvasPresentation")
 
 local AntiAlias = {}
+
+-- Phone panels routinely expose two to four million physical pixels even
+-- though the Game Boy playfield contains only 23k source pixels.  VASC's
+-- scene shader and depth buffer pay for every one of those panel pixels.  A
+-- desktop GPU can afford that; a tile-based phone GPU can spend long enough
+-- on the first frame that Gen1Recomp appears frozen behind its transition.
+-- Render the 3-D pass into a bounded internal canvas and let resolve() scale
+-- the finished image back to the exact framebuffer-sized canvas the engine
+-- compositor expects.  The bound is aspect preserving and deliberately
+-- independent of a saved AA choice: supersampling a phone bootstrap would
+-- undo the safety policy before the first voxel frame exists.
+local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
+  or CanvasPresentation.OS == "Android"
+local MOBILE_MAX_LONG_EDGE = 960
+local MOBILE_MAX_PIXELS = 640000
+
+local function mobileFactor(w, h)
+  if not MOBILE_RUNTIME then return 1 end
+  w, h = math.max(1, tonumber(w) or 1), math.max(1, tonumber(h) or 1)
+  return math.min(1,
+    MOBILE_MAX_LONG_EDGE / math.max(w, h),
+    math.sqrt(MOBILE_MAX_PIXELS / (w * h)))
+end
 
 -- the key under options.modOptions.VOXEL_ASCENDANT, shared by the row in
 -- OPTIONS and the mod manager's own settings page for this mod
@@ -98,19 +122,22 @@ end
 -- multiplied up into canvas ones, and the honest multiplier is the one this
 -- returned rather than the one the row asked for.
 function AntiAlias.expand(w, h)
-  local s = wanted()
-  local max = textureLimit()
+  local s = MOBILE_RUNTIME and mobileFactor(w, h) or wanted()
+  -- getSystemLimits may itself force lazy driver initialization.  Phones do
+  -- not need that probe: their pass is bounded above and never supersampled.
+  local max = not MOBILE_RUNTIME and textureLimit() or nil
   if max and max > 0 then
     -- clamped rather than abandoned: a window too big for 4X can usually
     -- still carry some of it, and half a rung of smoothing is worth more
     -- than a row that silently does nothing at that size
     s = math.min(s, max / math.max(1, w), max / math.max(1, h))
   end
-  if not (s > 1.01) then
+  if math.abs(s - 1) <= 0.01 then
     live = 1
     return w, h
   end
   local ew, eh = math.floor(w * s + 0.5), math.floor(h * s + 0.5)
+  ew, eh = math.max(1, ew), math.max(1, eh)
   live = ew / math.max(1, w)
   return ew, eh
 end
@@ -133,7 +160,7 @@ local targets = {}
 local function targetFor(slot, w, h)
   local t = targets[slot]
   if not (t and t.w == w and t.h == h) then
-    local ok, c = pcall(love.graphics.newCanvas, w, h)
+    local ok, c = pcall(love.graphics.newCanvas, w, h, { dpiscale = 1 })
     if not (ok and c) then return nil end
     -- nearest, like the canvas it stands in for: this one is composited a
     -- canvas pixel to a display pixel, and the smoothing has already happened
@@ -203,7 +230,12 @@ function AntiAlias.resolve(canvas, w, h, slot)
   local target = targetFor(slot or "world", w, h)
   if not target then return canvas end
 
-  local sh = getShader()
+  -- The box shader exists to FOLD supersampled input down.  Mobile does the
+  -- opposite here, so compiling a second shader after the scene shader would
+  -- add risk and cannot improve the upscale.  Linear sampling is the complete
+  -- operation for a smaller source.
+  local folding = cw > w or ch > h
+  local sh = folding and getShader() or nil
   local prevBlend, prevAlpha = love.graphics.getBlendMode()
   -- the scene canvas filters nearest for its usual 1:1 blit; the taps want
   -- linear, put back below so every other pass finds what it expects
@@ -239,6 +271,15 @@ end
 
 function AntiAlias.row()
   return AntiAlias.setting:row()
+end
+
+-- Read-only acceptance seam for the headless M6 contracts.
+function AntiAlias.mobilePolicy()
+  return {
+    active = MOBILE_RUNTIME,
+    maxLongEdge = MOBILE_MAX_LONG_EDGE,
+    maxPixels = MOBILE_MAX_PIXELS,
+  }
 end
 
 return AntiAlias

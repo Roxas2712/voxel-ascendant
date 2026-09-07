@@ -7,6 +7,7 @@ local V = ...
 local LocalMusic = {}
 local UserFiles = V.require("UserFiles")
 
+LocalMusic.API_VERSION = 2
 LocalMusic.ROOT = "user/music"
 LocalMusic.KEY_PREFIX = "localMusic."
 LocalMusic.ENABLED_KEY = "localMusic.enabled"
@@ -54,6 +55,10 @@ local enabled = false
 local lastChoice = {}
 local activeBattle = nil
 local serial = 0
+local observedCategories = {}
+local observedExact = {}
+local lastResolved = nil
+local previewSession = nil
 
 local function exists(path, kind)
   return UserFiles.info(path, kind) ~= nil
@@ -234,6 +239,12 @@ local function backToDefault(game)
 end
 
 function LocalMusic.restore(game)
+  if previewSession and type(LocalMusic.stopPreview) == "function" then
+    LocalMusic.stopPreview(previewSession.game)
+  end
+  -- A newly loaded/created game may resolve the same category to a different
+  -- edition or companion cue. Require a fresh hook observation before A/B.
+  observedCategories, observedExact, lastResolved = {}, {}, nil
   local save, loader = gameBuckets(game)
   enabled = (save and save[LocalMusic.ENABLED_KEY]
              or loader and loader[LocalMusic.ENABLED_KEY]) == true
@@ -285,6 +296,19 @@ function LocalMusic.categoryFor(ctx)
   return nil
 end
 
+local function rememberOriginal(current, ctx, category)
+  if type(current) ~= "string" or current == "" or registered[current] then
+    return
+  end
+  local exactId = replacements[current] and current or nil
+  if category then observedCategories[category] = current end
+  if exactId then observedExact[exactId] = true end
+  lastResolved = {
+    originalId=current, category=category, exactId=exactId,
+    reason=type(ctx) == "table" and ctx.reason or nil,
+  }
+end
+
 local function shuffled(category, ctx)
   local list = tracks[category] or {}
   if #list == 0 then return nil end
@@ -297,10 +321,11 @@ local function shuffled(category, ctx)
 end
 
 function LocalMusic.resolve(current, ctx)
+  local category = LocalMusic.categoryFor(ctx)
+  rememberOriginal(current, ctx, category)
   if not enabled then return current end
   local exact = type(current) == "string" and replacements[current] or nil
   local fallback = exact and exact.id or current
-  local category = LocalMusic.categoryFor(ctx)
   if not category then return fallback end
   local choice = validChoice(category, selected[category] or "original")
   if choice == "original" then return fallback end
@@ -316,6 +341,153 @@ end
 function LocalMusic.finish()
   activeBattle = nil
   serial = serial + 1
+end
+
+local function copyResolution(value)
+  if type(value) ~= "table" then return nil end
+  return {
+    originalId=value.originalId, category=value.category,
+    exactId=value.exactId, reason=value.reason,
+  }
+end
+
+local function previewReceipt()
+  if not previewSession then return nil end
+  return {
+    kind=previewSession.kind, songId=previewSession.songId,
+    label=previewSession.label, originalId=previewSession.originalId,
+  }
+end
+
+function LocalMusic.status()
+  local categories, exact = {}, {}
+  for id, song in pairs(observedCategories) do categories[id] = song end
+  for id in pairs(observedExact) do exact[id] = true end
+  return {
+    apiVersion=LocalMusic.API_VERSION, enabled=enabled,
+    observed={ categories=categories, exact=exact,
+               lastResolved=copyResolution(lastResolved) },
+    preview=previewReceipt(),
+  }
+end
+
+local function originalFor(target)
+  if type(target) ~= "table" then
+    return nil, "a category or exact target is required"
+  end
+  if target.category ~= nil then
+    local category = tostring(target.category)
+    if not BY_ID[category] then return nil, "unknown music category" end
+    local song = observedCategories[category]
+    if song then return song end
+    return nil, "no Game/KASC cue has been observed for this category yet"
+  end
+  if target.exactId ~= nil then
+    local exactId = tostring(target.exactId)
+    if not replacements[exactId] then return nil, "unknown exact replacement" end
+    if observedExact[exactId] then return exactId end
+    return nil, "this exact Game/KASC cue has not been observed yet"
+  end
+  return nil, "a category or exact target is required"
+end
+
+local function anyTrack(id)
+  if type(id) ~= "string" then return nil end
+  for _, list in pairs(tracks) do
+    for _, track in ipairs(list) do
+      if track.id == id then return track end
+    end
+  end
+  for _, track in pairs(replacements) do
+    if track.id == id then return track end
+  end
+end
+
+local function songAvailable(game, id)
+  local songs = game and game.data and game.data.audio and game.data.audio.songs
+  local def = songs and songs[id]
+  return type(def) == "table"
+     and (def.file ~= nil or def.chip ~= nil
+          or (def.address ~= nil and def.bank ~= nil))
+end
+
+local function engineMusic()
+  local ok, Music = pcall(require, "src.core.Music")
+  if not ok or type(Music) ~= "table" or type(Music.play) ~= "function" then
+    return nil, "the game music preview service is unavailable"
+  end
+  return Music
+end
+
+local function previewSong(game, id, receipt)
+  if not songAvailable(game, id) then
+    return nil, "the resolved song is not available in the current game"
+  end
+  local Music, unavailable = engineMusic()
+  if not Music then return nil, unavailable end
+  if previewSession and previewSession.game ~= game then
+    return nil, "a music preview is already active in another game"
+  end
+  local created = previewSession == nil
+  if created then
+    local previous
+    if type(Music.current) == "function" then
+      local ok, value = pcall(Music.current)
+      if ok and type(value) == "string" then previous = value end
+    end
+    previewSession = { game=game, previousId=previous }
+  end
+  local ok, err = pcall(Music.play, game.data, id, true, {
+    reason="direct", selected=true,
+  })
+  if not ok then
+    if created then previewSession = nil end
+    return nil, tostring(err)
+  end
+  previewSession.kind = receipt.kind
+  previewSession.songId = id
+  previewSession.label = receipt.label
+  previewSession.originalId = receipt.originalId
+  return true
+end
+
+function LocalMusic.previewOriginal(game, target)
+  local id, unavailable = originalFor(target)
+  if not id then return nil, unavailable end
+  return previewSong(game, id, {
+    kind="original", label=id, originalId=id,
+  })
+end
+
+function LocalMusic.previewTrack(game, trackId)
+  local track = anyTrack(trackId)
+  if not track then return nil, "unknown local music track" end
+  return previewSong(game, track.id, {
+    kind="custom", label=track.label, originalId=track.originalId,
+  })
+end
+
+function LocalMusic.stopPreview(game)
+  local session = previewSession
+  previewSession = nil
+  if not session then return false end
+  local Music = engineMusic()
+  if not Music then return false end
+  -- Always restore through the game whose music state was snapshotted.  A
+  -- stale caller must not replay that receipt into a different game object.
+  local activeGame = session.game or game
+  local data = activeGame and activeGame.data
+  if type(Music.stop) == "function" then pcall(Music.stop) end
+  if session.previousId and songAvailable(activeGame, session.previousId) then
+    local ok = pcall(Music.play, data, session.previousId, true, {
+      reason="direct", selected=true,
+    })
+    if ok then return true end
+  end
+  if data and type(Music.restoreMap) == "function" then
+    pcall(Music.restoreMap, data)
+  end
+  return true
 end
 
 local function choiceLabel(category)
@@ -340,15 +512,22 @@ function LocalMusic.row(mod)
   }
 end
 
+local function vascList(mod, game, title, items, opts)
+  local menu = mod.ui.ListMenu.new(game, title, items, opts)
+  local ok, hub = pcall(V.require, "VascMenu")
+  if ok and hub and type(hub.decorateActive) == "function" then
+    return hub.decorateActive(mod, menu)
+  end
+  return menu
+end
+
 local function installScreens(mod)
   local screens = mod and mod.content and mod.content.screens
   if not screens or type(screens.register) ~= "function" then return false end
   screens:register("VascUserMusic", {
     new = function(game)
       local items = {
-        { label="CUSTOM MUSIC", right=enabled and "ON" or "OFF",
-          toggle=true },
-        { label="BACK TO GAME / KASC", default=true },
+        { label="CONTENT PROFILE", right=enabled and "CUSTOM" or "INACTIVE" },
         { label="RESCAN FOLDERS", rescan=true },
       }
       for _, group in ipairs(GROUPS) do
@@ -359,18 +538,10 @@ local function installScreens(mod)
       items[#items + 1] = { label="EXACT SONG REPLACEMENTS",
                             right=tostring(exactCount), exact=true }
       items[#items + 1] = { label="FOLDER GUIDE", guide=true }
-      return mod.ui.ListMenu.new(game, "VASC MUSIC", items, {
+      return vascList(mod, game, "VASC MUSIC", items, {
         wrap=true,
         onChoose=function(item, menu)
-          if item.toggle then
-            setEnabled(game, not enabled)
-            item.right = enabled and "ON" or "OFF"
-          elseif item.default then
-            backToDefault(game)
-            if menu and menu.items and menu.items[1] then
-              menu.items[1].right = "OFF"
-            end
-          elseif item.rescan then
+          if item.rescan then
             scan(mod)
           elseif item.guide then
             mod.ui.push(game, "VascUserMusicHelp")
@@ -393,7 +564,7 @@ local function installScreens(mod)
                               right=choiceLabel(categoryId),
                               category=categoryId }
       end
-      return mod.ui.ListMenu.new(game, group.label, items, {
+      return vascList(mod, game, group.label, items, {
         wrap=true,
         onChoose=function(item)
           mod.ui.push(game, "VascUserMusicCategory",
@@ -412,14 +583,19 @@ local function installScreens(mod)
       if #(tracks[def.id] or {}) > 0 then
         items[#items + 1] = { label="SHUFFLE", value="shuffle" }
       end
+      items[#items + 1] = { label="MUSIC A/B PREVIEW", preview=true }
       for _, track in ipairs(tracks[def.id] or {}) do
         items[#items + 1] = { label=string.upper(track.label:sub(1, 18)), value=track.id }
       end
-      return mod.ui.ListMenu.new(game, def.label, items, {
+      return vascList(mod, game, def.label, items, {
         wrap=true,
         onChoose=function(item, menu)
-          persist(game, def.id, item.value)
-          menu:close()
+          if item.preview then
+            mod.ui.push(game, "VascUserMusicPreview", { category=def.id })
+          else
+            persist(game, def.id, item.value)
+            menu:close()
+          end
         end,
       })
     end,
@@ -441,7 +617,7 @@ local function installScreens(mod)
         { label="README_EN + README_DE" },
         { label="BACK = GAME/KASC" },
       }
-      return mod.ui.ListMenu.new(game, "USER MUSIC HELP", items, {
+      return vascList(mod, game, "USER MUSIC HELP", items, {
         onChoose=function(_, menu) menu:close() end,
       })
     end,
@@ -452,16 +628,79 @@ local function installScreens(mod)
       for originalId, track in pairs(replacements) do
         items[#items + 1] = {
           label=string.upper(originalId:sub(1, 18)), right=track.filename,
+          exactId=originalId,
         }
       end
       table.sort(items, function(a, b) return a.label < b.label end)
       if #items == 0 then items[1] = { label="NO EXACT REPLACEMENTS" } end
-      return mod.ui.ListMenu.new(game, "EXACT SONG IDS", items, {
-        onChoose=function(_, menu) menu:close() end,
+      return vascList(mod, game, "EXACT SONG IDS", items, {
+        onChoose=function(item, menu)
+          if item.exactId then
+            mod.ui.push(game, "VascUserMusicPreview", { exactId=item.exactId })
+          else
+            menu:close()
+          end
+        end,
+      })
+    end,
+  })
+  screens:register("VascUserMusicPreview", {
+    new = function(game, opts)
+      local target = opts and opts.exactId
+        and { exactId=opts.exactId } or { category=opts and opts.category }
+      local originalId = originalFor(target)
+      local items = {}
+      if originalId then
+        items[#items + 1] = {
+          label="PLAY LAST ORIGINAL", right=originalId:sub(1, 18),
+          original=true,
+        }
+      else
+        items[#items + 1] = {
+          label="ORIGINAL UNSEEN", right="UNAVAILABLE", unavailable=true,
+        }
+      end
+      if target.exactId then
+        local track = replacements[target.exactId]
+        if track then
+          items[#items + 1] = {
+            label="PREVIEW CUSTOM", right=track.label:sub(1, 18), track=track.id,
+          }
+        end
+      else
+        for _, track in ipairs(tracks[target.category] or {}) do
+          items[#items + 1] = {
+            label="CUSTOM " .. string.upper(track.label:sub(1, 11)),
+            right="PREVIEW", track=track.id,
+          }
+        end
+      end
+      items[#items + 1] = { label="STOP + RESTORE", stop=true }
+      return vascList(mod, game, "MUSIC A/B PREVIEW", items, {
+        wrap=true,
+        onChoose=function(item)
+          if item.original then
+            LocalMusic.previewOriginal(game, target)
+          elseif item.track then
+            LocalMusic.previewTrack(game, item.track)
+          elseif item.stop then
+            LocalMusic.stopPreview(game)
+          end
+        end,
+        onCancel=function() LocalMusic.stopPreview(game) end,
       })
     end,
   })
   return true
+end
+
+local function profileResolve(song, ctx)
+  local ok, content = pcall(V.require, "LocalContent")
+  if ok and type(content) == "table"
+     and type(content.resolveMusic) == "function" then
+    return content.resolveMusic(song, ctx)
+  end
+  return LocalMusic.resolve(song, ctx)
 end
 
 local function installOneShotRelay()
@@ -473,15 +712,11 @@ local function installOneShotRelay()
   local held = rawget(Music, "voxelAscendantLocalOneShotRelay")
   if held then
     if current ~= held.wrapper then return false end
-    held.resolve = function(song)
-      return LocalMusic.resolve(song, {reason="once"})
-    end
+    held.resolve = function(song) return profileResolve(song, {reason="once"}) end
     return true
   end
   held = {}
-  held.resolve = function(song)
-    return LocalMusic.resolve(song, {reason="once"})
-  end
+  held.resolve = function(song) return profileResolve(song, {reason="once"}) end
   -- Music.playOnce verifies that the playing ID equals its argument before it
   -- arms map-theme restoration. Resolve the local alias before entering that
   -- function so a replaced healing/jingle cue still restores correctly.
@@ -502,7 +737,7 @@ function LocalMusic.install(mod)
     return false
   end
   mod.hooks:wrap("music.select", function(nextSong, current, ctx)
-    return LocalMusic.resolve(nextSong(current, ctx), ctx)
+    return profileResolve(nextSong(current, ctx), ctx)
   end, 2000000)
   return true
 end

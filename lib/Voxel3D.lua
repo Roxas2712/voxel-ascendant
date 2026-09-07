@@ -39,6 +39,25 @@ local CanvasPresentation = V.require("CanvasPresentation")
 
 local Voxel3D = {}
 
+local MobileDiagnostic = V and V.mod and V.mod._vascMobileDiagnostic or nil
+local function mobileDiagnostic(name, ...)
+  local fn = MobileDiagnostic and MobileDiagnostic[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if ok then return a, b end
+  return nil
+end
+
+local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
+  or CanvasPresentation.OS == "Android"
+
+-- Shared read-only platform receipt for builders that must choose a native
+-- buffer layout before any scene exists. Keeping detection here guarantees
+-- the mesher and the shader select the same phone policy.
+function Voxel3D.mobileRuntime()
+  return MOBILE_RUNTIME
+end
+
 -- Vertex format shared by terrain chunks and character models: a position,
 -- the map-canvas / sprite-sheet pixel it samples, and a per-vertex darken
 -- factor that gives a face its angle to the sun without a normal or a
@@ -73,7 +92,9 @@ Voxel3D.FACE_SHADE = {
 
 local SHADER = [[
   varying float vShade;
+  varying float vWeatherTop;
   varying vec3 vSun;          // this fragment's place in the sun's view
+  varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
 #ifdef VOXEL_GRID
   // model space, one unit per voxel -- see VoxelGrid. Precision matters
   // here in a way it does not for a colour: the seam is the FRACTIONAL
@@ -96,7 +117,16 @@ local SHADER = [[
   // also places a shared hull without a second shader switch per group.
   attribute vec3 InstanceOffset;
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    vShade = VertexShade;
+    // A negative shade is the internal "map object" caster bit. The visible
+    // pass keeps the exact historical lighting magnitude; only ShadowMap
+    // reads the sign when a companion requests object-only casting.
+    // ChunkMesher encodes a real upward-facing terrain/canopy/roof surface
+    // by adding 2 to the shade magnitude. Decode it here instead of trying
+    // to infer geometry from a colour value in the pixel shader: authored
+    // facades are allowed to share exactly the same lighting as a roof.
+    float encodedShade = abs(VertexShade);
+    vWeatherTop = step(1.5, encodedShade);
+    vShade = encodedShade - vWeatherTop * 2.0;
     vec4 placed = vertex_position;
     placed.xyz += InstanceOffset;
 #ifdef VOXEL_GRID
@@ -106,6 +136,10 @@ local SHADER = [[
     vGrid = placed.xyz;
 #endif
     vec4 w = model * placed;
+    // Uncurved world position for FULL's indoor dollhouse cut.  The cut plane
+    // belongs to the room, not to the optional presentation curve, so moving
+    // or disabling that curve can never make a wall reappear in strips.
+    vWorld = w.xyz;
     // The shadow lookup runs off `sunModel`, not `model`. For terrain the
     // two are the same matrix, but a character is drawn as a slab LEANING
     // back by the camera's pitch -- a trick played on the viewer, which
@@ -143,8 +177,23 @@ local SHADER = [[
 #ifdef PIXEL
   uniform Image sunMap;
   uniform float sunDark;      // how far into black a shadow goes; 0 = off
+  uniform float sunReceive;   // 0 for presentation cards; their floor receives
   uniform float sunBias;
   uniform vec2 sunTexel;
+  // VASC_MOBILE_AERIAL_UNIFORMS_BEGIN
+  uniform float cloudShadow; // restrained maximum darkening; 0 = no clouds
+  uniform float cloudTime;   // deterministic VASC sky clock
+  uniform float cloudProgress;// 0..1 across the current cloud flyover
+  uniform float cloudSeed;   // deterministic per-map cloud lane
+  uniform float birdShadow;  // animated flyover silhouette; 0 = no birds
+  uniform float birdProgress;// 0..1 across the current flyover
+  uniform float birdSeed;    // deterministic per-map placement
+  uniform float birdCount;   // formation count selected by SkyEvents
+  uniform float birdScale;   // apparent size of that same VASC species
+  uniform float birdDirection;// matches the visible atlas flight direction
+  uniform float birdLegendary;// broader solitary silhouette for legends
+  uniform vec2 shadowAnchor; // current player/focus point in world XZ
+  // VASC_MOBILE_AERIAL_UNIFORMS_END
 
   // the two-channel pack ShadowMap writes: high byte, then low
   float sunDepth(vec2 uv) {
@@ -156,7 +205,7 @@ local SHADER = [[
   // out on the diagonals: a 2x2 box filter, which is what turns the
   // shadow map's texel staircase into a one-pixel soft edge.
   float sunlight(vec3 p) {
-    if (sunDark <= 0.0) return 1.0;
+    if (sunDark <= 0.0 || sunReceive <= 0.0) return 1.0;
     // outside the sun's frustum nothing was recorded, so nothing occludes
     if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) {
       return 1.0;
@@ -177,6 +226,75 @@ local SHADER = [[
               + step(z, sunDepth(p.xy + sunTexel * vec2( 0.5,  0.5)));
     return 1.0 - sunDark * edge * (1.0 - lit * 0.25);
   }
+
+  // VASC_MOBILE_AERIAL_FUNCTIONS_BEGIN
+  float cloudLobe(vec2 p, vec2 centre, vec2 radius) {
+    vec2 d = (p - centre) / radius;
+    return 1.0 - smoothstep(0.42, 1.0, dot(d, d));
+  }
+
+  // A guaranteed local flyover: the cloud bank crosses the current focus
+  // instead of relying on a random distant cell happening to enter view.
+  // Four soft lobes keep it cloud-shaped and below map-sized dimensions.
+  float cloudlight(vec2 world) {
+    if (cloudShadow <= 0.0) return 1.0;
+    vec2 p = world - shadowAnchor;
+    float lane = (fract(cloudSeed * 0.417) - 0.5) * 42.0;
+    float travel = fract(cloudSeed * 0.233) >= 0.5
+                   ? cloudProgress : 1.0 - cloudProgress;
+    vec2 centre = vec2(mix(-190.0, 190.0, travel), lane);
+    float cover = cloudLobe(p, centre, vec2(62.0, 38.0));
+    cover = max(cover, cloudLobe(p, centre + vec2(-42.0, 12.0),
+                                 vec2(48.0, 31.0)));
+    cover = max(cover, cloudLobe(p, centre + vec2(38.0, -10.0),
+                                 vec2(53.0, 34.0)));
+    cover = max(cover, cloudLobe(p, centre + vec2(3.0, 23.0),
+                                 vec2(39.0, 27.0)));
+    return 1.0 - cloudShadow * clamp(cover, 0.0, 1.0);
+  }
+
+  float birdStroke(vec2 p, vec2 a, vec2 b, float width) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.001), 0.0, 1.0);
+    float distanceToWing = length(pa - ba * h);
+    return 1.0 - smoothstep(width, width + 0.85, distanceToWing);
+  }
+
+  // A compact flying silhouette made from two tapered wing strokes and a
+  // short body. Three copies form a loose chevron. The repeat is wider than
+  // an ordinary map view, so a flyover reads as one passing flock rather than
+  // a wallpaper pattern while remaining independent of camera position.
+  float birdShape(vec2 p, float phase) {
+    float flap = sin(cloudTime * 8.5 + phase) * 2.2;
+    float wing = mix(7.0, 10.5, birdLegendary);
+    float width = mix(1.15, 1.65, birdLegendary);
+    float left = birdStroke(p, vec2(0.0, 0.0),
+                            vec2(-wing, 2.6 + flap), width);
+    float right = birdStroke(p, vec2(0.0, 0.0),
+                             vec2(wing, 2.6 + flap), width);
+    vec2 body = p / mix(vec2(1.45, 4.2), vec2(2.0, 6.3), birdLegendary);
+    float centre = 1.0 - smoothstep(0.72, 1.0, dot(body, body));
+    return max(centre, max(left, right));
+  }
+
+  float birdlight(vec2 world) {
+    if (birdShadow <= 0.0) return 1.0;
+    float lane = (fract(birdSeed * 0.371) - 0.5) * 34.0;
+    float travel = birdDirection >= 0.0 ? birdProgress : 1.0 - birdProgress;
+    vec2 centre = shadowAnchor
+                  + vec2(mix(-150.0, 150.0, travel), lane);
+    vec2 p = (world - centre) / max(0.5, birdScale);
+    float flock = birdShape(p, 0.0);
+    flock = max(flock, birdShape(p - vec2(-17.0, 10.0), 1.9)
+                       * step(1.5, birdCount));
+    flock = max(flock, birdShape(p - vec2(17.0, 10.0), 3.7)
+                       * step(2.5, birdCount));
+    flock = max(flock, birdShape(p - vec2(0.0, 20.0), 5.1)
+                       * step(3.5, birdCount));
+    return 1.0 - birdShadow * clamp(flock, 0.0, 1.0);
+  }
+  // VASC_MOBILE_AERIAL_FUNCTIONS_END
 
 #ifdef VOXEL_GRID
   uniform float gridDark;     // how far toward black a seam pulls; 0 = off
@@ -214,14 +332,23 @@ local SHADER = [[
   uniform vec3 ghostColor;    // the flat silhouette colour
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
   uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
+  uniform float weatherGround;// 0 off, 1 wet, 2 snow, 3 heat-dried green tops
+  uniform float weatherGrass; // 1 snow / 2 heat, only during grass mesh draws
+  uniform float weatherAmount;// 0..1 accumulated coat / draining wetness
+  uniform float weatherTime;  // shared deterministic animation clock
   uniform Image glassMask;    // opaque where the atlas texel is window glass
   uniform vec2 glassSize;     // the mask's dimensions: tc -> atlas texels
   uniform float glassNight;   // 0 = daylight .. 1 = the lamps are on
   uniform float glassPhase;   // the glint's phase: advances with TRAVEL
   uniform float glassGlint;   // and its strength: 0 while standing still
   uniform float glassOn;      // 0 for sprite-sheet draws (see Voxel3D.glass)
+  // xy = camera-side ground-plane normal, z = plane offset, w = enabled.
+  // Sent only for the synthetic enclosure wall draw; terrain, furniture and
+  // actors always receive w=0 and therefore keep their complete geometry.
+  uniform vec4 cutaway;
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+    if (cutaway.w > 0.5 && dot(vWorld.xz, cutaway.xy) > cutaway.z) discard;
     vec4 p = Texel(tex, tc);
     // sprite sheets key GB OBJ color 0 to alpha 0; discarding rather than
     // blending keeps those texels out of the depth buffer, so a model never
@@ -229,7 +356,71 @@ local SHADER = [[
     if (p.a < 0.5) discard;
     // the hour's tint multiplies like the sun terms do: it is LIGHT, the
     // same warm or moonlit cast on every surface, not a palette swap
-    vec3 rgb = p.rgb * vShade * sunlight(vSun) * dayTint;
+    // VASC_MOBILE_AERIAL_LIGHT_BEGIN
+    vec3 rgb = p.rgb * vShade * sunlight(vSun)
+               * cloudlight(vWorld.xz) * birdlight(vWorld.xz) * dayTint;
+    // VASC_MOBILE_AERIAL_LIGHT_END
+    // This bit is geometric, not chromatic. Ground, sloped/flat roofs and
+    // tree crowns receive weather; vertical house art never can, even when a
+    // facade deliberately uses the same brightness as an upper surface.
+    if (weatherGround > 0.5 && vWeatherTop > 0.5) {
+      // Broad world-fixed basins, each with its own birth/drain phase. They
+      // live on real upward voxel surfaces, so perspective, roofs, occlusion
+      // and camera motion all come for free. No screen-space ellipses remain
+      // when VASC owns the ground.
+      float seed = fract(sin(dot(floor(vWorld.xz / 11.0),
+                                  vec2(12.9898, 78.233))) * 43758.5453);
+      float life = fract(weatherTime * (0.020 + seed * 0.012) + seed);
+      float born = smoothstep(0.02, 0.20, life);
+      float drained = 1.0 - smoothstep(0.70, 0.98, life);
+      float basin = sin(vWorld.x * 0.075 + seed * 5.0)
+                  + cos(vWorld.z * 0.069 - seed * 4.0)
+                  + sin((vWorld.x + vWorld.z) * 0.031);
+      float weatherPatch = smoothstep(0.25, 1.05, basin) * born * drained;
+      if (weatherGround < 1.5) {
+        // Wet ground is darker at its rim and carries a moving grey-sky glint
+        // through its centre, which reads much closer to shallow water than a
+        // blue tint. Every pool still returns completely to the source tile.
+        vec3 wet = mix(rgb * 0.48, vec3(0.34, 0.39, 0.40), 0.46);
+        float glint = max(0.0, sin((vWorld.x - vWorld.z) * 0.18
+                                  + weatherTime * 0.72));
+        wet += vec3(0.13, 0.15, 0.15) * glint * weatherPatch;
+        rgb = mix(rgb, wet,
+                  weatherPatch * 0.72 * clamp(weatherAmount, 0.0, 1.0));
+      } else if (weatherGround < 2.5) {
+        // Snow must read as snow even on a red or blue authored roof. Keep a
+        // little world-fixed variation, but guarantee a dense near-white coat
+        // on every real upper surface for the whole active snow spell. The
+        // source colour returns immediately when the weather state clears.
+        float cover = .78 + smoothstep(-0.55, .75, basin) * .16;
+        rgb = mix(rgb, vec3(.965, .975, .985),
+                  cover * .96 * clamp(weatherAmount, 0.0, 1.0));
+      } else {
+        // HEAT dries only authored green texels. The upward-face gate above
+        // keeps facades and trunks intact, while a broad slow world pattern
+        // prevents the terrain from becoming one perfectly flat brown plate.
+        float green = smoothstep(.015, .13, p.g - max(p.r, p.b));
+        float dry = .68 + .12 * sin(vWorld.x * .055 - vWorld.z * .047
+                                    + weatherTime * .025);
+        vec3 earth = vec3(.43, .285, .125) * (.72 + p.g * .34);
+        rgb = mix(rgb, earth * dayTint, green * dry);
+      }
+    }
+    if (weatherGrass > 0.5) {
+      // Tall-grass blades are camera-facing cards, not upward terrain faces,
+      // so they use a separately gated draw state. The texture's alpha was
+      // discarded above; only the authored blades become frosted white.
+      if (weatherGrass < 1.5) {
+        float frost = 0.72 + 0.10 * sin(vWorld.x * .31 + vWorld.z * .23
+                                        + weatherTime * .08);
+        rgb = mix(rgb, vec3(.86, .89, .89),
+                  frost * clamp(weatherAmount, 0.0, 1.0));
+      } else {
+        float green = smoothstep(.015, .12, p.g - max(p.r, p.b));
+        vec3 straw = vec3(.46, .30, .12) * (.76 + p.g * .30);
+        rgb = mix(rgb, straw * dayTint, green * .82);
+      }
+    }
 #ifdef VOXEL_GRID
     // darken what is there rather than painting a colour, so a seam across
     // dark grass and one across a white roof each stay in their own palette
@@ -277,12 +468,180 @@ local SHADER = [[
 #endif
 ]]
 
+-- Some otherwise fully capable mobile GLES compilers reject the complete
+-- Gen-1 fragment program once both animated aerial shadow functions are
+-- present. Gen 2 does not carry those functions and stays 3D on the same
+-- devices. Build a strictly delimited fallback source which omits only that
+-- optional cloud/bird contribution. Terrain, sun/shadows, vWeatherTop,
+-- weatherGround/weatherGrass, glass and the indoor cutaway remain byte-for-
+-- byte the same source as the full shader.
+local function removeMarkedBlock(source, beginMarker, endMarker)
+  local beginAt = source:find(beginMarker, 1, true)
+  if not beginAt then
+    return nil, "missing shader marker " .. tostring(beginMarker)
+  end
+  local endAt, endLast = source:find(endMarker, beginAt, true)
+  if not endAt then
+    return nil, "missing shader marker " .. tostring(endMarker)
+  end
+  if source:find(beginMarker, beginAt + #beginMarker, true) then
+    return nil, "duplicate shader marker " .. tostring(beginMarker)
+  end
+  if source:find(endMarker, endLast + 1, true) then
+    return nil, "duplicate shader marker " .. tostring(endMarker)
+  end
+  return source:sub(1, beginAt - 1)
+    .. "// VASC mobile-safe: optional aerial lighting omitted\n"
+    .. source:sub(endLast + 1)
+end
+
+local function mobileSafeShaderSource(source)
+  local stripped, err = removeMarkedBlock(source,
+    "// VASC_MOBILE_AERIAL_UNIFORMS_BEGIN",
+    "// VASC_MOBILE_AERIAL_UNIFORMS_END")
+  if not stripped then return nil, err end
+  stripped, err = removeMarkedBlock(stripped,
+    "// VASC_MOBILE_AERIAL_FUNCTIONS_BEGIN",
+    "// VASC_MOBILE_AERIAL_FUNCTIONS_END")
+  if not stripped then return nil, err end
+
+  local lightBegin = "// VASC_MOBILE_AERIAL_LIGHT_BEGIN"
+  local lightEnd = "// VASC_MOBILE_AERIAL_LIGHT_END"
+  local beginAt = stripped:find(lightBegin, 1, true)
+  local endAt, endLast
+  if beginAt then
+    endAt, endLast = stripped:find(lightEnd, beginAt + #lightBegin, true)
+  end
+  if not (beginAt and endAt and endLast) then
+    return nil, "missing mobile aerial light markers"
+  end
+  if stripped:find(lightBegin, beginAt + #lightBegin, true)
+      or stripped:find(lightEnd, endLast + 1, true) then
+    return nil, "duplicate mobile aerial light markers"
+  end
+  local replacement = [[// VASC mobile-safe: keep the complete scene lighting,
+    // weather and cutaway path; only optional cloud/bird shadows are neutral.
+    vec3 rgb = p.rgb * vShade * sunlight(vSun) * dayTint;
+]]
+  stripped = stripped:sub(1, beginAt - 1)
+    .. replacement .. stripped:sub(endLast + 1)
+
+  -- A malformed fallback is worse than a logged refusal. These receipts make
+  -- it impossible for a future shader edit to silently strip weather or
+  -- cutaway while still being accepted as the mobile-safe 3D path.
+  for _, required in ipairs({
+    "varying float vWeatherTop;",
+    "uniform float weatherGround;",
+    "uniform float weatherGrass;",
+    "uniform float weatherAmount;",
+    "uniform float weatherTime;",
+    "uniform vec4 cutaway;",
+    "if (cutaway.w > 0.5",
+    "weatherGround > 0.5 && vWeatherTop > 0.5",
+  }) do
+    if not stripped:find(required, 1, true) then
+      return nil, "mobile-safe shader lost required receipt: " .. required
+    end
+  end
+  for _, forbidden in ipairs({ "cloudlight(", "birdlight(" }) do
+    if stripped:find(forbidden, 1, true) then
+      return nil, "mobile-safe shader retained aerial receipt: " .. forbidden
+    end
+  end
+  return stripped
+end
+
+-- The first phone frame needs one dependable textured/depth-tested program,
+-- not every desktop lighting feature compiled behind uniform branches.  M5
+-- proved that the larger "mobile-safe" program can return from newShader, but
+-- a driver may still realize it lazily at setShader/first draw.  This is a
+-- standalone vertex + fragment program: it deliberately does not inherit the
+-- desktop instance, sun or weather varyings, so a mobile driver has nothing
+-- optional to link or lazily realize at first draw.  Its irreducible contract
+-- is the ROM atlas texel, baked face shade, day tint, alpha cut-out, player
+-- ghost, camera pull, world curve and indoor cutaway.
+local function mobileCoreShaderSource(_)
+  local core = [[
+varying float vShade;
+varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
+
+#ifdef VERTEX
+  uniform mat4 vp;
+  uniform mat4 model;
+  uniform vec3 eye;
+  uniform float pull;
+  uniform vec3 curve;
+  attribute float VertexShade;
+
+  vec4 position(mat4 transform_projection, vec4 vertex_position) {
+    float encodedShade = abs(VertexShade);
+    float weatherTop = step(1.5, encodedShade);
+    vShade = encodedShade - weatherTop * 2.0;
+    vec4 w = model * vertex_position;
+    vWorld = w.xyz;
+    if (curve.z > 0.0) {
+      vec2 cd = w.xz - curve.xy;
+      w.y -= dot(cd, cd) * curve.z;
+    }
+    if (pull > 0.0) {
+      w.xyz += normalize(eye - w.xyz) * pull;
+    }
+    return vp * w;
+  }
+#endif
+
+#ifdef PIXEL
+  uniform vec3 ghostColor;
+  uniform float ghost;
+  uniform vec3 dayTint;
+  uniform vec4 cutaway;
+
+  vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+    if (cutaway.w > 0.5 && dot(vWorld.xz, cutaway.xy) > cutaway.z) discard;
+    vec4 p = Texel(tex, tc);
+    if (p.a < 0.5) discard;
+    vec3 rgb = p.rgb * vShade * dayTint;
+    rgb = mix(rgb, ghostColor, ghost);
+    return vec4(rgb, 1.0) * color;
+  }
+#endif
+]]
+  for _, required in ipairs({
+    "uniform mat4 vp;",
+    "uniform mat4 model;",
+    "attribute float VertexShade;",
+    "uniform vec3 curve;",
+    "uniform float pull;",
+    "uniform vec4 cutaway;",
+    "vec4 p = Texel(tex, tc);",
+    "vec3 rgb = p.rgb * vShade * dayTint;",
+  }) do
+    if not core:find(required, 1, true) then
+      return nil, "mobile-core shader lost required receipt: " .. required
+    end
+  end
+  for _, forbidden in ipairs({
+    "uniform Image sunMap;", "uniform Image glassMask;",
+    "uniform float weatherGround;", "uniform mat4 sunModel;",
+    "uniform mat4 sunVP;", "attribute vec3 InstanceOffset;",
+    "varying vec3 vSun;", "varying float vWeatherTop;",
+    "cloudlight(", "birdlight(",
+  }) do
+    if core:find(forbidden, 1, true) then
+      return nil, "mobile-core shader retained optional receipt: " .. forbidden
+    end
+  end
+  return core
+end
+
 -- Two compilations of SHADER: the plain scene, and the same thing with the
 -- voxel wireframe compiled in. The wireframe needs shader derivatives
 -- (fwidth), the one piece of this a driver can refuse, so it is a separate
 -- build rather than a branch -- a refusal costs the grid and nothing else.
 -- Each entry is nil = untried, false = unavailable.
 local shaders = { [false] = nil, [true] = nil }
+local shaderVariants = { [false] = nil, [true] = nil }
+local shaderErrors = { [false] = nil, [true] = nil }
 local activeShader = nil      -- the variant this pass bound
 
 -- Scene canvases, one per NAMED SLOT. There are exactly two callers and
@@ -295,6 +654,7 @@ local slots = {}
 local canvas, canvasW, canvasH = nil, 0, 0   -- the slot this pass bound
 local held = nil                             -- and the whole record for it
 local active = false
+local firstDrawPending = false
 
 -- A READABLE depth canvas, so a later pass in the same frame can ask the
 -- buffer questions rather than only write to it -- which is the whole of
@@ -315,14 +675,49 @@ local active = false
 local DEPTH_FORMATS = { "depth24", "depth24stencil8", "depth32f", "depth16" }
 
 local function newDepth(w, h)
-  if not (love.graphics and love.graphics.newCanvas) then return nil end
-  local c = nil
-  for _, format in ipairs(DEPTH_FORMATS) do
-    local ok, made = pcall(love.graphics.newCanvas, w, h,
-                           { format = format, readable = true })
-    if ok and made then c = made break end
+  -- The LIGHT mobile path needs depth testing, not a readable depth texture.
+  -- Skip four optional format allocations and let depthTarget() request the
+  -- engine's internal depth buffer instead. Full-water reflections already
+  -- degrade to their sky path when no sampled depth is present.
+  if MOBILE_RUNTIME then
+    mobileDiagnostic("checkpoint", "mobile-internal-depth-only", {
+      caller="Voxel3D.newDepth", width=w, height=h,
+      reason="skip-readable-depth-probes-on-mobile",
+    })
+    return nil
   end
-  if not c then return nil end
+  if not (love.graphics and love.graphics.newCanvas) then
+    mobileDiagnostic("capability", "D06", "depth-canvas-api", false,
+      "love.graphics.newCanvas-unavailable", { caller="Voxel3D.newDepth" })
+    return nil
+  end
+  local c = nil
+  local selected = nil
+  local failures = {}
+  for _, format in ipairs(DEPTH_FORMATS) do
+    -- This attachment must have the same physical dimensions as the scene
+    -- colour canvas; PixelCanvas pins both to one texel per requested pixel.
+    mobileDiagnostic("checkpoint", "readable-depth-create-start:" .. format, {
+      caller="PixelCanvas.new", format=format, width=w, height=h,
+    })
+    local ok, made = PixelCanvas.new(w, h,
+                                     { format = format, readable = true })
+    if ok and made then
+      c, selected = made, format
+      break
+    end
+    failures[#failures + 1] = format .. ":" .. tostring(made or "nil")
+  end
+  if not c then
+    mobileDiagnostic("checkpoint", "readable-depth-unavailable", {
+      caller="Voxel3D.newDepth", result="internal-depth-fallback",
+      attempts=table.concat(failures, " | "), width=w, height=h,
+    })
+    return nil
+  end
+  mobileDiagnostic("checkpoint", "readable-depth-created", {
+    caller="Voxel3D.newDepth", format=selected, width=w, height=h,
+  })
   -- nearest: a depth is a distance, and a blend of two of them is a
   -- distance to nothing. The march wants the texel it landed on.
   pcall(c.setFilter, c, "nearest", "nearest")
@@ -360,9 +755,59 @@ local IDENTITY = Mat4.identity()
 -- that was never going to work, and it is how LOVE reports the ES2
 -- extension the grid rides on.
 local function derivativesOK()
+  if MOBILE_RUNTIME then return false end
   if not (love.graphics and love.graphics.getSupported) then return false end
   local ok, caps = pcall(love.graphics.getSupported)
   return ok and caps and caps.shaderderivatives == true
+end
+
+local function shaderSource(variant, grid)
+  local source, err = SHADER, nil
+  if variant == "mobile-core" then
+    source, err = mobileCoreShaderSource(SHADER)
+    if not source then return nil, err end
+  elseif variant == "mobile-safe" then
+    source, err = mobileSafeShaderSource(SHADER)
+    if not source then return nil, err end
+  elseif variant ~= "full" then
+    return nil, "unknown Voxel3D shader variant " .. tostring(variant)
+  end
+  if grid then source = "#define VOXEL_GRID 1\n" .. source end
+  return source
+end
+
+local function warnShader(message)
+  local logger = V and V.mod and V.mod.log
+  if logger and type(logger.warn) == "function" then
+    local ok = pcall(logger.warn, logger, "%s", tostring(message))
+    if ok then return end
+  end
+  if type(print) == "function" then
+    pcall(print, "VOXEL_ASCENDANT: " .. tostring(message))
+  end
+end
+
+local function compileShader(variant, grid)
+  local source, sourceErr = shaderSource(variant, grid)
+  if not source then return nil, tostring(sourceErr) end
+  local traceVariant = tostring(variant) .. ":grid=" .. tostring(grid == true)
+  mobileDiagnostic("checkpoint", "shader-compile-start:" .. traceVariant, {
+    caller="love.graphics.newShader", variant=variant,
+    grid=grid == true,
+  })
+  local ok, shaderOrError = pcall(love.graphics.newShader, source)
+  if ok and shaderOrError then
+    mobileDiagnostic("checkpoint", "shader-compiled:" .. traceVariant, {
+      caller="Voxel3D.compileShader", variant=variant,
+      grid=grid == true,
+    })
+    return shaderOrError, nil
+  end
+  mobileDiagnostic("checkpoint", "shader-compile-rejected:" .. traceVariant, {
+    caller="Voxel3D.compileShader", variant=variant,
+    grid=grid == true, error=shaderOrError,
+  })
+  return nil, tostring(shaderOrError or "shader compiler returned no object")
 end
 
 -- The scene shader. `grid` asks for the wireframe variant, and nil comes
@@ -371,26 +816,153 @@ end
 function Voxel3D.shader(grid)
   grid = grid and true or false
   if shaders[grid] == nil then
-    if grid and not derivativesOK() then
+    if grid and MOBILE_RUNTIME then
+      -- The optional grid requires derivatives and a second shader program.
+      -- Keep the first phone frame to one known-small program.
       shaders[grid] = false
+      shaderVariants[grid] = "mobile-disabled-grid"
+      shaderErrors[grid] = {
+        full = "grid disabled by mobile first-frame policy",
+      }
+    elseif grid and not derivativesOK() then
+      shaders[grid] = false
+      shaderVariants[grid] = "unsupported-derivatives"
+      shaderErrors[grid] = {
+        full = "driver does not expose shader derivatives",
+      }
+    elseif MOBILE_RUNTIME then
+      -- A native shader compiler can block instead of returning an error, so
+      -- attempting FULL before the fallback defeats the fallback completely.
+      -- Phones compile only the bounded world-core program; desktop keeps the
+      -- full -> mobile-safe rejection path below.
+      local shader, mobileError = compileShader("mobile-core", false)
+      shaderErrors[grid] = {
+        full = "skipped-on-mobile",
+        mobileCore = mobileError and tostring(mobileError) or nil,
+      }
+      if shader then
+        shaders[grid] = shader
+        shaderVariants[grid] = "mobile-core"
+        warnShader("Gen-1 Voxel3D mobile first-frame policy: using the "
+          .. "mobile-core 3D shader; optional shadows, weather, glass, "
+          .. "reflections and voxel grid are disabled")
+      else
+        shaders[grid] = false
+        shaderVariants[grid] = "unavailable"
+        mobileDiagnostic("capability", "D07", "shader-compile-link", false,
+          tostring(mobileError), {
+            caller="Voxel3D.shader", variant="mobile-core-only", grid=false,
+          })
+        warnShader("Gen-1 Voxel3D mobile-core shader failed: "
+          .. tostring(mobileError) .. " -- 3D remains unavailable")
+      end
     else
-      local src = grid and ("#define VOXEL_GRID 1\n" .. SHADER) or SHADER
-      local ok, sh = pcall(love.graphics.newShader, src)
-      shaders[grid] = ok and sh or false
+      local shader, fullError = compileShader("full", grid)
+      if shader then
+        shaders[grid] = shader
+        shaderVariants[grid] = "full"
+        shaderErrors[grid] = {}
+      else
+        -- Do not silently turn VOXEL FULL into a flat map. Record and emit
+        -- the complete driver response, then retry the same 3D/weather shader
+        -- with only the optional Gen-1 aerial cloud/bird block omitted.
+        warnShader(("Gen-1 Voxel3D full shader did not compile (grid=%s): %s")
+          :format(tostring(grid), tostring(fullError)))
+        local fallback, fallbackError = compileShader("mobile-safe", grid)
+        shaderErrors[grid] = {
+          full = tostring(fullError),
+          mobileSafe = fallbackError and tostring(fallbackError) or nil,
+        }
+        if fallback then
+          shaders[grid] = fallback
+          shaderVariants[grid] = "mobile-safe"
+          warnShader(("Gen-1 Voxel3D is using the mobile-safe 3D shader "
+            .. "(grid=%s); weather, glass and cutaway remain enabled; "
+            .. "only cloud/bird ground shadows are neutral")
+            :format(tostring(grid)))
+        else
+          shaders[grid] = false
+          shaderVariants[grid] = "unavailable"
+          if grid then
+            -- Grid is optional: beginScene immediately retries the plain
+            -- shader, so its isolated failure is evidence but not a lost
+            -- voxel renderer.
+            mobileDiagnostic("checkpoint", "grid-shader-unavailable", {
+              caller="Voxel3D.shader", variant="full+mobile-safe",
+              grid=true, error=tostring(fallbackError or fullError),
+            })
+          else
+            mobileDiagnostic("capability", "D07", "shader-compile-link", false,
+              tostring(fallbackError or fullError), {
+                caller="Voxel3D.shader", variant="full+mobile-safe",
+                grid=false,
+              })
+          end
+          warnShader(("Gen-1 Voxel3D mobile-safe shader also failed "
+            .. "(grid=%s): %s -- 3D remains unavailable")
+            :format(tostring(grid), tostring(fallbackError)))
+        end
+      end
     end
   end
   return shaders[grid] or nil
 end
 
+-- Private QA receipts. They expose no assets and do not affect runtime
+-- selection; deterministic gates use them to prove which program compiled
+-- and that the mobile source still contains every weather/cutaway contract.
+function Voxel3D.shaderVariant(grid)
+  return shaderVariants[grid and true or false]
+end
+
+function Voxel3D.shaderCompileErrors(grid)
+  local found = shaderErrors[grid and true or false]
+  if type(found) ~= "table" then return found end
+  local copy = {}
+  for key, value in pairs(found) do copy[key] = value end
+  return copy
+end
+
+function Voxel3D._shaderSource(variant, grid)
+  return shaderSource(variant or "full", grid and true or false)
+end
+
 -- Whether the 3D path can run at all. False on a headless test run (no
 -- love.graphics), without shader support, or where a depth canvas cannot be
 -- created -- every caller treats that as "stay on the 2D path".
-function Voxel3D.available()
-  if not (love.graphics and love.graphics.newCanvas
+function Voxel3D.available(callSite)
+  callSite = type(callSite) == "string" and callSite or "Voxel3D.available"
+  -- Only an unfinished M7 graphics START marker means the previous process
+  -- stopped inside a risky call. The recovery boot must not touch even the
+  -- first capability seam; completed D00/D90/FAILURE receipts never get here.
+  if mobileDiagnostic("recoveryMode") == true then return false end
+  mobileDiagnostic("checkpoint", "gen1-voxel3d-available-start", {
+    caller=callSite, context="world",
+    reason="entering-graphics-capability-path",
+  })
+  if not (love and love.graphics and love.graphics.newCanvas
           and love.graphics.setDepthMode) then
+    mobileDiagnostic("capability", "D06", "graphics-api", false,
+      "newCanvas-or-setDepthMode-unavailable", {
+        caller=callSite,
+      })
     return false
   end
-  return Voxel3D.shader() ~= nil
+  local available = Voxel3D.shader() ~= nil
+  if available then
+    mobileDiagnostic("capability", "D06", "graphics-api", true,
+      "canvas-depth-api-and-shader-ready", {
+        caller=callSite, shader=shaderVariants[false],
+      })
+  else
+    -- A cached rejected shader performs no compile probe on later calls, so
+    -- explicitly close the high-level availability START receipt as well.
+    mobileDiagnostic("checkpoint", "gen1-voxel3d-available-unavailable", {
+      caller=callSite, context="world",
+      reason="scene-shader-unavailable",
+    })
+  end
+  return available
 end
 
 -- Hardware instancing is an optional acceleration, never a requirement for
@@ -401,6 +973,13 @@ local instancing = nil
 
 function Voxel3D.canInstance()
   if instancing ~= nil then return instancing end
+  -- Driver capability flags do not prove that per-instance attributes and the
+  -- first drawInstanced call are safe. Phones use the byte-identical expanded
+  -- mesh fallback until the native backends have a physical-device gate.
+  if MOBILE_RUNTIME then
+    instancing = false
+    return false
+  end
   local g = love and love.graphics
   if not (g and type(g.getSupported) == "function"
           and type(g.drawInstanced) == "function") then
@@ -426,10 +1005,35 @@ end
 -- which the callers treat the same way they treat a missing model.
 function Voxel3D.newMesh(verts, map)
   if #verts == 0 then return nil end
+  mobileDiagnostic("checkpoint", "mesh-create-start", {
+    caller="love.graphics.newMesh", vertexCount=#verts,
+    indexMode=map and "lua-table" or "none",
+  })
   local ok, mesh = pcall(love.graphics.newMesh, Voxel3D.FORMAT, verts,
                          "triangles", "static")
-  if not ok then return nil end
-  if map and #map > 0 then pcall(mesh.setVertexMap, mesh, map) end
+  if not ok or not mesh then
+    mobileDiagnostic("capability", "D09", "mesh-create", false,
+      mesh or "newMesh-returned-nil", { caller="Voxel3D.newMesh" })
+    return nil
+  end
+  mobileDiagnostic("checkpoint", "mesh-create-ready", {
+    caller="love.graphics.newMesh", vertexCount=#verts,
+    indexMode=map and "lua-table" or "none",
+  })
+  if map and #map > 0 then
+    mobileDiagnostic("checkpoint", "mesh-index-map-start", {
+      caller="mesh.setVertexMap", indexMode="lua-table", indexCount=#map,
+    })
+    local mapped, mapErr = pcall(mesh.setVertexMap, mesh, map)
+    if not mapped then
+      mobileDiagnostic("capability", "D09", "mesh-index-map", false,
+        mapErr, { caller="Voxel3D.newMesh", indexMode="lua-table" })
+    else
+      mobileDiagnostic("checkpoint", "mesh-index-map-ready", {
+        caller="mesh.setVertexMap", indexMode="lua-table", indexCount=#map,
+      })
+    end
+  end
   return mesh
 end
 
@@ -850,15 +1454,28 @@ local function drawWorldDisc(w, h)
     verts[i] = { (x / ww * 0.5 + 0.5) * w, (y / ww * 0.5 + 0.5) * h,
                  c[3], c[4] }
   end
-  pcall(function()
+  mobileDiagnostic("checkpoint", "sky-disc-render-start", {
+    caller="Voxel3D.drawDisc", context="world",
+  })
+  local discOK = pcall(function()
     if not discMesh then
+      mobileDiagnostic("checkpoint", "sky-disc-mesh-create-start", {
+        caller="love.graphics.newMesh", context="world", vertices=4,
+      })
       discMesh = love.graphics.newMesh(4, "fan", "stream")
     end
+    mobileDiagnostic("checkpoint", "sky-disc-vertex-upload-start", {
+      caller="Mesh.setVertices", context="world", vertices=4,
+    })
     discMesh:setVertices(verts)
     discMesh:setTexture(img)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(discMesh)
   end)
+  mobileDiagnostic("checkpoint",
+    discOK and "sky-disc-render-ready" or "sky-disc-render-unavailable", {
+      caller="Voxel3D.drawDisc", context="world", ok=discOK,
+    })
 end
 
 -- ----------------------------------------------------------------- scene --
@@ -879,12 +1496,29 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   if not sh then
     grid, sh = false, Voxel3D.shader()
   end
-  if not sh then return false end
+  if not sh then
+    mobileDiagnostic("capability", "D07", "scene-shader", false,
+      "no-scene-shader-object", { caller="Voxel3D.beginScene" })
+    return false
+  end
   local name = slot or "world"
   local slotHeld = slots[name]
   if not (slotHeld and slotHeld.w == w and slotHeld.h == h) then
+    mobileDiagnostic("checkpoint", "color-canvas-create-start", {
+      caller="PixelCanvas.new", slot=name, width=w, height=h,
+    })
     local ok, c = PixelCanvas.new(w, h)
-    if not ok then return false end
+    if not ok or not c then
+      mobileDiagnostic("capability", "D08", "color-canvas-create", false,
+        c or "PixelCanvas-returned-nil", {
+          caller="Voxel3D.beginScene", slot=name, width=w, height=h,
+        })
+      return false
+    end
+    mobileDiagnostic("checkpoint", "color-canvas-created", {
+      caller="Voxel3D.beginScene", slot=name, width=w, height=h,
+      format="default-dpiscale-1",
+    })
     c:setFilter("nearest", "nearest")
     if slotHeld then releaseSlot(slotHeld) end
     -- the depth canvas is sized with its colour, so a window resize
@@ -896,18 +1530,37 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   canvas, canvasW, canvasH = held.canvas, w, h
   -- a depth buffer is what makes occlusion real: walk behind a building and
   -- the building wins, with no y-sorting anywhere
+  mobileDiagnostic("checkpoint", "framebuffer-depth-attach-start", {
+    caller="love.graphics.setCanvas", slot=name,
+    depth=held.depth and "readable" or "internal",
+  })
   local ok = pcall(love.graphics.setCanvas, depthTarget())
   if not ok and held.depth then
     -- the readable canvas would not bind; fall back to the internal buffer
     -- for the rest of this session rather than losing the whole 3D pass
     pcall(held.depth.release, held.depth)
     held.depth = nil
+    mobileDiagnostic("checkpoint", "readable-depth-attach-rejected", {
+      caller="Voxel3D.beginScene", slot=name,
+      result="retry-internal-depth",
+    })
+    mobileDiagnostic("checkpoint", "framebuffer-internal-retry-start", {
+      caller="love.graphics.setCanvas", slot=name, depth="internal",
+    })
     ok = pcall(love.graphics.setCanvas, depthTarget())
   end
   if not ok then
     pcall(love.graphics.setCanvas)
+    mobileDiagnostic("capability", "D08", "framebuffer-depth-attach", false,
+      "readable-and-internal-depth-target-bind-failed", {
+        caller="Voxel3D.beginScene", slot=name, width=w, height=h,
+      })
     return false
   end
+  mobileDiagnostic("checkpoint", "framebuffer-depth-attached", {
+    caller="Voxel3D.beginScene", slot=name,
+    depth=held.depth and "readable" or "internal",
+  })
   -- Ahead of the clear, because the sky's bands are placed off the ground
   -- plane's vanishing line and that is a property of this matrix.
   Voxel3D.vp = Voxel3D.viewProjection(cx, cy, vw, vh)
@@ -926,6 +1579,9 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- pitch is the rung's -- the classic frame-hung painting stands.
   local skyRay = Voxel3D.skyRayLive
   local atmosphereRay = Voxel3D.atmosphereRayLive or skyRay
+  local skyWeather = skyContext and skyContext.weather or nil
+  local bodyObscured = skyWeather == "storm" or skyWeather == "fog"
+                       or skyWeather == "rain" or skyWeather == "snow"
   local hy = Voxel3D.horizonY(h)
   -- where the sky's bottom edge lands, which is what the reflection
   -- reads its bands against (see Water). nil when nothing painted bands.
@@ -942,22 +1598,40 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
     -- are the same size as the world's own and follow every resize and zoom.
     -- The banded sky also hangs the hour's sun or moon (skyBody projects it
     -- through this very camera); a flat sky has no bands and hangs nothing.
+    -- Terrain and billboards already use the mobile clip-space convention.
+    -- Sky.paint is the one contained 2-D pass inside that same Canvas, so on
+    -- iOS it needs the established pre-flip used by weather/backdrop pixels.
+    -- Without it only the sky artwork (most visibly the cloud silhouettes)
+    -- is upside down while the 3-D world remains upright.
+    love.graphics.push("all")
+    CanvasPresentation.begin2D(love.graphics, h)
     if skyRay and sky.bands then
-      Sky.paint(w, h, sky, nil, Voxel3D.cell, Voxel3D.skyBody(w, h),
+      Sky.paint(w, h, sky, nil, Voxel3D.cell,
+                bodyObscured and nil or Voxel3D.skyBody(w, h),
                 nil, nil, skyRay, {
                   ray = atmosphereRay,
                   weather = skyContext and skyContext.weather or nil,
                   arena = skyContext and skyContext.arena or nil,
+                  mapId = skyContext and skyContext.mapId or nil,
+                  shadowPolicy = skyContext and skyContext.shadowPolicy or nil,
+                  battleView = skyContext and skyContext.battleView == true,
                 })
-      if not (skyContext and skyContext.arena) then drawWorldDisc(w, h) end
+      love.graphics.pop()
+      if not bodyObscured and not (skyContext and skyContext.arena) then
+        drawWorldDisc(w, h)
+      end
     else
       Sky.paint(w, h, sky, hy, Voxel3D.cell,
-                sky.bands and Voxel3D.skyBody(w, h) or nil,
+                sky.bands and not bodyObscured and Voxel3D.skyBody(w, h) or nil,
                 nil, nil, nil, {
                   ray = atmosphereRay,
                   weather = skyContext and skyContext.weather or nil,
                   arena = skyContext and skyContext.arena or nil,
+                  mapId = skyContext and skyContext.mapId or nil,
+                  shadowPolicy = skyContext and skyContext.shadowPolicy or nil,
+                  battleView = skyContext and skyContext.battleView == true,
                 })
+      love.graphics.pop()
     end
   else
     love.graphics.clear(0, 0, 0, 0, true, true)
@@ -967,21 +1641,81 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- flips winding; hidden faces are already culled at build time, so there
   -- is nothing to gain from backface culling and a real bug to avoid
   love.graphics.setMeshCullMode("none")
-  love.graphics.setShader(sh)
+  mobileDiagnostic("checkpoint", "scene-shader-bind-start", {
+    caller="love.graphics.setShader", context="world", slot=name,
+    variant=shaderVariants[grid],
+  })
+  local shaderBound, shaderBindError = pcall(love.graphics.setShader, sh)
+  if not shaderBound then
+    pcall(love.graphics.setCanvas)
+    mobileDiagnostic("fail", "D07", "scene-shader-bind",
+      tostring(shaderBindError), {
+        caller="love.graphics.setShader", context="world", slot=name,
+        variant=shaderVariants[grid],
+      })
+    return false
+  end
+  mobileDiagnostic("checkpoint", "scene-shader-bound", {
+    caller="Voxel3D.beginScene", context="world", slot=name,
+    variant=shaderVariants[grid],
+  })
   love.graphics.setColor(1, 1, 1, 1)
+  mobileDiagnostic("checkpoint", "scene-uniform-batch-start", {
+    caller="Shader.send", context="world", slot=name,
+    variant=shaderVariants[grid],
+  })
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
+  if MOBILE_RUNTIME then
+    -- The standalone phone program declares exactly these presentation
+    -- uniforms. Do not probe absent desktop uniforms through pcall: some GLES
+    -- drivers defer uniform realization to first use, which puts avoidable
+    -- work back into the frame this path is meant to protect.
+    pcall(sh.send, sh, "ghost", 0)
+    pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
+    pcall(sh.send, sh, "dayTint", Voxel3D.tint or { 1, 1, 1 })
+  else
   -- the sun's frame, filled by ShadowMap just before this pass opened.
   -- Sent unconditionally: the sampler is declared either way, and leaving
   -- one unbound is a driver-dependent crash rather than a fallback.
-  local map = Shadows.enabled() and ShadowMap.active()
+  local map = not MOBILE_RUNTIME and Shadows.enabled() and ShadowMap.active()
   pcall(sh.send, sh, "sunVP", "row", map and ShadowMap.uvVP or IDENTITY)
-  local tex = ShadowMap.texture()
+  -- mobile-core has no sunMap sampler; do not create ShadowMap's otherwise
+  -- mandatory 1x1 GPU placeholder merely to send it to an absent uniform.
+  local tex = not MOBILE_RUNTIME and ShadowMap.texture() or nil
   if tex then pcall(sh.send, sh, "sunMap", tex) end
   pcall(sh.send, sh, "sunDark", map and Voxel3D.SHADOW_ALPHA or 0)
+  -- Every scene begins with ordinary world receivers. Camera-facing battle
+  -- cards suppress only this compare around their own draw; the terrain or
+  -- backdrop contact pass still receives the shadow they cast.
+  pcall(sh.send, sh, "sunReceive", 1)
   pcall(sh.send, sh, "sunBias", ShadowMap.bias)
   local texel = 1 / ShadowMap.res
   pcall(sh.send, sh, "sunTexel", { texel, texel })
+  local shadowPolicy = skyContext and skyContext.shadowPolicy or nil
+  pcall(sh.send, sh, "cloudShadow",
+        shadowPolicy and shadowPolicy.cloudOpacity or 0)
+  pcall(sh.send, sh, "cloudTime", Sky.clock or 0)
+  pcall(sh.send, sh, "cloudProgress",
+        shadowPolicy and shadowPolicy.cloudProgress or 0)
+  pcall(sh.send, sh, "cloudSeed",
+        shadowPolicy and shadowPolicy.cloudSeed or 0)
+  pcall(sh.send, sh, "birdShadow",
+        shadowPolicy and shadowPolicy.birdOpacity or 0)
+  pcall(sh.send, sh, "birdProgress",
+        shadowPolicy and shadowPolicy.birdProgress or 0)
+  pcall(sh.send, sh, "birdSeed",
+        shadowPolicy and shadowPolicy.birdSeed or 0)
+  pcall(sh.send, sh, "birdCount",
+        shadowPolicy and shadowPolicy.birdCount or 1)
+  pcall(sh.send, sh, "birdScale",
+        shadowPolicy and shadowPolicy.birdScale or 1)
+  pcall(sh.send, sh, "birdDirection",
+        shadowPolicy and shadowPolicy.birdDirection or 1)
+  pcall(sh.send, sh, "birdLegendary",
+        shadowPolicy and shadowPolicy.birdLegendary and 1 or 0)
+  local focus = Voxel3D.focus or { 0, 0, 0 }
+  pcall(sh.send, sh, "shadowAnchor", { focus[1] or 0, focus[3] or 0 })
   if grid then
     pcall(sh.send, sh, "gridDark", VoxelGrid.DARK)
     pcall(sh.send, sh, "gridWidth", VoxelGrid.width())
@@ -994,10 +1728,23 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "ghostColor", Voxel3D.GHOST_COLOR)
   -- the hour's light, as the caller last set it (see Voxel3D.tint)
   pcall(sh.send, sh, "dayTint", Voxel3D.tint or { 1, 1, 1 })
+  local weather = skyContext and (skyContext.groundWeather
+                                   or skyContext.weather) or nil
+  Voxel3D.weatherKind = (weather == "heat" and 3)
+                        or (weather == "snow" and 2)
+                        or ((weather == "rain" or weather == "storm") and 1)
+                        or 0
+  Voxel3D.weatherAmount = math.max(0, math.min(1,
+    tonumber(skyContext and skyContext.groundAmount) or 1))
+  pcall(sh.send, sh, "weatherGround", 0)
+  pcall(sh.send, sh, "weatherGrass", 0)
+  pcall(sh.send, sh, "weatherAmount", Voxel3D.weatherAmount)
+  pcall(sh.send, sh, "weatherTime", Sky.clock or 0)
   -- the window glass: the tileset's mask (or the blank -- the sampler is
   -- declared either way, and unbound is a driver-dependent crash), how lit
   -- the panes are, and the movement-fed glint as the caller last set it
-  local mask = Voxel3D.glassMask or GlassMask.blank()
+  local mask = not MOBILE_RUNTIME
+               and (Voxel3D.glassMask or GlassMask.blank()) or nil
   if mask then
     pcall(sh.send, sh, "glassMask", mask)
     local ok, mw, mh = pcall(mask.getDimensions, mask)
@@ -1008,6 +1755,9 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
   -- on until a sprite pass says otherwise, reset per frame like `ghost`
   pcall(sh.send, sh, "glassOn", 1)
+  end -- desktop-only sun/weather/glass uniform batch
+  -- No cut unless VoxelScene explicitly opens a FULL indoor shell below.
+  pcall(sh.send, sh, "cutaway", { 0, 0, 0, 0 })
   -- the curved world bends about the camera's focus, so the horizon keeps
   -- a fixed distance ahead of the player rather than sitting on the map.
   -- A placed camera may decline it outright (Voxel3D.camera.curve = 0).
@@ -1019,8 +1769,18 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- against (so scale == 1 for anything standing at the view centre)
   local m = Voxel3D.vp
   Voxel3D.focusW = m[13] * cx + m[14] * 0 + m[15] * cy + m[16]
+  mobileDiagnostic("checkpoint", "scene-uniform-batch-ready", {
+    caller="Voxel3D.beginScene", context="world", slot=name,
+    variant=shaderVariants[grid],
+  })
   activeShader = sh
   active = true
+  firstDrawPending = true
+  mobileDiagnostic("capability", "D08", "scene-framebuffer-ready", true,
+    "color-and-depth-target-active", {
+      caller="Voxel3D.beginScene", slot=name,
+      depth=held.depth and "readable" or "internal",
+    })
   return true
 end
 
@@ -1050,16 +1810,20 @@ function Voxel3D.backdrop(image, tint)
           and iw > 0 and ih > 0) then
     return false
   end
-  love.graphics.setShader()
-  love.graphics.setDepthMode("always", false)
   local c = type(tint) == "table" and tint or { 1, 1, 1 }
-  love.graphics.setColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
-  local dx, dy, dr, dsx, dsy = CanvasPresentation.imageDraw(
-    canvasW, canvasH, iw, ih)
-  local ok = pcall(love.graphics.draw, image, dx, dy, dr, dsx, dsy)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.setDepthMode("lequal", true)
-  love.graphics.setShader(activeShader)
+  local ok = pcall(function()
+    love.graphics.setShader()
+    love.graphics.setDepthMode("always", false)
+    love.graphics.setColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+    local dx, dy, dr, dsx, dsy = CanvasPresentation.imageDraw(
+      canvasW, canvasH, iw, ih)
+    love.graphics.draw(image, dx, dy, dr, dsx, dsy)
+  end)
+  -- Optional backdrop failure must not leak temporary graphics state into the
+  -- established ARENA stage which continues drawing after this call.
+  pcall(love.graphics.setColor, 1, 1, 1, 1)
+  pcall(love.graphics.setDepthMode, "lequal", true)
+  pcall(love.graphics.setShader, activeShader)
   return ok
 end
 
@@ -1089,7 +1853,13 @@ function Voxel3D.backdropWindows(scene, regions, sourceW, sourceH)
   if not (type(skyAlpha) == "number" and type(stars) == "number"
           and type(moon) == "number") then return false end
 
-  local sx, sy = canvasW / sourceW, canvasH / sourceH
+  -- Use the exact same aspect-preserving COVER transform as the authored
+  -- backdrop.  Window tint/stars are source-space annotations; stretching
+  -- or mapping them with a second ratio would make them drift off their panes
+  -- after a phone rotates.
+  local ox, oy, coverScale = CanvasPresentation.cover(
+    canvasW, canvasH, sourceW, sourceH)
+  local sx, sy = coverScale, coverScale
   local blend, alphaMode = "alpha", "alphamultiply"
   if gfx.getBlendMode then
     local ok, gotBlend, gotAlpha = pcall(gfx.getBlendMode)
@@ -1130,20 +1900,21 @@ function Voxel3D.backdropWindows(scene, regions, sourceW, sourceH)
     local function regionShape(region)
       if region.shape == "rect" then
         local rh = region.h * sy
-        gfx.rectangle("fill", region.x * sx,
-                      CanvasPresentation.rectY(region.y * sy, rh, canvasH),
+        gfx.rectangle("fill", ox + region.x * sx,
+                      CanvasPresentation.rectY(oy + region.y * sy,
+                                               rh, canvasH),
                       region.w * sx, rh)
       elseif region.shape == "ellipse" then
-        gfx.ellipse("fill", (region.x + region.w * .5) * sx,
+        gfx.ellipse("fill", ox + (region.x + region.w * .5) * sx,
                     CanvasPresentation.pointY(
-                      (region.y + region.h * .5) * sy, canvasH),
+                      oy + (region.y + region.h * .5) * sy, canvasH),
                     region.w * sx * .5, region.h * sy * .5, 48)
       else
         local points = {}
         for i=1,#region.points,2 do
-          points[#points + 1] = region.points[i] * sx
+          points[#points + 1] = ox + region.points[i] * sx
           points[#points + 1] = CanvasPresentation.pointY(
-            region.points[i + 1] * sy, canvasH)
+            oy + region.points[i + 1] * sy, canvasH)
         end
         gfx.polygon("fill", points)
       end
@@ -1186,8 +1957,8 @@ function Voxel3D.backdropWindows(scene, regions, sourceW, sourceH)
             local size = ((i + ri) % 5 == 0) and 1.7 or .8
             gfx.setColor(1, .97, .78,
                          stars * starScale * (.46 + (i % 4) * .12))
-            gfx.circle("fill", x * sx,
-                       CanvasPresentation.pointY(y * sy, canvasH),
+            gfx.circle("fill", ox + x * sx,
+                       CanvasPresentation.pointY(oy + y * sy, canvasH),
                        math.max(1, size * math.min(sx, sy)))
           end
         end
@@ -1195,8 +1966,8 @@ function Voxel3D.backdropWindows(scene, regions, sourceW, sourceH)
           local mx, my = bx + bw * .72, by + bh * .28
           if pointIn(region, mx, my) then
             gfx.setColor(.94, .95, .82, moon * .95)
-            gfx.circle("fill", mx * sx,
-                       CanvasPresentation.pointY(my * sy, canvasH),
+            gfx.circle("fill", ox + mx * sx,
+                       CanvasPresentation.pointY(oy + my * sy, canvasH),
                        math.max(2, math.min(bw * sx, bh * sy) * .075))
           end
         end
@@ -1322,21 +2093,40 @@ end
 function Voxel3D.beginWater(paint)
   if not (active and canvas and held and held.depth) then return nil end
   if not held.mirror then
-    local ok, c = pcall(love.graphics.newCanvas, held.w, held.h)
+    -- The reflection copy is attached to the readable scene depth target, so
+    -- it must use the same one-texel-per-pixel DPI rule as that whole family.
+    mobileDiagnostic("checkpoint", "water-mirror-create-start", {
+      caller="PixelCanvas.new", context="water",
+      width=held.w, height=held.h,
+    })
+    local ok, c = PixelCanvas.new(held.w, held.h)
     if not (ok and c) then return nil end
     pcall(c.setFilter, c, "nearest", "nearest")
     pcall(c.setWrap, c, "clamp", "clamp")
     held.mirror = c
+    mobileDiagnostic("checkpoint", "water-mirror-ready", {
+      caller="PixelCanvas.new", context="water",
+      width=held.w, height=held.h,
+    })
   end
   love.graphics.setShader()
   -- the frame's own depth rides along, so the paint below can test against
   -- it; the copy underneath switches the test off rather than detaching it
+  mobileDiagnostic("checkpoint", "water-mirror-bind-start", {
+    caller="love.graphics.setCanvas", context="water",
+  })
   local ok = pcall(love.graphics.setCanvas,
                    { held.mirror, depthstencil = held.depth })
   if not ok then
+    mobileDiagnostic("checkpoint", "water-mirror-bind-unavailable", {
+      caller="love.graphics.setCanvas", context="water",
+    })
     pcall(love.graphics.setCanvas, depthTarget())
     return nil
   end
+  mobileDiagnostic("checkpoint", "water-mirror-bound", {
+    caller="love.graphics.setCanvas", context="water",
+  })
   love.graphics.setDepthMode("always", false)
   -- COLOUR only. The last two arguments are what keep the depth buffer the
   -- frame's rather than this canvas's: cleared here, the water's own depth
@@ -1359,10 +2149,16 @@ function Voxel3D.beginWater(paint)
   love.graphics.setDepthMode()
   -- and back to the scene canvas WITHOUT its depth: that texture is about
   -- to be read
+  mobileDiagnostic("checkpoint", "water-color-target-bind-start", {
+    caller="love.graphics.setCanvas", context="water",
+  })
   if not pcall(love.graphics.setCanvas, canvas) then
     pcall(love.graphics.setCanvas, depthTarget())
     return nil
   end
+  mobileDiagnostic("checkpoint", "water-pass-ready", {
+    caller="Voxel3D.beginWater", context="water",
+  })
   return held.mirror, held.depth
 end
 
@@ -1370,6 +2166,9 @@ end
 -- the pass had them. Safe to call after a beginWater that returned nil.
 function Voxel3D.endWater()
   if not active then return end
+  mobileDiagnostic("checkpoint", "water-depth-target-restore-start", {
+    caller="love.graphics.setCanvas", context="water",
+  })
   pcall(love.graphics.setCanvas, depthTarget())
   pcall(love.graphics.setDepthMode, "lequal", true)
   love.graphics.setColor(1, 1, 1, 1)
@@ -1403,6 +2202,7 @@ end
 -- uniform, and the send simply does not take there -- which is right: with
 -- no wireframe compiled in there is nothing to suppress.
 function Voxel3D.seams(on)
+  if MOBILE_RUNTIME then return end
   if not (active and activeShader) then return end
   pcall(activeShader.send, activeShader, "gridDark",
         on and VoxelGrid.DARK or 0)
@@ -1441,6 +2241,7 @@ end
 -- on it, and at night that painted lamplight stripes down whoever was
 -- standing in the wrong part of their own sheet.
 function Voxel3D.glass(on)
+  if MOBILE_RUNTIME then return end
   if not (active and activeShader) then return end
   pcall(activeShader.send, activeShader, "glassOn", on and 1 or 0)
 end
@@ -1473,6 +2274,18 @@ Voxel3D.SHADOW_ALPHA = 0.40   -- how far into black a shadowed surface goes
 -- back to the flat decals below.
 function Voxel3D.shadowsActive()
   return Shadows.enabled() and ShadowMap.active()
+end
+
+-- Camera-facing presentation cards are shadow CASTERS, not useful shadow
+-- receivers. Sampling the card's own packed depth makes precision differences
+-- dim the artwork itself instead of putting that darkness on the floor. This
+-- narrow per-draw switch leaves baked face light, day tint, weather and every
+-- world receiver intact; callers must restore it immediately after the card.
+function Voxel3D.shadowReception(on)
+  if MOBILE_RUNTIME then return false end
+  if not (active and activeShader) then return false end
+  return pcall(activeShader.send, activeShader, "sunReceive",
+               on == false and 0 or 1)
 end
 
 -- The upright card a character presents to the sun: its 16x16 sprite quad
@@ -1548,23 +2361,85 @@ function Voxel3D.draw(mesh, texture, model, pull, sunModel)
   -- sending a uniform to the other shader would go nowhere
   local sh = activeShader
   if not sh then return end
-  -- LOVE defaults matrix uniforms to column-major; Mat4 is row-major
-  pcall(sh.send, sh, "model", "row", model or IDENTITY)
-  pcall(sh.send, sh, "sunModel", "row", sunModel or model or IDENTITY)
-  pcall(sh.send, sh, "pull", pull or 0)
-  if mesh.__voxelMeshBundle then
-    if mesh.base then
-      if texture then mesh.base:setTexture(texture) end
-      love.graphics.draw(mesh.base)
+  local function performDraw()
+    -- LOVE defaults matrix uniforms to column-major; Mat4 is row-major
+    pcall(sh.send, sh, "model", "row", model or IDENTITY)
+    if not MOBILE_RUNTIME then
+      pcall(sh.send, sh, "sunModel", "row", sunModel or model or IDENTITY)
     end
-    for _, group in ipairs(mesh.instances or {}) do
-      if texture then group.mesh:setTexture(texture) end
-      love.graphics.drawInstanced(group.mesh, group.count)
+    pcall(sh.send, sh, "pull", pull or 0)
+    if mesh.__voxelMeshBundle then
+      if mesh.base then
+        if texture then mesh.base:setTexture(texture) end
+        love.graphics.draw(mesh.base)
+      end
+      for _, group in ipairs(mesh.instances or {}) do
+        if texture then group.mesh:setTexture(texture) end
+        love.graphics.drawInstanced(group.mesh, group.count)
+      end
+    else
+      if texture then mesh:setTexture(texture) end
+      love.graphics.draw(mesh)
     end
-  else
-    if texture then mesh:setTexture(texture) end
-    love.graphics.draw(mesh)
   end
+
+  if firstDrawPending then
+    firstDrawPending = false
+    mobileDiagnostic("checkpoint", "scene-first-mesh-draw-start", {
+      caller="love.graphics.draw", context="world",
+      variant=shaderVariants[false],
+      bundle=mesh.__voxelMeshBundle and true or false,
+    })
+    local ok, err = pcall(performDraw)
+    if not ok then
+      mobileDiagnostic("fail", "D10", "scene-first-mesh-draw",
+        tostring(err), {
+          caller="love.graphics.draw", context="world",
+          variant=shaderVariants[false],
+        })
+      return false
+    end
+    mobileDiagnostic("checkpoint", "scene-first-mesh-draw-ready", {
+      caller="Voxel3D.draw", context="world",
+      variant=shaderVariants[false],
+    })
+    return true
+  end
+
+  performDraw()
+  return true
+end
+
+-- Gate native accumulation to terrain draws. Character cards, flowers,
+-- horizon curtains and authored decals may also use upward-facing geometry;
+-- leaving the uniform globally enabled would frost or flood those as well.
+function Voxel3D.weatherGround(on)
+  if MOBILE_RUNTIME then return false end
+  if not (active and activeShader) then return false end
+  local amount = on and (Voxel3D.weatherKind or 0) or 0
+  local ok = pcall(activeShader.send, activeShader, "weatherGround", amount)
+  return ok and amount > 0
+end
+
+function Voxel3D.weatherGrass(on)
+  if MOBILE_RUNTIME then return false end
+  if not (active and activeShader) then return false end
+  local amount = on and ((Voxel3D.weatherKind == 2 and 1)
+                         or (Voxel3D.weatherKind == 3 and 2) or 0) or 0
+  local ok = pcall(activeShader.send, activeShader, "weatherGrass", amount)
+  return ok and amount > 0
+end
+
+-- Enable/disable the synthetic-room half-space cut for subsequent draws.
+-- Keeping this as draw state, rather than rebuilding a camera-specific mesh,
+-- makes rotation immediate and preserves the one cached enclosure geometry.
+function Voxel3D.setCutaway(nx, nz, offset)
+  if not (active and activeShader) then return false end
+  local valid = type(nx) == "number" and type(nz) == "number"
+                and type(offset) == "number"
+  local value = valid and { nx, nz, offset, 1 } or { 0, 0, 0, 0 }
+  local ok = pcall(activeShader.send, activeShader, "cutaway", value)
+  return ok and valid
 end
 
 -- Project a world point to canvas pixels: returns (x, y, scale), or nil
@@ -1602,16 +2477,33 @@ function Voxel3D.beginOverlay()
   if not canvas then return false end
   love.graphics.setShader()
   love.graphics.setDepthMode()
-  local ok = pcall(love.graphics.setCanvas, canvas)
-  if not ok then return false end
+  mobileDiagnostic("checkpoint", "gen1-overlay-canvas-bind-start", {
+    caller="love.graphics.setCanvas", context="world-overlay",
+  })
+  local ok, err = pcall(love.graphics.setCanvas, canvas)
+  if not ok then
+    mobileDiagnostic("checkpoint", "gen1-overlay-canvas-bind-unavailable", {
+      caller="love.graphics.setCanvas", context="world-overlay", error=err,
+    })
+    return false
+  end
+  mobileDiagnostic("checkpoint", "gen1-overlay-canvas-bound", {
+    caller="love.graphics.setCanvas", context="world-overlay",
+  })
   love.graphics.setColor(1, 1, 1, 1)
   return true
 end
 
 -- Close the overlay begun by beginOverlay.
 function Voxel3D.endOverlay()
+  mobileDiagnostic("checkpoint", "gen1-overlay-canvas-unbind-start", {
+    caller="love.graphics.setCanvas", context="world-overlay",
+  })
   love.graphics.setCanvas()
-  active, activeShader = false, nil
+  mobileDiagnostic("checkpoint", "gen1-overlay-canvas-unbound", {
+    caller="love.graphics.setCanvas", context="world-overlay",
+  })
+  active, activeShader, firstDrawPending = false, nil, false
 end
 
 -- End the pass and hand back the rendered canvas.
@@ -1620,8 +2512,14 @@ function Voxel3D.endScene()
   love.graphics.setShader()
   love.graphics.setDepthMode()
   love.graphics.setMeshCullMode("none")
+  mobileDiagnostic("checkpoint", "gen1-scene-canvas-unbind-start", {
+    caller="love.graphics.setCanvas", context="world",
+  })
   love.graphics.setCanvas()
-  active, activeShader = false, nil
+  mobileDiagnostic("checkpoint", "gen1-caller-target-restored", {
+    caller="Voxel3D.endScene", target="physical-screen",
+  })
+  active, activeShader, firstDrawPending = false, nil, false
   return canvas
 end
 
@@ -1637,6 +2535,7 @@ end
 
 -- Drop the GPU objects (window resize, hot reload).
 function Voxel3D.invalidate()
+  active, activeShader, firstDrawPending = false, nil, false
   for name, slotHeld in pairs(slots) do
     releaseSlot(slotHeld)
     slots[name] = nil

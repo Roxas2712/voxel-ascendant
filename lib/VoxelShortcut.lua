@@ -1,11 +1,11 @@
 -- Dedicated, discoverable camera-ladder shortcuts.
 --
--- The engine pipeline still owns `3`, and the historical controller bridge
--- still owns SELECT. This module adds aliases that do not compete with a
--- Game Boy input: V on keyboards and the mapped right trigger (ZR/R2/RT) on
--- controllers. Both delegate to main.lua's one authoritative cycleVoxel()
--- function, so persistence, availability gates and TILT/GBC-FX exclusion
--- remain byte-semantic with the existing controls.
+-- The engine pipeline still owns `3`. This module adds aliases that do not
+-- compete with a Game Boy input: V on keyboards and the mapped right trigger
+-- (ZR/R2/RT) on controllers. Both delegate to main_gen1.lua's one authoritative
+-- cycleVoxel() function, so persistence, availability gates and TILT/GBC-FX
+-- exclusion remain byte-semantic with the existing control. SELECT stays
+-- entirely game/KASC-owned.
 
 local V = ...
 

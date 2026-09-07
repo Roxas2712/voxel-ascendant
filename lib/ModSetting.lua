@@ -57,10 +57,22 @@ function ModSetting:onChange(fn)
 end
 
 local function indexOf(self, value)
+  if self.legacyAliases and self.legacyAliases[value] ~= nil then
+    value = self.legacyAliases[value]
+  end
   for i, v in ipairs(self.values) do
     if v == value then return i end
   end
   return self.defaultIndex or 1
+end
+
+-- Map a retired persisted rung to a live one without keeping the retired
+-- value selectable. The save is rewritten naturally on the player's next
+-- change; until then every reader observes the safe replacement.
+function ModSetting:aliasLegacy(oldValue, liveValue)
+  self.legacyAliases = self.legacyAliases or {}
+  self.legacyAliases[oldValue] = liveValue
+  return self
 end
 
 -- ------- rungs that are not always there
@@ -217,7 +229,7 @@ function ModSetting:schema(help)
   end
   if #self.values == 2 and self.values[1] == false then
     return { key = self.key, type = "toggle", label = self.label,
-             default = self.values[1], help = help }
+             default = self.values[self.defaultIndex or 1], help = help }
   end
   return { key = self.key, type = "choice", label = self.label,
            choices = choices,

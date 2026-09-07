@@ -9,7 +9,9 @@ Short version / Kurzfassung:
 2. Open VASC -> USER MUSIC -> RESCAN FOLDERS.
 3. Select one track or SHUFFLE. ORIGINAL keeps Game/KASC.
    Titel oder SHUFFLE waehlen. ORIGINAL behaelt Spiel/KASC.
-4. BACK TO GAME / KASC, or the global ALL TO GAME/KASC action, disables and
+4. MUSIC A/B PREVIEW compares the last observed Game/KASC cue with your
+   files without saving a new selection; STOP + RESTORE resumes prior music.
+5. BACK TO GAME / KASC, or the global ALL TO GAME/KASC action, disables and
    resets every VASC music override without deleting your files.
 
 Installed folder / Installierter Ordner:

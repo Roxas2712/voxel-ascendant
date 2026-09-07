@@ -1,4 +1,4 @@
-VOXEL ASCENDANT 2.0.1 - SPRITES LOKAL ERSETZEN (DEUTSCH)
+VOXEL ASCENDANT 2.0.12 - SPRITES LOKAL ERSETZEN (DEUTSCH)
 =======================================================
 
 VASC liefert keine Austausch-Sprites aus. Es stellt nur eine lokale,
@@ -21,6 +21,27 @@ transparente Flaeche und dieselbe Fuss-/Grundlinie wie beim ersetzten Sprite.
 VASC baut die Grafik nicht um. Bei animierten Oberwelt-Sheets muessen Groesse,
 Frame-Raster, Richtungsreihenfolge und transparente Raender dem Original
 entsprechen, sonst werden Bewegungsbilder abgeschnitten oder verschoben.
+
+CANVAS, GROESSE UND BODENANKER
+------------------------------
+Es gibt absichtlich keine allgemeine 16x16- oder 32x32-Pflicht. Uebernimm
+Canvas-Groesse und transparente Raender exakt von der finalen Spiel-/KASC-
+Grafik, die ersetzt wird. Ein Crystal-HD-Trainer darf daher deutlich groesser
+sein als ein nativer Gen-I-Trainer; beide sind gueltig.
+
+Fuer Kampf-Front- und Rueckenbilder gilt:
+- alle sichtbaren Pixel muessen innerhalb des PNG-Canvas liegen;
+- transparenten Freiraum oberhalb der Figur lassen, nicht unter den Fuessen;
+- beide Fuesse/tiefsten Kontaktpixel auf eine klare letzte sichtbare Zeile;
+- keinen Boden, Schlagschatten, weissen Hintergrund oder Vorab-Skew malen;
+- Front und Rueckenbild in glaubwuerdiger gemeinsamer Groesse halten.
+
+VASC misst die sichtbaren Alpha-Grenzen, behaelt die physische Quellgroesse und
+setzt die tiefste sichtbare Zeile auf den geprueften Kampfboden. So versinken
+native, Retro- und KASC-HD-Grafiken weder auf MAP-Terrain noch in ARENA-Bildern
+oder DISCS. Bei sehr grossen Pokemon darf die MAP-/DISCS-Kamera auf 1X fuer
+diesen Kampf etwas weiter werden, damit die komplette Silhouette sichtbar
+bleibt; die gespeicherte Kamerawahl wird nicht veraendert.
 
 POKEMON
 -------
@@ -58,6 +79,63 @@ Gegnerische Trainerportraets nutzen ihre kanonische Klassen-ID:
   trainers/OPP_RIVAL2.png
   trainers/OPP_BROCK.png
   trainers/OPP_ROCKET.png
+  trainers/OPP_LORELEI.png
+  trainers/OPP_BRUNO.png
+  trainers/OPP_AGATHA.png
+  trainers/OPP_LANCE.png
+
+ROT, BLAU, GRUEN, RIVALEN UND KASC-GRAFIKEN
+-------------------------------------------
+VASC fragt zuerst Spiel und optionale Mods nach ihrer final ausgewaehlten
+Grafik. Ohne lokale Ersetzung behalten Rot, Blau, Gruen, Rivalen, normale
+Trainer und die Top Vier deshalb ihre native oder von KASC gewaehlte Grafik.
+VASC kopiert keinen KASC-Code und benoetigt KASC nicht.
+
+POSITION UND GROESSE DIREKT IN VASC SPEICHERN
+---------------------------------------------
+Oeffne VOXEL ASCENDANT -> BATTLE -> BATTLE LAYOUT. Das ist eine normale
+VASC-Laufzeitfunktion; der getrennte Desktop-Layouteditor ist optional. Zuerst
+TARGET waehlen, danach X, Y und SIZE einstellen. Eigene Speicherziele gibt es
+fuer Spieler-Front, moderne Spieler-Rueckseite, alte halbe Rueckseite, Mega,
+Gegner-Pokemon, Spieler-Trainer vorne/hinten, Gegner-Trainer, beide Statusfelder,
+beide Teamreihen sowie Befehls- und Textbereich. RESET ONE setzt nur das
+gewaehlte Ziel zurueck. RESET ALL stellt die gepruefte Automatik mit
+0 / 0 / 100% fuer alle Ziele wieder her.
+
+Die Werte greifen erst nach der Auswahl des finalen Sprite-Anbieters. Sie
+veraendern keine PNG und niemals eine KASC-Option oder -Datei. Fuer kleine
+persoenliche Korrekturen sind sie geeignet; bei der Pruefung von transparentem
+Canvas und Fusslinie sollten zunaechst die Standardwerte verwendet werden.
+
+Die beiden player/-Dateien oben sind globale Ersetzungen der finalen
+Spielergrafik. Sie sind kein Rot/Blau/Gruen-Waehler: player/battle_front.png
+ersetzt die vom aktuellen Spiel-/KASC-Aufbau ausgewaehlte Spielerfigur.
+Gegner lassen sich einzeln ueber trainers/<KLASSEN_ID>.png ersetzen.
+
+Zur Abnahme jeden wichtigen Trainer in allen aktiven Kampfarten ansehen:
+  MAP   - Fuesse auf begehbarem Terrain, vollstaendige Figur.
+  DISCS - Fuesse auf der projizierten Disk, nie auf der Hintergrundfarbe.
+  ARENA - Fuesse auf der komponierten Vordergrundlinie, nichts abgeschnitten.
+
+TRAINER BACK einmal OFF und ON pruefen. OFF stellt die finale Frontgrafik in
+die 3D-Szene; ON stellt den echten klassischen Wurf-Rueckensprite auf denselben
+geprueften 3D-Spieler-Bodenanker. Er bleibt dadurch vom Gegner getrennt und
+kann ihn in ARENA/Hochformat nicht mehr verdecken. Das sind
+Darstellungsoptionen, keine anderen Dateiformate.
+
+POKEMON-FRONT/RUECKEN UND MEGA-FORMEN
+-------------------------------------
+Jedes eigene Kampf-Pokemon in beiden Darstellungen pruefen:
+- PKMN BACK OFF: Beide Pokemon stehen auf geprueften Welt-/Arena-/Disk-Ankern.
+- PKMN BACK ON: Das echte Rueckenbild steht auf demselben geprueften 3D-Anker
+  und nutzt dieselbe physische Groessenobergrenze wie die Frontansicht; der
+  Gegner bleibt auf seinem eigenen Anker. Kein Rueckenbild kehrt in den
+  uebergrossen unteren Slot zurueck.
+
+Dies mit einer normal grossen Art, einer sehr grossen Art und jeder gelieferten
+Mega-Form testen. Mega-Dateinamen folgen der oben dokumentierten Formsuche.
+Fehlt eine Mega-Datei, reicht VASC die animierte finale Spiel-/KASC-Grafik
+durch, statt eine leere Karte oder unpassende Ersatzgrafik zu zeigen.
 
 OBERWELT-SHEETS EINSCHLIESSLICH KASC-ZUSTAENDEN
 ------------------------------------------------
@@ -128,4 +206,28 @@ UPDATES UND FEHLERSUCHE
 - Wird eine Grafik abgelehnt, als echte PNG neu exportieren.
 - Bei falscher Groesse, Blickrichtung oder Animation Canvas, transparenten
   Rand und Frame-Aufteilung mit der konkreten Spiel-/KASC-Quelle vergleichen.
+- Versinkt eine Figur, transparente Zeilen unter den Fuessen entfernen und
+  pruefen, ob Schatten-/Bodenpixel unter die vorgesehene Sohle reichen.
+- Ist eine Figur zu klein/gross, mit dem final gewaehlten nativen/KASC-Canvas
+  vergleichen, nicht mit einer skalierten Discord-/Browser-Vorschau.
+- Ist ein Trainer unsichtbar, CUSTOM SPRITES testweise ausschalten. Erscheint
+  die Spiel-/KASC-Rueckfallebene, sind lokaler Name oder PNG falsch; sonst
+  Kampfart, Trainerklasse und TRAINER BACK notieren.
+- Fehlt ein Pokemon-Rueckenbild, pokemon/back/<ART>.png und PKMN BACK ON
+  pruefen. Frontdateien ersetzen die gewaehlte Rueckenbildquelle nicht.
+- Nach geaenderten Canvas-Raendern auf iPhone/Android Hoch- und Querformat
+  testen; Drehen aendert die HUD-Position, nicht den Fussanker.
 - Grafiken nur weitergeben, wenn die erforderlichen Rechte vorliegen.
+
+RC-ABNAHMELISTE
+---------------
+[ ] Native/Retro-Frontgrafiken in MAP, DISCS und mehreren ARENAs
+[ ] Native/Retro-Pokemon-Rueckenbilder mit PKMN BACK ON
+[ ] Finale KASC-Front- und Rueckenbilder (wenn KASC installiert ist)
+[ ] Rot, Blau, Gruen und Rivalen mit TRAINER BACK OFF
+[ ] Trainer-Wurf-Rueckenbild mit TRAINER BACK ON
+[ ] Normaler Trainer, Arenaleiter und alle vier Top-Vier-Klassen
+[ ] Gesunde, besiegte und leere Team-Pokebaelle bleiben lesbar
+[ ] Grosse Pokemon und Megas komplett bei 1X/2X/3X und ARENA-Kamera
+[ ] Keine Fuesse unter Terrain/Disk/Arenaboden; kein Kopf-/Fluegel-Crop
+[ ] HUD/Text bei 35-80% Transparenz in Hoch- und Querformat lesbar

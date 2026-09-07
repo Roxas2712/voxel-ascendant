@@ -21,6 +21,11 @@ local TileRenderer = require("src.render.TileRenderer")
 
 local HorizonWall = {}
 
+-- Read by the Scenery Editor before it launches an isolated playtest.  The
+-- number changes only when generated scenery needs runtime behaviour an older
+-- HorizonWall cannot provide; contract 3 introduces ground-standing models.
+HorizonWall.EDITOR_RUNTIME_CONTRACT = 3
+
 HorizonWall.setting = ModSetting.new("scenery", "SCENERY",
   { "full", "off" }, { "FULL", "OFF" })
 
@@ -720,7 +725,7 @@ HorizonWall.EDGE_PROFILES = {
     east=mix3("rural", "mountain", "rural", 0.18, 0.82),
   },
   ROUTE_10 =          { north="mountain", south="mountain", west="mountain", east="mountain" },
-  ROUTE_12 =          { north="rural", south="rural", west="rural", east="rural" },
+  ROUTE_12 =          { north="rural", south="rural", west="rural", east="open_water" },
 
   VERMILION_CITY =    { north="town", south="harbor",
                         west=mix3("town", "rural", "harbor", 0.42, 0.58),
@@ -738,8 +743,13 @@ HorizonWall.EDGE_PROFILES = {
                                   0.27, 0.39, 0.69),
                         east=mix4("forest", "rural", "town", "harbor",
                                   0.31, 0.45, 0.73) },
-  ROUTE_13 =          { north="rural", south="rural", west="rural", east="rural" },
-  ROUTE_14 =          { north="rural", south="rural", west="rural", east="rural" },
+  -- The eastern coast is one resident-map union. Route 13's southern rural
+  -- apron used to project a rectangular grass plate into Route 14's sea.
+  -- These are EXTERIOR scenery edges: real map bodies/connections are still
+  -- clipped by the union, and their ground, shoreline and collision stay intact.
+  ROUTE_13 =          { north="rural", south="open_water", west="rural", east="open_water" },
+  ROUTE_14 =          { north="rural", west="rural",
+                        south="open_water", east="open_water" },
   ROUTE_15 =          { north=mix2("town", "rural", 0.43),
                         south=mix2("town", "rural", 0.57),
                         west="town", east="rural" },
@@ -766,6 +776,854 @@ HorizonWall.EDGE_PROFILES = {
   ROUTE_23 =          { north="mountain", south="mountain", west="mountain", east="mountain" },
   INDIGO_PLATEAU =    { north="mountain", south="mountain", west="mountain", east="mountain" },
 }
+
+-- Optional output from the native VASC Scenery Editor.  The shipped tables
+-- above remain the complete fail-safe defaults; an edited package overlays
+-- only the maps and edges present in data/scenery_profiles.generated.lua.
+-- Editor edge records retain explicit half-open `[from, upto)` intervals.
+-- Missing spans are material data too: they are normalized to `kind="none"`
+-- so a doorway can never be filled by the semantic fallback or by the final
+-- authored panorama.  Legacy built-in EDGE_PROFILES remain untouched and keep
+-- their historical cumulative-`upto` interpretation.
+HorizonWall.NONE_KIND = "none"
+HorizonWall.EDITOR_ASSETS = {}
+-- Versioned, editor-authored room shells live beside (not inside) PROFILES.
+-- Keeping this table separate is a safety boundary: an interior record can
+-- never turn an outdoor map into the semantic `room` class or alter gameplay
+-- map/collision/warp data.
+HorizonWall.INTERIOR_PROFILES = {}
+-- Additive editor decorations deliberately live outside PROFILES.  An
+-- automatic-only export may contain props/overlays without defining a semantic
+-- map class; putting either list on PROFILES would make classFor() return a
+-- partial record and change the legacy renderer for that map.
+HorizonWall.EDITOR_PROPS = {}
+HorizonWall.EDITOR_OVERLAYS = {}
+
+local function finiteNumber(value)
+  local number = tonumber(value)
+  if not number or number ~= number
+     or number == math.huge or number == -math.huge then return nil end
+  return number
+end
+
+local function clamp01(value)
+  return math.max(0, math.min(1, value))
+end
+
+-- Pure frame helpers keep sprite-sheet timing testable without a LOVE
+-- graphics context. Frame indices are zero-based and loop globally; a
+-- missing FPS deliberately freezes a configured sheet on its first frame.
+function HorizonWall.animationFrameAt(frames, fps, elapsed)
+  frames, fps, elapsed = finiteNumber(frames), finiteNumber(fps),
+                         finiteNumber(elapsed)
+  frames = frames and math.floor(frames) or 1
+  if frames <= 1 or frames > 16 or not fps or fps <= 0 or fps > 24 then
+    return 0
+  end
+  return math.floor(math.max(0, elapsed or 0) * fps) % frames
+end
+
+function HorizonWall.animationFrameUV(cropFrom, cropTo, frames, frame,
+                                      mirrored)
+  local from = clamp01(finiteNumber(cropFrom) or 0)
+  local upto = clamp01(finiteNumber(cropTo) or 1)
+  local count = math.floor(finiteNumber(frames) or 1)
+  if upto <= from or count <= 1 or count > 16 then
+    return mirrored and upto or from, mirrored and from or upto
+  end
+  local index = math.floor(finiteNumber(frame) or 0) % count
+  local width = (upto - from) / count
+  local first, last = from + width * index, from + width * (index + 1)
+  return mirrored and last or first, mirrored and first or last
+end
+
+-- `mapX/mapY` identifies the visual foot point of an editor prop. Most PNGs
+-- paint all the way to their bottom edge (anchor 1); an asset with transparent
+-- padding below its feet can declare a smaller normalized baseline. Lowering
+-- the raw quad by exactly that padding keeps the painted feet at the authored
+-- world height without changing legacy bottom-anchored records.
+function HorizonWall.groundedPropBase(height, verticalOffset, groundAnchor)
+  height = math.max(0, finiteNumber(height) or 0)
+  verticalOffset = finiteNumber(verticalOffset) or 0
+  groundAnchor = clamp01(finiteNumber(groundAnchor) or 1)
+  return verticalOffset - height * (1 - groundAnchor)
+end
+
+local function animationClock()
+  local timer = love and love.timer
+  if timer and type(timer.getTime) == "function" then
+    local ok, value = pcall(timer.getTime)
+    value = ok and finiteNumber(value) or nil
+    if value then return value end
+  end
+  -- Runtime mods cannot use Lua's process/OS APIs.  A missing LOVE timer only
+  -- occurs in headless helpers, where freezing an optional editor-authored
+  -- sheet on its first frame is deterministic and safer than a second clock.
+  return 0
+end
+
+local function editorPart(part, from, upto)
+  local normalized = {
+    kind = part.kind,
+    from = from,
+    upto = upto,
+    editor = true,
+  }
+  local asset = type(part.asset) == "string" and part.asset or nil
+  if asset and asset ~= "" then normalized.asset = asset end
+  local distance = finiteNumber(part.distance)
+  if distance then normalized.distance = math.max(0, distance) end
+  local height = finiteNumber(part.height)
+  if height then normalized.height = math.max(1, height) end
+  local verticalOffset = finiteNumber(part.verticalOffset)
+  if verticalOffset then normalized.verticalOffset = verticalOffset end
+  if part.mirrored ~= nil then normalized.mirrored = part.mirrored == true end
+  local cropFrom, cropTo = finiteNumber(part.cropFrom), finiteNumber(part.cropTo)
+  if cropFrom then normalized.cropFrom = clamp01(cropFrom) end
+  if cropTo then normalized.cropTo = clamp01(cropTo) end
+  if type(part.ground) == "string" and part.ground ~= "" then
+    normalized.ground = part.ground
+  end
+  return normalized
+end
+
+local function normalizeEditorRule(incoming)
+  local parts, impliedFrom = {}, 0
+  for index, part in ipairs(incoming or {}) do
+    if type(part) == "table" and type(part.kind) == "string"
+       and part.kind ~= "" then
+      local from = finiteNumber(part.from)
+      local upto = finiteNumber(part.upto)
+      from = clamp01(from or impliedFrom)
+      upto = clamp01(upto or 1)
+      impliedFrom = upto
+      if upto > from then
+        local normalized = editorPart(part, from, upto)
+        normalized.sourceIndex = index
+        parts[#parts + 1] = normalized
+      end
+    end
+  end
+  table.sort(parts, function(a, b)
+    if a.from == b.from then return a.sourceIndex < b.sourceIndex end
+    return a.from < b.from
+  end)
+  if #parts == 0 then return nil end
+
+  local rule, cursor = {}, 0
+  local function appendNone(from, upto)
+    if upto <= from then return end
+    rule[#rule + 1] = {
+      kind = HorizonWall.NONE_KIND,
+      from = from,
+      upto = upto,
+      editor = true,
+      ground = "none",
+    }
+  end
+  for _, part in ipairs(parts) do
+    if part.from > cursor then appendNone(cursor, part.from) end
+    -- Overlapping authored input is invalid in the editor.  Fail
+    -- deterministically here by retaining the first sorted owner and clipping
+    -- only the ambiguous prefix of the later record.
+    local from = math.max(cursor, part.from)
+    if part.upto > from then
+      part.from = from
+      part.sourceIndex = nil
+      rule[#rule + 1] = part
+      cursor = part.upto
+    end
+  end
+  appendNone(cursor, 1)
+  return rule
+end
+
+local function safeEditorAssetPath(path)
+  if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/"
+     or path:find("\\", 1, true) or path:find("%z")
+     or not path:match("^assets/")
+     or not path:lower():match("%.png$") then return false end
+  return not ("/" .. path .. "/"):find("/%.%./")
+end
+
+local function normalizeEditorAssets(incoming)
+  local assets = {}
+  for id, spec in pairs(incoming or {}) do
+    if type(id) == "string" and id ~= "" and type(spec) == "table"
+       and safeEditorAssetPath(spec.path) then
+      local width, height = finiteNumber(spec.width), finiteNumber(spec.height)
+      local baseline = finiteNumber(spec.baseline)
+      local renderMode = spec.renderMode == "fountain3d"
+                         and "fountain3d" or nil
+      if width and height and width >= 1 and height >= 1
+         and width <= 8192 and height <= 8192
+         and width * height <= 16777216 then
+        assets[id] = {
+          path = spec.path,
+          width = math.floor(width),
+          height = math.floor(height),
+          baseline = baseline and clamp01(baseline) or nil,
+          renderMode = renderMode,
+        }
+      end
+    end
+  end
+  return assets
+end
+
+local EDITOR_EDGES = { north = true, south = true, west = true, east = true }
+
+local function normalizeEditorProps(incoming)
+  local props = {}
+  for index, prop in ipairs(incoming or {}) do
+    if type(prop) == "table" and EDITOR_EDGES[prop.edge]
+       and type(prop.kind) == "string" and prop.kind ~= "" then
+      local asset = type(prop.asset) == "string" and prop.asset or nil
+      if not asset or asset == "" then
+        asset = prop.kind == "tree" and "miniTrees" or nil
+      end
+      local along = finiteNumber(prop.along)
+      local distance = finiteNumber(prop.distance)
+      local size = finiteNumber(prop.size)
+      local width = finiteNumber(prop.width)
+      local verticalOffset = finiteNumber(prop.verticalOffset)
+      local variant = finiteNumber(prop.variant)
+      local cropFrom = finiteNumber(prop.cropFrom)
+      local cropTo = finiteNumber(prop.cropTo)
+      local order = finiteNumber(prop.order)
+      local animationFrames = finiteNumber(prop.animationFrames)
+      local animationFPS = finiteNumber(prop.animationFPS)
+      local groundAnchor = finiteNumber(prop.groundAnchor)
+      local mapX = finiteNumber(prop.mapX)
+      local mapY = finiteNumber(prop.mapY)
+      if cropFrom ~= nil or cropTo ~= nil then
+        cropFrom = clamp01(cropFrom or 0)
+        cropTo = clamp01(cropTo or 1)
+        -- Mirroring is explicit. A reversed/empty hand-authored crop must not
+        -- silently turn into a second mirroring mode or a zero-width card.
+        if cropTo <= cropFrom then cropFrom, cropTo = nil, nil end
+      end
+      if animationFrames ~= nil then
+        animationFrames = math.floor(animationFrames)
+        if animationFrames <= 1 or animationFrames > 16 then
+          animationFrames = nil
+        end
+      end
+      -- Frames define the horizontal sheet layout even when it is paused.
+      -- A missing/invalid FPS therefore shows frame zero rather than the
+      -- complete strip; only a valid explicit FPS enables per-frame work.
+      if not (animationFPS and animationFPS > 0 and animationFPS <= 24) then
+        animationFPS = nil
+      end
+      -- Tree has a real shipped default. Bush/rock/custom/ridge records without
+      -- an asset are optional editor placeholders, not a reason to reject the
+      -- map's complete live revision or invent visually wrong artwork.
+      if asset then
+        props[#props + 1] = {
+          edge = prop.edge,
+          along = clamp01(along or 0.5),
+          distance = math.max(0, distance or 48),
+          kind = prop.kind,
+          asset = asset,
+          size = math.max(1, size or 32),
+          -- Optional additions keep schemaVersion 1 backward compatible. An
+          -- absent width retains the historical aspect-derived footprint.
+          width = width and math.max(1, width) or nil,
+          verticalOffset = verticalOffset or 0,
+          mirrored = prop.mirrored == true,
+          variant = variant and math.max(0, math.min(3,
+            math.floor(variant))) or nil,
+          cropFrom = cropFrom,
+          cropTo = cropTo,
+          order = math.floor(order or 0),
+          animationFrames = animationFrames,
+          animationFPS = animationFrames and animationFPS or nil,
+          groundAnchor = groundAnchor and clamp01(groundAnchor) or nil,
+          -- Optional free placement on the playable map plane. Both values
+          -- are required; old edge-relative props stay byte-for-byte valid.
+          mapX = mapX and mapY and clamp01(mapX) or nil,
+          mapY = mapX and mapY and clamp01(mapY) or nil,
+          sourceIndex = index,
+        }
+      end
+    end
+  end
+  return props
+end
+
+local function normalizeEditorOverlays(incoming)
+  local overlays = {}
+  for index, overlay in ipairs(incoming or {}) do
+    local asset = type(overlay) == "table"
+      and type(overlay.asset) == "string" and overlay.asset or nil
+    if type(overlay) == "table" and EDITOR_EDGES[overlay.edge]
+       and asset and asset ~= "" then
+      local from = clamp01(finiteNumber(overlay.from) or 0)
+      local upto = clamp01(finiteNumber(overlay.upto)
+                           or finiteNumber(overlay.to) or 1)
+      if upto > from then
+        local distance = finiteNumber(overlay.distance)
+        local height = finiteNumber(overlay.height)
+        local verticalOffset = finiteNumber(overlay.verticalOffset)
+        local cropFrom = finiteNumber(overlay.cropFrom)
+        local cropTo = finiteNumber(overlay.cropTo)
+        local order = finiteNumber(overlay.order)
+        overlays[#overlays + 1] = {
+          edge = overlay.edge,
+          from = from,
+          upto = upto,
+          asset = asset,
+          distance = math.max(0, distance or 92),
+          height = math.max(1, height or 64),
+          verticalOffset = verticalOffset or 54,
+          cropFrom = clamp01(cropFrom or 0),
+          cropTo = clamp01(cropTo or 1),
+          mirrored = overlay.mirrored == true,
+          order = math.floor(order or 0),
+          sourceIndex = index,
+        }
+      end
+    end
+  end
+  table.sort(overlays, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.sourceIndex < b.sourceIndex
+  end)
+  return overlays
+end
+
+local function editorCatalogHasAsset(catalog, id)
+  return type(id) == "string" and id ~= ""
+         and (catalog[id] ~= nil or HorizonWall.IMAGE_ASSETS[id] ~= nil)
+end
+
+-- Keep the shipped profiles recoverable across live editor revisions.  The
+-- editor owns only the IDs it has overlaid; a later export may remove one of
+-- them, in which case that exact built-in record (or absence) is restored.
+-- This also lets a malformed replacement fail transactionally without
+-- destroying the last complete scene.
+local EDITOR_ABSENT = {}
+local editorProfileBases, editorEdgeBases = {}, {}
+
+local function copyEditorValue(value, seen)
+  if type(value) ~= "table" then return value end
+  seen = seen or {}
+  if seen[value] then return seen[value] end
+  local copy = {}
+  seen[value] = copy
+  for key, child in pairs(value) do
+    copy[copyEditorValue(key, seen)] = copyEditorValue(child, seen)
+  end
+  return copy
+end
+
+local function rememberedBase(bases, current, id)
+  local base = bases[id]
+  if base == EDITOR_ABSENT then return nil end
+  if base ~= nil then return base end
+  return current[id]
+end
+
+local function rememberBase(bases, current, id)
+  if bases[id] ~= nil then return end
+  local value = current[id]
+  bases[id] = value == nil and EDITOR_ABSENT or copyEditorValue(value)
+end
+
+local function restoreEditorBases(bases, current)
+  for id, base in pairs(bases) do
+    if base == EDITOR_ABSENT then
+      current[id] = nil
+    else
+      current[id] = copyEditorValue(base)
+    end
+  end
+end
+
+local function parseSceneryEditorData(authored)
+  if authored == nil then
+    local ok, loaded = pcall(V.data, "scenery_profiles.generated")
+    if not ok then
+      return nil, "scenery_profiles.generated could not be read: "
+                  .. tostring(loaded)
+    end
+    authored = loaded
+  end
+  if type(authored) ~= "table"
+     or tonumber(authored.schemaVersion) ~= 1 then
+    return nil, "scenery_profiles.generated needs schemaVersion = 1"
+  end
+
+  local parsed = {
+    assets = normalizeEditorAssets(authored.assets),
+    profiles = {},
+    edges = {},
+    props = {},
+    overlays = {},
+  }
+
+  for id, incoming in pairs(authored.profiles or {}) do
+    if type(id) == "string" and type(incoming) == "table" then
+      local existing = rememberedBase(editorProfileBases,
+                                      HorizonWall.PROFILES, id)
+      local current = copyEditorValue(existing or {})
+      local hasSemanticClass = existing ~= nil
+        or incoming.class and incoming.class ~= "automatic"
+      if incoming.class and incoming.class ~= "automatic" then
+        current.class = incoming.class
+      end
+      if incoming.wall and incoming.wall ~= "" then current.wall = incoming.wall end
+      if incoming.filler and incoming.filler ~= "" then
+        current.filler = incoming.filler
+      end
+      if tonumber(incoming.fillerRows) then
+        current.fillerRows = math.max(0, math.floor(incoming.fillerRows))
+      end
+      if incoming.sky ~= nil then current.sky = incoming.sky == true end
+      if incoming.openWater ~= nil then
+        current.openWater = incoming.openWater == true
+      end
+      -- An automatic-only record with no established semantic profile should
+      -- affect edge art without inventing a renderer class.
+      if hasSemanticClass and next(current) ~= nil then
+        parsed.profiles[id] = current
+      end
+      local props = normalizeEditorProps(incoming.props)
+      local overlays = normalizeEditorOverlays(incoming.overlays)
+      if #props > 0 then parsed.props[id] = props end
+      if #overlays > 0 then parsed.overlays[id] = overlays end
+    end
+  end
+
+  for id, incomingEdges in pairs(authored.edgeProfiles or {}) do
+    if type(id) == "string" and type(incomingEdges) == "table" then
+      local normalized = {}
+      for _, edge in ipairs({ "north", "south", "west", "east" }) do
+        local incoming = incomingEdges[edge]
+        if type(incoming) == "table" and #incoming > 0 then
+          local rule = normalizeEditorRule(incoming)
+          if rule then normalized[edge] = rule end
+        end
+      end
+      if next(normalized) ~= nil then
+        -- An editor revision owns only the edges it actually contains.  Start
+        -- from the remembered shipped record so editing north cannot silently
+        -- erase built-in south/east/west scenery for that map.
+        local existing = rememberedBase(editorEdgeBases,
+                                        HorizonWall.EDGE_PROFILES, id)
+        local merged = copyEditorValue(existing or {})
+        for edge, rule in pairs(normalized) do merged[edge] = rule end
+        parsed.edges[id] = merged
+      end
+    end
+  end
+
+  -- An invalid reference must never masquerade as a successful live test.
+  -- Keep the preceding complete revision active until every authored PNG ID
+  -- resolves either in the exported catalog or in the shipped library.
+  for id, edges in pairs(parsed.edges) do
+    for edge, rule in pairs(edges) do
+      if type(rule) == "table" then
+        for _, part in ipairs(rule) do
+          if part.asset
+             and not editorCatalogHasAsset(parsed.assets, part.asset) then
+            return nil, string.format(
+              "edge asset '%s' is missing (%s.%s)", part.asset, id, edge)
+          end
+        end
+      end
+    end
+  end
+  for id, props in pairs(parsed.props) do
+    for _, prop in ipairs(props) do
+      if not editorCatalogHasAsset(parsed.assets, prop.asset) then
+        return nil, string.format(
+          "prop asset is missing (%s.%s #%d)", id, prop.edge,
+          prop.sourceIndex or 0)
+      end
+    end
+  end
+  for id, overlays in pairs(parsed.overlays) do
+    for _, overlay in ipairs(overlays) do
+      if not editorCatalogHasAsset(parsed.assets, overlay.asset) then
+        return nil, string.format(
+          "overlay asset '%s' is missing (%s.%s #%d)", overlay.asset,
+          id, overlay.edge, overlay.sourceIndex or 0)
+      end
+    end
+  end
+  return parsed
+end
+
+local function parseInteriorEditorData(authored, assetCatalog)
+  if type(authored) ~= "table"
+     or tonumber(authored.schemaVersion) ~= 1
+     or type(authored.profiles) ~= "table" then
+    return nil, "interiors.generated needs schemaVersion = 1 and profiles"
+  end
+
+  local parsed = { profiles = {}, referencedAssets = {} }
+  local edgeRank = { north = 1, south = 2, west = 3, east = 4 }
+  local function asset(value, where)
+    if value == nil then return nil end
+    if type(value) ~= "string" or value == ""
+       or not editorCatalogHasAsset(assetCatalog, value) then
+      return nil, string.format("interior asset '%s' is missing (%s)",
+                                tostring(value), where)
+    end
+    parsed.referencedAssets[value] = true
+    return value
+  end
+
+  for id, incoming in pairs(authored.profiles) do
+    if type(id) ~= "string" or id == "" or type(incoming) ~= "table"
+       or type(incoming.enabled) ~= "boolean" then
+      return nil, "invalid interior profile " .. tostring(id)
+    end
+    if not incoming.enabled then
+      parsed.profiles[id] = { enabled = false }
+    else
+      local shellHeight = finiteNumber(incoming.shellHeight)
+      local wallDistance = finiteNumber(incoming.wallDistance)
+      if not shellHeight or shellHeight < 32 or shellHeight > 512
+         or not wallDistance or wallDistance < 0 or wallDistance > 192 then
+        return nil, "invalid interior dimensions for " .. id
+      end
+      local wallEdges = incoming.wallEdges
+      if type(wallEdges) ~= "table" then
+        return nil, "interior wallEdges are missing for " .. id
+      end
+      local normalizedEdges = {}
+      for _, edge in ipairs({ "north", "south", "west", "east" }) do
+        if type(wallEdges[edge]) ~= "boolean" then
+          return nil, "interior wall edge is not boolean: " .. id .. "." .. edge
+        end
+        normalizedEdges[edge] = wallEdges[edge]
+      end
+
+      local ceiling = incoming.ceiling
+      if type(ceiling) ~= "table" or type(ceiling.enabled) ~= "boolean" then
+        return nil, "invalid interior ceiling for " .. id
+      end
+      local wallAsset, wallAssetError = asset(incoming.wallAsset, id .. ".wall")
+      if wallAssetError then return nil, wallAssetError end
+      local ceilingAsset, ceilingAssetError = asset(
+        ceiling.asset, id .. ".ceiling")
+      if ceilingAssetError then return nil, ceilingAssetError end
+
+      local doors = {}
+      if incoming.doors ~= nil and type(incoming.doors) ~= "table" then
+        return nil, "invalid interior doors for " .. id
+      end
+      for index, door in ipairs(incoming.doors or {}) do
+        local from = type(door) == "table" and finiteNumber(door.from) or nil
+        local upto = type(door) == "table" and finiteNumber(door.upto) or nil
+        local height = type(door) == "table" and finiteNumber(door.height) or nil
+        if type(door) ~= "table" or not edgeRank[door.edge]
+           or not from or not upto or from < 0 or upto > 1 or upto <= from
+           or not height or height <= 0 or height > shellHeight
+           or type(door.open) ~= "boolean"
+           or door.destination ~= nil
+              and (type(door.destination) ~= "string"
+                   or door.destination == "") then
+          return nil, string.format("invalid interior door %s #%d", id, index)
+        end
+        local doorAsset, doorAssetError = asset(
+          door.asset, string.format("%s.%s door #%d", id, door.edge, index))
+        if doorAssetError then return nil, doorAssetError end
+        doors[#doors + 1] = {
+          edge = door.edge, from = from, upto = upto, height = height,
+          open = door.open, asset = doorAsset,
+          destination = door.destination, sourceIndex = index,
+        }
+      end
+      table.sort(doors, function(a, b)
+        if edgeRank[a.edge] ~= edgeRank[b.edge] then
+          return edgeRank[a.edge] < edgeRank[b.edge]
+        end
+        if a.from ~= b.from then return a.from < b.from end
+        return a.sourceIndex < b.sourceIndex
+      end)
+      local previousByEdge = {}
+      for _, door in ipairs(doors) do
+        local previous = previousByEdge[door.edge]
+        if previous and door.from < previous.upto - 1e-9 then
+          return nil, "overlapping interior doors for " .. id .. "." .. door.edge
+        end
+        previousByEdge[door.edge] = door
+        door.sourceIndex = nil
+      end
+
+      parsed.profiles[id] = {
+        enabled = true,
+        shellHeight = shellHeight,
+        wallDistance = wallDistance,
+        wallAsset = wallAsset,
+        ceiling = { enabled = ceiling.enabled, asset = ceilingAsset },
+        wallEdges = normalizedEdges,
+        doors = doors,
+      }
+    end
+  end
+  return parsed
+end
+
+local function validateParsedEditorImages(parsed)
+  local g = love and love.graphics
+  if not (g and type(g.newImage) == "function"
+          and type(V.path) == "string") then return true end
+  local referenced = {}
+  for _, edges in pairs(parsed.edges) do
+    for _, rule in pairs(edges) do
+      if type(rule) == "table" then
+        for _, part in ipairs(rule) do
+          if part.asset then referenced[part.asset] = true end
+        end
+      end
+    end
+  end
+  for _, props in pairs(parsed.props) do
+    for _, prop in ipairs(props) do referenced[prop.asset] = true end
+  end
+  for _, overlays in pairs(parsed.overlays) do
+    for _, overlay in ipairs(overlays) do referenced[overlay.asset] = true end
+  end
+  for id in pairs(parsed.interiorAssets or {}) do referenced[id] = true end
+  local referencedIDs = {}
+  for id in pairs(referenced) do referencedIDs[#referencedIDs + 1] = id end
+  table.sort(referencedIDs)
+  for _, id in ipairs(referencedIDs) do
+    local spec = parsed.assets[id]
+    -- Shipped assets were already package-reviewed. Only editor-owned files can
+    -- change between marker revisions and therefore need a last-good preflight.
+    if spec then
+      local path = V.path .. "/" .. spec.path
+      local ok, image = pcall(g.newImage, path,
+                              { mipmaps = false, linear = false })
+      if not (ok and image) then ok, image = pcall(g.newImage, path) end
+      if not (ok and image) then
+        return false, "editor PNG could not be decoded: " .. spec.path
+      end
+      local dimOK, width, height = pcall(image.getDimensions, image)
+      if image.release then pcall(image.release, image) end
+      if not dimOK or width ~= spec.width or height ~= spec.height then
+        return false, string.format(
+          "editor PNG dimensions differ for %s (expected %dx%d, got %sx%s)",
+          spec.path, spec.width, spec.height, tostring(width), tostring(height))
+      end
+    end
+  end
+  return true
+end
+
+local function commitSceneryEditorData(parsed)
+  restoreEditorBases(editorProfileBases, HorizonWall.PROFILES)
+  restoreEditorBases(editorEdgeBases, HorizonWall.EDGE_PROFILES)
+  for id, profile in pairs(parsed.profiles) do
+    rememberBase(editorProfileBases, HorizonWall.PROFILES, id)
+    HorizonWall.PROFILES[id] = profile
+  end
+  for id, edges in pairs(parsed.edges) do
+    rememberBase(editorEdgeBases, HorizonWall.EDGE_PROFILES, id)
+    HorizonWall.EDGE_PROFILES[id] = edges
+  end
+  HorizonWall.EDITOR_ASSETS = parsed.assets
+  HorizonWall.EDITOR_PROPS = parsed.props
+  HorizonWall.EDITOR_OVERLAYS = parsed.overlays
+end
+
+local function applySceneryEditorData(authored, interiorAuthored,
+                                      replaceInteriors)
+  local parsed, err = parseSceneryEditorData(authored)
+  if not parsed then return false, err end
+  local parsedInteriors
+  if replaceInteriors then
+    parsedInteriors, err = parseInteriorEditorData(interiorAuthored,
+                                                   parsed.assets)
+    if not parsedInteriors then return false, err end
+    parsed.interiorAssets = parsedInteriors.referencedAssets
+  end
+  local imagesValid, imageError = validateParsedEditorImages(parsed)
+  if not imagesValid then return false, imageError end
+
+  commitSceneryEditorData(parsed)
+  if replaceInteriors then
+    HorizonWall.INTERIOR_PROFILES = parsedInteriors.profiles
+  end
+  return true
+end
+
+HorizonWall.editorDataApplied = applySceneryEditorData()
+HorizonWall.interiorDataApplied = true
+do
+  -- Older packages intentionally have no generated interior module. Absence
+  -- is the valid empty catalog; a present malformed file simply contributes
+  -- no new geometry during initial construction.
+  local ok, authored = pcall(V.data, "interiors.generated")
+  if ok then
+    local parsed, err = parseInteriorEditorData(authored,
+                                                HorizonWall.EDITOR_ASSETS)
+    if parsed then
+      local carrier = {
+        assets = HorizonWall.EDITOR_ASSETS, edges = {}, props = {}, overlays = {},
+        interiorAssets = parsed.referencedAssets,
+      }
+      local imagesValid = validateParsedEditorImages(carrier)
+      if imagesValid then
+        HorizonWall.INTERIOR_PROFILES = parsed.profiles
+      else
+        HorizonWall.interiorDataApplied = false
+      end
+    else
+      HorizonWall.interiorDataApplied = false
+      HorizonWall.interiorDataError = err
+    end
+  end
+end
+
+-- V.data is intentionally load-once for ordinary package data. main.lua
+-- stages this one generated module outside that cache; this function commits
+-- a complete parsed revision and drops all geometry and retained editor
+-- textures. Failed parses keep both the preceding tables and cached document
+-- live.
+function HorizonWall.reloadEditorData(authored, interiorAuthored)
+  local applied, err = applySceneryEditorData(
+    authored, interiorAuthored, interiorAuthored ~= nil)
+  if not applied then return false, err end
+  HorizonWall.editorDataApplied = true
+  if interiorAuthored ~= nil then HorizonWall.interiorDataApplied = true end
+  if type(HorizonWall.invalidate) == "function" then HorizonWall.invalidate() end
+  return true
+end
+
+function HorizonWall.reloadInteriorData(authored)
+  local parsed, err = parseInteriorEditorData(authored,
+                                              HorizonWall.EDITOR_ASSETS)
+  if not parsed then return false, err end
+  local carrier = {
+    assets = HorizonWall.EDITOR_ASSETS, edges = {}, props = {}, overlays = {},
+    interiorAssets = parsed.referencedAssets,
+  }
+  local imagesValid, imageError = validateParsedEditorImages(carrier)
+  if not imagesValid then return false, imageError end
+  HorizonWall.INTERIOR_PROFILES = parsed.profiles
+  HorizonWall.interiorDataApplied = true
+  if type(HorizonWall.invalidate) == "function" then HorizonWall.invalidate() end
+  return true
+end
+
+local editorReload = {
+  elapsed = 0,
+  interval = 0.5,
+  initialized = false,
+  marker = nil,
+  failedMarker = nil,
+}
+
+local function readEditorReloadMarker()
+  if not (V.mod and type(V.mod.read) == "function") then
+    return false, nil
+  end
+  local ok, marker = pcall(V.mod.read, V.mod,
+                           "data/scenery_editor.reload")
+  if not ok then return false, nil end
+  return true, marker
+end
+
+local function reloadMarkerKey(marker)
+  return marker == nil and EDITOR_ABSENT or tostring(marker)
+end
+
+-- Prime at module construction rather than on the first frame.  That closes
+-- the small window in which the editor can publish between module load and
+-- the first pipeline update.  A mounted zip may remain immutable in PhysFS;
+-- the supported live path is an unpacked mod folder whose marker is written
+-- last, after the Lua module and PNG assets have been atomically replaced.
+do
+  local readable, marker = readEditorReloadMarker()
+  if readable then
+    editorReload.initialized = true
+    editorReload.marker = reloadMarkerKey(marker)
+  end
+end
+
+function HorizonWall.pollEditorReload(dt)
+  editorReload.elapsed = editorReload.elapsed + math.max(0, tonumber(dt) or 0)
+  if editorReload.elapsed < editorReload.interval then return false end
+  editorReload.elapsed = editorReload.elapsed % editorReload.interval
+
+  local readable, marker = readEditorReloadMarker()
+  if not readable then return false end
+  local key = reloadMarkerKey(marker)
+  if not editorReload.initialized then
+    editorReload.initialized, editorReload.marker = true, key
+    return false
+  end
+  if key == editorReload.marker then return false end
+
+  if type(V.readDataFresh) ~= "function"
+     or type(V.commitData) ~= "function" then
+    if editorReload.failedMarker ~= key then
+      editorReload.failedMarker = key
+      return false, "runtime data cache cannot stage the generated profile"
+    end
+    return false
+  end
+  local ok, authored = pcall(V.readDataFresh, "scenery_profiles.generated")
+  if not ok then
+    if editorReload.failedMarker ~= key then
+      editorReload.failedMarker = key
+      return false, "scenery_profiles.generated could not be read: "
+                    .. tostring(authored)
+    end
+    return false
+  end
+  local interiorAuthored
+  local interiorPresent = false
+  if V.mod and type(V.mod.read) == "function" then
+    local fileOK, contents = pcall(V.mod.read, V.mod,
+                                   "data/interiors.generated.lua")
+    interiorPresent = fileOK and contents ~= nil
+  end
+  if interiorPresent then
+    local interiorOK
+    interiorOK, interiorAuthored = pcall(V.readDataFresh,
+                                         "interiors.generated")
+    if not interiorOK then
+      if editorReload.failedMarker ~= key then
+        editorReload.failedMarker = key
+        return false, "interiors.generated could not be read: "
+                      .. tostring(interiorAuthored)
+      end
+      return false
+    end
+  end
+  local applied, err = HorizonWall.reloadEditorData(authored, interiorAuthored)
+  if not applied then
+    if editorReload.failedMarker ~= key then
+      editorReload.failedMarker = key
+      return false, err
+    end
+    return false
+  end
+  V.commitData("scenery_profiles.generated", authored)
+  if interiorPresent then V.commitData("interiors.generated", interiorAuthored) end
+  editorReload.marker, editorReload.failedMarker = key, nil
+  return true
+end
+
+function HorizonWall.editorAssetSpec(id)
+  if type(id) ~= "string" or id == "" then return nil end
+  local authored = HorizonWall.EDITOR_ASSETS[id]
+  if authored then return authored end
+  local builtIn = HorizonWall.IMAGE_ASSETS[id]
+  if not builtIn then return nil end
+  return {
+    path = builtIn.path,
+    width = builtIn.sourceW,
+    height = builtIn.sourceH,
+  }
+end
 
 -- Only these long, genuinely maritime horizons receive isolated landmark
 -- sprites.  They remain sparse billboards over the water mesh, never walls.
@@ -951,6 +1809,12 @@ local function isOutdoor(def)
   return def.tileset == "OVERWORLD"
 end
 
+-- Public fail-closed semantic probe shared with InteriorCutaway. A malformed
+-- map without a definition is never accepted as an editor-owned room.
+function HorizonWall.isOutdoorMap(map)
+  return not (map and type(map.def) == "table") or isOutdoor(map.def)
+end
+
 local function roomShellProfile(map)
   local def = map and map.def or {}
   local id = tostring(map and map.id or def.id or "")
@@ -1042,6 +1906,23 @@ function HorizonWall.profileFor(map)
   return HorizonWall.PROFILES[tostring(map and map.id or def.id or "")]
 end
 
+-- Editor room shells are an additive renderer contract, not a semantic class
+-- override. Only an ordinary, genuinely non-outdoor interior may consume one;
+-- caves, towers, reviewed room shells and every exterior retain their existing
+-- owners and geometry.
+function HorizonWall.interiorProfileFor(map)
+  if HorizonWall.isOutdoorMap(map)
+     or HorizonWall.classFor(map) ~= "interior" then return nil end
+  local def = map.def or {}
+  local id = tostring(map.id or def.id or "")
+  local profile = HorizonWall.INTERIOR_PROFILES[id]
+  return profile and profile.enabled == true and profile or nil
+end
+
+function HorizonWall.hasInteriorShell(map)
+  return HorizonWall.enabled() and HorizonWall.interiorProfileFor(map) ~= nil
+end
+
 local function defaultEdgeKind(class)
   if class == "smalltown" then return "town" end
   if class == "metropolis" then return "metropolis" end
@@ -1056,7 +1937,13 @@ local function resolveEdgeRule(rule, t)
   if type(rule) == "string" then return rule end
   if type(rule) == "table" then
     for _, part in ipairs(rule) do
-      if part.upto == nil or t < part.upto then return part.kind end
+      if part.from ~= nil then
+        if t >= part.from and (part.upto == nil or t < part.upto) then
+          return part.kind, part
+        end
+      elseif part.upto == nil or t < part.upto then
+        return part.kind, part
+      end
     end
   end
   return nil
@@ -1076,22 +1963,66 @@ end
 -- `localAlong` is a map-local world coordinate, but only chooses a semantic
 -- transition.  It never participates in texture scaling; panelUV receives the
 -- canonical coordinate separately.
-function HorizonWall.panelProfile(map, edge, localAlong)
+function HorizonWall.panelProfile(map, edge, localAlong, sampleSpan)
   local def = map and map.def or {}
   local id = tostring(map and map.id or def.id or "")
   local profile = HorizonWall.PROFILES[id]
-  if OPEN_SEA_MAPS[id] or profile and profile.openWater then
-    return "open_water", 0
-  end
   local horizontal = edge == "north" or edge == "south"
   local length = math.max(HorizonWall.CELL,
     (horizontal and (def.width or 1) or (def.height or 1)) * HorizonWall.CELL)
   local t = math.max(0, math.min(0.999999,
-    ((localAlong or 0) + HorizonWall.CELL * 0.5) / length))
+    ((localAlong or 0) + (sampleSpan or HorizonWall.CELL) * 0.5)
+    / length))
   local rules = HorizonWall.EDGE_PROFILES[id]
-  local kind = rules and resolveEdgeRule(rules[edge], t)
-               or defaultEdgeKind(HorizonWall.classFor(map))
-  return kind, fillerRowsFor(map, kind)
+  local kind, placement
+  if rules then kind, placement = resolveEdgeRule(rules[edge], t) end
+  -- A concrete editor interval is more specific than a map-wide sea profile.
+  -- Built-in maps retain the previous open-water precedence because their
+  -- cumulative rules carry no editor marker.
+  if not (placement and placement.editor)
+     and (OPEN_SEA_MAPS[id] or profile and profile.openWater) then
+    return "open_water", 0
+  end
+  kind = kind or defaultEdgeKind(HorizonWall.classFor(map))
+  return kind, fillerRowsFor(map, kind), placement
+end
+
+-- The large PanoramaBackdrop cylinder is deliberately scene-wide; unlike the
+-- edge mesh it cannot punch a local doorway into its texture.  An explicit
+-- editor `none` therefore has to win conservatively for the complete resident
+-- union, otherwise the removed HorizonWall panel merely reveals the older
+-- panorama behind it.  Only editor-authored records participate, so all
+-- shipped/legacy profiles retain the historical backdrop behaviour, except
+-- the audited Route 12–14 coast. Its near, direction-specific land walls remain;
+-- the scene-wide painted cylinder must not put a second countryside wall
+-- behind the newly opened sea. Apply to the resident union to avoid swapping
+-- that distant layer merely when crossing the Route 13/14 ownership seam.
+function HorizonWall.allowsFarBackdrop(state)
+  local function mapAllows(map)
+    local def = map and map.def or {}
+    local id = tostring(map and map.id or def.id or "")
+    if id == "ROUTE_12" or id == "ROUTE_13" or id == "ROUTE_14" then return false end
+    local rules = HorizonWall.EDGE_PROFILES[id]
+    if type(rules) ~= "table" then return true end
+    for _, edge in ipairs({ "north", "south", "west", "east" }) do
+      local rule = rules[edge]
+      if type(rule) == "table" then
+        for _, part in ipairs(rule) do
+          if type(part) == "table" and part.editor == true
+             and part.kind == HorizonWall.NONE_KIND then
+            return false
+          end
+        end
+      end
+    end
+    return true
+  end
+
+  if not state or not mapAllows(state.map) then return false end
+  for _, neighbor in ipairs(state.neighbors or {}) do
+    if not mapAllows(neighbor and neighbor.map) then return false end
+  end
+  return true
 end
 
 function HorizonWall.edgeClass(map, edge, localAlong)
@@ -1113,6 +2044,7 @@ end
 -- portion and lets the panorama exist immediately with the map body.
 function HorizonWall.preferBody(map)
   if not HorizonWall.enabled() then return false end
+  if HorizonWall.interiorProfileFor(map) then return true end
   local class = HorizonWall.classFor(map)
   return class ~= "interior"
 end
@@ -1164,6 +2096,18 @@ function HorizonWall.wallFamily(kind, map)
   if kind == "cave" or kind == "tower" then return kind end
   if kind == "room" and map then return HorizonWall.materialFor(map) end
   return nil
+end
+
+local function wallFamilyFor(kind, map, placement)
+  if placement and placement.asset then
+    if HorizonWall.editorAssetSpec(placement.asset) then
+      return "editor:" .. placement.asset
+    end
+    -- A missing catalog entry must not silently display the semantic fallback
+    -- and pretend that the user's selected PNG worked.
+    return nil
+  end
+  return HorizonWall.wallFamily(kind, map)
 end
 
 -- Route 8's long north/south faces consume the strip once at native scale.
@@ -1576,6 +2520,37 @@ end
 -- Every authored lane cell and its raw 2x2 material must match, while both
 -- adjacent source cells remain blocked.  An edited route therefore fails
 -- closed instead of inheriting screenshot-shaped scenery on a changed lane.
+-- Route 2's forest occupies blocked terrain between its two forest gates.
+-- This is an in-map visual occluder, not a collision or transition wall. Only
+-- admit the exact native footprint; edited/walkable/custom versions stay open.
+function HorizonWall.route2ForestVerified(map)
+  local def = map and map.def
+  if not (def and (map.id or def.id) == "ROUTE_2" and def.id == "ROUTE_2"
+      and def.width == 10 and def.height == 36 and def.tileset == "OVERWORLD"
+      and type(def.warps) == "table"
+      and type(map.isWalkableCell) == "function") then return false end
+  local north, south = false, false
+  for _, warp in ipairs(def.warps or {}) do
+    if type(warp) ~= "table" then return false end
+    if warp.x == 3 and warp.y == 11
+       and warp.destMap == "VIRIDIAN_FOREST_NORTH_GATE" then north = true end
+    if warp.x == 3 and warp.y == 43
+       and warp.destMap == "VIRIDIAN_FOREST_SOUTH_GATE" then south = true end
+    if type(warp.x) == "number" and type(warp.y) == "number"
+       and warp.x >= 0 and warp.x <= 13 and warp.y >= 22 and warp.y <= 37 then
+      return false
+    end
+  end
+  if not north or not south then return false end
+  for cy = 22, 37 do
+    for cx = 0, 13 do
+      local ok, walkable = pcall(map.isWalkableCell, map, cx, cy)
+      if not ok or walkable ~= false then return false end
+    end
+  end
+  return true
+end
+
 function HorizonWall.route8SeamVerified(map, edgeIndex)
   local seam = HorizonWall.route8SeamSpec(edgeIndex)
   local def = map and map.def
@@ -1686,6 +2661,15 @@ local function wallDistanceFor(kind, class)
   return HorizonWall.OUTDOOR_WALL_DISTANCE
 end
 
+local function panelPlacement(kind, class, placement)
+  local distance = placement and placement.distance
+                   or wallDistanceFor(kind, class)
+  local height = placement and placement.height or panelHeight(kind)
+  local verticalOffset = placement and placement.verticalOffset or 0
+  local ground = placement and placement.ground or nil
+  return distance, height, verticalOffset, ground
+end
+
 -- One deliberately small, faceted voxel tree. Four trunk sides, four lower
 -- crown sides plus its visible top rim, then four faces meeting at the crown
 -- tip: exactly 13 quads. The transparent skyline still supplies the many
@@ -1768,11 +2752,228 @@ local function pushForestGateFacade(verts, indices, spec)
   pushQuad(verts, indices, corners, uv, 1)
 end
 
+-- A generated ordinary-interior shell deliberately has its own compact
+-- geometry path. It does not mutate classFor(), borrow the reviewed `room`
+-- allowlist, read map blocks, or change collision/warps. The body mesh remains
+-- gameplay truth; these quads only close its visual perimeter.
+local function interiorShellGeometryFor(entry, profile, cooperativeStep)
+  if not (entry and entry.map and entry.map.def and profile) then return nil end
+  local C = HorizonWall.CELL
+  local H, distance = profile.shellHeight, profile.wallDistance
+  local wallFamily = profile.wallAsset and ("editor:" .. profile.wallAsset)
+                     or "interior_shell"
+  local ceilingFamily = profile.ceiling.asset
+    and ("editor:" .. profile.ceiling.asset) or "interior_shell"
+  local wallVerts, wallIndices = {}, {}
+  local ceilingVerts, ceilingIndices = {}, {}
+  local groupsByFamily, groups = {}, {}
+  local wallQuads, doorQuads, ceilingQuads = 0, 0, 0
+  local work = 0
+  local function checkpoint()
+    if not cooperativeStep then return end
+    work = work + 1
+    if work >= HorizonWall.BUILD_UNITS_PER_SLICE then
+      work = 0
+      cooperativeStep()
+    end
+  end
+  local function groupFor(family)
+    local group = groupsByFamily[family]
+    if not group then
+      group = { family = family, vertices = {}, indices = {} }
+      groupsByFamily[family] = group
+      groups[#groups + 1] = group
+    end
+    return group
+  end
+  local function wallQuad(family, corners, uv, shade, isDoor)
+    local group = groupFor(family)
+    pushQuad(group.vertices, group.indices, corners, uv, shade)
+    pushQuad(wallVerts, wallIndices, corners, uv, shade)
+    if isDoor then doorQuads = doorQuads + 1
+    else wallQuads = wallQuads + 1 end
+    checkpoint()
+  end
+
+  local doorsByEdge = { north = {}, south = {}, west = {}, east = {} }
+  for _, door in ipairs(profile.doors or {}) do
+    doorsByEdge[door.edge][#doorsByEdge[door.edge] + 1] = door
+  end
+  local function openDoorAt(edge, t)
+    for _, door in ipairs(doorsByEdge[edge]) do
+      if door.open and t >= door.from and t < door.upto then return door end
+    end
+    return nil
+  end
+  local function cutsFor(edge, length)
+    local cuts = { -distance, 0, length, length + distance }
+    local at = 0
+    while at > -distance + 1e-9 do
+      at = math.max(-distance, at - C)
+      cuts[#cuts + 1] = at
+    end
+    at = 0
+    while at < length + distance - 1e-9 do
+      at = math.min(length + distance, at + C)
+      cuts[#cuts + 1] = at
+    end
+    for _, door in ipairs(doorsByEdge[edge]) do
+      cuts[#cuts + 1] = door.from * length
+      cuts[#cuts + 1] = door.upto * length
+    end
+    table.sort(cuts)
+    local unique = {}
+    for _, cut in ipairs(cuts) do
+      if #unique == 0 or math.abs(cut - unique[#unique]) > 1e-9 then
+        unique[#unique + 1] = cut
+      end
+    end
+    return unique
+  end
+
+  local edgeInfo = {
+    north = { horizontal = true, wall = -distance, outward = -1, shade = 5 },
+    south = { horizontal = true, wall = entry.h + distance,
+              outward = 1, shade = 6 },
+    west = { horizontal = false, wall = -distance, outward = -1, shade = 1 },
+    east = { horizontal = false, wall = entry.w + distance,
+             outward = 1, shade = 2 },
+  }
+  for _, edge in ipairs({ "north", "south", "west", "east" }) do
+    if profile.wallEdges[edge] then
+      local info = edgeInfo[edge]
+      local length = info.horizontal and entry.w or entry.h
+      local extent = math.max(1e-9, length + distance * 2)
+      local cuts = cutsFor(edge, length)
+      for i = 1, #cuts - 1 do
+        local from, upto = cuts[i], cuts[i + 1]
+        if upto > from + 1e-9 then
+          local midpoint = (from + upto) / 2
+          local door = midpoint >= 0 and midpoint < length
+                       and openDoorAt(edge, midpoint / length) or nil
+          local y0 = door and door.height or 0
+          if y0 < H - 1e-9 then
+            local u0 = (from + distance) / extent
+            local u1 = (upto + distance) / extent
+            local vBottom = 1 - y0 / H
+            local corners, uv
+            if info.horizontal then
+              corners = {
+                { from, y0, info.wall }, { upto, y0, info.wall },
+                { upto, H, info.wall }, { from, H, info.wall },
+              }
+              uv = { { u0, vBottom }, { u1, vBottom },
+                     { u1, 0 }, { u0, 0 } }
+            else
+              corners = {
+                { info.wall, y0, upto }, { info.wall, y0, from },
+                { info.wall, H, from }, { info.wall, H, upto },
+              }
+              uv = { { u1, vBottom }, { u0, vBottom },
+                     { u0, 0 }, { u1, 0 } }
+            end
+            wallQuad(wallFamily, corners, uv,
+                     Voxel3D.FACE_SHADE[info.shade] or 0.8, false)
+          end
+        end
+      end
+
+      -- A closed door never opens or closes a gameplay warp. Its optional
+      -- image is a shallow visual card over the still-complete wall.
+      for _, door in ipairs(doorsByEdge[edge]) do
+        if not door.open and door.asset then
+          local start, finish = door.from * length, door.upto * length
+          local span = finish - start
+          local at = start
+          while at < finish - 1e-9 do
+            local nextAt = math.min(finish, at + C)
+            local u0, u1 = (at - start) / span, (nextAt - start) / span
+            local wall = info.wall - info.outward * 0.125
+            local corners, uv
+            if info.horizontal then
+              corners = {
+                { at, 0, wall }, { nextAt, 0, wall },
+                { nextAt, door.height, wall }, { at, door.height, wall },
+              }
+              uv = { { u0, 1 }, { u1, 1 }, { u1, 0 }, { u0, 0 } }
+            else
+              corners = {
+                { wall, 0, nextAt }, { wall, 0, at },
+                { wall, door.height, at }, { wall, door.height, nextAt },
+              }
+              uv = { { u1, 1 }, { u0, 1 }, { u0, 0 }, { u1, 0 } }
+            end
+            wallQuad("editor:" .. door.asset, corners, uv,
+                     Voxel3D.FACE_SHADE[info.shade] or 0.8, true)
+            at = nextAt
+          end
+        end
+      end
+    end
+  end
+
+  if profile.ceiling.enabled then
+    local x0, x1 = -distance, entry.w + distance
+    local z0, z1 = -distance, entry.h + distance
+    local fullW, fullH = math.max(1e-9, x1 - x0),
+                         math.max(1e-9, z1 - z0)
+    local z = z0
+    while z < z1 - 1e-9 do
+      local nextZ = math.min(z1, z + C)
+      local x = x0
+      while x < x1 - 1e-9 do
+        local nextX = math.min(x1, x + C)
+        local corners = {
+          { x, H, z }, { nextX, H, z },
+          { nextX, H, nextZ }, { x, H, nextZ },
+        }
+        local uv = {
+          { (x - x0) / fullW, (z - z0) / fullH },
+          { (nextX - x0) / fullW, (z - z0) / fullH },
+          { (nextX - x0) / fullW, (nextZ - z0) / fullH },
+          { (x - x0) / fullW, (nextZ - z0) / fullH },
+        }
+        pushQuad(ceilingVerts, ceilingIndices, corners, uv,
+                 Voxel3D.FACE_SHADE[4] or 0.55)
+        ceilingQuads = ceilingQuads + 1
+        checkpoint()
+        x = nextX
+      end
+      z = nextZ
+    end
+  end
+
+  if wallQuads + doorQuads + ceilingQuads == 0 then return nil end
+  return {
+    map = entry.map, ox = entry.ox, oy = entry.oy,
+    class = "interior", material = "interior_shell",
+    wallVertices = wallVerts, wallIndices = wallIndices,
+    wallGroups = groups, wallDraws = #groups,
+    groundVertices = {}, groundIndices = {},
+    ceilingVertices = ceilingVerts, ceilingIndices = ceilingIndices,
+    ceilingFamily = ceilingFamily,
+    foregroundVertices = {}, foregroundIndices = {},
+    route8MidgroundVertices = {}, route8MidgroundIndices = {},
+    route8SeamPathVertices = {}, route8SeamPathIndices = {},
+    forestGatePathVertices = {}, forestGatePathIndices = {},
+    forestGateFacadeVertices = {}, forestGateFacadeIndices = {},
+    seaVertices = {}, seaIndices = {}, coastalVertices = {}, coastalIndices = {},
+    storyVertices = {}, storyIndices = {},
+    interiorWallQuads = wallQuads, interiorDoorQuads = doorQuads,
+    interiorCeilingQuads = ceilingQuads, ceilingQuads = ceilingQuads,
+    shellHeight = H, wallDistance = distance,
+    quads = wallQuads + doorQuads + ceilingQuads,
+  }
+end
+
 local function geometryFor(entry, own, rects, cooperativeStep,
                            sharedGroundCells, sharedSeaCells,
                            sharedRuralTerminals, worldMaps)
   local class = HorizonWall.classFor(entry.map)
-  if class == "interior" then return nil end
+  if class == "interior" then
+    return interiorShellGeometryFor(
+      entry, HorizonWall.interiorProfileFor(entry.map), cooperativeStep)
+  end
   local material = HorizonWall.materialFor(entry.map)
   local profile = HorizonWall.profileFor(entry.map)
   local safariForest = HorizonWall.isSafariForest(entry.map)
@@ -1787,6 +2988,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
   local wallVerts, wallIndices = {}, {}
   local wallGroupsByFamily = {}
+  local decorationGroups = {}
+  local overlayQuads, propQuads = 0, 0
   local groundVerts, groundIndices, quads = {}, {}, 0
   local seaVerts, seaIndices, seaQuads = {}, {}, 0
   local coastalVerts, coastalIndices, coastalQuads = {}, {}, 0
@@ -1805,12 +3008,23 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local forestGatePathQuads = 0
   local forestGatePathQuadsByEdge = { north = 0, south = 0 }
   local forestGateEdges = { north = false, south = false }
+  local route2ForestQuads = 0
   local route8MidgroundQuads = 0
+  local distanceJoinQuads = 0
   local route8SeamFlankQuads = 0
   local route8SeamPathQuads = 0
   local route8SeamPathQuadsByEdge = { [2] = 0, [3] = 0 }
   local C, B, D = HorizonWall.CELL, HorizonWall.BELT, HorizonWall.CAP_DEPTH
   local mapId = tostring(entry.map.id or entry.map.def.id or "")
+  -- Keep the concave-apron closure scoped to the audited inland groups;
+  -- coastal/editor owners retain their separately authored ground contracts.
+  local repairClippedLandApron = mapId == "PEWTER_CITY"
+    or mapId == "ROUTE_2" or mapId == "ROUTE_3"
+    or mapId == "CERULEAN_CITY" or mapId == "ROUTE_4"
+    or mapId == "ROUTE_5" or mapId == "ROUTE_9"
+    or mapId == "ROUTE_24" or mapId == "ROUTE_25"
+    or mapId == "SAFFRON_CITY"
+    or mapId == "VIRIDIAN_CITY"
   local route8Owner = mapId == "ROUTE_8"
   local southSeaLandFoot = verifiedSouthSeaLandFoot(entry, rects)
   local coastalCadence = southSeaLandFoot or verifiedDockCadence(entry)
@@ -1972,16 +3186,39 @@ local function geometryFor(entry, own, rects, cooperativeStep,
 
   local function pushWall(kind, corners, edgeIndex, world0, world1, shade,
                           reverse, local0, local1, edgeLength,
-                          forcedPhase0, forcedPhase1)
-    local family = HorizonWall.wallFamily(kind, entry.map)
+                          forcedPhase0, forcedPhase1, placement)
+    local family = wallFamilyFor(kind, entry.map, placement)
     if not family then return end
     local texture0, texture1 = world0, world1
-    if kind == "route8" and local0 ~= nil and local1 ~= nil then
+    if kind == "route8" and local0 ~= nil and local1 ~= nil
+       and not (placement and placement.asset) then
       texture0, texture1 = HorizonWall.route8PanelPhases(
         edgeIndex, local0, local1, edgeLength)
     end
     local u0, u1, v0, v1
-    if forcedPhase0 ~= nil and forcedPhase1 ~= nil and kind == "forest" then
+    if family:sub(1, 7) == "editor:" then
+      local crop0 = placement.cropFrom or 0
+      local crop1 = placement.cropTo or 1
+      if local0 ~= nil and local1 ~= nil and edgeLength
+         and placement.from ~= nil and placement.upto ~= nil then
+        local start = placement.from * edgeLength
+        local span = math.max(1e-9,
+          (placement.upto - placement.from) * edgeLength)
+        local t0 = math.max(0, math.min(1, (local0 - start) / span))
+        local t1 = math.max(0, math.min(1, (local1 - start) / span))
+        if placement.mirrored then
+          u0 = crop1 - (crop1 - crop0) * t0
+          u1 = crop1 - (crop1 - crop0) * t1
+        else
+          u0 = crop0 + (crop1 - crop0) * t0
+          u1 = crop0 + (crop1 - crop0) * t1
+        end
+      else
+        u0, u1 = placement.mirrored and crop1 or crop0,
+                 placement.mirrored and crop0 or crop1
+      end
+      v0, v1 = 0, 1
+    elseif forcedPhase0 ~= nil and forcedPhase1 ~= nil and kind == "forest" then
       local slice = HorizonWall.REGIONAL_SLICES.forest
       local function phaseU(phase)
         local p = phase % slice.w
@@ -2054,18 +3291,29 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- clips those internal pieces while retaining the exact outer contour.
   local function insideDilatedUnion(worldX, worldZ, distance)
     for _, rect in ipairs(rects) do
-      if worldX >= rect.x0 - distance and worldX < rect.x1 + distance
-         and worldZ >= rect.z0 - distance and worldZ < rect.z1 + distance then
+      local rectDistance = distance
+      local rectClass = HorizonWall.classFor(rect.map)
+      -- Pallet/Route 1 terminate at their BODY; towns sit 96px farther out.
+      -- Testing both owners with the candidate's distance cuts a 96px hole
+      -- in the town face and leaves the forest face ending at the seam.
+      -- Honour the neighbour's own default only across that mixed class
+      -- boundary; same-class/editor interval behaviour remains unchanged.
+      if class == "pallet" and rectClass == "smalltown"
+          or class == "smalltown" and rectClass == "pallet" then
+        rectDistance = wallDistanceFor(HorizonWall.materialFor(rect.map), rectClass)
+      end
+      if worldX >= rect.x0 - rectDistance and worldX < rect.x1 + rectDistance
+         and worldZ >= rect.z0 - rectDistance and worldZ < rect.z1 + rectDistance then
         return true
       end
     end
     return false
   end
 
-  local function exteriorWallPanel(axis, along, wall, outward, distance)
+  local function exteriorWallPanel(axis, along, wall, outward, distance, span)
     if not outdoorGround then return true end
     local worldAlong = (axis == "z" and entry.ox or entry.oy)
-                       + along + C / 2
+                       + along + (span or C) / 2
     local worldWall = (axis == "z" and entry.oy or entry.ox) + wall
     local inNormal = worldWall - outward
     local outNormal = worldWall + outward
@@ -2210,13 +3458,20 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     local loX, hiX = math.min(x0, x1), math.max(x0, x1)
     local loZ, hiZ = math.min(z0, z1), math.max(z0, z1)
     local added = 0
-    for x = loX, hiX - C, C do
-      for z = loZ, hiZ - C, C do
+    local x = loX
+    while x < hiX - 1e-9 do
+      local nextX = math.min(x + C, hiX)
+      local z = loZ
+      while z < hiZ - 1e-9 do
+        local nextZ = math.min(z + C, hiZ)
         local key = worldCellKey(x, z)
+        if nextX - x < C - 1e-9 or nextZ - z < C - 1e-9 then
+          key = table.concat({ key, entry.ox + nextX, entry.oy + nextZ }, ":")
+        end
         if not sharedGroundCells[key] then
           sharedGroundCells[key] = true
-          local p = { { x, 0, z }, { x + C, 0, z },
-                      { x + C, 0, z + C }, { x, 0, z + C } }
+          local p = { { x, 0, z }, { nextX, 0, z },
+                      { nextX, 0, nextZ }, { x, 0, nextZ } }
           local uv = {}
           for i = 1, 4 do uv[i] = groundUV(p[i]) end
           pushQuad(groundVerts, groundIndices, p, uv,
@@ -2224,7 +3479,33 @@ local function geometryFor(entry, own, rects, cooperativeStep,
           added = added + 1
           checkpoint(1 / HorizonWall.GROUND_QUADS_PER_BUILD_UNIT)
         end
+        z = nextZ
       end
+      x = nextX
+    end
+    return added
+  end
+
+  -- A concave union join can hide BOTH owners' offset wall panels while the
+  -- low apron between their real bodies is still visible. Dropping the apron
+  -- together with that wall leaves a 96px corner hole (Pewter/Route 2, for
+  -- example). Retain only these ground cells, never a cap/prop/wall, and clip
+  -- against real neighbours before using the shared de-duplication lattice.
+  local function clippedApron(x0, x1, z0, z1)
+    local added = 0
+    local x = math.min(x0, x1)
+    while x < math.max(x0, x1) - 1e-9 do
+      local nx = math.min(x + C, math.max(x0, x1))
+      local z = math.min(z0, z1)
+      while z < math.max(z0, z1) - 1e-9 do
+        local nz = math.min(z + C, math.max(z0, z1))
+        if not covered(rects, own, entry.ox + (x + nx) / 2,
+                                  entry.oy + (z + nz) / 2) then
+          added = added + outdoorGroundRect(x, nx, z, nz)
+        end
+        z = nz
+      end
+      x = nx
     end
     return added
   end
@@ -2247,8 +3528,9 @@ local function geometryFor(entry, own, rects, cooperativeStep,
 
   local safariCornerOrder = { nw = 0, ne = 1, se = 2, sw = 3 }
   local function sceneryRows(axis, along, wall, outward, ordinal, edgeIndex,
-                             fillerRows, beltDepth, cornerInfo)
+                             fillerRows, beltDepth, cornerInfo, panelSpan)
     if fillerRows <= 0 then return end
+    panelSpan = panelSpan or C
     local gateName = edgeIndex == 0 and "north"
                      or edgeIndex == 1 and "south" or nil
     local gate = gateName and HorizonWall.VIRIDIAN_FOREST_GATES[gateName]
@@ -2286,11 +3568,15 @@ local function geometryFor(entry, own, rects, cooperativeStep,
         -- paired cards are their closed canopy, not freestanding props.
         -- Pallet uses the same overlap to form one continuous tree line; its
         -- former 26px cards deliberately exposed six-pixel floor/sky slits.
-        lo, hi = along - 4 + stagger, along + C + 4 + stagger
+        lo, hi = along - 4 + stagger,
+                 along + panelSpan + 4 + stagger
       else
         local half = HorizonWall.NEAR_FILL_CARD_W / 2
-        local centre = along + C / 2 + stagger
+        local centre = along + panelSpan / 2 + stagger
         lo, hi = centre - half, centre + half
+      end
+      if panelSpan < C - 1e-9 and not cornerInfo then
+        lo, hi = math.max(lo, along), math.min(hi, along + panelSpan)
       end
 
       -- At every Safari turn, row 0/1/2 owns the outer/middle/inner arm pair.
@@ -2414,9 +3700,14 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
 
   local seaTile, seaRect
-  local function edgePanel(edge, along)
-    local kind, rows = HorizonWall.panelProfile(entry.map, edge, along)
-    if not coastalCadence then return kind, rows end
+  local function edgePanel(edge, along, span)
+    local kind, rows, placement = HorizonWall.panelProfile(
+      entry.map, edge, along, span)
+    -- An editor interval owns its exact cells. In particular, an explicit
+    -- `none` opening must not be repainted by the automatic coastal cadence.
+    if placement and placement.editor or not coastalCadence then
+      return kind, rows, placement
+    end
     local horizontal = edge == "north" or edge == "south"
     local length = horizontal and entry.w or entry.h
     local stage = HorizonWall.coastalCadenceStage(
@@ -2425,7 +3716,41 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       return HorizonWall.COASTAL_CADENCE_LOW_KIND, 0
     end
     if stage == "open_water" then return "open_water", 0 end
-    return kind, rows
+    return kind, rows, placement
+  end
+
+  local function edgeSpans(edge, cellStart)
+    local horizontal = edge == "north" or edge == "south"
+    local length = horizontal and entry.w or entry.h
+    local cuts = { cellStart, cellStart + C }
+    local rules = HorizonWall.EDGE_PROFILES[mapId]
+    local rule = rules and rules[edge]
+    if type(rule) == "table" then
+      for _, part in ipairs(rule) do
+        if part.editor then
+          for _, fraction in ipairs({ part.from, part.upto }) do
+            local boundary = fraction and fraction * length or nil
+            if boundary and boundary > cellStart + 1e-9
+               and boundary < cellStart + C - 1e-9 then
+              cuts[#cuts + 1] = boundary
+            end
+          end
+        end
+      end
+    end
+    table.sort(cuts)
+    local spans = {}
+    for i = 1, #cuts - 1 do
+      local from, upto = cuts[i], cuts[i + 1]
+      if upto > from + 1e-9 then
+        local kind, rows, placement = edgePanel(edge, from, upto - from)
+        spans[#spans + 1] = {
+          from = from, span = upto - from,
+          kind = kind, rows = rows, placement = placement,
+        }
+      end
+    end
+    return spans
   end
 
   local function coastalWaterFoot(edgeName, along)
@@ -2438,48 +3763,84 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
 
   local function panelZ(x, z, outward, edgeIndex, edgeName, kind, fillerRows,
-                        forceBoundary)
-    local H = panelHeight(kind)
-    local wallDistance = wallDistanceFor(kind, class)
+                        forceBoundary, placement, span)
+    span = span or C
+    local wallDistance, H, y0, ground = panelPlacement(kind, class, placement)
     local wallZ = z + outward * (wallDistance - B)
-    if not forceBoundary
-       and not exteriorWallPanel("z", x, wallZ, outward, wallDistance) then
+    -- A painted apron may deliberately exist without a panorama wall.  The
+    -- editor represents that as kind="none" plus a non-none ground material;
+    -- keep the normal wall-distance contract so the brush preview and runtime
+    -- cover exactly the same strip in front of the map edge.
+    if kind == HorizonWall.NONE_KIND then
+      if ground == nil or ground == "none" then return end
+      local inner = wallZ - outward * wallDistance
+      local far = wallZ + outward * D
+      local groundAdded = 0
+      if outdoorGround then
+        groundAdded = outdoorGroundRect(x, x + span, wallZ, inner)
+                    + outdoorGroundRect(x, x + span, wallZ, far)
+      else
+        local apron = { { x, 0, wallZ }, { x + span, 0, wallZ },
+                        { x + span, 0, inner }, { x, 0, inner } }
+        local cap = { { x, capY, wallZ }, { x + span, capY, wallZ },
+                      { x + span, capY, far }, { x, capY, far } }
+        pushQuad(groundVerts, groundIndices, apron,
+          { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
+            groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        pushQuad(groundVerts, groundIndices, cap,
+          { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
+            groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        groundAdded = 2
+      end
+      quads = quads + groundAdded
+      checkpoint(1)
       return
     end
-    local world0, world1 = entry.ox + x, entry.ox + x + C
+    if not forceBoundary
+       and not exteriorWallPanel("z", x, wallZ, outward, wallDistance,
+                                 span) then
+      if repairClippedLandApron and ground ~= "none" and not placement
+          and not coastalWaterFoot(edgeName, x) then
+        quads = quads + clippedApron(x, x + span, wallZ,
+                                     wallZ - outward * wallDistance)
+      end
+      return
+    end
+    local world0, world1 = entry.ox + x, entry.ox + x + span
     pushWall(kind,
-      { { x, 0, wallZ }, { x + C, 0, wallZ },
-        { x + C, H, wallZ }, { x, H, wallZ } },
+      { { x, y0, wallZ }, { x + span, y0, wallZ },
+        { x + span, y0 + H, wallZ }, { x, y0 + H, wallZ } },
       edgeIndex, world0, world1,
       kind == "mountain" and HorizonWall.MOUNTAIN_SHADE
       or Voxel3D.FACE_SHADE[outward < 0 and 5 or 6] or 0.8, false,
-      x, x + C, entry.w)
+      x, x + span, entry.w, nil, nil, placement)
     -- Low apron reaches back to the real map edge without adding carved
     -- voxels. Outdoor surfaces use the shared 32px lattice; closed rooms keep
     -- their historical single apron/cap quads unchanged.
     local inner = wallZ - outward * wallDistance
-    local apron = { { x, 0, wallZ }, { x + C, 0, wallZ },
-                    { x + C, 0, inner },
+    local apron = { { x, 0, wallZ }, { x + span, 0, wallZ },
+                    { x + span, 0, inner },
                     { x, 0, inner } }
     -- The high-view canopy/plateau extends AWAY from the playable map. The
     -- previous sign extended it inward, where a ground-level camera saw its
     -- underside as disconnected black strips floating in the sky.
     local far = wallZ + outward * D
-    local cap = { { x, capY, wallZ }, { x + C, capY, wallZ },
-                  { x + C, capY, far }, { x, capY, far } }
-    local groundAdded
-    if outdoorGround then
+    local cap = { { x, capY, wallZ }, { x + span, capY, wallZ },
+                  { x + span, capY, far }, { x, capY, far } }
+    local groundAdded = 0
+    local wantsGround = ground ~= "none"
+    if outdoorGround and wantsGround then
       if coastalWaterFoot(edgeName, x) then
         local waterEnd = inner + outward * SOUTH_SEA_LAND_FOOT_DEPTH
-        groundAdded = outdoorGroundRect(x, x + C, waterEnd, far)
+        groundAdded = outdoorGroundRect(x, x + span, waterEnd, far)
         coastalWaterFootQuads = coastalWaterFootQuads
-          + seaRect(x, x + C, math.min(inner, waterEnd),
+          + seaRect(x, x + span, math.min(inner, waterEnd),
                     math.max(inner, waterEnd))
       else
-        groundAdded = outdoorGroundRect(x, x + C, wallZ, inner)
-                      + outdoorGroundRect(x, x + C, wallZ, far)
+        groundAdded = outdoorGroundRect(x, x + span, wallZ, inner)
+                      + outdoorGroundRect(x, x + span, wallZ, far)
       end
-    else
+    elseif not outdoorGround and wantsGround then
       pushQuad(groundVerts, groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
@@ -2489,54 +3850,88 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       groundAdded = 2
     end
     quads = quads + 1 + groundAdded
-    rememberTree(kind, "z", x + C / 2, wallZ, outward, x / C,
+    rememberTree(kind, "z", x + span / 2, wallZ, outward, x / C,
                  entry.w / C, edgeIndex, wallDistance)
     sceneryRows("z", x, wallZ, outward, x / C, edgeIndex, fillerRows,
-                wallDistance)
-    ruralWallTerminals(kind, "z", x, wallZ, outward, wallDistance)
-    route8MidgroundRows("z", x, edgeIndex == 0 and 0 or entry.h,
-                        outward, edgeIndex, entry.w)
+                wallDistance, nil, span)
+    if span >= C - 1e-9 then
+      ruralWallTerminals(kind, "z", x, wallZ, outward, wallDistance)
+      route8MidgroundRows("z", x, edgeIndex == 0 and 0 or entry.h,
+                          outward, edgeIndex, entry.w)
+    end
     checkpoint(1)
   end
 
   local function panelX(x, z, outward, edgeIndex, edgeName, kind, fillerRows,
-                        forceBoundary)
-    local H = panelHeight(kind)
-    local wallDistance = wallDistanceFor(kind, class)
+                        forceBoundary, placement, span)
+    span = span or C
+    local wallDistance, H, y0, ground = panelPlacement(kind, class, placement)
     local wallX = x + outward * (wallDistance - B)
-    if not forceBoundary
-       and not exteriorWallPanel("x", z, wallX, outward, wallDistance) then
+    if kind == HorizonWall.NONE_KIND then
+      if ground == nil or ground == "none" then return end
+      local inner = wallX - outward * wallDistance
+      local far = wallX + outward * D
+      local groundAdded = 0
+      if outdoorGround then
+        groundAdded = outdoorGroundRect(wallX, inner, z, z + span)
+                    + outdoorGroundRect(wallX, far, z, z + span)
+      else
+        local apron = { { wallX, 0, z }, { wallX, 0, z + span },
+                        { inner, 0, z + span }, { inner, 0, z } }
+        local cap = { { wallX, capY, z }, { wallX, capY, z + span },
+                      { far, capY, z + span }, { far, capY, z } }
+        pushQuad(groundVerts, groundIndices, apron,
+          { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
+            groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        pushQuad(groundVerts, groundIndices, cap,
+          { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
+            groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        groundAdded = 2
+      end
+      quads = quads + groundAdded
+      checkpoint(1)
       return
     end
-    local world0, world1 = entry.oy + z, entry.oy + z + C
+    if not forceBoundary
+       and not exteriorWallPanel("x", z, wallX, outward, wallDistance,
+                                 span) then
+      if repairClippedLandApron and ground ~= "none" and not placement
+          and not coastalWaterFoot(edgeName, z) then
+        quads = quads + clippedApron(wallX,
+          wallX - outward * wallDistance, z, z + span)
+      end
+      return
+    end
+    local world0, world1 = entry.oy + z, entry.oy + z + span
     -- X-facing geometry is listed south->north, hence the canonical endpoint
     -- UVs are reversed for every family, not only for mountains.
     pushWall(kind,
-      { { wallX, 0, z + C }, { wallX, 0, z },
-        { wallX, H, z }, { wallX, H, z + C } },
+      { { wallX, y0, z + span }, { wallX, y0, z },
+        { wallX, y0 + H, z }, { wallX, y0 + H, z + span } },
       edgeIndex, world0, world1,
       kind == "mountain" and HorizonWall.MOUNTAIN_SHADE
       or Voxel3D.FACE_SHADE[outward < 0 and 1 or 2] or 0.8, true,
-      z, z + C, entry.h)
+      z, z + span, entry.h, nil, nil, placement)
     local inner = wallX - outward * wallDistance
-    local apron = { { wallX, 0, z }, { wallX, 0, z + C },
-                    { inner, 0, z + C }, { inner, 0, z } }
+    local apron = { { wallX, 0, z }, { wallX, 0, z + span },
+                    { inner, 0, z + span }, { inner, 0, z } }
     local far = wallX + outward * D
-    local cap = { { wallX, capY, z }, { wallX, capY, z + C },
-                  { far, capY, z + C }, { far, capY, z } }
-    local groundAdded
-    if outdoorGround then
+    local cap = { { wallX, capY, z }, { wallX, capY, z + span },
+                  { far, capY, z + span }, { far, capY, z } }
+    local groundAdded = 0
+    local wantsGround = ground ~= "none"
+    if outdoorGround and wantsGround then
       if coastalWaterFoot(edgeName, z) then
         local waterEnd = inner + outward * SOUTH_SEA_LAND_FOOT_DEPTH
-        groundAdded = outdoorGroundRect(waterEnd, far, z, z + C)
+        groundAdded = outdoorGroundRect(waterEnd, far, z, z + span)
         coastalWaterFootQuads = coastalWaterFootQuads
           + seaRect(math.min(inner, waterEnd), math.max(inner, waterEnd),
-                    z, z + C)
+                    z, z + span)
       else
-        groundAdded = outdoorGroundRect(wallX, inner, z, z + C)
-                      + outdoorGroundRect(wallX, far, z, z + C)
+        groundAdded = outdoorGroundRect(wallX, inner, z, z + span)
+                      + outdoorGroundRect(wallX, far, z, z + span)
       end
-    else
+    elseif not outdoorGround and wantsGround then
       pushQuad(groundVerts, groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
@@ -2546,23 +3941,30 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       groundAdded = 2
     end
     quads = quads + 1 + groundAdded
-    rememberTree(kind, "x", z + C / 2, wallX, outward, z / C,
+    rememberTree(kind, "x", z + span / 2, wallX, outward, z / C,
                  entry.h / C, edgeIndex, wallDistance)
     sceneryRows("x", z, wallX, outward, z / C, edgeIndex, fillerRows,
-                wallDistance)
-    ruralWallTerminals(kind, "x", z, wallX, outward, wallDistance)
-    route8MidgroundRows("x", z, edgeIndex == 2 and 0 or entry.w,
-                        outward, edgeIndex, entry.h)
+                wallDistance, nil, span)
+    if span >= C - 1e-9 then
+      ruralWallTerminals(kind, "x", z, wallX, outward, wallDistance)
+      route8MidgroundRows("x", z, edgeIndex == 2 and 0 or entry.w,
+                          outward, edgeIndex, entry.h)
+    end
     checkpoint(1)
   end
 
-  seaTile = function(x, z)
+  seaTile = function(x, z, spanX, spanZ)
+    spanX, spanZ = spanX or C, spanZ or C
     local key = worldCellKey(x, z)
+    if spanX < C - 1e-9 or spanZ < C - 1e-9 then
+      key = table.concat({ key, entry.ox + x + spanX,
+                          entry.oy + z + spanZ }, ":")
+    end
     if sharedSeaCells[key] then return 0 end
     sharedSeaCells[key] = true
     local y = HorizonWall.SEA_LEVEL
-    local p = { { x, y, z }, { x + C, y, z },
-                { x + C, y, z + C }, { x, y, z + C } }
+    local p = { { x, y, z }, { x + spanX, y, z },
+                { x + spanX, y, z + spanZ }, { x, y, z + spanZ } }
     local uv = {}
     for i = 1, 4 do uv[i] = { p[i][1] / C, p[i][3] / C } end
     pushQuad(seaVerts, seaIndices, p, uv, Voxel3D.FACE_SHADE[3] or 1)
@@ -2573,15 +3975,29 @@ local function geometryFor(entry, own, rects, cooperativeStep,
 
   seaRect = function(x0, x1, z0, z1)
     local added = 0
-    for x = x0, x1 - C, C do
-      for z = z0, z1 - C, C do added = added + seaTile(x, z) end
+    local x = x0
+    while x < x1 - 1e-9 do
+      local nextX = math.min(x + C, x1)
+      local z = z0
+      while z < z1 - 1e-9 do
+        local nextZ = math.min(z + C, z1)
+        added = added + seaTile(x, z, nextX - x, nextZ - z)
+        z = nextZ
+      end
+      x = nextX
     end
     return added
   end
 
-  local open, seaOpen = {}, {}
+  local open, seaOpen, endpoint = {}, {}, {}
   local waterPanels = { north = {}, south = {}, west = {}, east = {} }
-  local E = B + HorizonWall.SEA_DEPTH
+  -- The east-coast union is visible obliquely from Route 14. The former
+  -- 384px strips ended at different depths in one view, exposing rectangular
+  -- sea edges before the curved terrain reached the horizon. Extend only
+  -- this audited coast; existing harbour/landmark budgets remain unchanged.
+  local coastalDepth = (mapId == "ROUTE_12" or mapId == "ROUTE_13"
+    or mapId == "ROUTE_14") and 768 or HorizonWall.SEA_DEPTH
+  local E = B + coastalDepth
   -- Far outdoor walls follow the actual union boundary. The old one-block
   -- per-map overhang was harmless while wall distance equalled one block, but
   -- at 96px it became an isolated perpendicular fin whenever the next map was
@@ -2589,6 +4005,11 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local alongStart = outdoorGround and 0 or -B
   local alongEndX = outdoorGround and entry.w - C or entry.w + B - C
   local alongEndZ = outdoorGround and entry.h - C or entry.h + B - C
+  local function edgePartState(part)
+    local water = part.kind == "open_water"
+    local wall = not water and part.kind ~= HorizonWall.NONE_KIND
+    return water, wall
+  end
   for x = alongStart, alongEndX, C do
     local gx = entry.ox + x + C / 2
     -- Outside detects a north/south connection; inside prevents one owner
@@ -2597,51 +4018,84 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                   and not covered(rects, own, gx, entry.oy + 1)
     local south = not covered(rects, own, gx, entry.oy + entry.h + 1)
                   and not covered(rects, own, gx, entry.oy + entry.h - 1)
+    local northSpans, southSpans = edgeSpans("north", x),
+                                    edgeSpans("south", x)
     if north then
-      local kind, rows = edgePanel("north", x)
-      if kind == "open_water" then
-        if x >= 0 and x < entry.w then seaRect(x, x + C, -E, 0) end
-        if x >= 0 and x < entry.w then waterPanels.north[x] = true end
-      else
-        panelZ(x, -B, -1, 0, "north", kind, rows)
+      for _, part in ipairs(northSpans) do
+        if part.kind == "open_water" then
+          local from, upto = math.max(0, part.from),
+                             math.min(entry.w, part.from + part.span)
+          if upto > from then
+            seaRect(from, upto, -E, 0)
+            waterPanels.north[from] = true
+          end
+        elseif part.kind ~= HorizonWall.NONE_KIND
+               or (part.placement and part.placement.ground
+                   and part.placement.ground ~= "none") then
+          panelZ(part.from, -B, -1, 0, "north", part.kind, part.rows,
+                 nil, part.placement, part.span)
+        end
       end
     end
     if south then
-      local kind, rows = edgePanel("south", x)
-      if kind == "open_water" then
-        if x >= 0 and x < entry.w then
-          seaRect(x, x + C, entry.h, entry.h + E)
-          waterPanels.south[x] = true
+      for _, part in ipairs(southSpans) do
+        if part.kind == "open_water" then
+          local from, upto = math.max(0, part.from),
+                             math.min(entry.w, part.from + part.span)
+          if upto > from then
+            seaRect(from, upto, entry.h, entry.h + E)
+            waterPanels.south[from] = true
+          end
+        elseif part.kind ~= HorizonWall.NONE_KIND
+               or (part.placement and part.placement.ground
+                   and part.placement.ground ~= "none") then
+          panelZ(part.from, entry.h + B, 1, 1, "south", part.kind,
+                 part.rows, nil, part.placement, part.span)
         end
-      else
-        panelZ(x, entry.h + B, 1, 1, "south", kind, rows)
       end
     end
-    local northWater = edgePanel("north", x) == "open_water"
-    local southWater = edgePanel("south", x) == "open_water"
     if outdoorGround then
       -- Independent tests matter for a one-cell map, where both ends are the
       -- same panel. These flags describe the union's first/last real cells,
       -- never a synthetic per-owner overhang.
       if x == 0 then
-        open.nwN = north and not northWater
-        open.swS = south and not southWater
+        local northPart, southPart = northSpans[1], southSpans[1]
+        local northWater, northWall = edgePartState(northPart)
+        local southWater, southWall = edgePartState(southPart)
+        open.nwN = north and northWall
+        open.swS = south and southWall
+        endpoint.nwN = { kind = northPart.kind, rows = northPart.rows,
+                         placement = northPart.placement }
+        endpoint.swS = { kind = southPart.kind, rows = southPart.rows,
+                         placement = southPart.placement }
         seaOpen.nwN = north and northWater
         seaOpen.swS = south and southWater
       end
       if x == entry.w - C then
-        open.neN = north and not northWater
-        open.seS = south and not southWater
+        local northPart, southPart = northSpans[#northSpans],
+                                     southSpans[#southSpans]
+        local northWater, northWall = edgePartState(northPart)
+        local southWater, southWall = edgePartState(southPart)
+        open.neN = north and northWall
+        open.seS = south and southWall
+        endpoint.neN = { kind = northPart.kind, rows = northPart.rows,
+                         placement = northPart.placement }
+        endpoint.seS = { kind = southPart.kind, rows = southPart.rows,
+                         placement = southPart.placement }
         seaOpen.neN = north and northWater
         seaOpen.seS = south and southWater
       end
     elseif x == -B then
       -- Cave/tower corner ownership stays byte-for-byte on the old apron.
-      open.nwN = north and not northWater
-      open.swS = south and not southWater
+      local northWater, northWall = edgePartState(northSpans[1])
+      local southWater, southWall = edgePartState(southSpans[1])
+      open.nwN = north and northWall
+      open.swS = south and southWall
     elseif x == entry.w then
-      open.neN = north and not northWater
-      open.seS = south and not southWater
+      local northWater, northWall = edgePartState(northSpans[#northSpans])
+      local southWater, southWall = edgePartState(southSpans[#southSpans])
+      open.neN = north and northWall
+      open.seS = south and southWall
     end
   end
   for z = alongStart, alongEndZ, C do
@@ -2650,48 +4104,166 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                  and not covered(rects, own, entry.ox + 1, gz)
     local east = not covered(rects, own, entry.ox + entry.w + 1, gz)
                  and not covered(rects, own, entry.ox + entry.w - 1, gz)
+    local westSpans, eastSpans = edgeSpans("west", z),
+                                  edgeSpans("east", z)
     if west then
-      local kind, rows = edgePanel("west", z)
-      if kind == "open_water" then
-        if z >= 0 and z < entry.h then seaRect(-E, 0, z, z + C) end
-        if z >= 0 and z < entry.h then waterPanels.west[z] = true end
-      else
-        panelX(-B, z, -1, 2, "west", kind, rows)
+      for _, part in ipairs(westSpans) do
+        if part.kind == "open_water" then
+          local from, upto = math.max(0, part.from),
+                             math.min(entry.h, part.from + part.span)
+          if upto > from then
+            seaRect(-E, 0, from, upto)
+            waterPanels.west[from] = true
+          end
+        elseif part.kind ~= HorizonWall.NONE_KIND
+               or (part.placement and part.placement.ground
+                   and part.placement.ground ~= "none") then
+          panelX(-B, part.from, -1, 2, "west", part.kind, part.rows,
+                 nil, part.placement, part.span)
+        end
       end
     end
     if east then
-      local kind, rows = edgePanel("east", z)
-      if kind == "open_water" then
-        if z >= 0 and z < entry.h then
-          seaRect(entry.w, entry.w + E, z, z + C)
-          waterPanels.east[z] = true
+      for _, part in ipairs(eastSpans) do
+        if part.kind == "open_water" then
+          local from, upto = math.max(0, part.from),
+                             math.min(entry.h, part.from + part.span)
+          if upto > from then
+            seaRect(entry.w, entry.w + E, from, upto)
+            waterPanels.east[from] = true
+          end
+        elseif part.kind ~= HorizonWall.NONE_KIND
+               or (part.placement and part.placement.ground
+                   and part.placement.ground ~= "none") then
+          panelX(entry.w + B, part.from, 1, 3, "east", part.kind,
+                 part.rows, nil, part.placement, part.span)
         end
-      else
-        panelX(entry.w + B, z, 1, 3, "east", kind, rows)
       end
     end
-    local westWater = edgePanel("west", z) == "open_water"
-    local eastWater = edgePanel("east", z) == "open_water"
     if outdoorGround then
       if z == 0 then
-        open.nwW = west and not westWater
-        open.neE = east and not eastWater
+        local westPart, eastPart = westSpans[1], eastSpans[1]
+        local westWater, westWall = edgePartState(westPart)
+        local eastWater, eastWall = edgePartState(eastPart)
+        open.nwW = west and westWall
+        open.neE = east and eastWall
+        endpoint.nwW = { kind = westPart.kind, rows = westPart.rows,
+                         placement = westPart.placement }
+        endpoint.neE = { kind = eastPart.kind, rows = eastPart.rows,
+                         placement = eastPart.placement }
         seaOpen.nwW = west and westWater
         seaOpen.neE = east and eastWater
       end
       if z == entry.h - C then
-        open.swW = west and not westWater
-        open.seE = east and not eastWater
+        local westPart, eastPart = westSpans[#westSpans],
+                                   eastSpans[#eastSpans]
+        local westWater, westWall = edgePartState(westPart)
+        local eastWater, eastWall = edgePartState(eastPart)
+        open.swW = west and westWall
+        open.seE = east and eastWall
+        endpoint.swW = { kind = westPart.kind, rows = westPart.rows,
+                         placement = westPart.placement }
+        endpoint.seE = { kind = eastPart.kind, rows = eastPart.rows,
+                         placement = eastPart.placement }
         seaOpen.swW = west and westWater
         seaOpen.seE = east and eastWater
       end
     elseif z == -B then
-      open.nwW = west and not westWater
-      open.neE = east and not eastWater
+      local westWater, westWall = edgePartState(westSpans[1])
+      local eastWater, eastWall = edgePartState(eastSpans[1])
+      open.nwW = west and westWall
+      open.neE = east and eastWall
     elseif z == entry.h then
-      open.swW = west and not westWater
-      open.seE = east and not eastWater
+      local westWater, westWall = edgePartState(westSpans[#westSpans])
+      local eastWater, eastWall = edgePartState(eastSpans[#eastSpans])
+      open.swW = west and westWall
+      open.seE = east and eastWall
     end
+  end
+
+  -- Adjacent editor panels may intentionally use different distances. Their
+  -- two parallel faces otherwise end as detached paper edges with a visible
+  -- slit between them. Add one bounded side face at the authored boundary;
+  -- its bottom and top follow both panels, so height/Y changes cannot reopen
+  -- the join. Identical-distance legacy rules take this zero-work path.
+  local function distanceStepJoins(edge)
+    local horizontal = edge == "north" or edge == "south"
+    local length = horizontal and entry.w or entry.h
+    local outward = (edge == "north" or edge == "west") and -1 or 1
+    local edgeIndex = edge == "north" and 0 or edge == "south" and 1
+                      or edge == "west" and 2 or 3
+    local function infoAt(sample)
+      local kind, _, placement = edgePanel(edge, sample, 0)
+      if kind == HorizonWall.NONE_KIND or kind == "open_water" then return nil end
+      local distance, height, y0 = panelPlacement(kind, class, placement)
+      local wall = horizontal
+        and (edge == "north" and -distance or entry.h + distance)
+        or (edge == "west" and -distance or entry.w + distance)
+      local exposed = horizontal
+        and exteriorWallPanel("z", sample - C / 2, wall, outward,
+                              distance)
+        or exteriorWallPanel("x", sample - C / 2, wall, outward,
+                             distance)
+      if not exposed then return nil end
+      return { kind = kind, distance = distance, height = height,
+               y0 = y0, wall = wall, placement = placement }
+    end
+    local boundaries = {}
+    for along = C, length - C, C do boundaries[#boundaries + 1] = along end
+    local rules = HorizonWall.EDGE_PROFILES[mapId]
+    local rule = rules and rules[edge]
+    for _, part in ipairs(type(rule) == "table" and rule or {}) do
+      if part.editor then
+        for _, fraction in ipairs({ part.from, part.upto }) do
+          local boundary = fraction and fraction * length or nil
+          if boundary and boundary > 1e-9 and boundary < length - 1e-9 then
+            boundaries[#boundaries + 1] = boundary
+          end
+        end
+      end
+    end
+    table.sort(boundaries)
+    local previous
+    for _, along in ipairs(boundaries) do
+      if previous == nil or math.abs(along - previous) > 1e-9 then
+        local epsilon = math.min(1e-4, length * 1e-7)
+        local first, second = infoAt(along - epsilon),
+                              infoAt(along + epsilon)
+      if first and second
+         and math.abs(first.distance - second.distance) > 1e-9 then
+        local corners, world0, world1, reverse
+        if horizontal then
+          corners = {
+            { along, first.y0, first.wall },
+            { along, second.y0, second.wall },
+            { along, second.y0 + second.height, second.wall },
+            { along, first.y0 + first.height, first.wall },
+          }
+          world0, world1, reverse = entry.oy + first.wall,
+                                    entry.oy + second.wall, true
+        else
+          corners = {
+            { first.wall, first.y0, along },
+            { second.wall, second.y0, along },
+            { second.wall, second.y0 + second.height, along },
+            { first.wall, first.y0 + first.height, along },
+          }
+          world0, world1, reverse = entry.ox + first.wall,
+                                    entry.ox + second.wall, false
+        end
+        pushWall(first.kind, corners, edgeIndex, world0, world1,
+          Voxel3D.FACE_SHADE[horizontal and 1 or 5] or 0.8, reverse,
+          nil, nil, nil, nil, nil, first.placement)
+        distanceJoinQuads = distanceJoinQuads + 1
+        quads = quads + 1
+        checkpoint(1)
+      end
+      end
+      previous = along
+    end
+  end
+  for _, edge in ipairs({ "north", "south", "west", "east" }) do
+    distanceStepJoins(edge)
   end
 
   -- Main outdoor panels end on the true map/union cells. Three native-width
@@ -2703,33 +4275,37 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                 or wallDistanceFor(nil, class)
   local function cornerPanelZ(x, z, outward, edgeIndex, edgeName,
                               forcedKind, forcedRows, forceBoundary,
-                              cornerInfo)
-    local kind, rows = forcedKind, forcedRows
-    if not kind then kind, rows = edgePanel(edgeName, x) end
-    local H = panelHeight(kind)
+                              cornerInfo, forcedPlacement, span)
+    local kind, rows, placement = forcedKind, forcedRows, forcedPlacement
+    if not kind then kind, rows, placement = edgePanel(edgeName, x) end
+    if kind == HorizonWall.NONE_KIND then return end
+    local distance, H, y0 = panelPlacement(kind, class, placement)
+    span = span or C
     if not forceBoundary
        and not exteriorWallPanel("z", x, z, outward,
-                                 wallDistanceFor(kind, class)) then
+                                 distance) then
       return
     end
-    local world0, world1 = entry.ox + x, entry.ox + x + C
+    local world0, world1 = entry.ox + x, entry.ox + x + span
     local phase0, phase1
     if safariForest and kind == "forest" and cornerInfo then
       phase0, phase1 = HorizonWall.safariCornerPanelPhases(
         cornerInfo.name, cornerInfo.panelIndex, cornerInfo.outerAtStart)
     end
     pushWall(kind,
-      { { x, 0, z }, { x + C, 0, z }, { x + C, H, z }, { x, H, z } },
+      { { x, y0, z }, { x + span, y0, z },
+        { x + span, y0 + H, z }, { x, y0 + H, z } },
       edgeIndex, world0, world1,
       kind == "mountain" and HorizonWall.MOUNTAIN_SHADE
       or Voxel3D.FACE_SHADE[outward < 0 and 5 or 6] or 0.8, false,
-      x, x + C, entry.w, phase0, phase1)
+      x, x + span, entry.w, phase0, phase1, placement)
     local far = z + outward * D
-    local groundAdded = outdoorGroundRect(x, x + C, z, far)
-    sceneryRows("z", x, z, outward, x / C, edgeIndex, rows, wallB,
+    local groundAdded = placement and placement.ground == "none" and 0
+      or outdoorGroundRect(x, x + span, z, far)
+    sceneryRows("z", x, z, outward, x / C, edgeIndex, rows, distance,
                 cornerInfo)
     ruralWallTerminals(kind, "z", x, z, outward,
-                       wallDistanceFor(kind, class))
+                       distance)
     route8MidgroundRows("z", x, edgeIndex == 0 and 0 or entry.h,
                         outward, edgeIndex, entry.w)
     quads = quads + 1 + groundAdded
@@ -2737,40 +4313,62 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
   local function cornerPanelX(x, z, outward, edgeIndex, edgeName,
                               forcedKind, forcedRows, forceBoundary,
-                              cornerInfo)
-    local kind, rows = forcedKind, forcedRows
-    if not kind then kind, rows = edgePanel(edgeName, z) end
-    local H = panelHeight(kind)
+                              cornerInfo, forcedPlacement, span)
+    local kind, rows, placement = forcedKind, forcedRows, forcedPlacement
+    if not kind then kind, rows, placement = edgePanel(edgeName, z) end
+    if kind == HorizonWall.NONE_KIND then return end
+    local distance, H, y0 = panelPlacement(kind, class, placement)
+    span = span or C
     if not forceBoundary
        and not exteriorWallPanel("x", z, x, outward,
-                                 wallDistanceFor(kind, class)) then
+                                 distance) then
       return
     end
-    local world0, world1 = entry.oy + z, entry.oy + z + C
+    local world0, world1 = entry.oy + z, entry.oy + z + span
     local phase0, phase1
     if safariForest and kind == "forest" and cornerInfo then
       phase0, phase1 = HorizonWall.safariCornerPanelPhases(
         cornerInfo.name, cornerInfo.panelIndex, cornerInfo.outerAtStart)
     end
     pushWall(kind,
-      { { x, 0, z + C }, { x, 0, z }, { x, H, z }, { x, H, z + C } },
+      { { x, y0, z + span }, { x, y0, z },
+        { x, y0 + H, z }, { x, y0 + H, z + span } },
       edgeIndex, world0, world1,
       kind == "mountain" and HorizonWall.MOUNTAIN_SHADE
       or Voxel3D.FACE_SHADE[outward < 0 and 1 or 2] or 0.8, true,
-      z, z + C, entry.h, phase0, phase1)
+      z, z + span, entry.h, phase0, phase1, placement)
     local far = x + outward * D
-    local groundAdded = outdoorGroundRect(x, far, z, z + C)
-    sceneryRows("x", z, x, outward, z / C, edgeIndex, rows, wallB,
+    local groundAdded = placement and placement.ground == "none" and 0
+      or outdoorGroundRect(x, far, z, z + span)
+    sceneryRows("x", z, x, outward, z / C, edgeIndex, rows, distance,
                 cornerInfo)
     ruralWallTerminals(kind, "x", z, x, outward,
-                       wallDistanceFor(kind, class))
+                       distance)
     route8MidgroundRows("x", z, edgeIndex == 2 and 0 or entry.w,
                         outward, edgeIndex, entry.h)
     quads = quads + 1 + groundAdded
     checkpoint(1)
   end
-  local function innerCorner(x0, x1, z0, z1)
-    quads = quads + outdoorGroundRect(x0, x1, z0, z1)
+  local function endpointDistance(info)
+    if not info then return wallB end
+    return panelPlacement(info.kind, class, info.placement)
+  end
+  local function endpointWantsGround(info)
+    return not (info and info.placement
+                and info.placement.ground == "none")
+  end
+  local function innerCorner(first, second, x0, x1, z0, z1)
+    if endpointWantsGround(first) and endpointWantsGround(second) then
+      quads = quads + outdoorGroundRect(x0, x1, z0, z1)
+    end
+  end
+  local function eachSpan(from, upto, fn)
+    local at, index = from, 0
+    while at < upto - 1e-9 do
+      local span = math.min(C, upto - at)
+      fn(at, span, index, math.ceil((upto - from) / C))
+      at, index = at + span, index + 1
+    end
   end
   local function forestCornerInfo(name, panelIndex, outerAtStart, fromOuter,
                                   x, z, towardX, towardZ)
@@ -2779,65 +4377,87 @@ local function geometryFor(entry, own, rects, cooperativeStep,
              outerAtStart = outerAtStart, fromOuter = fromOuter,
              x = x, z = z, towardX = towardX, towardZ = towardZ }
   end
-  if outdoorGround and wallB >= B then
+  if outdoorGround then
     if open.nwN and open.nwW then
-      for x = -wallB, -C, C do
-        local i = (x + wallB) / C
-        cornerPanelZ(x, -wallB, -1, 0, "north", nil, nil, nil,
-          forestCornerInfo("nw", i, true, i, -wallB, -wallB, 1, 1))
-      end
-      for z = -wallB, -C, C do
-        local i = (z + wallB) / C
-        cornerPanelX(-wallB, z, -1, 2, "west", nil, nil, nil,
-          forestCornerInfo("nw", i, true, i, -wallB, -wallB, 1, 1))
-      end
-      innerCorner(-wallB, 0, -wallB, 0)
+      local northInfo, westInfo = endpoint.nwN, endpoint.nwW
+      local northD, westD = endpointDistance(northInfo),
+                             endpointDistance(westInfo)
+      eachSpan(-westD, 0, function(x, span, i)
+        cornerPanelZ(x, -northD, -1, 0, "north",
+          northInfo.kind, northInfo.rows, nil,
+          forestCornerInfo("nw", i, true, i, -westD, -northD, 1, 1),
+          northInfo.placement, span)
+      end)
+      eachSpan(-northD, 0, function(z, span, i)
+        cornerPanelX(-westD, z, -1, 2, "west",
+          westInfo.kind, westInfo.rows, nil,
+          forestCornerInfo("nw", i, true, i, -westD, -northD, 1, 1),
+          westInfo.placement, span)
+      end)
+      innerCorner(northInfo, westInfo, -westD, 0, -northD, 0)
     end
     if open.neN and open.neE then
-      for x = entry.w, entry.w + wallB - C, C do
-        local i = (x - entry.w) / C
-        cornerPanelZ(x, -wallB, -1, 0, "north", nil, nil, nil,
-          forestCornerInfo("ne", i, false, 2 - i,
-            entry.w + wallB, -wallB, -1, 1))
-      end
-      for z = -wallB, -C, C do
-        local i = (z + wallB) / C
-        cornerPanelX(entry.w + wallB, z, 1, 3, "east", nil, nil, nil,
+      local northInfo, eastInfo = endpoint.neN, endpoint.neE
+      local northD, eastD = endpointDistance(northInfo),
+                             endpointDistance(eastInfo)
+      eachSpan(entry.w, entry.w + eastD, function(x, span, i, count)
+        cornerPanelZ(x, -northD, -1, 0, "north",
+          northInfo.kind, northInfo.rows, nil,
+          forestCornerInfo("ne", i, false, count - 1 - i,
+            entry.w + eastD, -northD, -1, 1),
+          northInfo.placement, span)
+      end)
+      eachSpan(-northD, 0, function(z, span, i)
+        cornerPanelX(entry.w + eastD, z, 1, 3, "east",
+          eastInfo.kind, eastInfo.rows, nil,
           forestCornerInfo("ne", i, true, i,
-            entry.w + wallB, -wallB, -1, 1))
-      end
-      innerCorner(entry.w, entry.w + wallB, -wallB, 0)
+            entry.w + eastD, -northD, -1, 1),
+          eastInfo.placement, span)
+      end)
+      innerCorner(northInfo, eastInfo, entry.w, entry.w + eastD,
+                  -northD, 0)
     end
     if open.swS and open.swW then
-      for x = -wallB, -C, C do
-        local i = (x + wallB) / C
-        cornerPanelZ(x, entry.h + wallB, 1, 1, "south", nil, nil, nil,
+      local southInfo, westInfo = endpoint.swS, endpoint.swW
+      local southD, westD = endpointDistance(southInfo),
+                             endpointDistance(westInfo)
+      eachSpan(-westD, 0, function(x, span, i)
+        cornerPanelZ(x, entry.h + southD, 1, 1, "south",
+          southInfo.kind, southInfo.rows, nil,
           forestCornerInfo("sw", i, true, i,
-            -wallB, entry.h + wallB, 1, -1))
-      end
-      for z = entry.h, entry.h + wallB - C, C do
-        local i = (z - entry.h) / C
-        cornerPanelX(-wallB, z, -1, 2, "west", nil, nil, nil,
-          forestCornerInfo("sw", i, false, 2 - i,
-            -wallB, entry.h + wallB, 1, -1))
-      end
-      innerCorner(-wallB, 0, entry.h, entry.h + wallB)
+            -westD, entry.h + southD, 1, -1),
+          southInfo.placement, span)
+      end)
+      eachSpan(entry.h, entry.h + southD, function(z, span, i, count)
+        cornerPanelX(-westD, z, -1, 2, "west",
+          westInfo.kind, westInfo.rows, nil,
+          forestCornerInfo("sw", i, false, count - 1 - i,
+            -westD, entry.h + southD, 1, -1),
+          westInfo.placement, span)
+      end)
+      innerCorner(southInfo, westInfo, -westD, 0,
+                  entry.h, entry.h + southD)
     end
     if open.seS and open.seE then
-      for x = entry.w, entry.w + wallB - C, C do
-        local i = (x - entry.w) / C
-        cornerPanelZ(x, entry.h + wallB, 1, 1, "south", nil, nil, nil,
-          forestCornerInfo("se", i, false, 2 - i,
-            entry.w + wallB, entry.h + wallB, -1, -1))
-      end
-      for z = entry.h, entry.h + wallB - C, C do
-        local i = (z - entry.h) / C
-        cornerPanelX(entry.w + wallB, z, 1, 3, "east", nil, nil, nil,
-          forestCornerInfo("se", i, false, 2 - i,
-            entry.w + wallB, entry.h + wallB, -1, -1))
-      end
-      innerCorner(entry.w, entry.w + wallB,
-                  entry.h, entry.h + wallB)
+      local southInfo, eastInfo = endpoint.seS, endpoint.seE
+      local southD, eastD = endpointDistance(southInfo),
+                             endpointDistance(eastInfo)
+      eachSpan(entry.w, entry.w + eastD, function(x, span, i, count)
+        cornerPanelZ(x, entry.h + southD, 1, 1, "south",
+          southInfo.kind, southInfo.rows, nil,
+          forestCornerInfo("se", i, false, count - 1 - i,
+            entry.w + eastD, entry.h + southD, -1, -1),
+          southInfo.placement, span)
+      end)
+      eachSpan(entry.h, entry.h + southD, function(z, span, i, count)
+        cornerPanelX(entry.w + eastD, z, 1, 3, "east",
+          eastInfo.kind, eastInfo.rows, nil,
+          forestCornerInfo("se", i, false, count - 1 - i,
+            entry.w + eastD, entry.h + southD, -1, -1),
+          eastInfo.placement, span)
+      end)
+      innerCorner(southInfo, eastInfo, entry.w, entry.w + eastD,
+                  entry.h, entry.h + southD)
     end
   end
 
@@ -2850,22 +4470,26 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local function profileAtCorner(edge, atEnd)
     local horizontal = edge == "north" or edge == "south"
     local length = horizontal and entry.w or entry.h
-    return edgePanel(edge, atEnd and math.max(0, length - C) or 0)
+    return edgePanel(edge, atEnd and math.max(0, length - 1e-6) or 0, 0)
   end
 
   local nwMixed = open.nwN and seaOpen.nwW
                   or seaOpen.nwN and open.nwW
   if nwMixed then
     if open.nwN then
-      local kind, rows = profileAtCorner("north", false)
-      for z = -wallB, -C, C do
-        cornerPanelX(0, z, -1, 0, "north", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("north", false)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(-distance, 0, function(z, span)
+        cornerPanelX(0, z, -1, 0, "north", kind, rows, true, nil,
+                     placement, span)
+      end)
     else
-      local kind, rows = profileAtCorner("west", false)
-      for x = -wallB, -C, C do
-        cornerPanelZ(x, 0, -1, 2, "west", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("west", false)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(-distance, 0, function(x, span)
+        cornerPanelZ(x, 0, -1, 2, "west", kind, rows, true, nil,
+                     placement, span)
+      end)
     end
     seaRect(-E, 0, -E, 0)
   end
@@ -2874,15 +4498,19 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                   or seaOpen.neN and open.neE
   if neMixed then
     if open.neN then
-      local kind, rows = profileAtCorner("north", true)
-      for z = -wallB, -C, C do
-        cornerPanelX(entry.w, z, 1, 0, "north", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("north", true)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(-distance, 0, function(z, span)
+        cornerPanelX(entry.w, z, 1, 0, "north", kind, rows, true, nil,
+                     placement, span)
+      end)
     else
-      local kind, rows = profileAtCorner("east", false)
-      for x = entry.w, entry.w + wallB - C, C do
-        cornerPanelZ(x, 0, -1, 3, "east", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("east", false)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(entry.w, entry.w + distance, function(x, span)
+        cornerPanelZ(x, 0, -1, 3, "east", kind, rows, true, nil,
+                     placement, span)
+      end)
     end
     seaRect(entry.w, entry.w + E, -E, 0)
   end
@@ -2891,15 +4519,19 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                   or seaOpen.swS and open.swW
   if swMixed then
     if open.swS then
-      local kind, rows = profileAtCorner("south", false)
-      for z = entry.h, entry.h + wallB - C, C do
-        cornerPanelX(0, z, -1, 1, "south", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("south", false)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(entry.h, entry.h + distance, function(z, span)
+        cornerPanelX(0, z, -1, 1, "south", kind, rows, true, nil,
+                     placement, span)
+      end)
     else
-      local kind, rows = profileAtCorner("west", true)
-      for x = -wallB, -C, C do
-        cornerPanelZ(x, entry.h, 1, 2, "west", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("west", true)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(-distance, 0, function(x, span)
+        cornerPanelZ(x, entry.h, 1, 2, "west", kind, rows, true, nil,
+                     placement, span)
+      end)
     end
     seaRect(-E, 0, entry.h, entry.h + E)
   end
@@ -2908,15 +4540,19 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                   or seaOpen.seS and open.seE
   if seMixed then
     if open.seS then
-      local kind, rows = profileAtCorner("south", true)
-      for z = entry.h, entry.h + wallB - C, C do
-        cornerPanelX(entry.w, z, 1, 1, "south", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("south", true)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(entry.h, entry.h + distance, function(z, span)
+        cornerPanelX(entry.w, z, 1, 1, "south", kind, rows, true, nil,
+                     placement, span)
+      end)
     else
-      local kind, rows = profileAtCorner("east", true)
-      for x = entry.w, entry.w + wallB - C, C do
-        cornerPanelZ(x, entry.h, 1, 3, "east", kind, rows, true)
-      end
+      local kind, rows, placement = profileAtCorner("east", true)
+      local distance = panelPlacement(kind, class, placement)
+      eachSpan(entry.w, entry.w + distance, function(x, span)
+        cornerPanelZ(x, entry.h, 1, 3, "east", kind, rows, true, nil,
+                     placement, span)
+      end)
     end
     seaRect(entry.w, entry.w + E, entry.h, entry.h + E)
   end
@@ -2931,6 +4567,433 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
   if seaOpen.seS and seaOpen.seE then
     seaRect(entry.w, entry.w + E, entry.h, entry.h + E)
+  end
+
+  -- Close the view through the native blocked forest reserve, while keeping
+  -- the right-hand walkable bypass and both gate houses unobstructed. Three
+  -- joined native-scale faces reuse the retained forest atlas; no roof, floor,
+  -- texture allocation or gameplay data is added. The existing western tree
+  -- boundary remains the fourth side.
+  if HorizonWall.route2ForestVerified(entry.map) then
+    local function forestFace(horizontal, start, stop, fixed, edgeIndex)
+      for along = start, stop - 1, C do
+        local upto = math.min(along + C, stop)
+        local x0, z0 = horizontal and along or fixed, horizontal and fixed or along
+        local x1, z1 = horizontal and upto or fixed, horizontal and fixed or upto
+        local origin = horizontal and entry.ox or entry.oy
+        pushWall("forest", {{x0,0,z0},{x1,0,z1},{x1,96,z1},{x0,96,z0}},
+          edgeIndex, origin + along, origin + upto,
+          Voxel3D.FACE_SHADE[horizontal and (edgeIndex == 0 and 5 or 6) or 2] or .8,
+          edgeIndex == 0, along, upto, stop)
+        route2ForestQuads = route2ForestQuads + 1
+        quads = quads + 1
+        checkpoint(1)
+      end
+    end
+    forestFace(true, 8, 216, 360, 0)
+    forestFace(false, 360, 600, 216, 3)
+    forestFace(true, 8, 216, 600, 1)
+  end
+
+  -- The editor's overlays and props are additive cut-out cards, never another
+  -- semantic perimeter.  They are emitted only on the true face span, after
+  -- all base/corner topology is closed, and stay out of wallVerts so existing
+  -- diagnostics continue to count one authored wall rather than a stack of
+  -- apparent full panoramas.
+  local decorationBias = 0.125
+  local function decorationInfo(edge, distance)
+    local horizontal = edge == "north" or edge == "south"
+    local outward = (edge == "north" or edge == "west") and -1 or 1
+    local length = horizontal and entry.w or entry.h
+    local effectiveDistance = math.max(0, distance - decorationBias)
+    local wall = horizontal
+      and (edge == "north" and -effectiveDistance
+           or entry.h + effectiveDistance)
+      or (edge == "west" and -effectiveDistance
+          or entry.w + effectiveDistance)
+    return horizontal, outward, length, effectiveDistance, wall
+  end
+
+  local function editorNoneOverlaps(edge, from, upto)
+    local edgeRules = HorizonWall.EDGE_PROFILES[mapId]
+    local rule = edgeRules and edgeRules[edge]
+    if type(rule) ~= "table" then return false end
+    for _, part in ipairs(rule) do
+      if part.editor and part.kind == HorizonWall.NONE_KIND
+         and (part.from or 0) < upto - 1e-9
+         and (part.upto or 1) > from + 1e-9 then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function spansWithoutEditorNone(edge, from, upto)
+    local spans, cursor = {}, from
+    local edgeRules = HorizonWall.EDGE_PROFILES[mapId]
+    local rule = edgeRules and edgeRules[edge]
+    for _, part in ipairs(type(rule) == "table" and rule or {}) do
+      if part.editor and part.kind == HorizonWall.NONE_KIND then
+        local gap0 = math.max(from, part.from or 0)
+        local gap1 = math.min(upto, part.upto or 1)
+        if gap1 > gap0 then
+          if gap0 > cursor then spans[#spans + 1] = { cursor, gap0 } end
+          cursor = math.max(cursor, gap1)
+        end
+      end
+    end
+    if upto > cursor then spans[#spans + 1] = { cursor, upto } end
+    return spans
+  end
+
+  -- Split at native-cell cadence and at every resident rectangle boundary.
+  -- Thus a partially covered edge never keeps a 32px card hanging into an
+  -- adjacent loaded map, while curved projection still receives short chords.
+  local function eachDecorationSlice(edge, from, upto, fn)
+    local horizontal = edge == "north" or edge == "south"
+    local breaks = { from, upto }
+    for _, rect in ipairs(rects) do
+      local lo = horizontal and rect.x0 - entry.ox or rect.z0 - entry.oy
+      local hi = horizontal and rect.x1 - entry.ox or rect.z1 - entry.oy
+      if lo > from and lo < upto then breaks[#breaks + 1] = lo end
+      if hi > from and hi < upto then breaks[#breaks + 1] = hi end
+    end
+    table.sort(breaks)
+    for i = 1, #breaks - 1 do
+      local at, finish = breaks[i], breaks[i + 1]
+      while at < finish - 1e-9 do
+        local nextAt = math.min(finish, at + C)
+        fn(at, nextAt)
+        at = nextAt
+      end
+    end
+  end
+
+  local function decorationExterior(edge, from, upto, distance, wall)
+    local horizontal = edge == "north" or edge == "south"
+    local outward = (edge == "north" or edge == "west") and -1 or 1
+    local worldAlong = (horizontal and entry.ox or entry.oy)
+                       + (from + upto) / 2
+    local worldWall = (horizontal and entry.oy or entry.ox) + wall
+    local inNormal, outNormal = worldWall - outward,
+                               worldWall + outward
+    if horizontal then
+      return insideDilatedUnion(worldAlong, inNormal, distance)
+             and not insideDilatedUnion(worldAlong, outNormal, distance)
+    end
+    return insideDilatedUnion(inNormal, worldAlong, distance)
+           and not insideDilatedUnion(outNormal, worldAlong, distance)
+  end
+
+  local function newDecorationGroup(kind, asset, order, sourceIndex,
+                                    animation)
+    return {
+      kind = kind,
+      family = "editor:" .. asset,
+      order = order or 0,
+      sourceIndex = sourceIndex or 0,
+      animation = animation,
+      vertices = {}, indices = {},
+    }
+  end
+
+  local function pushDecoration(group, edge, from, upto, wall, y0, height,
+                                u0, u1)
+    local shade, corners, uv
+    if edge == "north" or edge == "south" then
+      local outward = edge == "north" and -1 or 1
+      shade = Voxel3D.FACE_SHADE[outward < 0 and 5 or 6] or 0.8
+      corners = { { from, y0, wall }, { upto, y0, wall },
+                  { upto, y0 + height, wall },
+                  { from, y0 + height, wall } }
+      uv = { { u0, 1 }, { u1, 1 }, { u1, 0 }, { u0, 0 } }
+    else
+      local outward = edge == "west" and -1 or 1
+      shade = Voxel3D.FACE_SHADE[outward < 0 and 1 or 2] or 0.8
+      corners = { { wall, y0, upto }, { wall, y0, from },
+                  { wall, y0 + height, from },
+                  { wall, y0 + height, upto } }
+      uv = { { u1, 1 }, { u0, 1 }, { u0, 0 }, { u1, 0 } }
+    end
+    pushQuad(group.vertices, group.indices, corners, uv, shade)
+    checkpoint(1 / HorizonWall.GROUND_QUADS_PER_BUILD_UNIT)
+  end
+
+  -- A fountain is not a panorama fragment and must not read as one in the
+  -- walkable world.  The imported sheet is still useful for its exact Kanto
+  -- palette and animated water silhouette, but the basin itself is built as
+  -- real ground-standing geometry: an outer stone drum, inset wall, top rim,
+  -- horizontal water surface and central nozzle.  Two narrow cut-out planes
+  -- carry only the animated jet, which is rotationally symmetric enough for
+  -- a crossed pair and no longer turns the complete fountain into a flat
+  -- card.  Every solid face carries the existing negative-shade map-object
+  -- marker so the ordinary object-only sun pass can cast its contact shadow.
+  local function pushFountainModel(solidGroup, waterGroup, centreX, centreZ,
+                                   y0, width, height, frameU0, frameU1)
+    local segments, faces = 12, 0
+    local radius = math.max(0.5, width * 0.5)
+    local basinHeight = math.max(0.25,
+      math.min(height * 0.26, radius * 0.52))
+    basinHeight = math.min(height * 0.35, basinHeight)
+    local innerRadius = radius * 0.74
+    local waterRadius = innerRadius * 0.94
+    local waterY = y0 + basinHeight * 0.72
+    local rimY = y0 + basinHeight
+    local nozzleRadius = math.max(0.2, radius * 0.105)
+    local nozzleTop = math.min(y0 + height * 0.45,
+      rimY + math.max(0.25, basinHeight * 0.20))
+
+    local function frameU(localU)
+      return frameU0 + (frameU1 - frameU0) * localU
+    end
+    local function point(radiusValue, angle, y)
+      return { centreX + math.cos(angle) * radiusValue, y,
+               centreZ + math.sin(angle) * radiusValue }
+    end
+    local function sideShade(angle)
+      local nx, nz = math.cos(angle), math.sin(angle)
+      local shade
+      if math.abs(nx) > math.abs(nz) then
+        shade = Voxel3D.FACE_SHADE[nx >= 0 and 1 or 2] or 0.8
+      else
+        shade = Voxel3D.FACE_SHADE[nz >= 0 and 5 or 6] or 0.8
+      end
+      return -math.abs(shade)
+    end
+    local function constantUV(localU, v)
+      local u = frameU(localU)
+      return { { u, v }, { u, v }, { u, v }, { u, v } }
+    end
+    local function modelQuad(group, corners, uv, shade, castsShadow)
+      pushQuad(group.vertices, group.indices, corners, uv,
+               castsShadow and -math.abs(shade) or math.abs(shade))
+      faces = faces + 1
+      checkpoint(1 / HorizonWall.GROUND_QUADS_PER_BUILD_UNIT)
+    end
+
+    for index = 0, segments - 1 do
+      local a0 = index * math.pi * 2 / segments
+      local a1 = (index + 1) * math.pi * 2 / segments
+      local mid = (a0 + a1) * 0.5
+      -- Two alternating, known-opaque stone samples retain a deliberate
+      -- pixel-block cadence around the low-poly basin without stretching the
+      -- perspective-painted front wall around its back.
+      local stoneU = index % 2 == 0 and 0.47 or 0.58
+      modelQuad(solidGroup,
+                { point(radius, a0, y0), point(radius, a1, y0),
+                  point(radius, a1, rimY), point(radius, a0, rimY) },
+                constantUV(stoneU, 0.88), sideShade(mid), true)
+      modelQuad(solidGroup, { point(innerRadius, a1, waterY),
+                  point(innerRadius, a0, waterY),
+                  point(innerRadius, a0, rimY),
+                  point(innerRadius, a1, rimY) },
+                constantUV(0.23, 0.72), sideShade(mid + math.pi), true)
+      modelQuad(solidGroup,
+                { point(radius, a0, rimY), point(radius, a1, rimY),
+                  point(innerRadius, a1, rimY),
+                  point(innerRadius, a0, rimY) },
+                constantUV(0.18, 0.64), 1, true)
+      -- A degenerate fourth corner turns the shared quad helper into one
+      -- water wedge while retaining the renderer's single triangle format.
+      local centre = { centreX, waterY, centreZ }
+      modelQuad(waterGroup,
+                { centre, point(waterRadius, a0, waterY),
+                  point(waterRadius, a1, waterY), centre },
+                constantUV(0.31, 0.62), 1, false)
+    end
+
+    local nozzleSegments = 8
+    for index = 0, nozzleSegments - 1 do
+      local a0 = index * math.pi * 2 / nozzleSegments
+      local a1 = (index + 1) * math.pi * 2 / nozzleSegments
+      modelQuad(solidGroup, { point(nozzleRadius, a0, waterY),
+                  point(nozzleRadius, a1, waterY),
+                  point(nozzleRadius, a1, nozzleTop),
+                  point(nozzleRadius, a0, nozzleTop) },
+                constantUV(0.50, 0.66), sideShade((a0 + a1) * 0.5), true)
+      local centre = { centreX, nozzleTop, centreZ }
+      modelQuad(solidGroup,
+                { centre, point(nozzleRadius, a0, nozzleTop),
+                  point(nozzleRadius, a1, nozzleTop), centre },
+                constantUV(0.50, 0.64), 1, true)
+    end
+
+    local jetHalfWidth = math.max(0.5, radius * 0.16)
+    local top = y0 + height
+    local jetUV = faceUV(frameU(0.34), 0, frameU(0.66), 0.69)
+    modelQuad(waterGroup,
+              { { centreX - jetHalfWidth, nozzleTop, centreZ },
+                { centreX + jetHalfWidth, nozzleTop, centreZ },
+                { centreX + jetHalfWidth, top, centreZ },
+                { centreX - jetHalfWidth, top, centreZ } },
+              jetUV, Voxel3D.FACE_SHADE[5] or 0.9, false)
+    modelQuad(waterGroup,
+              { { centreX, nozzleTop, centreZ + jetHalfWidth },
+                { centreX, nozzleTop, centreZ - jetHalfWidth },
+                { centreX, top, centreZ - jetHalfWidth },
+                { centreX, top, centreZ + jetHalfWidth } },
+              jetUV, Voxel3D.FACE_SHADE[1] or 0.84, false)
+    return faces
+  end
+
+  for _, overlay in ipairs(HorizonWall.EDITOR_OVERLAYS[mapId] or {}) do
+    local horizontal, _, length, distance, wall =
+      decorationInfo(overlay.edge, overlay.distance)
+    local full0, full1 = overlay.from * length, overlay.upto * length
+    local fullSpan = math.max(1e-9, full1 - full0)
+    local group = newDecorationGroup("overlay", overlay.asset,
+                                     overlay.order, overlay.sourceIndex)
+    for _, visible in ipairs(spansWithoutEditorNone(
+        overlay.edge, overlay.from, overlay.upto)) do
+      local visible0, visible1 = visible[1] * length, visible[2] * length
+      eachDecorationSlice(overlay.edge, visible0, visible1,
+        function(from, upto)
+          if decorationExterior(overlay.edge, from, upto, distance, wall) then
+            local t0, t1 = (from - full0) / fullSpan,
+                                 (upto - full0) / fullSpan
+            local cropSpan = overlay.cropTo - overlay.cropFrom
+            local u0 = overlay.mirrored
+              and overlay.cropTo - cropSpan * t0
+              or overlay.cropFrom + cropSpan * t0
+            local u1 = overlay.mirrored
+              and overlay.cropTo - cropSpan * t1
+              or overlay.cropFrom + cropSpan * t1
+            pushDecoration(group, overlay.edge, from, upto, wall,
+                           overlay.verticalOffset, overlay.height, u0, u1)
+            overlayQuads = overlayQuads + 1
+          end
+        end)
+    end
+    if #group.vertices > 0 then decorationGroups[#decorationGroups + 1] = group end
+  end
+
+  for _, prop in ipairs(HorizonWall.EDITOR_PROPS[mapId] or {}) do
+    local spec = HorizonWall.editorAssetSpec(prop.asset)
+    if spec then
+      local crop0, crop1 = prop.cropFrom or 0, prop.cropTo or 1
+      if prop.cropFrom == nil and prop.cropTo == nil
+         and prop.asset == "miniTrees" then
+        local variant = prop.variant or 0
+        crop0, crop1 = variant / 4, (variant + 1) / 4
+      end
+      local frameCount = prop.animationFrames or 1
+      local frameCrop0, frameCrop1 = HorizonWall.animationFrameUV(
+        crop0, crop1, frameCount, 0, prop.mirrored)
+      local width = prop.width
+        or prop.size * (spec.width * math.abs(crop1 - crop0))
+           / math.max(1, spec.height) / frameCount
+      local mapPlaced = prop.mapX ~= nil and prop.mapY ~= nil
+      -- Ground anchors belong exclusively to freely placed map-space cards.
+      -- Legacy edge/along/distance props authored `verticalOffset` as their
+      -- literal quad base; applying an asset baseline there would move old
+      -- scenery even though its record has no map-space foot point.
+      local quadBase = prop.verticalOffset
+      if mapPlaced then
+        local groundAnchor = prop.groundAnchor or spec.baseline or 1
+        quadBase = HorizonWall.groundedPropBase(
+          prop.size, prop.verticalOffset, groundAnchor)
+      end
+      local function emitProp(from, upto, full0, full1, wall)
+        local animation = prop.animationFPS and {
+          frames = frameCount,
+          fps = prop.animationFPS,
+          cropFrom = crop0,
+          cropTo = crop1,
+          mirrored = prop.mirrored,
+        } or nil
+        local group = newDecorationGroup("prop", prop.asset, prop.order,
+                                         prop.sourceIndex, animation)
+        local fullSpan = math.max(1e-9, full1 - full0)
+        eachDecorationSlice(prop.edge, from, upto, function(slice0, slice1)
+          local t0, t1 = (slice0 - full0) / fullSpan,
+                               (slice1 - full0) / fullSpan
+          local frameSpan = frameCrop1 - frameCrop0
+          local u0 = frameCrop0 + frameSpan * t0
+          local u1 = frameCrop0 + frameSpan * t1
+          pushDecoration(group, prop.edge, slice0, slice1, wall,
+                         quadBase, prop.size, u0, u1)
+          propQuads = propQuads + 1
+        end)
+        if #group.vertices > 0 then
+          decorationGroups[#decorationGroups + 1] = group
+        end
+      end
+
+      if mapPlaced then
+        -- A freely placed bitmap lives on the active map plane instead of on
+        -- its exterior belt. `edge` remains its facing/orientation, while the
+        -- normalized map coordinates make click placement stable for every
+        -- map size and generation.
+        local horizontal = prop.edge == "north" or prop.edge == "south"
+        local length = horizontal and entry.w or entry.h
+        local centre = horizontal and prop.mapX * entry.w
+                                  or prop.mapY * entry.h
+        local wall = horizontal and prop.mapY * entry.h
+                                or prop.mapX * entry.w
+        local full0, full1 = centre - width / 2, centre + width / 2
+        local from, upto = math.max(0, full0), math.min(length, full1)
+        local centreX, centreZ = prop.mapX * entry.w, prop.mapY * entry.h
+        local radius = width * 0.5
+        -- Only a reviewed material sheet may enter the procedural model path:
+        -- arbitrary user PNGs tagged "fountain" do not share its opaque
+        -- stone/water sample coordinates. The stable bundled ID is accepted
+        -- as a migration bridge for projects saved before renderMode existed.
+        local legacyBundledFountain =
+          prop.asset == "editorKantoFountainAnimatedV1"
+          and spec.path == "assets/scenery/editor_objects/"
+                           .. "kanto_fountain_animated_v1.png"
+          and spec.width == 2172 and spec.height == 510
+          and frameCount == 4
+        local fountainModel = spec.renderMode == "fountain3d"
+          or legacyBundledFountain
+        local fountainFits = fountainModel
+          and centreX - radius >= 0 and centreX + radius <= entry.w
+          and centreZ - radius >= 0 and centreZ + radius <= entry.h
+        if fountainFits then
+          local animation = prop.animationFPS and {
+            frames = frameCount,
+            fps = prop.animationFPS,
+            cropFrom = crop0,
+            cropTo = crop1,
+            mirrored = prop.mirrored,
+          } or nil
+          local solidGroup = newDecorationGroup(
+            "prop", prop.asset, prop.order, prop.sourceIndex)
+          solidGroup.shape = "fountain3d"
+          solidGroup.castsShadow = true
+          local waterGroup = newDecorationGroup(
+            "prop", prop.asset, prop.order, prop.sourceIndex, animation)
+          waterGroup.shape = "fountain3d-water"
+          propQuads = propQuads + pushFountainModel(
+            solidGroup, waterGroup, centreX, centreZ, prop.verticalOffset,
+            width, prop.size, frameCrop0, frameCrop1)
+          decorationGroups[#decorationGroups + 1] = solidGroup
+          decorationGroups[#decorationGroups + 1] = waterGroup
+        elseif upto > from then
+          -- Hand-authored legacy data can put a fountain partly outside the
+          -- playable rectangle. Keep its previous clipped card instead of
+          -- silently moving the requested ground point.
+          emitProp(from, upto, full0, full1, wall)
+        end
+      else
+        local _, _, length, distance, wall =
+          decorationInfo(prop.edge, prop.distance)
+        local centre = prop.along * length
+        local full0, full1 = centre - width / 2, centre + width / 2
+        local from, upto = math.max(0, full0), math.min(length, full1)
+        if upto > from and not editorNoneOverlaps(
+            prop.edge, from / length, upto / length) then
+          -- An exterior prop is one object: if any part would enter a resident
+          -- neighbour, omit the whole card instead of leaving a chopped tree.
+          local exterior = true
+          eachDecorationSlice(prop.edge, from, upto, function(slice0, slice1)
+            if not decorationExterior(prop.edge, slice0, slice1,
+                                      distance, wall) then exterior = false end
+          end)
+          if exterior then emitProp(from, upto, full0, full1, wall) end
+        end
+      end
+    end
   end
 
   -- Sparse canonical coastal motifs. Each maritime map owns one fixed atlas
@@ -3117,19 +5180,39 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     end
   end
   if open.nwN and open.nwW then
-    corner(-wallB - D, -wallB, -wallB - D, -wallB)
+    local northD, westD = endpointDistance(endpoint.nwN),
+                           endpointDistance(endpoint.nwW)
+    if endpointWantsGround(endpoint.nwN)
+       and endpointWantsGround(endpoint.nwW) then
+      corner(-westD - D, -westD, -northD - D, -northD)
+    end
   end
   if open.neN and open.neE then
-    corner(entry.w + wallB, entry.w + wallB + D,
-           -wallB - D, -wallB)
+    local northD, eastD = endpointDistance(endpoint.neN),
+                           endpointDistance(endpoint.neE)
+    if endpointWantsGround(endpoint.neN)
+       and endpointWantsGround(endpoint.neE) then
+      corner(entry.w + eastD, entry.w + eastD + D,
+             -northD - D, -northD)
+    end
   end
   if open.swS and open.swW then
-    corner(-wallB - D, -wallB,
-           entry.h + wallB, entry.h + wallB + D)
+    local southD, westD = endpointDistance(endpoint.swS),
+                           endpointDistance(endpoint.swW)
+    if endpointWantsGround(endpoint.swS)
+       and endpointWantsGround(endpoint.swW) then
+      corner(-westD - D, -westD,
+             entry.h + southD, entry.h + southD + D)
+    end
   end
   if open.seS and open.seE then
-    corner(entry.w + wallB, entry.w + wallB + D,
-           entry.h + wallB, entry.h + wallB + D)
+    local southD, eastD = endpointDistance(endpoint.seS),
+                           endpointDistance(endpoint.seE)
+    if endpointWantsGround(endpoint.seS)
+       and endpointWantsGround(endpoint.seE) then
+      corner(entry.w + eastD, entry.w + eastD + D,
+             entry.h + southD, entry.h + southD + D)
+    end
   end
 
   -- A tall perimeter alone still leaves the renderer's black clear colour
@@ -3196,23 +5279,57 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                           + canopyFillerQuads + ruralTerminalQuads
 
   local wallGroups = {}
+  local includedFamilies = {}
   for _, family in ipairs({ "route8", "regional", "mountain", "mt_moon",
                             "cave", "tower", "pokecenter_room" }) do
     local group = wallGroupsByFamily[family]
-    if group and #group.vertices > 0 then wallGroups[#wallGroups + 1] = group end
+    if group and #group.vertices > 0 then
+      wallGroups[#wallGroups + 1] = group
+      includedFamilies[family] = true
+    end
   end
-  if #wallVerts == 0 and #seaVerts == 0 and ceilingQuads == 0
-     and #coastalVerts == 0 and #storyVerts == 0 then return nil end
+  local editorFamilies = {}
+  for family, group in pairs(wallGroupsByFamily) do
+    if not includedFamilies[family] and #group.vertices > 0 then
+      editorFamilies[#editorFamilies + 1] = family
+    end
+  end
+  table.sort(editorFamilies)
+  for _, family in ipairs(editorFamilies) do
+    wallGroups[#wallGroups + 1] = wallGroupsByFamily[family]
+  end
+  table.sort(decorationGroups, function(a, b)
+    local rankA = a.kind == "overlay" and 0 or 1
+    local rankB = b.kind == "overlay" and 0 or 1
+    if rankA ~= rankB then return rankA < rankB end
+    if a.order ~= b.order then return a.order < b.order end
+    if a.sourceIndex ~= b.sourceIndex then
+      return a.sourceIndex < b.sourceIndex
+    end
+    if a.shape ~= b.shape then
+      return tostring(a.shape or "") < tostring(b.shape or "")
+    end
+    return a.family < b.family
+  end)
+  for _, group in ipairs(decorationGroups) do
+    wallGroups[#wallGroups + 1] = group
+  end
+  if #wallVerts == 0 and #groundVerts == 0
+     and #seaVerts == 0 and ceilingQuads == 0
+     and #coastalVerts == 0 and #storyVerts == 0
+     and overlayQuads == 0 and propQuads == 0 then return nil end
   return { map = entry.map, ox = entry.ox, oy = entry.oy, class = class,
            material = material, groundPeriod = groundPeriod,
            wallVertices = wallVerts, wallIndices = wallIndices,
            wallGroups = wallGroups, wallDraws = #wallGroups,
+           overlayQuads = overlayQuads, propQuads = propQuads,
            groundVertices = groundVerts, groundIndices = groundIndices,
            foregroundVertices = foregroundVerts,
            foregroundIndices = foregroundIndices,
            route8MidgroundVertices = route8MidgroundVerts,
            route8MidgroundIndices = route8MidgroundIndices,
            route8MidgroundQuads = route8MidgroundQuads,
+           distanceJoinQuads = distanceJoinQuads,
            route8SeamFlankQuads = route8SeamFlankQuads,
            route8SeamPathVertices = route8SeamPathVerts,
            route8SeamPathIndices = route8SeamPathIndices,
@@ -3225,6 +5342,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
            forestGatePathQuadsByEdge = forestGatePathQuadsByEdge,
            forestGatePathMap = forestGatePathQuads > 0 and entry.map or nil,
            forestGateEdges = forestGateEdges,
+           route2ForestQuads = route2ForestQuads,
            forestGateFacadeVertices = forestGateFacadeVerts,
            forestGateFacadeIndices = forestGateFacadeIndices,
            forestGateFacadeQuads = forestGateFacadeQuads,
@@ -3246,7 +5364,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
            quads = quads + seaQuads + foregroundQuads + coastalQuads
                    + storyQuads
                    + route8MidgroundQuads + route8SeamPathQuads
-                   + forestGatePathQuads + forestGateFacadeQuads }
+                   + forestGatePathQuads + forestGateFacadeQuads
+                   + overlayQuads + propQuads }
 end
 
 function HorizonWall.geometry(state)
@@ -3824,6 +5943,16 @@ local function groundPattern(g, class, W, H)
         pixelRect(g, light, x, y, 8, 4)
       end
     end
+  elseif class == "interior_shell" then
+    local base = { 0.30, 0.32, 0.33 }
+    local seam = { 0.18, 0.20, 0.22 }
+    local light = { 0.52, 0.54, 0.52 }
+    pixelRect(g, base, 0, 0, W, H)
+    for at = 16, W - 1, 16 do pixelRect(g, seam, at, 0, 1, H) end
+    for at = 16, H - 1, 16 do pixelRect(g, seam, 0, at, W, 1) end
+    for y = 7, H - 7, 16 do
+      for x = 7, W - 7, 16 do pixelRect(g, light, x, y, 4, 2) end
+    end
   else
     pixelRect(g, { 0.07, 0.24, 0.36 }, 0, 0, W, H)
     for y = 3, H - 1, 8 do
@@ -3858,6 +5987,36 @@ releaseImage = function(image)
     pcall(image.release, image)
     assetStats.releases = assetStats.releases + 1
   end
+end
+
+local function editorPanoramaTexture(family)
+  local id = type(family) == "string" and family:match("^editor:(.+)$")
+  local spec = id and HorizonWall.editorAssetSpec(id)
+  local g = love and love.graphics
+  if not (spec and g and type(g.newImage) == "function"
+          and type(V.path) == "string") then return nil end
+  if textures[family] then return textures[family] end
+  if textureFailures[family] then return nil end
+  local path = V.path .. "/" .. spec.path
+  local ok, image = pcall(g.newImage, path,
+                          { mipmaps = false, linear = false })
+  if not (ok and image) then ok, image = pcall(g.newImage, path) end
+  if not (ok and image) then textureFailures[family] = true return nil end
+  assetStats.loads = assetStats.loads + 1
+  if image.setFilter then
+    pcall(image.setFilter, image, "nearest", "nearest", 1)
+  end
+  if image.setMipmapFilter then pcall(image.setMipmapFilter, image, nil) end
+  if image.setWrap then pcall(image.setWrap, image, "clamp", "clamp") end
+  local dimOK, width, height = pcall(image.getDimensions, image)
+  if not dimOK or width ~= spec.width or height ~= spec.height then
+    assetStats.rejected = assetStats.rejected + 1
+    releaseImage(image)
+    textureFailures[family] = true
+    return nil
+  end
+  textures[family] = image
+  return image
 end
 
 local function compactPath(spec)
@@ -3923,6 +6082,9 @@ function HorizonWall._resetAssetStats()
 end
 
 local function skylineTexture(class)
+  if type(class) == "string" and class:sub(1, 7) == "editor:" then
+    return editorPanoramaTexture(class)
+  end
   if not (love and love.graphics and love.graphics.newCanvas) then return nil end
   -- The baked panorama receives the scene's time-of-day tint in the world
   -- shader and never samples the terrain atlas. Sharing one Canvas per
@@ -3939,6 +6101,7 @@ local function skylineTexture(class)
             or class == "tower" and HorizonWall.TOWER_WALL_W
             or class == "pokecenter_room"
                and HorizonWall.POKECENTER_ROOM_WALL_W
+            or class == "interior_shell" and 128
             or hasWorldForestStrip(class) and HorizonWall.FOREST_STRIP_W
             or directional and HorizonWall.STRIP_W
             or HorizonWall.DIRECTION_W
@@ -3947,6 +6110,8 @@ local function skylineTexture(class)
             or class == "mountain" and HorizonWall.MOUNTAIN_TEXTURE_H
             or class == "mt_moon" and HorizonWall.ENCLOSURE_TEXTURE_H
             or class == "pokecenter_room"
+               and HorizonWall.ENCLOSURE_TEXTURE_H
+            or class == "interior_shell"
                and HorizonWall.ENCLOSURE_TEXTURE_H
             or isEnclosure(class) and HorizonWall.ENCLOSURE_TEXTURE_H
             or HorizonWall.HEIGHT
@@ -4002,6 +6167,8 @@ local function skylineTexture(class)
       end) then
         pokecenterRoomSkyline(g, W, H)
       end
+    elseif class == "interior_shell" then
+      pokecenterRoomSkyline(g, W, H)
     elseif directional then
       directionalSkyline(g, class, H)
     elseif hasWorldForestStrip(class) then
@@ -4265,19 +6432,44 @@ end
 function HorizonWall.prewarm(map)
   if not HorizonWall.enabled() or not map then return true end
   local class = HorizonWall.classFor(map)
-  if class == "interior" then return true end
-  local families, wantsForeground = {}, false
+  if class == "interior" then
+    local profile = HorizonWall.interiorProfileFor(map)
+    if not profile then return true end
+
+    -- A generated interior uses two independently authored materials.  Treat
+    -- both as structural: unlike optional outdoor props, a missing wall or
+    -- ceiling image must keep the complete previous/fallback scene rather
+    -- than publishing a room with an accidental opening.
+    local wallFamily = profile.wallAsset
+      and ("editor:" .. profile.wallAsset) or "interior_shell"
+    if not skylineTexture(wallFamily) then return false end
+    if profile.ceiling.enabled then
+      local ceilingFamily = profile.ceiling.asset
+        and ("editor:" .. profile.ceiling.asset) or "interior_shell"
+      local ceilingTexture = ceilingFamily:sub(1, 7) == "editor:"
+        and skylineTexture(ceilingFamily) or groundTexture(ceilingFamily)
+      if not ceilingTexture then return false end
+    end
+    for _, door in ipairs(profile.doors or {}) do
+      if not door.open and door.asset
+         and not skylineTexture("editor:" .. door.asset) then return false end
+    end
+    return true
+  end
+  local families, wantsForeground, missingAsset = {}, false, false
   local id = tostring(map.id or map.def and map.def.id or "")
   local rules = HorizonWall.EDGE_PROFILES[id]
-  local function includeKind(kind)
+  local function includeKind(kind, placement)
     if not kind then return end
-    local family = HorizonWall.wallFamily(kind, map)
+    if kind == HorizonWall.NONE_KIND or kind == "open_water" then return end
+    local family = wallFamilyFor(kind, map, placement)
+    if placement and placement.asset and not family then missingAsset = true end
     if family then families[family] = true end
     if fillerRowsFor(map, kind) > 0 then wantsForeground = true end
   end
   local function includeRule(rule)
     if type(rule) == "string" then includeKind(rule) return end
-    for _, part in ipairs(rule or {}) do includeKind(part.kind) end
+    for _, part in ipairs(rule or {}) do includeKind(part.kind, part) end
   end
   if rules then
     for _, edge in ipairs({ "north", "south", "west", "east" }) do
@@ -4286,7 +6478,21 @@ function HorizonWall.prewarm(map)
   else
     includeKind(defaultEdgeKind(class))
   end
-  local wall = true
+  local function includeDecoration(decoration)
+    local asset = decoration and decoration.asset
+    if not HorizonWall.editorAssetSpec(asset) then
+      missingAsset = true
+    else
+      families["editor:" .. asset] = true
+    end
+  end
+  for _, prop in ipairs(HorizonWall.EDITOR_PROPS[id] or {}) do
+    includeDecoration(prop)
+  end
+  for _, overlay in ipairs(HorizonWall.EDITOR_OVERLAYS[id] or {}) do
+    includeDecoration(overlay)
+  end
+  local wall = not missingAsset
   for family in pairs(families) do
     if not skylineTexture(family) then wall = false end
   end
@@ -4353,8 +6559,34 @@ end
 
 local function releaseMeshes(entries)
   for _, e in ipairs(entries or {}) do
-    if e.mesh and e.mesh.release then pcall(e.mesh.release, e.mesh) end
+    if e.animationMeshes then
+      for _, mesh in ipairs(e.animationMeshes) do
+        if mesh and mesh.release then pcall(mesh.release, mesh) end
+      end
+    elseif e.mesh and e.mesh.release then
+      pcall(e.mesh.release, e.mesh)
+    end
   end
+end
+
+local function animationVertices(vertices, animation, frame)
+  local base0, base1 = HorizonWall.animationFrameUV(
+    animation.cropFrom, animation.cropTo, animation.frames, 0,
+    animation.mirrored)
+  local target0, target1 = HorizonWall.animationFrameUV(
+    animation.cropFrom, animation.cropTo, animation.frames, frame,
+    animation.mirrored)
+  local baseSpan, targetSpan = base1 - base0, target1 - target0
+  local out = {}
+  for index, vertex in ipairs(vertices) do
+    local copy = {}
+    for component, value in ipairs(vertex) do copy[component] = value end
+    local t = math.abs(baseSpan) > 1e-12
+      and (vertex[4] - base0) / baseSpan or 0
+    copy[4] = target0 + targetSpan * t
+    out[index] = copy
+  end
+  return out
 end
 
 local function abandonPending(key)
@@ -4414,7 +6646,9 @@ local function stateKey(state, maps, canonical)
   for _, e in ipairs(maps) do
     parts[#parts + 1] = table.concat({ tostring(e.map.id), e.ox, e.oy,
       e.w, e.h, HorizonWall.classFor(e.map),
-      HorizonWall.materialFor(e.map) }, ":")
+      HorizonWall.materialFor(e.map),
+      HorizonWall.interiorProfileFor(e.map) and "editor-interior" or "legacy" },
+      ":")
   end
   return table.concat(parts, "|")
 end
@@ -4442,7 +6676,18 @@ local function touch(entry, baseX, baseY)
   if baseX ~= nil then
     entry.lastBaseX, entry.lastBaseY = baseX, baseY
   end
-  return rebasedView(entry, entry.lastBaseX or 0, entry.lastBaseY or 0)
+  local view = rebasedView(entry, entry.lastBaseX or 0, entry.lastBaseY or 0)
+  if entry.animated then
+    local now = animationClock()
+    for _, rim in ipairs(view) do
+      if rim.animationMeshes then
+        local frame = HorizonWall.animationFrameAt(
+          #rim.animationMeshes, rim.animationFPS, now)
+        rim.mesh = rim.animationMeshes[frame + 1]
+      end
+    end
+  end
+  return view
 end
 
 local function trimReady(keepKey)
@@ -4483,14 +6728,37 @@ local function newBuildJob(key, maps, worldMaps)
       -- allocate unrelated later parts for a result that can never publish.
       error("horizon mesh allocation failed", 0)
     end
-    local function addPart(kind, className, vertices, indices, texture, ox, oy)
+    local function addPart(kind, className, vertices, indices, texture, ox, oy,
+                           animation, shape, castsShadow)
       if #vertices == 0 then return end
+      if animation and animation.frames > 1 and animation.fps then
+        local part = {
+          texture = texture, ox = ox or 0, oy = oy or 0,
+          class = className, kind = kind, animationMeshes = {},
+          animationFPS = animation.fps,
+          shape = shape,
+          castsShadow = castsShadow == true,
+        }
+        job.meshes[#job.meshes + 1] = part
+        job.animated = true
+        for frame = 0, animation.frames - 1 do
+          coroutine.yield("before-animation-mesh")
+          local frameVertices = frame == 0 and vertices
+                                or animationVertices(vertices, animation, frame)
+          local mesh = texture and Voxel3D.newMesh(frameVertices, indices) or nil
+          if not mesh then failBuild() end
+          part.animationMeshes[#part.animationMeshes + 1] = mesh
+        end
+        part.mesh = part.animationMeshes[1]
+        return
+      end
       coroutine.yield("before-mesh")
       local mesh = texture and Voxel3D.newMesh(vertices, indices) or nil
       if not mesh then failBuild() end
       job.meshes[#job.meshes + 1] = {
         mesh = mesh, texture = texture, ox = ox or 0, oy = oy or 0,
-        class = className, kind = kind,
+        class = className, kind = kind, shape = shape,
+        castsShadow = castsShadow == true,
       }
     end
     local function addAtlasPart(kind, className, vertices, indices, textureMap)
@@ -4608,16 +6876,40 @@ local function newBuildJob(key, maps, worldMaps)
         end
         local floorTexture = #built.groundVertices > 0
                              and groundTexture(built.material) or nil
+        local ceilingTexture
+        if #(built.ceilingVertices or {}) > 0 then
+          local family = built.ceilingFamily or built.material
+          ceilingTexture = family:sub(1, 7) == "editor:"
+            and skylineTexture(family) or groundTexture(family)
+        end
         local treeTexture = #built.foregroundVertices > 0
                             and foregroundTreeTexture(built.class) or nil
         coroutine.yield("textures-ready")
 
         for groupIndex, group in ipairs(built.wallGroups or {}) do
-          addPart("wall", group.family, group.vertices, group.indices,
-                  wallTextures[groupIndex], built.ox, built.oy)
+          local texture = wallTextures[groupIndex]
+          if group.kind == "overlay" or group.kind == "prop" then
+            -- Optional imported cut-outs may fail image decode or a dimension
+            -- check independently.  Never discard the complete base horizon
+            -- just because one user decoration cannot be uploaded.
+            if texture then
+              addPart(group.kind, group.family, group.vertices, group.indices,
+                      texture, built.ox, built.oy, group.animation,
+                      group.shape, group.castsShadow)
+            end
+          else
+            addPart("wall", group.family, group.vertices, group.indices,
+                    texture, built.ox, built.oy)
+          end
         end
         addPart("ground", built.class, built.groundVertices,
                 built.groundIndices, floorTexture, built.ox, built.oy)
+        -- Keep the synthetic roof in its own ground-kind batch.  It can use a
+        -- ceiling-only texture and FULL's established cutaway removes exactly
+        -- this batch without hiding the playable terrain body beneath it.
+        addPart("ground", built.ceilingFamily or built.class,
+                built.ceilingVertices or {}, built.ceilingIndices or {},
+                ceilingTexture, built.ox, built.oy)
         addPart("foreground", built.class, built.foregroundVertices,
                 built.foregroundIndices, treeTexture, built.ox, built.oy)
         appendSea(built)
@@ -4706,6 +6998,7 @@ local function finishJob(job)
   end
   local meshes = job.meshes
   local entry = { key = job.key, meshes = meshes, used = 0, views = {},
+                  animated = job.animated == true,
                   mapIds = mapIdsOf(job.maps) }
   job.co, job.maps, job.meshes = nil, nil, nil
   readyCaches[job.key] = entry
@@ -4805,7 +7098,7 @@ function HorizonWall._canonicalAddress(state)
   return stateKey(state, maps, canonical), baseX, baseY, maps, canonical
 end
 
--- Horizon geometry never reads ordinary interior body blocks. The only
+-- Horizon geometry does not read ordinary interior body blocks. The
 -- block-dependent overlays (Route 8's cold seam and Viridian Forest's gate
 -- mouths) verify cells in the outermost block row or column. Keep malformed
 -- or mod-map metadata conservative, but avoid rebuilding a complete union for
@@ -4817,6 +7110,10 @@ function HorizonWall.blockAffectsGeometry(map, bx, by)
      or type(bx) ~= "number" or type(by) ~= "number" then
     return true
   end
+  -- This guarded visual screen reads the entire blocked reserve, not just
+  -- its shell. Opening any cell must remove it on the next geometry rebuild.
+  if (map.id or def.id) == "ROUTE_2" and w == 10 and h == 36
+     and bx >= 0 and bx <= 6 and by >= 11 and by <= 18 then return true end
   return bx <= 0 or by <= 0 or bx >= w - 1 or by >= h - 1
 end
 

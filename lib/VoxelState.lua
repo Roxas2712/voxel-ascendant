@@ -45,6 +45,30 @@ Voxel.MAX_LEVEL = #Voxel.ANGLES_DEG - 1
 -- the rung FULL sits on, so nothing has to hunt for it by label
 Voxel.FULL_LEVEL = 1
 
+-- Pipeline levels are persisted by the engine rather than by a ModSetting,
+-- so a newly installed mod has no schema default for this row. Seed only a
+-- genuinely absent key: an explicit zero is the player's OFF choice.
+function Voxel.seedOptions(opts)
+  if type(opts) ~= "table" then return false end
+  opts.pipelines = type(opts.pipelines) == "table" and opts.pipelines or {}
+  if opts.pipelines.voxel ~= nil then return false end
+  opts.pipelines.voxel = Voxel.FULL_LEVEL
+  return true
+end
+
+-- A newly installed mod and a newly created journey both arrive without a
+-- persisted pipeline key. Seed at either save lifecycle boundary and publish
+-- the new value immediately, so custom new-game hosts remain deterministic
+-- even if they applied the empty option bucket before emitting save.created.
+-- seedOptions preserves explicit OFF (zero), so this never changes a player's
+-- stored choice.
+function Voxel.seedLiveOptions(payload)
+  local save = payload and payload.save
+  if not (save and Voxel.seedOptions(save.options)) then return false end
+  require("src.render.Pipelines").applyOptions(save.options)
+  return true
+end
+
 function Voxel.isFull(level)
   return (level or Voxel.level) == Voxel.FULL_LEVEL
 end

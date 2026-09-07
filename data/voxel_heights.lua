@@ -176,6 +176,22 @@ return {
     stair_down_w = 16,
   },
 
+  -- A reused block may depict different furniture on different maps even
+  -- though its tile ids are byte-identical.  Keep those rare answers here,
+  -- beside the rest of the visual-only shape profile, instead of changing
+  -- generated map bytes or the collision table.
+  --
+  -- FACILITY block $43 is a tall glass display cabinet in the Mansion and
+  -- on Silph 3F/8F, but Silph 9F deliberately repeats the same drawing as
+  -- five recovery-room beds.  Only the six non-floor tiles of that block
+  -- become a low top surface on 9F; the identical cabinets everywhere else
+  -- remain full-height bookcases.
+  map_blocks = {
+    SILPH_CO_9F = {
+      [67] = { class = "bed", tiles = { 25, 26, 40, 41, 56, 57 } },
+    },
+  },
+
   -- Only tiles the detector must not touch need listing. Tile ids are
   -- indices into the tileset's own 8x8 atlas.
   tilesets = {

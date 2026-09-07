@@ -1,9 +1,9 @@
 -- Community metadata shown by compatible mod managers.
 return {
-  summary = "A sandbox-safe voxel overworld with native-card MAP/DISCS battles.",
+  summary = "One Gen1/Gen2 voxel package with integrated Gen1 species Surf/Fly cinematics.",
   author = "Voxel Ascendant contributors; forked from DramaticShape",
   contact = "https://github.com/Roxas2712/voxel-ascendant",
-  tags = { "graphics", "3d", "voxel", "render-pipeline", "battle" },
+  tags = { "graphics", "3d", "voxel", "render-pipeline", "battle", "surf", "fly" },
   differences = {
     changed = {
       "the overworld can render as depth-tested voxel geometry",
@@ -13,11 +13,12 @@ return {
     added = {
       "a versioned Voxel3D and wall-decal companion API",
       "sandbox-safe RAM-only geometry and texture caches",
+      "species-aware Gen1 Surf and Fly cinematics with native fallback",
     },
     known = {
       "requires shader and depth-canvas support; unsupported paths fall back to 2D",
       "1ST and 3RD are experimental player-attached cameras; VR, Stadium, ROM tooling, Horde mode, and external sprite art remain excluded",
-      "3D battle MAP mode falls back to the classic battle when no safe arena is available",
+      "3D battle MAP mode uses a portable safe Voxel stage when no reviewed arena is available",
     },
   },
   credits = {

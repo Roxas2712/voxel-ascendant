@@ -26,8 +26,71 @@
 
 -- the mod namespace (see main.lua): V.require loads a sibling module
 local V = ...
+local ModSetting = V.require("ModSetting")
 
 local BattleHud = {}
+
+-- The active KASC renderer bridge consumes the same HUD geometry exported by
+-- OverworldBattle, so these are shared presentation controls rather than a
+-- second VASC-only skin. AUTO is orientation-aware: landscape uses the wide
+-- edge composition and portrait phones split the status furniture between
+-- the top and bottom. iOS receives the same layout through VASC's private
+-- pre-flipped compositor, without advertising the historical unsafe public
+-- bridge to companion mods.
+BattleHud.POSITION_KEY = "battleHudPosition"
+BattleHud.SCALE_KEY = "battleHudScale"
+BattleHud.ALPHA_KEY = "battleHudAlpha"
+
+BattleHud.positionSetting = ModSetting.new(
+  BattleHud.POSITION_KEY, "HUD POS",
+  { "auto", "frame", "wide", "edges", "stacked" },
+  { "AUTO", "FRAME", "WIDE", "EDGES", "STACK" }, "auto")
+
+BattleHud.scaleSetting = ModSetting.new(
+  BattleHud.SCALE_KEY, "HUD SIZE",
+  { "auto", 0.75, 1, 1.25 },
+  { "AUTO", "75%", "100%", "125%" }, "auto")
+
+BattleHud.alphaSetting = ModSetting.new(
+  BattleHud.ALPHA_KEY, "HUD ALPHA",
+  { 0.35, 0.50, 0.65, 0.80 },
+  { "35%", "50%", "65%", "80%" }, 0.65)
+
+function BattleHud.position(os, width, height)
+  local selected = BattleHud.positionSetting:get()
+  if selected == "auto" then
+    -- Portrait phones gain a top/bottom composition: the status furniture
+    -- vacates the arena's centre instead of being squeezed together inside a
+    -- small landscape-shaped GB frame. Rotation is read per rendered shot,
+    -- so no restart or stale orientation flag is involved.
+    if (os == "Android" or os == "iOS")
+        and width and height and height > width then
+      return "stacked"
+    end
+    return "edges"
+  end
+  return selected
+end
+
+function BattleHud.scale(os, width, height)
+  local selected = BattleHud.scaleSetting:get()
+  if selected ~= "auto" then return selected end
+  if os == "Android" or os == "iOS" then
+    -- A portrait framebuffer has enough width for both native-size status
+    -- blocks and benefits from crisp integer pixel scaling.  Landscape keeps
+    -- the compact 75% furniture so the wider battlefield stays open.
+    if width and height and height > width then return 1 end
+    return 0.75
+  end
+  return 1
+end
+
+function BattleHud.edgeInset(position, width)
+  if position == "wide" then
+    return math.floor(math.max(8, width * 0.055) + 0.5)
+  end
+  return 0
+end
 
 -- How solid the frost is over the world behind it, and how far the tint
 -- pushes it toward the far end from the text.
@@ -38,6 +101,20 @@ local BattleHud = {}
 -- than as a second background.
 BattleHud.FROST = 0.55
 BattleHud.TINT = 0.26
+
+-- 65% is the reviewed KASC/VASC glass and maps byte-semantically to the old
+-- constants above.  The other rungs preserve the same frost/tint ratio, so
+-- lowering alpha reveals more of the arena without sacrificing the light
+-- backing that keeps Gen I's fixed black ink readable.
+function BattleHud.frostAlpha()
+  local multiplier = BattleHud.alphaSetting:get() / 0.65
+  return math.min(0.92, BattleHud.FROST * multiplier)
+end
+
+function BattleHud.tintAlpha()
+  local multiplier = BattleHud.alphaSetting:get() / 0.65
+  return math.min(0.75, BattleHud.TINT * multiplier)
+end
 
 -- The frost buffer's height; width follows the source's aspect. Small on
 -- purpose: the downscale is most of the blur.
@@ -175,15 +252,24 @@ end
 -- The tint always pushes toward WHITE, away from the black ink that is about
 -- to land on it, so the contrast is guaranteed rather than hoped for -- and
 -- it is the whole of what makes a fixed ink colour workable over any ground.
-function BattleHud.panel(rect, box, world)
+function BattleHud.panel(rect, box, world, sourceFlipAxis)
   if not (frost and box and box.scale and box.scale > 0) then return false end
   local fx, fy, fw, fh = mapper(world)(rect, box)
+  -- Historical callers passed true for the iOS Y pre-flip. Keep that alias,
+  -- while battle presentation receipts may now select X after a live device
+  -- rotation into a flipped orientation.
+  local axis = sourceFlipAxis == true and "y" or sourceFlipAxis
+  if axis == "x" then
+    fx = frostW - fx - fw
+  elseif axis == "y" then
+    fy = frostH - fy - fh
+  end
   local ok = pcall(function()
     local quad = love.graphics.newQuad(fx, fy, fw, fh, frostW, frostH)
-    love.graphics.setColor(1, 1, 1, BattleHud.FROST)
+    love.graphics.setColor(1, 1, 1, BattleHud.frostAlpha())
     love.graphics.draw(frost, quad, rect[1], rect[2], 0,
                        rect[3] / fw, rect[4] / fh)
-    love.graphics.setColor(1, 1, 1, BattleHud.TINT)
+    love.graphics.setColor(1, 1, 1, BattleHud.tintAlpha())
     love.graphics.rectangle("fill", rect[1], rect[2], rect[3], rect[4])
     love.graphics.setColor(1, 1, 1, 1)
   end)
@@ -198,12 +284,15 @@ end
 -- places at once, so the layer is rendered ONCE into a GB-sized canvas and
 -- each block is then blitted out of it as a quad.
 --
-local hudLayer = nil
+local hudLayers = {}
 
-function BattleHud.layerTexture(w, h, fn)
+function BattleHud.layerTexture(w, h, fn, slot)
+  slot = tostring(slot or "hud")
+  local hudLayer = hudLayers[slot]
   if not hudLayer or hudLayer:getWidth() ~= w or hudLayer:getHeight() ~= h then
     hudLayer = canvasOf(w, h, "nearest")
     if not hudLayer then return nil end
+    hudLayers[slot] = hudLayer
   end
   local g = love.graphics
   local prevCanvas = g.getCanvas()
@@ -225,7 +314,7 @@ end
 function BattleHud.invalidate()
   frost, blurA, blurB = nil, nil, nil
   frostW, frostH = 0, 0
-  hudLayer = nil
+  hudLayers = {}
 end
 
 return BattleHud

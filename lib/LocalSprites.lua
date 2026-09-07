@@ -6,10 +6,12 @@ local V = ...
 local LocalSprites = {}
 local UserFiles = V.require("UserFiles")
 
+LocalSprites.API_VERSION = 1
 LocalSprites.ROOT = "user/sprites"
 LocalSprites.ENABLED_KEY = "localSprites.enabled"
 local validation = {}
 local enabled = false
+local inventoryText = ""
 
 local function info(path)
   return UserFiles.info(path, "file")
@@ -227,6 +229,15 @@ end
 
 function LocalSprites.enabled() return enabled end
 
+function LocalSprites.status()
+  return {
+    apiVersion=LocalSprites.API_VERSION,
+    root=LocalSprites.ROOT,
+    enabled=enabled,
+    inventoryReady=inventoryText ~= "",
+  }
+end
+
 function LocalSprites.backToDefault(game)
   LocalSprites.setEnabled(game, false)
   local ok, packs = pcall(V.require, "SpritePacks")
@@ -247,8 +258,6 @@ local function sortedKeys(value)
   table.sort(out)
   return out
 end
-
-local inventoryText = ""
 
 function LocalSprites.writeInventory(data)
   if type(data) ~= "table" then return false end
@@ -312,6 +321,15 @@ function LocalSprites.row(mod)
   }
 end
 
+local function vascList(mod, game, title, items, opts)
+  local menu = mod.ui.ListMenu.new(game, title, items, opts)
+  local ok, hub = pcall(V.require, "VascMenu")
+  if ok and hub and type(hub.decorateActive) == "function" then
+    return hub.decorateActive(mod, menu)
+  end
+  return menu
+end
+
 function LocalSprites.install(mod)
   LocalSprites.ensureTree()
   local screens = mod and mod.content and mod.content.screens
@@ -319,27 +337,18 @@ function LocalSprites.install(mod)
     screens:register("VascUserSprites", {
       new=function(game)
         local items = {
-          {label="CUSTOM SPRITES", right=enabled and "ON" or "OFF",
-           action="toggle"},
-          {label="BACK TO GAME / KASC", action="default"},
+          {label="CONTENT PROFILE", right=enabled and "CUSTOM" or "INACTIVE"},
           {label="RESCAN PNG FILES", action="rescan"},
           {label="README + INDEX", action="help"},
           {label="POKEMON: FRONT/BACK"},
           {label="PLAYER + TRAINERS"},
           {label="DEX/ICONS/OVERWORLD"},
         }
-        return mod.ui.ListMenu.new(game, "USER SPRITES", items, {
+        return vascList(mod, game, "USER SPRITES", items, {
           onChoose=function(item, menu)
-            if item.action == "toggle" then
-              LocalSprites.setEnabled(game, not enabled)
-              menu:close()
-            elseif item.action == "default" then
-              LocalSprites.backToDefault(game)
-              menu:close()
-            elseif item.action == "rescan" then
+            if item.action == "rescan" then
               LocalSprites.rescan()
               LocalSprites.writeInventory(game.data)
-              LocalSprites.setEnabled(game, true)
               menu:close()
             elseif item.action == "help" then
               LocalSprites.writeInventory(game.data)
@@ -366,7 +375,7 @@ function LocalSprites.install(mod)
           {label="README_EN + README_DE"},
           {label="BACK = GAME/KASC"},
         }
-        return mod.ui.ListMenu.new(game, "SPRITE NAMING", items, {
+        return vascList(mod, game, "SPRITE NAMING", items, {
           onChoose=function(_, menu) menu:close() end,
         })
       end,

@@ -189,15 +189,20 @@ end
 -- supplies the content identity; caching by the canvas alone would hand the
 -- next form the previous form's baseline.  The returned max coordinates are
 -- inclusive, matching inkBounds above.
-function BattlePics.inkBounds(img, identity)
+function BattlePics.inkBounds(img, identity, transient)
   if not img then return nil end
-  local slot = boundsCache[img]
-  if not slot then
+  -- The engine paints grow-in/shrink-out into one reusable side Canvas.  Its
+  -- first three grow frames are deliberately empty, then 3/7, 5/7 and full
+  -- artwork follow under the SAME sprite identity.  A negative result (or
+  -- the first small result) from that mutable interval must therefore never
+  -- become the permanent bounds for the deployed Pokemon.
+  local slot = not transient and boundsCache[img] or nil
+  if not transient and not slot then
     slot = {}
     boundsCache[img] = slot
   end
   local key = identity or false
-  local hit = slot[key]
+  local hit = slot and slot[key] or nil
   if hit ~= nil then
     if hit == false then return nil end
     return hit[1], hit[2], hit[3], hit[4]
@@ -211,7 +216,7 @@ function BattlePics.inkBounds(img, identity)
     if x0 then result = { x0, y0, x1, y1 } end
   end)
   if not ok then result = false end
-  slot[key] = result
+  if slot then slot[key] = result end
   if result == false then return nil end
   return result[1], result[2], result[3], result[4]
 end

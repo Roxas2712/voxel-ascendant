@@ -31,8 +31,20 @@
 local V = ...
 
 local Assets = require("src.render.Assets")
+local CanvasPresentation = V.require("CanvasPresentation")
 
 local GlassMask = {}
+
+local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
+  or CanvasPresentation.OS == "Android"
+local MobileDiagnostic = V and V.mod and V.mod._vascMobileDiagnostic or nil
+local function mobileDiagnostic(name, ...)
+  local fn = MobileDiagnostic and MobileDiagnostic[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if ok then return a, b end
+  return nil
+end
 
 -- pane geometry the scan accepts: six glass texels across, and this many
 -- rows of them between the two border rows
@@ -113,6 +125,23 @@ local function entry(tileset)
   if not path then return nil end
   local hit = cache[path]
   if hit then return hit end
+  -- Glass is an optional lighting accent.  Its detector crosses the Lua/C
+  -- boundary once per atlas texel and then uploads another atlas-sized image;
+  -- doing that synchronously before the first terrain job is precisely the
+  -- wrong trade on a phone.  Cache an explicit empty verdict so prefetch does
+  -- not retry, and let the scene shader bind the existing 1x1 transparent
+  -- stand-in. Desktop keeps the complete shape detector and glass lighting.
+  if MOBILE_RUNTIME then
+    cache[path] = { rects = {}, texture = false }
+    mobileDiagnostic("checkpoint", "mobile-glass-mask-skipped", {
+      caller="GlassMask.prepare", context="world", path=path,
+      reason="mobile-world-core",
+    })
+    return cache[path]
+  end
+  mobileDiagnostic("checkpoint", "glass-mask-image-read-start", {
+    caller="Assets.imageData", context="world", path=path,
+  })
   local ok, data = pcall(Assets.imageData, path)
   if not (ok and data) then
     -- unreadable art is a verdict for the session, not a retry loop
@@ -120,12 +149,20 @@ local function entry(tileset)
     return cache[path]
   end
   local w, h = data:getDimensions()
+  mobileDiagnostic("checkpoint", "glass-mask-scan-start", {
+    caller="GlassMask.scan", context="world", path=path,
+    width=w, height=h,
+  })
   local rects = GlassMask.scan(function(x, y)
     return data:getPixel(x, y)
   end, w, h)
   local texture = false
   if #rects > 0 and love.image and love.image.newImageData
      and love.graphics and love.graphics.newImage then
+    mobileDiagnostic("checkpoint", "glass-mask-upload-start", {
+      caller="love.graphics.newImage", context="world", path=path,
+      width=w, height=h, panes=#rects,
+    })
     local built = pcall(function()
       local mask = love.image.newImageData(w, h)
       for _, r in ipairs(rects) do
@@ -141,6 +178,10 @@ local function entry(tileset)
     if not built then texture = false end
   end
   cache[path] = { rects = rects, texture = texture }
+  mobileDiagnostic("checkpoint", "glass-mask-ready", {
+    caller="GlassMask.prepare", context="world", path=path,
+    panes=#rects, texture=texture and true or false,
+  })
   return cache[path]
 end
 

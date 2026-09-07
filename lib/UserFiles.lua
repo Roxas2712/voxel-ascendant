@@ -28,4 +28,33 @@ function UserFiles.path(relative)
   return ok and type(value) == "string" and value or nil
 end
 
+function UserFiles.image(relative)
+  if not (assets and type(assets.image) == "function") then return nil end
+  local ok, value = pcall(assets.image, assets, relative)
+  return ok and value or nil
+end
+
+function UserFiles.read(relative, maxBytes)
+  if not (assets and type(assets.read) == "function") then
+    return nil, "bounded asset reads are unavailable"
+  end
+  local ok, value, reason = pcall(assets.read, assets, relative, maxBytes)
+  if not ok or type(value) ~= "string" then
+    return nil, ok and reason or tostring(value)
+  end
+  return value
+end
+
+function UserFiles.sha256(relative, maxBytes)
+  if not (assets and type(assets.sha256) == "function") then
+    return nil, "bounded asset hashing is unavailable"
+  end
+  local ok, value, reason = pcall(assets.sha256, assets, relative, maxBytes)
+  if not ok or type(value) ~= "string" or not value:match("^[0-9a-f]+$")
+     or #value ~= 64 then
+    return nil, ok and reason or tostring(value)
+  end
+  return value
+end
+
 return UserFiles

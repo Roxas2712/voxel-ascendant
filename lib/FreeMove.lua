@@ -156,8 +156,11 @@ local function slideX(state, p, dx)
     if hit then break end
   end
   if hit then
-    if dx > 0 then nx = math.min(nx, edge * 16 - r - EPS)
-    else nx = math.max(nx, (edge + 1) * 16 + r + EPS) end
+    -- An NPC can enter the already-overlapped body cells between frames.
+    -- Clip this frame's requested travel, never depenetrate backwards through
+    -- the player's previous position (which would trigger an unsolicited step).
+    if dx > 0 then nx = math.max(pos.x, math.min(nx, edge * 16 - r - EPS))
+    else nx = math.min(pos.x, math.max(nx, (edge + 1) * 16 + r + EPS)) end
   end
   pos.x = nx
   return hit
@@ -177,8 +180,8 @@ local function slideZ(state, p, dz)
     if hit then break end
   end
   if hit then
-    if dz > 0 then nz = math.min(nz, edge * 16 - r - EPS)
-    else nz = math.max(nz, (edge + 1) * 16 + r + EPS) end
+    if dz > 0 then nz = math.max(pos.z, math.min(nz, edge * 16 - r - EPS))
+    else nz = math.min(pos.z, math.max(nz, (edge + 1) * 16 + r + EPS)) end
   end
   pos.z = nz
   return hit
@@ -250,13 +253,12 @@ function FreeMove.tick(state)
   local Game = require("src.core.Game")
   local input = Game.input
 
-  -- the head is the facing: what A talks to, what the sun's card shows,
-  -- which way a bonk points. (A body that is WALKING may turn along its
-  -- travel instead -- see below, once there is a travel to turn along; a
-  -- standing one always faces where the camera looks, which is what makes
-  -- A predictable.) pointBody rather than compassFacing, so the card also
-  -- gets the CONTINUOUS bearing behind that compass point.
-  p.facing = FirstPerson.pointBody(0, 0)
+  -- First person keeps the body aligned to the live look bearing. Third
+  -- person deliberately keeps the last real travel bearing while standing,
+  -- matching Gen 2: releasing the stick after walking toward the camera must
+  -- not turn the visible actor around. pointBody's continuous bearing remains
+  -- the source for the billboard frame in both cases.
+  p.facing = FirstPerson.standingBodyFacing(p.facing)
 
   if input:wasPressed("a") then
     state:interact()

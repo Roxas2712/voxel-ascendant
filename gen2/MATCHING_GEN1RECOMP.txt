@@ -1,0 +1,81 @@
+STADIUM2_OVERWORLD_MODELS v0.2.81 matching engine snapshot
+
+Repository: bryanthaboi/gen1recomp
+Branch: dev
+Commit: 5198b35945be11a9713a512dbb6924564850773e
+Commit date: 2026-08-15 14:44:20 UTC (current dev at v0.2.78 build time)
+
+v0.2.39 was checked against the current Gen-2 START routing and built-in pause
+submenu classes on this dev snapshot: StartMenu, PartyMenu, PackMenu, PokedexMenu,
+Pokegear, TrainerCard, SaveMenu and OptionsMenu. Use the matching engine snapshot
+when reproducing behavior across later dev changes.
+
+v0.2.40 additionally checked the current `src/mods/ManagerState.lua` screen model (`list`, `detail`, `options`, `permissions`, `errors`, `apply`) and `src/core/StateStack.lua` `screen.pushed` seam. The mod-menu skin calls ManagerState's own row/value/action methods and only replaces draw presentation.
+
+v0.2.52 additionally checks v0.1.83 StartMenu's `ui.start_menu.items` injection contract and ManagerState's public `openOptions` path for the direct pause-menu settings shortcut.
+
+v0.2.54 additionally binds Gen2 OptionsMenu's native TILT ladder to the voxel FULL camera pitch and treats pause-skinned widescreen Gen2 pages as live-world overlays in the compose bridge.
+
+
+v0.2.55 additionally uses the v0.1.83 ManagerState -> Game2 persistence seam, keeps ChunkMesher as the sole voxel mesh owner while adding a save-folder FULL-mesh cache, and reuses the existing Stadium PartyModelPreview for pause POKéDEX list/entry rendering.
+v0.2.56 additionally checks the v0.1.83 split between Game2's `gold` options block and Loader's top-level `modOptions`, and moves Android screenFlip ownership from render.compose to the complete Game2:draw frame so Game2's later render.hud / TouchControls layer is rotated too.
+
+
+v0.2.57 keeps the same Gen1Recomp v0.1.83 API target while tightening the mod-side Pokédex viewport and OPEN WORLD placement/cached-geometry correctness. No engine patch is required.
+
+v0.2.59 keeps the same engine target and retunes only mod-side Stadium UI preview framing: high-resolution overscan remains, but the preview camera is tighter and aimed higher so complete models render larger without changing the UI boxes. v0.2.58 cache/Android fixes remain.
+
+v0.2.60 keeps the same engine target and adds a mod-side CUSTOM UI native-menu bypass plus a taller Pokédex model viewer; no engine patch is required.
+
+
+v0.2.62 keeps the same engine target and changes only mod-side Stadium preview camera framing: current skinned-pose vertex bounds now drive centering and fit, so complete animated models remain visible without an engine patch.
+v0.2.63 keeps the same engine target, removes v0.2.62's unsafe pre-scene posed-vertex preview probing, and restores the stable Stadium preview render order with camera-only Pokedex headroom; no engine patch is required.
+
+
+v0.2.64 keeps the same Gen1Recomp compatibility floor but adds fail-closed boot guards around post-v0.2.45 optional helpers, narrows settings persistence, Android-gates the full-frame patch, and quarantines persistent voxel-cache I/O.
+
+v0.2.65 additionally targets the current sandboxed mod runtime for Stadium ROM import: platform/file-picker/filesystem work is delegated to engine-owned Platform, RomImporter, SaveData.persistenceFs and HostShell seams, so the action no longer requires direct love.system/love.filesystem/io access from the mod.
+
+
+v0.2.66 keeps the current engine API target but restores v0.2.45's live ChunkMesher implementation and removes persistent disk-cache integration from the active terrain path. v0.2.65 Stadium picker compatibility remains.
+
+
+v0.2.67 keeps the same engine target and fixes the fresh Gold native TILT=OFF interaction: while 3D VOXEL WORLD is enabled, native TILT level 0 selects the normal 35-degree voxel diorama instead of flattening the voxel camera. Native TILT 15/35/50 remain literal; disabling 3D VOXEL WORLD still returns to native 2D.
+
+
+v0.2.68 additionally targets the current Gold render-pipeline contract: `Game2` installs `src.render.Pipelines` for Gold and the Gold world pass can consume a registered `drawWorld(ctx)` callback (`ctx.state` is the live World, with width/height/vw/vh/camera/scale fields). The mod registers `stadium2_gold_voxel` on that supported seam and retains render.compose only as a compatibility fallback for older hosts.
+
+
+v0.2.69 desktop compatibility note: the mod intentionally does not activate the experimental Gold drawWorld bridge from v0.2.68. Desktop world replacement goes through render.compose, matching the confirmed-working v0.2.45 integration; Voxel3D, ShadowMap and AntiAlias all exit to the physical screen on desktop, while Android/iOS retain nested-canvas restoration.
+
+v0.2.70 current-engine compatibility note: compared with v0.2.69's 26e9e1d snapshot, current dev has the stricter mod Sandbox plus newer Renderer/Game2/Loader behavior. The live voxel/compose bridges no longer dereference sandbox-blocked love.system. The supported Gold drawWorld pipeline is active unless red_3d_player is present; with Character Selector installed, compose owns Stadium presentation so the selector's public `voxel` pipeline and selected skin/camera state remain available.
+
+
+v0.2.71 Wilds compatibility note: current Gen1Recomp sandboxes block love.filesystem as well as love.system. Embedded Wilds asset/read probes now use mod-owned read/info APIs and EngineCompat instead, restoring roaming grass/bush Pokémon without weakening the sandbox.
+
+v0.2.72 follower compatibility note: Gold owns primary follower slot #1 through src.world.gen2.Follower. Embedded Wilds reserves that slot and only creates extra party trailers for follower counts above one; orphan native follower copies are removed at map entry.
+
+
+v0.2.73 follower compatibility note: the shared embedded Wilds control engine already suppresses the stock/native follower in normal FOLLOW mode and owns `pokepcTrailer` movement. Gold therefore keeps Wilds as visible follower slot #1 and uses src.world.gen2.Follower only as a fallback when Wilds is unavailable. Stale native `pikachuFollower` copies are purged without touching Wilds trailers.
+
+
+v0.2.74 battle-UI compatibility note: current Gold src.ui.gen2.BattleState holds intro PromptButton lines at messageTimer > 0 until A/B and can set phase=menu during a fixed step before the next render. BattleControllerUI now auto-pages only ordinary intro prompts and requires a completed custom command-panel draw before direct command shortcuts arm, so no controller edge can select an unseen command.
+
+v0.2.75 is mod-side only: it keeps the same Gen1Recomp snapshot and fixes BattleControllerUI geometry plus Stadium preview camera math. No engine patch is required; the preview now accounts for the viewport aspect ratio when deriving horizontal FOV and uses current posed mesh bounds.
+
+
+v0.2.76 current-engine compatibility note: verified against dev head 7804ef97938c25da4cf86257a161b9f5f32e2a3d. The release uses the shared src.render.TextBox / src.ui.ChoiceBox presentation surface and the official src.render.Zoom `zoom.range` hook; no engine patch is required. The engine retains its 0.25 minimum survey scale safety clamp.
+
+
+v0.2.77 model-toggle compatibility note: no engine patch is required. The existing stadium3dSprites key remains the Pokemon-model gate and the new player3dModel key only gates the red_3d_player mesh bridge; camera/pipeline coexistence stays unchanged.
+
+
+v0.2.78 material/Pokédex compatibility note: current Gold PokedexMenu still exposes NEW/OLD/A-Z ordering, but the custom Stadium UI now wraps its backing order to National Dex number while enabled. Stadium extraction itself remains mod-owned; DSM6 restores N64 G_SETTILE palette/address state and forces a one-time local pack rebuild. No engine patch is required.
+
+
+v0.2.79 texture compatibility note: DSM7 is a mod-owned Stadium cache change only. It adds RDP SetTileSize origin/clamp-window semantics and correct zero-mask clamp handling; no Gen1Recomp engine patch is required. Current dev remained 5198b35945be11a9713a512dbb6924564850773e at build time.
+
+v0.2.80 follower color compatibility note: current Gen1Recomp dev remains 5198b35945be11a9713a512dbb6924564850773e at build time. Current Gen-2 SpriteRenderer treats full-color (`trueColor`) custom sheets as raw RGBA and uses explicit OBJ palettes only for non-trueColor Gen-2 sprites; v0.2.80 therefore removes the old Gen-1 luminance conversion from this Gen-2-only mod rather than expecting a later zone recolor pass.
+
+
+v0.2.81 follower leader compatibility note: this release changes only the embedded Wilds party-follower ownership logic. Trainer FOLLOW mode now reconciles its saved selection fingerprint to the Pokemon currently occupying the bound party slot before trailer rendering. No engine-side API change or Stadium model-cache rebuild is required.

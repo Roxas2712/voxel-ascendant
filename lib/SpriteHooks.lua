@@ -4,15 +4,8 @@
 
 local V = ...
 local Runtime = require("src.mods.Runtime")
-local SpritePacks = V.require("SpritePacks")
-local LocalSprites = V.require("LocalSprites")
+local LocalContent = V.require("LocalContent")
 local SpriteHooks = {}
-
-local function overridesEnabled()
-  if LocalSprites.enabled and LocalSprites.enabled() then return true end
-  local _, selected = SpritePacks.active()
-  return selected ~= "base"
-end
 
 local function identity(value) return value end
 
@@ -23,9 +16,7 @@ local function publicPath(name, current, ctx)
 end
 
 local function path(kind, current, ctx, specific)
-  if not overridesEnabled() then return current end
-  current = SpritePacks.resolve(kind, current, ctx)
-  current = LocalSprites.resolve(kind, current, ctx)
+  current = LocalContent.resolveSprite(kind, current, ctx)
   current = publicPath("vasc.sprite." .. kind, current, ctx)
   if specific then current = publicPath("vasc.sprite." .. specific, current, ctx) end
   return current
@@ -77,20 +68,16 @@ local function installRenderer()
   if held then
     if current ~= held.wrapper then return false end
     held.resolve = function(def, seed)
-      if not overridesEnabled() then return def end
       local ctx = overworldContext(def, seed)
-      local chosen = SpritePacks.resolve("overworld", def, ctx)
-      chosen = LocalSprites.resolve("overworld", chosen, ctx)
+      local chosen = LocalContent.resolveSprite("overworld", def, ctx)
       return publicDef(chosen, ctx)
     end
     return true
   end
   held = {}
   held.resolve = function(def, seed)
-    if not overridesEnabled() then return def end
     local ctx = overworldContext(def, seed)
-    local chosen = SpritePacks.resolve("overworld", def, ctx)
-    chosen = LocalSprites.resolve("overworld", chosen, ctx)
+    local chosen = LocalContent.resolveSprite("overworld", def, ctx)
     return publicDef(chosen, ctx)
   end
   held.wrapper = function(def, seed)

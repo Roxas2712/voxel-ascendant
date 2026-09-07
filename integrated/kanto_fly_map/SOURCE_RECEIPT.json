@@ -1,0 +1,101 @@
+{
+  "schema": "vasc-integrated-kanto-widescreen-source/v1",
+  "feature_version": "1.0.0",
+  "source_archive": {
+    "filename": "vasc-kanto-fly-map-widescreen-1.0.0.zip",
+    "bytes": 4940355,
+    "sha256": "e08b41897b68fa59588059f2caab6ab0c55a91fe3f98bfae43d1a1bd513a2744",
+    "file_count": 8,
+    "members": [
+      {
+        "path": "manifest.json",
+        "bytes": 761,
+        "sha256": "918e39751ce8ccb81ff00ec61fc9b5a86a73f5240cac5f4acb0bc955f595f6a5"
+      },
+      {
+        "path": "mod.card",
+        "bytes": 333,
+        "sha256": "59f807fd4faa9c829b1ba1152584f373e7929e9b4e508163dab09f5cc4af1487"
+      },
+      {
+        "path": "main.lua",
+        "bytes": 42674,
+        "sha256": "8c96204400547d51c94f4720e599c07ed9b97a79767c8bb2b7782df88d3519a9"
+      },
+      {
+        "path": "README.md",
+        "bytes": 3469,
+        "sha256": "5ca2699ae09fcf408f44dae0708f7bf5676ffea2661d0916f54e3c8b53b967e1"
+      },
+      {
+        "path": "CHANGELOG.md",
+        "bytes": 10097,
+        "sha256": "a0761b1b54cf556c3f0472dad3c841ad23aeef4fa0a08d7884fde9503b9b0ff2"
+      },
+      {
+        "path": "assets/kanto_fly_map_wide.png",
+        "bytes": 383185,
+        "sha256": "6c7364811ab093cd50289f232af194f030f05e883e4705f9808e75d12e43a9a1"
+      },
+      {
+        "path": "assets/kanto_fly_map_wide_zoom.png",
+        "bytes": 1481735,
+        "sha256": "c9ce022bf3b68f2381c818c678d42595e5acd5fe077b4a8010b86db0fe6c778f"
+      },
+      {
+        "path": "assets/kanto_fly_map_vintage_clean.png",
+        "bytes": 3067215,
+        "sha256": "9757923e7e35beaa0e71d784d23d7feb597cfd8a715deece40c528213903f966"
+      }
+    ]
+  },
+  "upstream_files": [
+    {
+      "path": "main.lua",
+      "bytes": 42674,
+      "sha256": "8c96204400547d51c94f4720e599c07ed9b97a79767c8bb2b7782df88d3519a9",
+      "delivery": "ported"
+    },
+    {
+      "path": "assets/kanto_fly_map_wide.png",
+      "bytes": 383185,
+      "sha256": "6c7364811ab093cd50289f232af194f030f05e883e4705f9808e75d12e43a9a1",
+      "delivery": "byte-identical-runtime"
+    },
+    {
+      "path": "assets/kanto_fly_map_wide_zoom.png",
+      "bytes": 1481735,
+      "sha256": "c9ce022bf3b68f2381c818c678d42595e5acd5fe077b4a8010b86db0fe6c778f",
+      "delivery": "byte-identical-runtime"
+    },
+    {
+      "path": "assets/kanto_fly_map_vintage_clean.png",
+      "bytes": 3067215,
+      "sha256": "9757923e7e35beaa0e71d784d23d7feb597cfd8a715deece40c528213903f966",
+      "delivery": "source-only-omitted"
+    }
+  ],
+  "integrated_files": [
+    {
+      "path": "integrated/kanto_fly_map/widescreen.lua",
+      "bytes": 47280,
+      "sha256": "c7ca5adb15b60f1d0576716bab7432c348bce6aea137b1fb1a7eeeafdf3e258a"
+    },
+    {
+      "path": "assets/maps/kanto_fly_map_wide.png",
+      "bytes": 383185,
+      "sha256": "6c7364811ab093cd50289f232af194f030f05e883e4705f9808e75d12e43a9a1"
+    },
+    {
+      "path": "assets/maps/kanto_fly_map_wide_zoom.png",
+      "bytes": 1481735,
+      "sha256": "c9ce022bf3b68f2381c818c678d42595e5acd5fe077b4a8010b86db0fe6c778f"
+    }
+  ],
+  "runtime_policy": {
+    "public_modes": ["cartridge", "widescreen"],
+    "compact_288x240": "internal-fail-open-only",
+    "town_map_owner": "VOXEL_ASCENDANT",
+    "gen2": false
+  }
+}

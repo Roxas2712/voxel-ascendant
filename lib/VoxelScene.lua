@@ -16,23 +16,94 @@ local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
 local ShadowMap = V.require("ShadowMap")
 local Shadows = V.require("Shadows")
+local ShadowPolicy = V.require("ShadowPolicy")
 local ChunkMesher = V.require("ChunkMesher")
 local SpriteBillboards = V.require("SpriteBillboards")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
 local Voxel = V.require("VoxelState")
 local Sky = V.require("Sky")
+local SkyEvents = V.require("SkyEvents")
 local Water = V.require("Water")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local FirstPerson = V.require("FirstPerson")
 local HorizonWall = V.require("HorizonWall")
+local InteriorCutaway = V.require("InteriorCutaway")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local Weather = V.require("Weather")
+local CanvasPresentation = V.require("CanvasPresentation")
+local MobileSceneryGate = V.require("MobileSceneryGate")
+local ExternalKascWalker = V.require("ExternalKascWalker")
+local okWeatherTweak, WeatherTweak = pcall(V.require, "WeatherTweak")
+if not okWeatherTweak or type(WeatherTweak) ~= "table"
+    or type(WeatherTweak.observe) ~= "function"
+    or type(WeatherTweak.groundMode) ~= "function"
+    or type(WeatherTweak.groundAmount) ~= "function"
+    or type(WeatherTweak.apply) ~= "function" then
+  -- One hot-reload frame may still run an older module namespace. Preserve
+  -- the complete canonical scene until the new shared helper is available.
+  WeatherTweak = {
+    observe = function() end,
+    groundMode = function(_, mode, native) return native == false and "clear" or mode end,
+    groundAmount = function(_, _, native) return native == false and 0 or 1 end,
+    apply = function(canvas) return canvas end,
+  }
+end
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
 
 local VoxelScene = {}
+
+local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
+  or CanvasPresentation.OS == "Android"
+
+local MobileDiagnostic = V and V.mod and V.mod._vascMobileDiagnostic or nil
+local function mobileDiagnostic(name, ...)
+  local fn = MobileDiagnostic and MobileDiagnostic[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if ok then return a, b end
+  return nil
+end
+
+local function resolveShadowPolicy(context)
+  if type(ShadowPolicy.resolve) == "function" then
+    return ShadowPolicy.resolve(context)
+  end
+  return { enabled = true, casters = "world", cloudOpacity = 0,
+           cloudProgress = 0, cloudSeed = 0,
+           birdOpacity = 0, birdEnabled = false,
+           birdProgress = 0, birdSeed = 0,
+           key = "legacy-world" }
+end
+
+-- Fail closed if an old hot-reload namespace or a focused test fixture has
+-- not populated the new helper yet: the historical closed-room rendering is
+-- always the safe fallback.
+local function cutawayActive(map, level)
+  return type(InteriorCutaway.active) == "function"
+         and InteriorCutaway.active(map, level) == true
+end
+
+local function cutawayBodyOnly(map, level)
+  return type(InteriorCutaway.bodyOnly) == "function"
+         and InteriorCutaway.bodyOnly(map, level) == true
+end
+
+local function cutawayRimVisible(rim, enabled)
+  if type(InteriorCutaway.rimVisible) ~= "function" then return true end
+  return InteriorCutaway.rimVisible(rim, enabled)
+end
+
+-- Older compatible Voxel3D facades have no directional clip plane. FULL can
+-- still remove the synthetic roof there; the camera-side wall simply stays
+-- closed instead of crashing the complete scene during a hot reload.
+local function setCutaway(...)
+  if type(Voxel3D.setCutaway) == "function" then
+    return Voxel3D.setCutaway(...)
+  end
+end
 
 -- The map object whose CURRENT scene most recently passed the same atomic
 -- gate render() uses.  Voxel.ready alone is not enough at a warp midpoint:
@@ -142,7 +213,11 @@ end
 -- One flat colour, which is what a caller that only needs something to clear the
 -- void to wants -- the overworld battle's arena shot is one of those. The
 -- gradient is added on top of this by skyFor, for the free-roam camera alone.
-function VoxelScene.skyColor(map, t)
+local function sceneSkyColor(map, t, mobileScenery)
+  -- The phone bootstrap deliberately has no semantic panorama.  Besides
+  -- avoiding a desktop-only map-definition walk here, returning no sky keeps
+  -- the first frame to one colour/depth target and the compact scene shader.
+  if MOBILE_RUNTIME and mobileScenery ~= true then return nil end
   local canopy = DayNight.isCanopy(map)
   if not canopy and not HorizonWall.hasSky(map) then return nil end
   if not Sky.enabled() then return nil end
@@ -163,6 +238,12 @@ function VoxelScene.skyColor(map, t)
   return sky
 end
 
+-- Battle/compatibility callers keep M10's mobile answer. Only skyFor below,
+-- the Gen-1 overworld seam guarded by MobileSceneryGate, may opt into P1.
+function VoxelScene.skyColor(map, t)
+  return sceneSkyColor(map, t, false)
+end
+
 -- The free-roam sky: the flat one above, dressed with the banded gradient
 -- (lib/Sky.lua).
 --
@@ -172,11 +253,18 @@ end
 -- placed camera whose horizon sits above the frame entirely, so it keeps the
 -- flat fill it has always had -- there is no gradient to see from down there,
 -- and the arena's look is not this rung's to change.
-local function skyFor(map)
-  local sky = VoxelScene.skyColor(map, skyStrength(Voxel.angle))
+local function skyFor(map, weatherMode)
+  if type(Sky.setFrameWeather) == "function" then
+    Sky.setFrameWeather(weatherMode)
+  end
+  local mobileScenery = MOBILE_RUNTIME
+    and type(MobileSceneryGate.allow) == "function"
+    and MobileSceneryGate.allow(map) == true
+  local sky = sceneSkyColor(
+    map, skyStrength(Voxel.angle), mobileScenery)
   if not sky then return nil end
   if sky.canopy then return sky end
-  return Sky.dress(sky)
+  return Sky.dress(sky, weatherMode)
 end
 
 VoxelScene._skyFor = skyFor           -- named for the suite
@@ -211,6 +299,12 @@ local function groundAt(map, cellX, cellY)
   local shapes = TileShape.forMap(map)
   local s = shapes[map:cellTile(cellX, cellY)]
   if not s then return base end
+  -- The FLAT renderer removes the intrinsic ledge lip as well as the derived
+  -- terrace datum. Keep actors/camera on that same plane; otherwise a player
+  -- standing on hedge-separator collision art would float six pixels above
+  -- the watertight mesh.
+  if elevation and elevation.terrainMode == "flat"
+     and s.class == "ledge" then return base end
   -- a recessed class (water) still supports whatever stands on it; only
   -- raised ground lifts the model.  Stairs never do: the class height is
   -- the flight's TALL end, but the player enters at floor level and the
@@ -224,6 +318,34 @@ VoxelScene.YAW = YAW
 -- shared with the overworld battle, which stands its mons on map cells and
 -- needs the same answer about what height "the floor" is there
 VoxelScene.groundAt = groundAt
+
+-- cellX/cellY remain the origin until an engine step completes. On a WORLD
+-- boundary that means a wandering NPC moving uphill would otherwise keep the
+-- lower support for all sixteen travel pixels, appear inside the terrace, and
+-- pop upward only after arrival. Follow the actual rendered pose between the
+-- two proven surfaces. Ledge hops keep their authored arc and origin support;
+-- their two-cell discontinuity is intentionally not an ordinary slope.
+local function groundForEntity(map, entity, hopping)
+  local base = groundAt(map, entity.cellX, entity.cellY)
+  if hopping or not entity.moving
+      or type(entity.targetX) ~= "number"
+      or type(entity.targetY) ~= "number" then
+    return base
+  end
+  local dx = entity.targetX - entity.cellX
+  local dy = entity.targetY - entity.cellY
+  local span = math.max(math.abs(dx), math.abs(dy)) * 16
+  if span <= 0 then return base end
+  local px = tonumber(entity.px) or entity.cellX * 16
+  local py = tonumber(entity.py) or entity.cellY * 16
+  local travelled = math.max(math.abs(px - entity.cellX * 16),
+                             math.abs(py - entity.cellY * 16))
+  local t = math.max(0, math.min(1, travelled / span))
+  local target = groundAt(map, entity.targetX, entity.targetY)
+  return base + (target - base) * t
+end
+
+VoxelScene.groundForEntity = groundForEntity
 
 -- Camera-ward pull distance for billboards (and the grass rows, which
 -- must keep their relative depth to feet): just enough that a leaned-back
@@ -644,6 +766,268 @@ local function currentOnlyPlan(state)
   }
 end
 
+-- Mobile first-frame policy -------------------------------------------------
+--
+-- DramaticShape's proven phone path becomes drawable as soon as the current
+-- map's compact BODY exists. VASC's desktop scenery planner instead waits for
+-- glass, an authored horizon, atlases and an atomic connected-map union. That
+-- richer gate is valuable on desktop but makes one optional resource capable
+-- of holding Gen1Recomp's opaque transition forever on a phone.
+--
+-- Keep the mobile bootstrap deliberately small: current map only, BODY first
+-- and atlas CPU preparation. Once that exact scene has produced a real canvas,
+-- its current-only Horizon/Panorama is staged and promoted. Direct connections
+-- then enter a depth-1 ring one at a time; each BODY becomes visible only with
+-- its own aux/atlas and future semantic horizon. No semantic phone map builds
+-- current FULL, and no ring work can delay the first scene or a battle. A
+-- two-hop survey never enters this path. Desktop continues through
+-- semanticPlan unchanged below.
+local mobileCoreTrace = {
+  map = nil, mapObject = nil, phases = {}, presented = false,
+}
+
+-- The exact visible semantic state against which phone scenery is prepared.
+-- It is retained by object identity only; a warp (including same-id map
+-- replacement) drops it before any new semantic resource can be admitted.
+local mobileSceneryPlanMap, mobileSceneryPlan = nil, nil
+local mobileSceneryHorizonMap, mobileSceneryHorizon = nil, nil
+local mobileSkyWarmMap, mobileSkyWarmPhase = nil, "clouds"
+local mobileSceneryCanvasMap, mobileSceneryNextSlot = nil, "mobile-scenery"
+local mobileSceneryLifecycleArmed = false
+
+-- Gen2's useful phone invariant is an admitted depth-1 ring, not an atomic
+-- FULL + every-neighbour transaction.  `admitted` is deliberately separate
+-- from the visible plan: one direct map may enter the BODY/atlas work queue
+-- per pipeline update, while a completed current-only canvas remains on
+-- screen.  A neighbour becomes visible only after its own BODY, aux bundle,
+-- atlas and the future semantic horizon all agree in one plan.
+local mobileRingPlanMap, mobileRing = nil, nil
+local mobileGateStatus
+
+local function traceMobileCore(map, phase, fields)
+  local id = map and map.id or "unknown"
+  if mobileCoreTrace.map ~= id or mobileCoreTrace.mapObject ~= map then
+    mobileCoreTrace.map, mobileCoreTrace.mapObject = id, map
+    mobileCoreTrace.phases, mobileCoreTrace.presented = {}, false
+  end
+  if mobileCoreTrace.phases[phase] then return end
+  mobileCoreTrace.phases[phase] = true
+  fields = type(fields) == "table" and fields or {}
+  fields.caller = fields.caller or "VoxelScene.prefetch"
+  fields.context = fields.context or "world"
+  fields.map = id
+  mobileDiagnostic("checkpoint", "mobile-core-" .. phase, fields)
+end
+
+local function resetMobileRing(map)
+  mobileRingPlanMap = map
+  mobileRing = {
+    map = map,
+    admitted = {},
+    failed = {},
+    pending = nil,
+    promoting = nil,
+    semantic = nil,
+  }
+  return mobileRing
+end
+
+local function ringFor(map)
+  if mobileRingPlanMap ~= map or not mobileRing then
+    return resetMobileRing(map)
+  end
+  return mobileRing
+end
+
+local function semanticMobileRing(map)
+  if type(HorizonWall.preferBody) ~= "function" then return false end
+  local ok, answer = pcall(HorizonWall.preferBody, map)
+  return ok and answer == true
+end
+
+-- Keep only current + already admitted direct maps resident.  ChunkMesher
+-- itself retains one previous live set for a quick door/warp round-trip, so
+-- this bounds the active phone ring without weakening that existing cache.
+local function setMobileRingLive(state, ring)
+  local live = { [state.map.id] = true }
+  local key = "mobile-ring|" .. tostring(state.map.id)
+  local _, directOrder = directIds(state)
+  for _, i in ipairs(directOrder) do
+    local nb = state.neighbors[i]
+    local id = nb and nb.map and nb.map.id
+    if id and ring.admitted[id] then
+      live[id] = true
+      key = key .. "|" .. tostring(id)
+    end
+  end
+  if key ~= lastLiveKey then
+    lastLiveKey = key
+    ChunkMesher.setLive(live)
+    TerrainAtlas.setLive(live)
+  end
+  return live
+end
+
+local function mobileCorePrefetch(state)
+  local VoxelState = V.require("VoxelState")
+  local map = state and state.map
+  if not map then
+    VoxelState.ready = false
+    readyMap = nil
+    return nil, {}, nil, {}, currentOnlyPlan(state or {
+      map = { id = "missing" }, worldMaps = nil,
+    })
+  end
+
+  -- Once the real phone path has run, a following map object owns a complete
+  -- core->direct->scenery transaction even if the engine briefly lowers the
+  -- general VOXEL-active gate during its transition.  OFF at cold startup
+  -- never reaches this point and therefore cannot arm background work.
+  mobileSceneryLifecycleArmed = true
+
+  if mobileSceneryPlanMap ~= map then
+    mobileSceneryPlanMap, mobileSceneryPlan = map, nil
+    mobileSceneryHorizonMap, mobileSceneryHorizon = map, nil
+    mobileSkyWarmMap, mobileSkyWarmPhase = map, "clouds"
+    mobileSceneryCanvasMap, mobileSceneryNextSlot = map, "mobile-scenery"
+    resetMobileRing(map)
+  end
+  local ring = ringFor(map)
+  ring.semantic = semanticMobileRing(map)
+  if type(MobileSceneryGate.enterMap) == "function" then
+    MobileSceneryGate.enterMap(map)
+  end
+
+  traceMobileCore(map, "prefetch-start", {
+    reason="phone-current-map-first",
+  })
+
+  -- TerrainAtlas's mobile implementation is CPU-first and never performs
+  -- a GPU readback. Complete it before advertising the body; unlike glass or
+  -- scenery this texture is required to draw the source map at all.
+  if TerrainAtlas.prepared and TerrainAtlas.prepare
+      and not TerrainAtlas.prepared(map) then
+    traceMobileCore(map, "atlas-prepare-start")
+    TerrainAtlas.prepare(map)
+    if TerrainAtlas.prepared(map) then
+      traceMobileCore(map, "atlas-ready")
+    end
+  end
+
+  -- Priority 2 keeps the current BODY ahead of background work without the
+  -- desktop `urgent` contract that withholds terrain until grass, flowers and
+  -- figures are all built.  Those finishing overlays may land later on a
+  -- phone; the first dependable terrain canvas must not wait for them.
+  traceMobileCore(map, "body-requested", {
+    urgent=false, priority=2, terrainFirst=true,
+  })
+  ChunkMesher.request(map, true, nil, false, 2)
+  local body, bodyWater = ChunkMesher.pair(map, true)
+
+  local baseReady = body ~= nil and atlasPrepared(map)
+  if body then
+    traceMobileCore(map, "body-ready", {
+      auxReady=ChunkMesher.auxReady(map), atlasReady=atlasPrepared(map),
+    })
+  end
+
+  -- Before a real canvas has been returned, current-map work is the entire
+  -- live set.  This prevents render()'s second prefetch in the publication
+  -- frame from doing a synchronous neighbour-atlas prepare before that first
+  -- canvas has actually reached the caller.
+  local _, directOrder = directIds(state)
+  local live = setMobileRingLive(state, ring)
+  traceMobileCore(map, "live-set", {
+    maps=(function()
+      local count = 0
+      for _ in pairs(live) do count = count + 1 end
+      return count
+    end)(),
+    depth=1,
+  })
+
+  local corePlan = currentOnlyPlan(state)
+  -- render() treats this flag as "do not ask HorizonWall for a draw-time
+  -- mesh". Here it is the intentional mobile core path, not an error.
+  corePlan.horizonFallback = true
+  corePlan.mobileCoreBootstrap = true
+  -- Once the update-only scenery lane has completed this exact current-only
+  -- HorizonWall key, the same BODY is a closed battle arena too.  A battle no
+  -- longer has to wait for unrelated direct-neighbour geometry.
+  if type(HorizonWall.cacheStatus) == "function" then
+    local okStatus, status = pcall(HorizonWall.cacheStatus, corePlan.state)
+    if okStatus and status and status.ready == true then
+      corePlan.horizonFallback = nil
+      corePlan.mobileCoreClosed = true
+    end
+  end
+  if not baseReady then
+    VoxelState.ready = false
+    readyMap = nil
+    return body, {}, bodyWater, {}, corePlan
+  end
+
+  -- BODY + atlas is a complete first publication.  Direct streaming is gated
+  -- by the successful endScene receipt set in render(), never by a timer or a
+  -- guessed number of update calls.
+  VoxelState.ready = true
+  readyMap = map
+  setActive(state, corePlan.maps)
+  traceMobileCore(map, "scene-ready", { mesh="body", directMaps=#directOrder })
+  if mobileCoreTrace.presented == true then
+    -- Keep one stable current-only plan for the staged resource coroutine. Its
+    -- canonical address is value based, so the fresh plan returned to callers
+    -- above/below resolves the same HorizonWall receipt.
+    if not mobileSceneryPlan then mobileSceneryPlan = corePlan end
+    if type(MobileSceneryGate.noteCoreReady) == "function" then
+      MobileSceneryGate.noteCoreReady(map)
+    end
+  end
+  -- The ring is admitted from stageMobileScenery(), which runs once in the
+  -- pipeline update.  Prefetch merely keeps already admitted BODY jobs alive;
+  -- render() can therefore call prefetch again without admitting a second
+  -- cold map/atlas in the same physical frame.
+  local approachedIndex = seamCandidate(state)
+  local nbMesh, nbWater = {}, {}
+  for _, i in ipairs(directOrder) do
+    local nb = state.neighbors[i]
+    if ring.admitted[nb.map.id] then
+      local priority = i == approachedIndex and 2 or 1
+      ChunkMesher.request(nb.map, true, nil, false, priority)
+      nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, true)
+    end
+  end
+
+  -- Semantic outdoor maps never enqueue the current FULL slot on a phone.
+  -- Their current-only HorizonWall is already the closed edge treatment and
+  -- every admitted direct BODY is promoted independently behind a future
+  -- horizon.  Non-semantic interiors/settings retain a maskless current FULL
+  -- fallback, but it is independent of the ring and never waits for a direct
+  -- map; this removes the old FULL+all-direct atomic dependency everywhere.
+  local terrain, terrainWater = body, bodyWater
+  -- A failed rich probe is latched for this map object.  Keep drawing the
+  -- already proven current BODY contract rather than leaking the unproven
+  -- candidate ring into the ordinary (non-scenery) render path.
+  local gateState = mobileGateStatus and mobileGateStatus(map) or nil
+  local visiblePlan = gateState and gateState.failed and corePlan
+                      or mobileSceneryPlan or corePlan
+  if not ring.semantic and mobileCoreTrace.presented == true then
+    ChunkMesher.request(map, false, nil, false, 2)
+    local full, fullWater = ChunkMesher.pair(map, false)
+    if full then
+      terrain, terrainWater = full, fullWater
+      visiblePlan.mobileClosedFull = true
+      -- Compatibility receipt for BattleScene versions which predate the
+      -- more precise mobileCoreClosed marker.  This is a closed current map,
+      -- not the removed all-direct union.
+      visiblePlan.mobileDirectUnion = true
+      visiblePlan.mobileCoreClosed = true
+    end
+  end
+  setActive(state, visiblePlan.maps)
+  return terrain, nbMesh, terrainWater, nbWater, visiblePlan
+end
+
 local function semanticPlan(state, nbMesh, nbWater, approachedIndex)
   local previousHandoff = handoffUnion
   local plan, horizonReady
@@ -756,6 +1140,7 @@ end
 -- for the first visible frame to request meshes would show the flat
 -- fallback while the first slices run.
 function VoxelScene.prefetch(state)
+  if MOBILE_RUNTIME then return mobileCorePrefetch(state) end
   local Voxel = V.require("VoxelState")
   local approachedIndex = seamCandidate(state)
 
@@ -788,7 +1173,7 @@ function VoxelScene.prefetch(state)
   -- keeping every eventual pixel identical.
   local preparedOne = false
   local GlassMask = V.require("GlassMask")
-  local wantsGlass = HorizonWall.hasSky(state.map)
+  local wantsGlass = not MOBILE_RUNTIME and HorizonWall.hasSky(state.map)
   if wantsGlass and GlassMask.prepared and GlassMask.prepare
      and not GlassMask.prepared(state.map.tileset) then
     GlassMask.prepare(state.map.tileset)
@@ -834,7 +1219,9 @@ function VoxelScene.prefetch(state)
   -- On a cold semantic map the body is the smallest complete scene the player
   -- can walk on because the horizon supplies its edge. Previously the swap
   -- still waited for every connected body, even when they were off-screen.
-  local preferBody = HorizonWall.preferBody(state.map)
+  local semanticBody = HorizonWall.preferBody(state.map)
+  local cutawayBody = cutawayBodyOnly(state.map, Voxel.level)
+  local preferBody = semanticBody or cutawayBody
   -- Request the geometry this visual mode actually needs. A body mesh is not
   -- a complete fallback when SCENERY is off (or indoors): without its ring it
   -- exposes the void. Outdoor semantic scenery deliberately chooses body-only
@@ -880,7 +1267,7 @@ function VoxelScene.prefetch(state)
   -- even that cannot be made, Voxel.ready keeps the engine's 2D world.
   local plan
   local horizonReady
-  if preferBody then
+  if semanticBody then
     local horizonFailed
     plan, horizonReady, horizonFailed = semanticPlan(
       state, nbMesh, nbWater, approachedIndex)
@@ -900,6 +1287,14 @@ function VoxelScene.prefetch(state)
       plan.horizonFallback = true
       horizonReady = #plan.state.neighbors == #(state.neighbors or {})
     end
+  elseif cutawayBody then
+    -- FULL presents an ordinary interior as an open dollhouse. Its body-only
+    -- mesh is complete by design: the omitted repeated border ring is exactly
+    -- the camera-side wall/roof being removed, not missing streamed scenery.
+    -- Connected bodies (unusual for an interior, but valid for extensions)
+    -- remain atomic so a real doorway can never open onto a cold void.
+    plan = drawPlan(state, nbMesh, nbWater)
+    horizonReady = #plan.state.neighbors == #(state.neighbors or {})
   else
     -- SCENERY OFF/interiors use the current map's masked full border. Its
     -- connection masks assume every neighbour body is present, so this path
@@ -915,10 +1310,365 @@ function VoxelScene.prefetch(state)
                    and glassReady
   Voxel.ready = complete
   readyMap = complete and state.map or nil
+  -- Publish the exact plan that can become visible, regardless of which edge
+  -- treatment produced it. Semantic scenery maintains this receipt while it
+  -- stages seam unions, but FULL interiors, cutaways and the masked FULL
+  -- fallback also need to replace a previous map's root once their complete
+  -- scene is ready. Never advertise an incomplete plan: until this gate opens
+  -- the engine is still presenting its 2D fallback.
+  if complete then setActive(state, plan.maps) end
   -- The first four values are BattleScene's established, sparse/index-aligned
   -- contract. The fifth is overworld-private and safe for old Lua callers to
   -- ignore.
   return terrain, nbMesh, water, nbWater, plan
+end
+
+mobileGateStatus = function(map)
+  if type(MobileSceneryGate.status) ~= "function" then return nil end
+  local ok, status = pcall(MobileSceneryGate.status, map)
+  return ok and type(status) == "table" and status or nil
+end
+
+local function mobileRingPairs(state, ring)
+  local meshes, waters = {}, {}
+  local _, directOrder = directIds(state)
+  for _, i in ipairs(directOrder) do
+    local nb = state.neighbors[i]
+    if nb and nb.map and ring.admitted[nb.map.id] then
+      meshes[i], waters[i] = ChunkMesher.pair(nb.map, true)
+    end
+  end
+  return meshes, waters, directOrder
+end
+
+local function nextMobileRingAdmission(state, ring, directOrder)
+  local approached = seamCandidate(state)
+  if approached then
+    local nb = state.neighbors[approached]
+    local id = nb and nb.map and nb.map.id
+    if id and not ring.admitted[id] and not ring.failed[id] then
+      return approached
+    end
+  end
+  for _, i in ipairs(directOrder) do
+    local nb = state.neighbors[i]
+    local id = nb and nb.map and nb.map.id
+    if id and not ring.admitted[id] and not ring.failed[id] then return i end
+  end
+end
+
+local function nextMobileRingCandidate(state, ring, meshes, directOrder)
+  local visible = mobileSceneryPlan and mobileSceneryPlan.maps
+                  or { [state.map.id] = true }
+  local approached = seamCandidate(state)
+  local function ready(i)
+    local nb = i and state.neighbors[i]
+    local id = nb and nb.map and nb.map.id
+    return id and ring.admitted[id] and not ring.failed[id]
+           and not visible[id] and visuallyReady(nb, i, meshes)
+  end
+  if ready(approached) then return approached end
+  for _, i in ipairs(directOrder) do if ready(i) then return i end end
+end
+
+-- Advance Gen2-style depth-1 residency from the pipeline update only.  The
+-- return tuple begins with `handled`: callers must not fall through into a
+-- second upload/mesh action when a ring step already consumed this update.
+local function advanceMobileRing(state)
+  local map = state.map
+  local ring = ringFor(map)
+  if not ring.semantic then return false end
+
+  local status = mobileGateStatus(map)
+  if not status or status.failed then return false end
+
+  -- finishProbe is the only proof that the candidate canvas actually became
+  -- safe.  Until that render happens, keep every other admission/promotion
+  -- paused and let render() consume the already prepared plan.
+  if ring.promoting then
+    if not status.active then return true, false, "direct-ring-probe" end
+    setActive(state, mobileSceneryPlan.maps)
+    traceMobileCore(map,
+      "direct-visible-" .. tostring(ring.promoting.mapId), {
+        neighbor=ring.promoting.mapId,
+        visibleMaps=#(mobileSceneryPlan.state.neighbors or {}) + 1,
+        depth=1,
+      })
+    ring.promoting = nil
+  end
+
+  if not status.active then return false end
+
+  -- The future horizon is cooperative and may need several updates.  It is
+  -- built while Gate.active keeps the previous canvas visible.  Only a ready
+  -- horizon can arm the one-frame ping-pong promotion; a failed neighbour is
+  -- skipped without poisoning the current core or its other direct seams.
+  if ring.pending then
+    local pending = ring.pending
+    local ok, horizonOrError, ready, failed = pcall(
+      HorizonWall.meshes, pending.plan.state)
+    if ok and ready == true then
+      local begin = type(MobileSceneryGate.beginRingPromotion) == "function"
+                    and MobileSceneryGate.beginRingPromotion(map) == true
+      if not begin then return true, false, "direct-ring-promotion-gate" end
+      pending.plan.horizonFallback = nil
+      pending.plan.mobileCoreClosed = true
+      pending.plan.mobileRingDepth = 1
+      mobileSceneryPlan = pending.plan
+      mobileSceneryHorizonMap, mobileSceneryHorizon =
+        map, horizonOrError or {}
+      ring.pending = nil
+      ring.promoting = pending
+      traceMobileCore(map,
+        "direct-horizon-ready-" .. tostring(pending.mapId), {
+          neighbor=pending.mapId,
+          visibleMaps=#(pending.plan.state.neighbors or {}) + 1,
+          depth=1,
+        })
+      return true, true, "direct-ring-horizon"
+    end
+    if not ok or failed == true then
+      ring.failed[pending.mapId] = true
+      ring.pending = nil
+      mobileDiagnostic("fallback", "mobile-direct-ring-horizon",
+        ok and "build-failed" or tostring(horizonOrError),
+        "previous-ring-retained", {
+          caller="VoxelScene.stageMobileScenery", context="world",
+          map=map.id, neighbor=pending.mapId, depth=1,
+        })
+      return true, false, "direct-ring-horizon-failed"
+    end
+    return true, false, "direct-ring-horizon"
+  end
+
+  local meshes, waters, directOrder = mobileRingPairs(state, ring)
+  local candidateIndex = nextMobileRingCandidate(
+    state, ring, meshes, directOrder)
+  if candidateIndex then
+    local nb = state.neighbors[candidateIndex]
+    local futureIds = copySet(mobileSceneryPlan.maps)
+    futureIds[nb.map.id] = true
+    local plan = planForIds(state, meshes, waters, futureIds)
+    if plan then
+      ring.pending = {
+        mapId=nb.map.id, index=candidateIndex, plan=plan,
+      }
+      return true, false, "direct-ring-candidate"
+    end
+  end
+
+  -- Admit no more than one cold map in this update.  Atlas preparation and
+  -- the first BODY request stay together so the following bounded mesher pump
+  -- can immediately spend its slice on that exact direct neighbour.
+  local admission = nextMobileRingAdmission(state, ring, directOrder)
+  if admission then
+    local nb = state.neighbors[admission]
+    local id = nb.map.id
+    ring.admitted[id] = true
+    setMobileRingLive(state, ring)
+    if TerrainAtlas.prepared and TerrainAtlas.prepare
+        and not TerrainAtlas.prepared(nb.map) then
+      TerrainAtlas.prepare(nb.map)
+    end
+    local approached = seamCandidate(state)
+    ChunkMesher.request(nb.map, true, nil, false,
+                        admission == approached and 2 or 1)
+    traceMobileCore(map, "direct-admitted-" .. tostring(id), {
+      neighbor=id, depth=1, atlasReady=atlasPrepared(nb.map),
+    })
+    return true, true, "direct-ring-admit"
+  end
+
+  return false
+end
+
+-- Update-only P1 resource lane. The draw path never resumes a HorizonWall
+-- coroutine or decodes a panorama/sky atlas. Each invocation performs at most
+-- one bounded resource/ring action after the real current BODY canvas receipt.
+function VoxelScene.stageMobileScenery(state)
+  if not MOBILE_RUNTIME or not (state and state.map) then return false end
+  local map = state.map
+  if mobileSceneryPlanMap ~= map or not mobileSceneryPlan then return false end
+
+  if type(MobileSceneryGate.nextResource) ~= "function" then return false end
+
+  local resource = MobileSceneryGate.nextResource(map)
+  if resource == "horizon" then
+    if type(HorizonWall.enabled) == "function"
+        and HorizonWall.enabled() == false then
+      mobileSceneryHorizonMap, mobileSceneryHorizon = map, {}
+      MobileSceneryGate.noteResource(map, "horizon", true,
+        "disabled-by-user-setting")
+      return true, "horizon-disabled"
+    end
+    local ok, meshesOrError, ready, failed = pcall(
+      HorizonWall.meshes, mobileSceneryPlan.state)
+    if ok and ready == true then
+      mobileSceneryPlan.horizonFallback = nil
+      mobileSceneryPlan.mobileCoreClosed = true
+      mobileSceneryHorizonMap, mobileSceneryHorizon = map, meshesOrError or {}
+      MobileSceneryGate.noteResource(map, "horizon", true)
+      return true, "horizon"
+    end
+    if not ok or failed == true then
+      mobileDiagnostic("fallback", "mobile-scenery-horizon",
+        ok and "build-failed" or tostring(meshesOrError),
+        "m10-retained", {
+          caller="VoxelScene.stageMobileScenery", context="world",
+          map=map.id,
+        })
+      if type(MobileSceneryGate.fail) == "function" then
+        MobileSceneryGate.fail(map,
+          ok and "horizon-build-failed" or tostring(meshesOrError))
+      end
+    end
+    return false, "horizon"
+  end
+
+  if resource == "panorama" then
+    local enabled = type(HorizonWall.enabled) ~= "function"
+                    or HorizonWall.enabled() ~= false
+    PanoramaBackdrop.setEnabled(enabled)
+    if not enabled or not HorizonWall.hasSky(map) then
+      MobileSceneryGate.noteResource(map, "panorama", true,
+        enabled and "not-applicable-indoors" or "disabled-by-user-setting")
+      return true, "panorama-not-applicable"
+    end
+    local ready = type(PanoramaBackdrop.ready) == "function"
+                  and PanoramaBackdrop.ready() == true
+    local prepareReason, prepareRetryable = nil, false
+    if not ready then
+      local ok, result, reason, retryable = pcall(PanoramaBackdrop.prepare)
+      if not ok then
+        if type(MobileSceneryGate.fail) == "function" then
+          MobileSceneryGate.fail(map,
+            "panorama-prepare-error:" .. tostring(result))
+        end
+        return false, "panorama-error"
+      end
+      ready = result == true
+      prepareReason = reason or "panorama-prepare-failed"
+      -- Keep compatibility with a provider that still returns only boolean,
+      -- but the product PanoramaBackdrop always supplies this classification.
+      prepareRetryable = retryable ~= false
+    end
+    if ready then
+      MobileSceneryGate.noteResource(map, "panorama", true)
+      return true, "panorama"
+    end
+
+    MobileSceneryGate.noteResource(map, "panorama", false,
+      prepareReason)
+    local rearm = type(MobileSceneryGate.retryResource) == "function"
+      and MobileSceneryGate.retryResource(
+        map, "panorama", prepareReason, prepareRetryable) == true
+    if rearm then
+      -- Rearm only the failed GPU stage. Preserve already decoded ImageData or
+      -- a successfully uploaded texture across this bounded map lifecycle.
+      local reset = PanoramaBackdrop.rearm or PanoramaBackdrop.invalidate
+      local resetOK, resetResult = pcall(reset)
+      if resetOK and resetResult ~= false then
+        return false, "panorama-rearm"
+      end
+      if type(MobileSceneryGate.fail) == "function" then
+        MobileSceneryGate.fail(map,
+          "panorama-rearm-error:" .. tostring(resetResult))
+      end
+      return false, "panorama-error"
+    end
+    if type(MobileSceneryGate.fail) == "function" then
+      MobileSceneryGate.fail(map,
+        "panorama-prepare-terminal:" .. tostring(prepareReason))
+    end
+    return false, "panorama-terminal"
+  end
+
+  local ringHandled, ringReady, ringName = advanceMobileRing(state)
+  if ringHandled then return ringReady, ringName end
+
+  if type(MobileSceneryGate.assetWarmAllowed) ~= "function"
+      or MobileSceneryGate.assetWarmAllowed(map) ~= true then
+    return false
+  end
+
+  if mobileSkyWarmMap ~= map then
+    mobileSkyWarmMap, mobileSkyWarmPhase = map, "clouds"
+  end
+  local cloudsOff = Sky.cloudSetting
+    and type(Sky.cloudSetting.get) == "function"
+    and Sky.cloudSetting:get() == "off"
+  if mobileSkyWarmPhase == "events" and not cloudsOff
+      and type(Sky.cloudAssetStatus) == "function" then
+    local ok, status = pcall(Sky.cloudAssetStatus)
+    if ok and status == "cold" then mobileSkyWarmPhase = "clouds" end
+  end
+  if mobileSkyWarmPhase == "clouds" then
+    if cloudsOff or type(Sky.prewarmClouds) ~= "function" then
+      mobileSkyWarmPhase = "events"
+      return true, "clouds-not-applicable"
+    end
+    local ok, ready, attempted = pcall(Sky.prewarmClouds)
+    if ok and (ready == true or (tonumber(attempted) or 0) > 0) then
+      mobileSkyWarmPhase = "events"
+    end
+    return ok and ready == true, "clouds"
+  end
+
+  if type(SkyEvents.prewarm) == "function" then
+    -- prewarm(1) guarantees no more than one event family upload this update.
+    local ok = pcall(SkyEvents.prewarm, 1)
+    return ok, "sky-event"
+  end
+  return false
+end
+
+-- Read-only update predicate used outside the ordinary VOXEL active/warm
+-- branch.  It never creates a cold transaction; it only finishes an already
+-- armed map lifecycle, one bounded action per update via stageMobileScenery.
+function VoxelScene.mobileSceneryLifecyclePending(state)
+  if not MOBILE_RUNTIME or not mobileSceneryLifecycleArmed
+      or not (state and state.map) then return false end
+  local map = state.map
+  if mobileSceneryPlanMap ~= map or not mobileSceneryPlan then return true end
+  if type(MobileSceneryGate.shouldDrive) == "function"
+      and MobileSceneryGate.shouldDrive(map) == true then
+    return true
+  end
+  if mobileRingPlanMap == map and mobileRing and mobileRing.semantic then
+    local status = mobileGateStatus(map)
+    if status and not status.failed then
+      if mobileRing.pending or mobileRing.promoting then return true end
+      local visible = mobileSceneryPlan.maps or {}
+      local _, directOrder = directIds(state)
+      for _, i in ipairs(directOrder) do
+        local nb = state.neighbors[i]
+        local id = nb and nb.map and nb.map.id
+        if id and not visible[id] and not mobileRing.failed[id] then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
+function VoxelScene.invalidateMobileScenery(reason)
+  mobileSceneryPlanMap, mobileSceneryPlan = nil, nil
+  mobileRingPlanMap, mobileRing = nil, nil
+  mobileSceneryHorizonMap, mobileSceneryHorizon = nil, nil
+  mobileSkyWarmMap, mobileSkyWarmPhase = nil, "clouds"
+  mobileSceneryCanvasMap, mobileSceneryNextSlot = nil, "mobile-scenery"
+  mobileCoreTrace.map, mobileCoreTrace.mapObject = nil, nil
+  mobileCoreTrace.phases, mobileCoreTrace.presented = {}, false
+  mobileSceneryLifecycleArmed = false
+  readyMap, Voxel.ready = nil, false
+  if type(MobileSceneryGate.invalidate) == "function" then
+    MobileSceneryGate.invalidate(reason or "graphics-context")
+  end
+end
+
+function VoxelScene.requireExternalKascWalker(player, sprite)
+  return ExternalKascWalker.resolve(player, sprite)
 end
 
 -- Capture every entity's pose for this frame. pose() advances the hop /
@@ -934,7 +1684,7 @@ end
 -- below). Only that one entry gets the see-through treatment: NPCs and the
 -- ghosts standing on a neighbour map are left to honest occlusion, because
 -- it is only your own character you cannot afford to lose behind a roof.
-local function posesOf(state, spriteColors, drawableMaps)
+local function posesOf(state, spriteColors, drawableMaps, externalPlayerWalker)
   local colors = spriteColors(state.map)
   local posed = {}
   local me = nil
@@ -943,22 +1693,27 @@ local function posesOf(state, spriteColors, drawableMaps)
     -- A connected-map NPC must arrive with its ground, not hover over the
     -- temporary horizon closure while that neighbour is still meshing.
     if not drawableMaps or drawableMaps[ghostMap.id] then
-      local sprite, vx, vy, facing, phase, flip = g.npc:pose()
+      local sprite, vx, vy, facing, phase, flip, hopping = g.npc:pose()
       posed[#posed + 1] = {
         sprite = sprite, px = vx + g.ox, py = g.npc.py + g.oy,
         facing = facing, phase = phase, flip = flip,
-        gh = groundAt(ghostMap, g.npc.cellX, g.npc.cellY),
+        gh = groundForEntity(ghostMap, g.npc, hopping),
         lift = g.npc.py - vy, colors = spriteColors(ghostMap),
       }
     end
   end
   for _, e in ipairs(state.entities or {}) do
     if not (state.flyAnim and e == state.player) then
-      local sprite, vx, vy, facing, phase, flip = e:pose()
+      local sprite, vx, vy, facing, phase, flip, hopping = e:pose()
+      if e == state.player and externalPlayerWalker then
+        -- Keep the native/KASC 2-D renderer on the entity. Only this captured
+        -- 3-D pose receives the approved preflighted walker for its identity.
+        sprite = externalPlayerWalker
+      end
       posed[#posed + 1] = {
         sprite = sprite, px = vx, py = e.py,
         facing = facing, phase = phase, flip = flip,
-        gh = groundAt(state.map, e.cellX, e.cellY),
+        gh = groundForEntity(state.map, e, hopping),
         lift = e.py - vy, colors = colors,
       }
       if e == state.player then
@@ -1116,6 +1871,17 @@ local function drawCast(state, posed, atlasFor)
   -- agrees with the frame to the pixel; the sun pass deliberately does not
   -- and the hidden actor keeps casting its ordinary world shadow.
   local hideMe = FirstPerson.hidePlayer()
+  -- SURF replaces player+mount with one dense card. During a 3RD camera or
+  -- zoom transition its boom can momentarily be wall-collapsed; suppressing
+  -- that whole card produces the photographed rider/mount disappearance.
+  -- Genuine 1ST remains unchanged because this exception is 3RD-only and
+  -- SpeciesSurfCinematic sets the marker only around its VASC draw call.
+  local player = state and state.player
+  if hideMe and player and player.__vascSpeciesSurfForceVisible
+      and type(Voxel.isThirdPerson) == "function"
+      and Voxel.isThirdPerson(Voxel.level) then
+    hideMe = false
+  end
   local hideNearActor = hideMe and Voxel.isFirstPerson(Voxel.level)
   for _, p in ipairs(posed) do
     local hidden = p.isPlayer and hideMe
@@ -1213,6 +1979,16 @@ VoxelScene._drawCast = drawCast       -- named for the focused draw contract
 -- flat water). Confined to the curve there is no regression to reach: the
 -- flat world never had the far-shore bug in the first place.
 function VoxelScene.drawWater(draws, cast, options)
+  -- Reflections need another scene copy, optional readable depth and a second
+  -- fragment program. The mobile world-core pass keeps water as ordinary
+  -- textured geometry; it is still water from the ROM atlas, merely without
+  -- the desktop-only screen-space reflection chain.
+  if MOBILE_RUNTIME then
+    for _, d in ipairs(draws) do
+      Voxel3D.draw(d[1], d[2], d[3])
+    end
+    return
+  end
   -- prepass only under the bend; see the header
   local curved = (Voxel3D.curveK or 0) > 0
   if curved then
@@ -1263,7 +2039,8 @@ end
 -- redrawing the whole world from the sun would buy nothing -- which is
 -- most of a dialog, a menu, or any moment standing still.
 local sigBuf = {}
-local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
+local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh,
+                               policy, horizon)
   local n = 0
   local function put(v)
     n = n + 1
@@ -1285,9 +2062,20 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
   -- few times a minute rather than every frame.
   put(math.floor(ShadowMap.KX * 128))
   put(math.floor(ShadowMap.KZ * 128))
+  put(policy and policy.key or "legacy-world")
   put(FirstPerson.signature())
   put(tostring(terrain))
   for i = 1, #nbMesh do put(tostring(nbMesh[i])) end
+  for _, rim in ipairs(horizon or {}) do
+    if rim.castsShadow then
+      -- Animated water changes UVs, not the solid fountain hull. Keep the
+      -- caster on frame zero so an 8 FPS jet does not rebuild the complete
+      -- world shadow map eight times per second.
+      put(tostring(rim.animationMeshes and rim.animationMeshes[1]
+                   or rim.mesh))
+      put(rim.ox or 0); put(rim.oy or 0)
+    end
+  end
   for _, p in ipairs(posed) do
     put(p.sprite.def.image)
     put(p.px); put(p.py); put(p.gh); put(p.lift or 0)
@@ -1297,38 +2085,67 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
   return table.concat(sigBuf, ",")
 end
 
--- The sun pass: render the scene once from the light, so the main pass can
--- ask any fragment whether the sun reached it. Every caster the main pass
--- draws goes in -- the terrain mesh, which is where buildings, trees,
--- ledges, signs and every prop live, plus one UPRIGHT card per character
--- (Voxel3D.casterMatrix; the leaning slab is a trick for the camera, not
--- for the sun) -- so shadows land on walls, roofs, ledges and passing NPCs
--- as readily as on the floor.
+-- The sun pass: render the selected casters once from the light, so the main
+-- pass can ask any fragment whether the sun reached it. The legacy policy
+-- includes the complete terrain mesh. A companion may narrow this to signed
+-- map-object quads (modelled buildings, trees and props) plus object cards
+-- (flowers, authored figures and live actors), while ground, cliffs, water
+-- and border geometry are discarded.
 --
 -- Runs BEFORE Voxel3D.beginScene, because canvases do not nest. Grass is
 -- left out on purpose: thousands of tufts would cast a speckle no bigger
 -- than the pixels it lands on, at the cost of the mesh being drawn twice.
 local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
-                           atlasFor, water, nbWater)
+                           atlasFor, water, nbWater, policy, horizon)
   if not Shadows.enabled() then return end
+  if not (policy and policy.enabled) then
+    if type(ShadowMap.deactivate) == "function" then ShadowMap.deactivate() end
+    return
+  end
+  -- An ambient-only weather exception can keep the procedural flyer shadow
+  -- alive without authorising any map, object or actor caster. Also discard
+  -- the last sunny depth map immediately so it cannot bleed into the rain.
+  if policy.casters == "none" then
+    if type(ShadowMap.deactivate) == "function" then ShadowMap.deactivate() end
+    return
+  end
   if not ShadowMap.available() then return end
-  local sig = shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
+  local sig = shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh,
+                              policy, horizon)
   if not ShadowMap.stale(sig) then return end
   if not ShadowMap.begin(cx, cy, vw, vh) then return end
+  if type(ShadowMap.objectOnly) == "function" then
+    ShadowMap.objectOnly(policy.casters == "objects")
+  end
 
+  -- Object-only still submits the existing terrain bundle once: the sun
+  -- shader discards every ordinary quad and keeps only ChunkMesher's signed
+  -- building/tree/prop markers. This avoids a duplicate GPU mesh while
+  -- preventing ground, cliffs, water and the map border from casting.
   ShadowMap.draw(terrain, atlasFor(state.map), nil)
   for i, nb in ipairs(state.neighbors or {}) do
     ShadowMap.draw(nbMesh[i], atlasFor(nb.map),
                    Mat4.translate(nb.ox, 0, nb.oy))
   end
-  -- The water surface, which the terrain mesh no longer carries (it is its
-  -- own reflective pass now -- see Water). The sun still has to see it, or
-  -- the map the light records has a hole at every lake and the frustum's
-  -- far plane answers for the surface a shoreline tree's shadow falls on.
-  ShadowMap.draw(water, atlasFor(state.map), nil)
-  for i, nb in ipairs(state.neighbors or {}) do
-    ShadowMap.draw(nbWater and nbWater[i], atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy))
+  if policy.casters == "world" then
+    -- The water surface is a receiver, but the legacy full-world pass also
+    -- records it so its depth agrees with shoreline world geometry.
+    ShadowMap.draw(water, atlasFor(state.map), nil)
+    for i, nb in ipairs(state.neighbors or {}) do
+      ShadowMap.draw(nbWater and nbWater[i], atlasFor(nb.map),
+                     Mat4.translate(nb.ox, 0, nb.oy))
+    end
+  end
+  -- Ground-standing editor models live in HorizonWall's retained decoration
+  -- batches rather than ChunkMesher's terrain bundle. Their faces carry the
+  -- same negative object marker as native buildings, so this one bounded loop
+  -- supplies a real contact shadow in both world- and object-caster policies.
+  for _, rim in ipairs(horizon or {}) do
+    if rim.castsShadow then
+      local caster = rim.animationMeshes and rim.animationMeshes[1] or rim.mesh
+      ShadowMap.draw(caster, rim.texture,
+                     Mat4.translate(rim.ox or 0, 0, rim.oy or 0))
+    end
   end
   -- flower billboards live outside the terrain mesh (they draw after the
   -- characters, pulled -- see render), but the sun still sees them: a
@@ -1336,6 +2153,7 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   -- Every thin card from here down is SNUGGED toward the sun along its own
   -- ray (ShadowMap.snug) so its shadow keeps contact with its feet instead
   -- of starting a bias-width away.
+  if policy.casters == "objects" then ShadowMap.sprites(true) end
   ShadowMap.draw(ChunkMesher.flowers(state.map), atlasFor(state.map),
                  ShadowMap.snug(nil))
   for _, nb in ipairs(state.neighbors or {}) do
@@ -1378,8 +2196,59 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   ShadowMap.finish(sig)
 end
 
--- Render the world once into the active window-resolution scene canvas.
+-- A candidate may fail after beginScene has already rebound part of LOVE's
+-- graphics state but before Voxel3D marks the scene active. Voxel3D itself is
+-- part of the frozen P2 surface, so this narrow P1 seam restores the same
+-- neutral state endScene establishes, plus scissor/blend/color that Sky.paint
+-- can transiently own. Every call is best-effort and idempotent.
+local function abortMobileSceneryGraphics()
+  local g = love and love.graphics or nil
+  if not g then return end
+  if type(g.setShader) == "function" then pcall(g.setShader) end
+  if type(g.setDepthMode) == "function" then pcall(g.setDepthMode) end
+  if type(g.setMeshCullMode) == "function" then
+    pcall(g.setMeshCullMode, "none")
+  end
+  if type(g.setScissor) == "function" then pcall(g.setScissor) end
+  if type(g.setBlendMode) == "function" then
+    pcall(g.setBlendMode, "alpha")
+  end
+  if type(g.setColor) == "function" then pcall(g.setColor, 1, 1, 1, 1) end
+  if type(g.setCanvas) == "function" then pcall(g.setCanvas) end
+end
+
+local renderWorld
+
+-- The transaction begins before the gate can enter probing state and covers
+-- every rich-only semantic lookup, sky calculation, begin/draw/end operation.
+-- M10 core errors and all desktop errors retain their historical propagation.
 function VoxelScene.render(state, w, h, vw, vh, paletteFor)
+  if not MOBILE_RUNTIME then
+    return renderWorld(state, w, h, vw, vh, paletteFor)
+  end
+  local ok, canvasOrError = pcall(
+    renderWorld, state, w, h, vw, vh, paletteFor)
+  if ok then return canvasOrError end
+
+  local map = state and state.map or nil
+  local rich = map and type(MobileSceneryGate.allow) == "function"
+               and MobileSceneryGate.allow(map) == true
+  if not rich then error(canvasOrError, 0) end
+  abortMobileSceneryGraphics()
+  if type(MobileSceneryGate.fail) == "function" then
+    MobileSceneryGate.fail(map, tostring(canvasOrError))
+  end
+  mobileDiagnostic("fallback", "mobile-scenery-transaction",
+    tostring(canvasOrError), "m10-retained", {
+      caller="VoxelScene.render", context="world",
+      map=map and map.id or nil,
+    })
+  return type(MobileSceneryGate.lastSafeCanvas) == "function"
+         and MobileSceneryGate.lastSafeCanvas(map) or nil
+end
+
+-- Render the world once into the active window-resolution scene canvas.
+renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- With nothing cached at all (the first frame of a fresh toggle),
   -- return nil: the engine keeps the 2D path for the frame and
   -- Voxel.ready holds the camera tween at flat, so the switch waits
@@ -1390,12 +2259,64 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- maps that union can begin with the current map alone; missing neighbours
   -- keep building behind its curtain. The full-ring fallback remains atomic.
   local Voxel = V.require("VoxelState")
-  if not terrain or not Voxel.ready then return nil end
+  if not terrain or not Voxel.ready then
+    mobileDiagnostic("pending", "gen1-VoxelScene.prefetch",
+      "terrain-or-scene-not-ready", {
+        caller="VoxelScene.prefetch", context="world",
+        terrainReady=terrain ~= nil, sceneReady=Voxel.ready == true,
+      })
+    return nil
+  end
   plan = plan or drawPlan(state, nbMesh, nbWater)
+  local mobileSceneryProbe = false
+  local mobileScenery = false
+  if MOBILE_RUNTIME then
+    if type(MobileSceneryGate.enterMap) == "function" then
+      MobileSceneryGate.enterMap(state.map)
+    end
+    mobileScenery = type(MobileSceneryGate.allow) == "function"
+                      and MobileSceneryGate.allow(state.map) == true
+    if not mobileScenery
+        and type(MobileSceneryGate.beginProbe) == "function" then
+      mobileSceneryProbe = MobileSceneryGate.beginProbe(state.map) == true
+      mobileScenery = mobileSceneryProbe
+    end
+  end
   local drawState, drawMesh, drawWater = plan.state, plan.meshes, plan.waters
+
+  -- Resolve normal WALK before pose() advances any entity timer. KASC owns
+  -- three registered walker resources, but there is still only one engine
+  -- player and only one renderer is selected for this captured 3-D pose. If
+  -- KASC is absent, loader-rejected or malformed, keep the live actor renderer
+  -- and continue the completed Voxel canvas. Optional artwork must never turn
+  -- a successful world draw into the E31 nil-return loop. Fly omits the player
+  -- entirely; independent states keep pose()'s own renderer.
+  local externalPlayerWalker = nil
+  if state.player and not state.flyAnim then
+    local resolved, route = VoxelScene.requireExternalKascWalker(
+      state.player, state.player.sprite)
+    local liveFallback = type(route) == "string"
+      and route:find("live-actor-fallback:", 1, true) == 1
+    if not resolved or liveFallback then
+      mobileDiagnostic("fallback", "gen1-external-kasc-walker",
+        route or "external-walker-unavailable", "inactive", {
+          caller="ExternalKascWalker.resolve", context="world",
+          map=state.map and state.map.id or nil,
+          optionalArtwork=true,
+        })
+    end
+    if resolved and not liveFallback and route ~= "independent-state" then
+      externalPlayerWalker = resolved
+    end
+  end
 
   local cam = state.camera
   local cx, cy = cam.x + vw / 2, cam.y + vh / 2
+  local renderVw, renderVh = vw, vh
+  if MOBILE_RUNTIME
+      and type(CanvasPresentation.mobileWorldView) == "function" then
+    renderVw, renderVh = CanvasPresentation.mobileWorldView(w, h, vw, vh)
+  end
 
   -- the hour's light, before anything is cast or drawn: point the shared
   -- rig at the clock (or at noon, indoors -- a cave at midnight is exactly
@@ -1403,15 +2324,94 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- every surface by. A CANOPY map (Viridian Forest) is the case between:
   -- the rig stays at noon and its backdrop is closed by muted leaf colour,
   -- while the hour's tint still falls through -- night reaches the forest.
-  local outdoor = HorizonWall.hasSky(state.map)
+  -- Semantic sky/horizon discovery belongs to the desktop scene.  Mobile's
+  -- bounded world-core pass intentionally starts with neutral lighting and
+  -- adds no horizon, glass or weather dependency before the first canvas.
+  local outdoor = (not MOBILE_RUNTIME or mobileScenery)
+                  and HorizonWall.hasSky(state.map)
   DayNight.applyRig(outdoor)
   Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(state.map))
+
+  -- Resolve the effective sky weather before the sun pass. This includes the
+  -- optional standalone weather owner, so a storm can never leave VASC's
+  -- previous clear-frame shadow map active underneath it.
+  local weatherMode = Weather.mode(state.map)
+  local skyWeatherMode, nativeGround = weatherMode, true
+  if type(Weather.skyState) == "function" then
+    skyWeatherMode, nativeGround = Weather.skyState(state.map)
+  elseif type(Weather.skyMode) == "function" then
+    skyWeatherMode = Weather.skyMode(state.map)
+  end
+  WeatherTweak.observe(state.map, weatherMode, Weather.clock, outdoor)
+  local groundWeather = WeatherTweak.groundMode(
+    state.map, skyWeatherMode, nativeGround)
+  local groundAmount = WeatherTweak.groundAmount(
+    state.map, skyWeatherMode, nativeGround)
+  local shadowPolicy = resolveShadowPolicy({
+    map = state.map,
+    mapId = state.map and (state.map.id
+      or (state.map.def and state.map.def.id)) or nil,
+    outdoor = outdoor,
+    weather = skyWeatherMode,
+    daytime = type(DayNight.tod) == "function" and DayNight.tod() or "DAY",
+    clock = Sky.clock or 0,
+    clouds = not (Sky.cloudSetting and Sky.cloudSetting:get() == "off"),
+  })
+  if MOBILE_RUNTIME then
+    -- The phone bootstrap has no shadow map and must not replace it with a
+    -- per-character decal pass while proving the first core world canvas.
+    -- Desktop retains the complete policy and all authored shadows.
+    shadowPolicy = {
+      enabled = false, casters = "none", key = "mobile-world-core",
+      cloudOpacity = 0, cloudProgress = 0, cloudSeed = 0,
+      birdOpacity = 0, birdEnabled = false,
+      birdProgress = 0, birdSeed = 0,
+    }
+  end
+  if type(SkyEvents.requestShadowFlyer) == "function" then
+    local native = shadowPolicy.birdEnabled
+                   and type(SkyEvents.shadowState) == "function"
+                   and SkyEvents.shadowState({ weather = skyWeatherMode })
+                   or nil
+    if native then
+      -- A real ambient VASC flight already in the sky wins. This includes all
+      -- four legendaries; the ground shadow mirrors its exact live phase.
+      shadowPolicy.birdOpacity = native.opacity
+      shadowPolicy.birdProgress = native.progress
+      shadowPolicy.birdSeed = native.seed
+      shadowPolicy.birdCount = native.count
+      shadowPolicy.birdScale = native.scale
+      shadowPolicy.birdDirection = native.direction
+      shadowPolicy.birdSpecies = native.species
+      shadowPolicy.birdLegendary = native.legendary
+      shadowPolicy.birdPaired = false
+      if native.weatherException
+          and type(SkyEvents.requestShadowLegend) == "function" then
+        SkyEvents.requestShadowLegend(native.species, true)
+      else
+        SkyEvents.requestShadowFlyer(nil, false)
+      end
+    else
+      local paired = shadowPolicy.birdEnabled
+                     and (shadowPolicy.birdOpacity or 0) > 0
+      local plan = SkyEvents.requestShadowFlyer(shadowPolicy.birdSeed, paired)
+      shadowPolicy.birdPaired = paired
+      if paired and plan then
+        shadowPolicy.birdCount = plan.count or 1
+        shadowPolicy.birdScale = math.max(0.78, math.min(1.6,
+          (plan.apparentHeightCells or 6) / 7))
+        shadowPolicy.birdDirection = plan.occurrence % 2 == 0 and 1 or -1
+        shadowPolicy.birdSpecies = plan.species
+      end
+    end
+  end
   -- and the window glass: the tileset's own panes (found in its art --
   -- GlassMask), lit after dark. Outdoors only, like everything the clock
   -- touches, which also keeps any pane-shaped art in an interior tileset
   -- from picking up a glint.
-  local GlassMask = V.require("GlassMask")
-  Voxel3D.glassMask = outdoor and GlassMask.texture(state.map.tileset) or nil
+  local GlassMask = not MOBILE_RUNTIME and V.require("GlassMask") or nil
+  Voxel3D.glassMask = GlassMask and outdoor
+                      and GlassMask.texture(state.map.tileset) or nil
   Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
   local g = VoxelScene.glintStep(glint, cx, cy)
   Voxel3D.glassPhase, Voxel3D.glassGlint = g.phase, g.amp
@@ -1443,12 +2443,61 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- canvas. The former lazy call happened inside drawScene; its temporary
   -- Canvas could detach the active world target on the first frame, leaving
   -- no background or isolated black fragments until later frames recovered.
-  local horizon = plan.horizonFallback and {}
-                  or HorizonWall.meshes(drawState)
-  local sceneryEnabled = HorizonWall.enabled()
-  PanoramaBackdrop.setEnabled(sceneryEnabled)
-  local panoramaReady = outdoor and sceneryEnabled
-                         and PanoramaBackdrop.prepare()
+  local sceneryEnabled = (not MOBILE_RUNTIME or mobileScenery)
+                         and HorizonWall.enabled()
+  if not MOBILE_RUNTIME or mobileScenery then
+    -- While P1 is merely preparing, disabling PanoramaBackdrop would reset
+    -- its terminal-attempt latch and turn a failed upload into a retry loop.
+    PanoramaBackdrop.setEnabled(sceneryEnabled)
+  end
+  local horizon
+  if MOBILE_RUNTIME then
+    -- Candidate paint consumes only the exact mesh receipt prepared by the
+    -- update lane. Validate the borrowed handles against HorizonWall's passive
+    -- cache receipt; invalidation restages P1 and presents the untouched safe
+    -- canvas for this frame instead of drawing released GPU objects.
+    horizon = {}
+    if mobileScenery and sceneryEnabled then
+      local status = type(HorizonWall.cacheStatus) == "function"
+                     and HorizonWall.cacheStatus(drawState) or nil
+      local valid = mobileSceneryHorizonMap == state.map
+                    and mobileSceneryHorizon ~= nil
+                    and (status == nil or status.ready == true)
+      if not valid then
+        mobileSceneryHorizon = nil
+        if type(MobileSceneryGate.restage) == "function" then
+          MobileSceneryGate.restage(state.map, "horizon-cache-invalidated")
+        end
+        return type(MobileSceneryGate.lastSafeCanvas) == "function"
+               and MobileSceneryGate.lastSafeCanvas(state.map) or nil
+      end
+      horizon = mobileSceneryHorizon
+    end
+  else
+    horizon = plan.horizonFallback and {} or HorizonWall.meshes(drawState)
+  end
+  local indoorCutaway = cutawayActive(state.map, Voxel.level)
+  local panoramaAllowed = outdoor and sceneryEnabled
+    and (type(HorizonWall.allowsFarBackdrop) ~= "function"
+         or HorizonWall.allowsFarBackdrop(drawState))
+  local panoramaReady = false
+  if panoramaAllowed then
+    if MOBILE_RUNTIME then
+      -- The update-only stage owns first allocation on a phone.
+      panoramaReady = type(PanoramaBackdrop.ready) == "function"
+                      and PanoramaBackdrop.ready() == true
+      if not panoramaReady then
+        mobileSceneryHorizon = nil
+        if type(MobileSceneryGate.restage) == "function" then
+          MobileSceneryGate.restage(state.map, "panorama-cache-invalidated")
+        end
+        return type(MobileSceneryGate.lastSafeCanvas) == "function"
+               and MobileSceneryGate.lastSafeCanvas(state.map) or nil
+      end
+    else
+      panoramaReady = PanoramaBackdrop.prepare()
+    end
+  end
 
   -- sprite palettes only exist in the SGB modes; under RED++ the OBP bake
   -- inside sprite:resolveImage() already colors the sheet
@@ -1457,17 +2506,25 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     return effectiveColorsFor(map)
   end
 
-  local posed, me = posesOf(state, spriteColors, plan.maps)
+  local posed, me = posesOf(
+    state, spriteColors, plan.maps, externalPlayerWalker)
+  -- Complete owner-filtered frame demand, before shadows resolve any textures.
+  -- An optional visual provider must never enumerate other building residents.
+  if type(Voxel3D.preparePokemonFrame) == "function" then
+    Voxel3D.preparePokemonFrame(state, posed)
+  end
 
   -- Place the free-roam rig before either the shadow or eye pass. The scene
   -- centre follows the player during the blend so curve, depth and lighting
   -- stay centred on the camera actually drawing the frame.
-  local fpRig, fpCx, fpCy = FirstPerson.frame(me, cx, cy, vw, vh)
+  local fpRig, fpCx, fpCy = FirstPerson.frame(
+    me, cx, cy, renderVw, renderVh)
   if fpRig then cx, cy = fpCx, fpCy end
 
-  local shCx, shCy = FirstPerson.shadowCenter(cx, cy, vh)
-  castShadows(drawState, terrain, drawMesh, posed, shCx, shCy, vw, vh,
-              atlasFor, water, drawWater)
+  local shCx, shCy = FirstPerson.shadowCenter(cx, cy, renderVh)
+  castShadows(drawState, terrain, drawMesh, posed, shCx, shCy,
+              renderVw, renderVh,
+              atlasFor, water, drawWater, shadowPolicy, horizon)
 
   -- Everything between beginScene and endScene, as one function: the flat
   -- path runs it once, a VR frame runs it once PER EYE -- same posed
@@ -1475,31 +2532,60 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- about anything but their viewpoint.
   local function drawScene()
 
+  local surfaceWeather = false
+  if type(Voxel3D.weatherGround) == "function" then
+    surfaceWeather = Voxel3D.weatherGround(true) == true
+  end
   if panoramaReady then
-    PanoramaBackdrop.drawAt(me and me.px or cx, 0, me and me.py or cy)
+    local painted = PanoramaBackdrop.drawAt(
+      me and me.px or cx, 0, me and me.py or cy, {
+        weather=groundWeather, amount=groundAmount, outdoor=outdoor,
+        surfaces=surfaceWeather,
+      })
+    if MOBILE_RUNTIME and mobileScenery and painted ~= true then
+      error("mobile-panorama-draw-failed", 0)
+    end
   end
 
-  Voxel3D.draw(terrain, atlasFor(state.map), nil)
+  local terrainDrawn = Voxel3D.draw(terrain, atlasFor(state.map), nil)
+  if MOBILE_RUNTIME and mobileScenery and terrainDrawn == false then
+    error("mobile-terrain-draw-failed", 0)
+  end
   for i, nb in ipairs(drawState.neighbors or {}) do
     Voxel3D.draw(drawMesh[i], atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy))
+  end
+  if type(Voxel3D.weatherGround) == "function" then
+    Voxel3D.weatherGround(false)
   end
   -- A low-cost textured belt and curtain around the streamed map union.
   -- This closes the world edge for 1ST/3RD without extending fully carved
   -- tree hulls to the far plane (which is prohibitively expensive on iPhone).
   Voxel3D.glass(false)
   for _, rim in ipairs(horizon) do
-    if rim.kind ~= "water" then
+    if rim.kind ~= "water"
+       and cutawayRimVisible(rim, indoorCutaway) then
       -- The cold Route 8 seam proxy samples the current Route 8 atlas instead
       -- of retaining a duplicate $39 texture.  All ordinary horizon parts
       -- keep their baked texture; the proxy is absent as soon as Lavender's
       -- real body joins the draw union.
       local rimTexture = rim.textureMap and atlasFor(rim.textureMap)
                          or rim.texture
+      if indoorCutaway and rim.kind == "wall" then
+        if type(InteriorCutaway.wallPlane) == "function" then
+          setCutaway(InteriorCutaway.wallPlane(
+            Voxel3D.eye, Voxel3D.focus))
+        else
+          setCutaway()
+        end
+      else
+        setCutaway()
+      end
       Voxel3D.draw(rim.mesh, rimTexture,
                    Mat4.translate(rim.ox, 0, rim.oy))
     end
   end
+  setCutaway()
   Voxel3D.glass(true)
 
   -- Without a shadow map (headless, or a driver that could not make the
@@ -1509,7 +2595,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- against the terrain just drawn (a shadow behind a building stays
   -- hidden) but never depth-writing, so the grass pass at the end of the
   -- frame still wins its feet-overdraw fights.
-  if Shadows.enabled() and not Voxel3D.shadowsActive() then
+  if shadowPolicy.enabled and shadowPolicy.casters ~= "none"
+      and Shadows.enabled()
+      and not Voxel3D.shadowsActive() then
     Voxel3D.beginShadows()
     for _, p in ipairs(posed) do
       drawShadow(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
@@ -1608,10 +2696,16 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
   -- so the tuft rows keep exactly the characters' own depth handicap
   local lean = math.max(leanAngle(), 0.05)
   local pull = VoxelScene.pull(lean)
+  if type(Voxel3D.weatherGrass) == "function" then
+    Voxel3D.weatherGrass(true)
+  end
   Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
   for _, nb in ipairs(drawState.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy), pull)
+  end
+  if type(Voxel3D.weatherGrass) == "function" then
+    Voxel3D.weatherGrass(false)
   end
   -- flower billboards: pulled like the characters and the grass, MINUS
   -- the depth of 8 world pixels along the view (8 sin a -- the camera
@@ -1636,16 +2730,152 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
 
   end   -- drawScene
 
-  local weatherMode = Weather.mode(state.map)
-  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, skyFor(state.map), nil,
-                            { weather = weatherMode }) then
+  if mobileScenery and mobileSceneryCanvasMap ~= state.map then
+    mobileSceneryCanvasMap, mobileSceneryNextSlot =
+      state.map, "mobile-scenery"
+  end
+  -- Ping-pong between M10's existing world slot and one P1 slot. The frame
+  -- being painted is therefore never the object held as lastSafeCanvas.
+  local sceneSlot = mobileScenery and mobileSceneryNextSlot or nil
+  local sceneArgs = {
+    weather = skyWeatherMode,
+    mapId = state.map and state.map.id or nil,
+    groundWeather = groundWeather,
+    groundAmount = groundAmount,
+    shadowPolicy = shadowPolicy,
+  }
+  local sceneSky = skyFor(state.map, skyWeatherMode)
+  local beginOK, began
+  if mobileScenery then
+    beginOK, began = pcall(Voxel3D.beginScene,
+      w, h, cx, cy, renderVw, renderVh,
+      sceneSky, sceneSlot, sceneArgs)
+  else
+    beginOK = true
+    began = Voxel3D.beginScene(
+      w, h, cx, cy, renderVw, renderVh,
+      sceneSky, sceneSlot, sceneArgs)
+  end
+  if not beginOK or not began then
+    if mobileScenery then abortMobileSceneryGraphics() end
+    mobileDiagnostic("fallback", "gen1-VoxelScene.beginScene",
+      beginOK and "world-canvas-depth-attach-failed" or tostring(began),
+      "failed", {
+        caller="Voxel3D.beginScene", context="world", width=w, height=h,
+      })
+    if mobileScenery and type(MobileSceneryGate.fail) == "function" then
+      MobileSceneryGate.fail(state.map,
+        beginOK and "world-canvas-depth-attach-failed" or tostring(began))
+    elseif mobileSceneryProbe
+        and type(MobileSceneryGate.finishProbe) == "function" then
+      MobileSceneryGate.finishProbe(state.map, nil, tostring(began))
+    end
+    if mobileScenery
+        and type(MobileSceneryGate.lastSafeCanvas) == "function" then
+      return MobileSceneryGate.lastSafeCanvas(state.map)
+    end
     return nil
   end
-  drawScene()
-  local WallDecals = V.require("WallDecals")
-  WallDecals.drawState(drawState)
-  local out = Voxel3D.endScene()
-  return Weather.apply(out, w, h, state.map, Voxel3D.cell, weatherMode)
+  local drawOK, drawError = true, nil
+  if mobileScenery then
+    drawOK, drawError = pcall(drawScene)
+  else
+    drawScene()
+  end
+  if not drawOK then
+    -- Release the candidate binding, but never publish its partial canvas.
+    pcall(Voxel3D.endScene)
+    abortMobileSceneryGraphics()
+    if type(MobileSceneryGate.fail) == "function" then
+      MobileSceneryGate.fail(state.map, tostring(drawError))
+    elseif mobileSceneryProbe
+        and type(MobileSceneryGate.finishProbe) == "function" then
+      MobileSceneryGate.finishProbe(state.map, nil, tostring(drawError))
+    end
+    mobileDiagnostic("fallback", "mobile-scenery-draw",
+      tostring(drawError), "m10-retained", {
+        caller="VoxelScene.render", context="world",
+        map=state.map and state.map.id or nil,
+      })
+    if type(MobileSceneryGate.lastSafeCanvas) == "function" then
+      return MobileSceneryGate.lastSafeCanvas(state.map)
+    end
+    return nil
+  end
+  if not MOBILE_RUNTIME then
+    local WallDecals = V.require("WallDecals")
+    WallDecals.drawState(drawState)
+  end
+  local endOK, out = true, nil
+  if mobileScenery then
+    endOK, out = pcall(Voxel3D.endScene)
+  else
+    out = Voxel3D.endScene()
+  end
+  if not endOK or not out then
+    if mobileScenery then
+      if not endOK then pcall(Voxel3D.endScene) end
+      abortMobileSceneryGraphics()
+    end
+    mobileDiagnostic("fail", "D08", "gen1-world-scene-output",
+      endOK and "Voxel3D.endScene-returned-nil" or tostring(out), {
+        caller="Voxel3D.endScene", context="world", width=w, height=h,
+      })
+    if mobileScenery and type(MobileSceneryGate.fail) == "function" then
+      MobileSceneryGate.fail(state.map,
+        endOK and "Voxel3D.endScene-returned-nil" or tostring(out))
+    elseif mobileSceneryProbe
+        and type(MobileSceneryGate.finishProbe) == "function" then
+      MobileSceneryGate.finishProbe(state.map, nil, tostring(out))
+    end
+    if mobileScenery
+        and type(MobileSceneryGate.lastSafeCanvas) == "function" then
+      return MobileSceneryGate.lastSafeCanvas(state.map)
+    end
+    return nil
+  end
+  mobileDiagnostic("checkpoint", "gen1-world-scene-canvas-ready", {
+    caller="VoxelScene.render", context="world", width=w, height=h,
+  })
+  -- Mobile validates the completed core canvas before decorating it, but the
+  -- canonical weather painters draw in-place and do not allocate a second
+  -- full-frame target.  Apply them before publishing the safe receipt: once
+  -- the voxel canvas replaces the 2-D fallback there is no engine weather
+  -- layer underneath it (the real-device symptom was weather music with a
+  -- permanently clear picture).
+  if MOBILE_RUNTIME then
+    out = Weather.apply(out, w, h, state.map, Voxel3D.cell, weatherMode)
+    out = WeatherTweak.apply(
+      out, w, h, state.map, Voxel3D.cell, weatherMode, false)
+    -- Only an actual completed canvas opens direct-map streaming.  Merely
+    -- having BODY/atlas in the cache is insufficient because update and render
+    -- both call prefetch in the first publication frame.
+    mobileCoreTrace.presented = true
+    traceMobileCore(state.map, "canvas-presented", {
+      caller="VoxelScene.render", context="world",
+    })
+    if mobileScenery then
+      mobileSceneryNextSlot = sceneSlot == "mobile-scenery"
+        and "world" or "mobile-scenery"
+    else
+      -- A restage presents the M10 core in the ordinary world slot while P1
+      -- resources are rebuilt.  Re-arm the candidate slot at that exact
+      -- publication boundary so the next probe can never alias/overwrite the
+      -- newly retained safe world canvas.
+      mobileSceneryCanvasMap, mobileSceneryNextSlot =
+        state.map, "mobile-scenery"
+    end
+    if mobileSceneryProbe
+        and type(MobileSceneryGate.finishProbe) == "function" then
+      MobileSceneryGate.finishProbe(state.map, out)
+    elseif type(MobileSceneryGate.noteSafeCanvas) == "function" then
+      MobileSceneryGate.noteSafeCanvas(state.map, out)
+    end
+    return out
+  end
+  out = Weather.apply(out, w, h, state.map, Voxel3D.cell, weatherMode)
+  return WeatherTweak.apply(
+    out, w, h, state.map, Voxel3D.cell, weatherMode, false)
 end
 
 return VoxelScene

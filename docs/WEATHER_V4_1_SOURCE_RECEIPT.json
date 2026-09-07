@@ -1,0 +1,119 @@
+{
+  "schema": "voxel-ascendant/weather-v4.1-source-receipt/v1",
+  "source_package": {
+    "filename": "VOXEL_ASCENDANT-3.0.0-rc.9-WX-WORLD-CYCLE-v4.1-TEST.zip",
+    "archive_size_bytes": 117053997,
+    "archive_sha256": "c2265f1b9e9416f82e4754c0e45864a71ccad9107b472d6acc025a056dd933dc",
+    "relevant_member_count": 7
+  },
+  "relevant_source_members": [
+    {
+      "path": "shared/WeatherTweak.lua",
+      "bytes": 18519,
+      "sha256": "791e96b9507376aaa1fa36bed2349eebcdeeef41b6e0f40f6db6e474da29cd69"
+    },
+    {
+      "path": "shared/AmbientAudio.lua",
+      "bytes": 4848,
+      "sha256": "0c9b80bd2912e8833ac028c05b9206dd50afd6c54dafd1d5c6ef25b8c1dcb279"
+    },
+    {
+      "path": "docs/WEATHER_TWEAK.md",
+      "bytes": 3871,
+      "sha256": "c3df76b8e2419c8822f371f1c420c3bc3d4f09b55cc482ec45da4c1f8c31a27b"
+    },
+    {
+      "path": "gen2/lib/WeatherTweak.lua",
+      "bytes": 495,
+      "sha256": "9664730b9ff6d1b564c03301c150b6e2926788e49ab7a9658f3d24560a4373e1"
+    },
+    {
+      "path": "gen2/lib/AmbientAudio.lua",
+      "bytes": 412,
+      "sha256": "121b14dbbc989c7c4236bb1c863a1dd4a5ce2fe8e00c8d535bb4f4205270e79e"
+    },
+    {
+      "path": "lib/WeatherTweak.lua",
+      "bytes": 495,
+      "sha256": "81174abbddc9d5f3c25f760e7026f94b422c83c8feaa96e384f2c6c330523193"
+    },
+    {
+      "path": "lib/AmbientAudio.lua",
+      "bytes": 412,
+      "sha256": "eafc5491673a4c88cb4ef0f107ac42f3a9241e1e538924878f3821988926ac91"
+    }
+  ],
+  "integrated_targets": [
+    {
+      "path": "shared/WeatherTweak.lua",
+      "bytes": 18416,
+      "sha256": "c2ceed21c4ee22c8e190fd92c6f6131fe44c8161bf80be4af110a17c2bbd15ee",
+      "delivery": "reviewed-two-change-port"
+    },
+    {
+      "path": "shared/AmbientAudio.lua",
+      "bytes": 4848,
+      "sha256": "0c9b80bd2912e8833ac028c05b9206dd50afd6c54dafd1d5c6ef25b8c1dcb279",
+      "delivery": "byte-identical"
+    },
+    {
+      "path": "docs/WEATHER_TWEAK.md",
+      "bytes": 4365,
+      "sha256": "d241cab69a058db9985d81ca501ce8e61a753c697826900a916e2ced4fc312d2",
+      "delivery": "rc10-documentation-rewrite"
+    },
+    {
+      "path": "gen2/lib/WeatherTweak.lua",
+      "bytes": 495,
+      "sha256": "9664730b9ff6d1b564c03301c150b6e2926788e49ab7a9658f3d24560a4373e1",
+      "delivery": "byte-identical"
+    },
+    {
+      "path": "gen2/lib/AmbientAudio.lua",
+      "bytes": 412,
+      "sha256": "121b14dbbc989c7c4236bb1c863a1dd4a5ce2fe8e00c8d535bb4f4205270e79e",
+      "delivery": "byte-identical"
+    },
+    {
+      "path": "lib/WeatherTweak.lua",
+      "bytes": 495,
+      "sha256": "81174abbddc9d5f3c25f760e7026f94b422c83c8feaa96e384f2c6c330523193",
+      "delivery": "byte-identical"
+    },
+    {
+      "path": "lib/AmbientAudio.lua",
+      "bytes": 412,
+      "sha256": "eafc5491673a4c88cb4ef0f107ac42f3a9241e1e538924878f3821988926ac91",
+      "delivery": "byte-identical"
+    }
+  ],
+  "code_transformations": [
+    {
+      "path": "shared/WeatherTweak.lua",
+      "kind": "production-default",
+      "source": "WX MICRO EVENTS defaults to FULL",
+      "integrated": "WX MICRO EVENTS defaults to SUBTLE"
+    },
+    {
+      "path": "shared/WeatherTweak.lua",
+      "kind": "comment-cleanup",
+      "source": "three-line firefly-lane implementation comment",
+      "integrated": "equivalent two-line implementation comment; executable behavior unchanged"
+    }
+  ],
+  "documentation_transformation": {
+    "path": "docs/WEATHER_TWEAK.md",
+    "kind": "rc10-review-rewrite",
+    "contract": "Rewritten for the RC10 owner/fallback contract, production SUBTLE default, normal-rain guard and focused visual matrix; it is not represented as byte-identical source."
+  },
+  "deliberately_rejected_rc9_surfaces": [
+    "complete lib/Weather.lua and gen2/lib/Weather.lua replacements",
+    "complete lib/VoxelScene.lua and gen2/lib/VoxelScene.lua replacements",
+    "complete lib/Voxel3D.lua replacement",
+    "complete main.lua, main_gen1.lua, gen2/main.lua and options/menu replacements",
+    "complete Gen2 environment and Gold bridge replacements",
+    "older RC9 battle, renderer, shadow, occlusion and lifecycle ordering",
+    "VoxelUltimate ledge/height systems, WeatherFX, rebranding, optional GBC effects, gameplay, Kanto world and Stadium surfaces",
+    "post-v4.1 experimental weather, legendary and thunder variants"
+  ]
+}

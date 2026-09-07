@@ -48,9 +48,53 @@ local AntiAlias = V.require("AntiAlias")
 local Weather = V.require("Weather")
 local HorizonWall = V.require("HorizonWall")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
+local okWeatherTweak, WeatherTweak = pcall(V.require, "WeatherTweak")
+if not okWeatherTweak or type(WeatherTweak) ~= "table"
+    or type(WeatherTweak.observe) ~= "function"
+    or type(WeatherTweak.groundMode) ~= "function"
+    or type(WeatherTweak.groundAmount) ~= "function" then
+  WeatherTweak = {
+    observe = function() end,
+    groundMode = function(_, mode, native)
+      return native == false and "clear" or mode
+    end,
+    groundAmount = function(_, _, native)
+      return native == false and 0 or 1
+    end,
+  }
+end
 local PaletteFX = require("src.render.PaletteFX")
 
 local BattleScene = {}
+
+-- BattleScene is unit-tested with deliberately tiny V namespaces.  Resolve
+-- the optional controller lazily so those geometry tests retain their neutral
+-- baseline, while the real VASC runtime always supplies BattleLayout.
+local layoutModule, layoutChecked
+local function battleLayout()
+  if layoutChecked then return layoutModule end
+  layoutChecked = true
+  local ok, value = pcall(V.require, "BattleLayout")
+  if ok and type(value) == "table" then layoutModule = value end
+  return layoutModule
+end
+
+local function battleLayoutContext(arena, map)
+  local controller = battleLayout()
+  if controller and type(controller.stageContext) == "function" then
+    local ok, value = pcall(controller.stageContext, arena, map)
+    if ok and type(value) == "table" then return value end
+  end
+  local host = map or type(arena) == "table" and arena.map or nil
+  local declared = type(arena) == "table" and arena.presentationMode or nil
+  local mode = (declared == "MAP" or declared == "ARENA"
+      or declared == "DISCS") and declared
+    or type(arena) == "table" and arena.arenaStyle and "ARENA"
+    or type(arena) == "table" and arena.discs and "DISCS" or "MAP"
+  return {mapID=host and tostring(host.id or host) or nil,
+          stageID=host and tostring(host.id or host) or nil,
+          mode=mode}
+end
 
 -- The GB frame the battle screen is drawn in, and the frame BattleCam's rig
 -- is solved against.
@@ -166,7 +210,13 @@ local function prefetchArena(state, host)
     -- masked border ring instead. Those masks assume every connected body is
     -- present, so preserve VoxelScene's atomic rule rather than accepting a
     -- compact partial plan in that mode.
-    if (plan.horizonFallback or not HorizonWall.preferBody(host))
+    -- Mobile's bounded path proves an atomic masked FULL plus every *direct*
+    -- connection and stamps that exact receipt. Two-hop survey maps are not
+    -- connection masks and must not make a complete phone arena return nil.
+    -- The initial current-only BODY has no receipt and remains rejected here,
+    -- so a battle never opens on an unclosed bootstrap edge.
+    if not plan.mobileDirectUnion
+       and (plan.horizonFallback or not HorizonWall.preferBody(host))
        and #(plan.state.neighbors or {}) ~= #(state.neighbors or {}) then
       return nil
     end
@@ -227,17 +277,11 @@ end
 -- texture reports -- the column the pic was centred on and the row its feet
 -- were put on -- which is translated onto the cell before the card is stood
 -- up, so a mon of any size in any pose has its feet on the ground.
--- `mirror` flips the card about its own anchor column. Both mons wear their
--- FRONT pic, which is drawn facing out of the screen -- so dropped into the
--- world unaltered the pair stand back to back, both looking the same way past
--- each other. Mirroring the near one turns it to face the far one, which is
--- what a fight looks like; and because it is a flip about the pic's own
--- centre the feet do not move off the tile.
---
--- The player's TRAINER pic is the exception, and it is exempted below. That
--- one is a BACK view -- the player seen from behind, already turned to face
--- up the field -- so it arrives pointing the right way and mirroring it would
--- turn it around to face the camera it is standing in front of.
+-- `mirror` flips the card about its own anchor column.  The value is resolved
+-- from an explicit view/flip receipt below: bundled fronts intrinsically face
+-- left, while certified full-body backs intrinsically face right.  This keeps
+-- editor preview, native test battle and runtime on the same contract and,
+-- crucially, lets a rejected Back -> HD Front fallback change direction too.
 -- A companion may return a high-DPI canvas while retaining the logical
 -- Gen-1 anchor (80,96).  Never assume that such a card is still 160x144:
 -- doing so maps only its upper-left quarter onto the billboard and makes the
@@ -260,12 +304,134 @@ end
 -- reuses one canvas per side, so caching by that canvas alone would make the
 -- next species inherit the previous species' silhouette.  KASC Megas provide
 -- their source path; VASC's ordinary path supplies the actual sprite object.
+--
+-- An animated companion form can provide a different source path on every
+-- authored frame.  Those paths are content identities, not actor ownership:
+-- feeding their independent alpha boxes straight into density, camera fit and
+-- HUD safety made all three targets cycle with the animation.  Learn one
+-- conservative envelope per exact VASC deployment/model instead.  The weak
+-- owner key releases naturally with the mon, while `vascRenderModelKey`
+-- separates form/view changes on a surviving object.  Grow/shrink canvases
+-- remain transient and never teach this deployed envelope.
+local companionInkEnvelopes = setmetatable({}, { __mode="k" })
+
+local function companionInkOwner(tex)
+  if not (tex and (tex.kantoAscendantMegaSupersampled == true
+      or tex.kantoAscendantGorochuSupersampled == true)) then return nil end
+  local owner = tex.vascRenderMon or tex.vascRenderBattler
+                or tex.vascRenderTextureToken
+  local modelKey = tex.vascRenderModelKey
+  if (type(owner) ~= "table" and type(owner) ~= "userdata")
+      or type(modelKey) ~= "string" or modelKey == "" then return nil end
+  return owner, modelKey
+end
+
 function BattleScene.textureInkBounds(tex)
-  if not (tex and not tex.trainer and tex.canvas
+  if not (tex and tex.canvas
           and type(BattlePics.inkBounds) == "function") then return nil end
   local identity = tex.kantoAscendantMegaSource or tex.inkIdentity
-  if identity == nil then return nil end
-  return BattlePics.inkBounds(tex.canvas, identity)
+  local transient = tex.inkTransient == true
+  local x0, y0, x1, y1
+  if identity ~= nil then
+    x0, y0, x1, y1 = BattlePics.inkBounds(
+      tex.canvas, identity, transient)
+  end
+  if transient then return x0, y0, x1, y1 end
+
+  local owner, modelKey = companionInkOwner(tex)
+  if not owner then return x0, y0, x1, y1 end
+  local models = companionInkEnvelopes[owner]
+  if not models then
+    models = {}
+    companionInkEnvelopes[owner] = models
+  end
+  local envelope = models[modelKey]
+  local valid = type(x0) == "number" and type(y0) == "number"
+    and type(x1) == "number" and type(y1) == "number"
+    and x1 >= x0 and y1 >= y0
+  if valid then
+    if envelope then
+      envelope[1] = math.min(envelope[1], x0)
+      envelope[2] = math.min(envelope[2], y0)
+      envelope[3] = math.max(envelope[3], x1)
+      envelope[4] = math.max(envelope[4], y1)
+    else
+      envelope = { x0, y0, x1, y1 }
+      models[modelKey] = envelope
+    end
+  end
+  if not envelope then return nil end
+  return envelope[1], envelope[2], envelope[3], envelope[4]
+end
+
+-- A trainer can be mirrored like a regular player card while still being
+-- human-scale art.  Keep that presentation fact separate from `trainer`,
+-- whose historical meaning also controls the player-card mirror.
+function BattleScene.isTrainerTexture(tex)
+  return tex and (tex.trainer == true or tex.trainerArt == true
+                  or tex.ascendantHighResTrainer == true) or false
+end
+
+-- Concrete horizontal orientation shared with the VASC Battlemap Editor.
+-- A user/profile flip is absolute and therefore wins.  Otherwise fronts face
+-- the opponent by mirroring only the player card; genuine full-body backs do
+-- the inverse.  Unknown legacy cards retain the historical safe default.
+-- Capability is never inferred from dimensions: a 64px image can be either a
+-- reviewed full-body trainer back or a cropped Game Boy battle sprite.
+function BattleScene.textureFlipX(side, tex)
+  tex = type(tex) == "table" and tex or {}
+  if type(tex.flipX) == "boolean" then return tex.flipX end
+  if type(tex.vascFlipX) == "boolean" then return tex.vascFlipX end
+
+  local receipt = type(tex.vascEmbeddedTrainer) == "table"
+    and tex.vascEmbeddedTrainer or nil
+  local view = tex.vascSpriteView or tex.ascendantSpriteView
+    or tex.battleSpriteView or (receipt and receipt.view)
+  if view == "full_back" then view = "back" end
+  if view == "back" then return side == "enemy" end
+  if view == "front" then return side == "player" end
+
+  if tex.vascFullBodyBack == true or tex.ascendantFullBodyBack == true then
+    return side == "enemy"
+  end
+  -- `trainer=true` is the engine's native player-back marker, but enemy
+  -- trainer fronts carry it too.  Preserve that distinction by side.
+  if side == "player" and tex.trainer == true then return false end
+  return side == "player"
+end
+
+-- KASC's reviewed HD standee is a 2x raster of the logical 160x144 battle
+-- card.  Its ax/ay fields deliberately stay in logical coordinates; the
+-- raster is denser, not physically twice as large.  Recognise only that
+-- explicit companion receipt, and fail neutral for every unknown provider.
+function BattleScene.texturePixelScale(tex)
+  if not (tex and tex.ascendantHighResTrainer == true) then return 1 end
+  local cw, ch = BattleScene.textureDimensions(tex)
+  -- KASC 6.5.17 publishes the source-density receipt explicitly.  Honour it
+  -- only when the actual canvas agrees, so a stale/partial wrapper can never
+  -- enlarge an unrelated surface.  Older compatible wrappers did not expose
+  -- the field; their exact 160x144 multiple remains a supported fallback.
+  local declared = tonumber(tex.ascendantTrainerSourceScale)
+  if declared ~= nil then
+    if not (declared == declared and declared > 0 and declared <= 8
+            and declared == math.floor(declared)
+            and cw == BattleScene.GB_W * declared
+            and ch == BattleScene.GB_H * declared) then
+      return 1
+    end
+    return declared
+  end
+  local sx, sy = cw / BattleScene.GB_W, ch / BattleScene.GB_H
+  if not (sx == sx and sy == sy and sx > 0 and sy > 0
+          and sx < math.huge and sy < math.huge
+          and math.abs(sx - sy) < 0.001) then return 1 end
+  return sx
+end
+
+function BattleScene.textureAnchorX(tex)
+  local cw = BattleScene.textureDimensions(tex)
+  local ax = tonumber(tex and tex.ax) or cw / 2
+  return ax * BattleScene.texturePixelScale(tex)
 end
 
 -- A sprite's feet are its last visible alpha row, not the bottom of its
@@ -275,9 +441,14 @@ end
 -- beneath the ground by extending ink outside its declared slot.
 function BattleScene.textureBaseline(tex)
   local ay = tonumber(tex and tex.ay) or BattleScene.GB_H
-  if tex and tex.trainer then return ay end
+  ay = ay * BattleScene.texturePixelScale(tex)
   local _, _, _, y1 = BattleScene.textureInkBounds(tex)
   if type(y1) ~= "number" then return ay end
+  -- Trainer canvases contain the engine's final placement, including KASC's
+  -- 64px fronts and per-character back offset.  Their last alpha row is the
+  -- only truthful foot line; clamping it to the legacy 56/96 anchor is the
+  -- exact operation that buried the lower body in the voxel floor.
+  if BattleScene.isTrainerTexture(tex) then return y1 + 1 end
   return math.min(ay, y1 + 1)
 end
 
@@ -298,12 +469,18 @@ BattleScene.SPECIES_SCALE_MAX = 1.80
 -- not exceed the largest previously accepted indoor actor envelope.
 BattleScene.PRESENTATION_SCALE_MAX = 2.75
 BattleScene.COMPANION_MASTER_CARD = 96
-BattleScene.MEGA_SILHOUETTE_BONUS = 1.06
-BattleScene.MEGA_LARGE_FOOTPRINT = 28
-BattleScene.MEGA_WORLD_WIDTH_MAX = 34
-BattleScene.MEGA_WORLD_HEIGHT_MAX = 30
+BattleScene.MEGA_DENSITY_MAX = 1
 BattleScene.PAIR_SPREAD_WIDTH = 40
 BattleScene.PAIR_SPREAD_FACTOR = 0.75
+local GOROCHU_CRYSTAL_PRIMARY_DENSITY = 1.08
+
+-- Maximum visible actor footprint that the deliberately tight 1X camera may
+-- frame without widening. These are world units after canonical species,
+-- room and high-density KASC/Mega scaling have all been applied. The result
+-- is a transient camera floor, not a sprite shrink: feet, relative species
+-- size and authored ARENA compositions therefore remain untouched.
+BattleScene.ACTOR_FIT_WORLD_HEIGHT = 10.9
+BattleScene.ACTOR_FIT_WORLD_WIDTH = 14.5
 
 -- KASC redraws Mega/Gorochu art from a 96px master so it stays crisp. Those
 -- extra pixels are source density, not extra physical height. A fixed 56/96
@@ -311,58 +488,55 @@ BattleScene.PAIR_SPREAD_FACTOR = 0.75
 -- alpha could occupy only half of that nominal card, making Mega Charizard X
 -- smaller than ordinary Charizard and the Raichu forms smaller still.
 --
--- Normalize an ordinary-sized Mega from its actual visible alpha height and
--- give it one restrained six-percent presentation lift. Already-large
--- silhouettes keep the reviewed legacy density (Mega Steelix is the guard
--- case), while width/height envelopes stop a very broad pose from growing
--- into the other combatant or the HUD. The envelopes scale with an authored
--- room, so intimate ARENA paintings retain their reviewed actor scale.
+-- Normalize the longest visible axis of every Mega to the ordinary 56px
+-- battle-card envelope.  Using alpha HEIGHT alone made broad, low poses such
+-- as Mega Charizard and Mega Alakazam almost twice as large after the form
+-- swap: their short height produced a huge density multiplier even though
+-- their wings/spoons already filled the full master width.  The master is a
+-- higher-resolution source, not a larger creature. Canonical Pokédex height
+-- still supplies the physical species scale below; this conversion only
+-- removes source-density from the equation.
 function BattleScene.textureDensityScale(tex, combinedScale)
   local legacy = BattleBillboard.FULL_PIC
     / BattleScene.COMPANION_MASTER_CARD
+  if BattleScene.isTrainerTexture(tex)
+      and tex.ascendantHighResTrainer == true then
+    return 1 / BattleScene.texturePixelScale(tex), "trainer-hires"
+  end
   if tex and tex.kantoAscendantMegaSupersampled == true then
     local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
     if not (type(x0) == "number" and type(y0) == "number"
             and type(x1) == "number" and type(y1) == "number"
             and x1 >= x0 and y1 >= y0) then
-      return legacy, "legacy-no-ink"
+      return legacy, "master-no-ink"
     end
     local inkWidth, inkHeight = x1 - x0 + 1, y1 - y0 + 1
-    local canonical = BattleScene.speciesScale(tex)
-    local base = BattleBillboard.FULL_W / BattleBillboard.FULL_PIC
-    local legacyWidth = inkWidth * base * canonical * legacy
-    local legacyHeight = inkHeight * base * canonical * legacy
-    if legacyWidth >= BattleScene.MEGA_LARGE_FOOTPRINT
-        or legacyHeight >= BattleScene.MEGA_LARGE_FOOTPRINT then
-      return legacy, "large-preserved"
-    end
-
-    local combined = tonumber(combinedScale) or canonical
-    if not (combined == combined and combined > 0
-            and combined < math.huge) then combined = canonical end
-    local roomScale = canonical > 0 and combined / canonical or 1
-    local density = (BattleBillboard.FULL_PIC / inkHeight)
-      * BattleScene.MEGA_SILHOUETTE_BONUS
-    local widthCap = BattleScene.MEGA_WORLD_WIDTH_MAX * roomScale
-      / (inkWidth * base * combined)
-    local heightCap = BattleScene.MEGA_WORLD_HEIGHT_MAX * roomScale
-      / (inkHeight * base * combined)
-    local policy = "silhouette"
-    if widthCap < density then policy = "width-capped" end
-    if heightCap < math.min(density, widthCap) then
-      policy = "height-capped"
-    end
-    density = math.min(density, widthCap, heightCap)
-    return math.max(legacy, density), policy
+    local longest = math.max(inkWidth, inkHeight)
+    local density = BattleBillboard.FULL_PIC / longest
+    density = math.max(legacy,
+      math.min(BattleScene.MEGA_DENSITY_MAX, density))
+    return density, "master-normalized"
   end
   if tex and tex.kantoAscendantGorochuSupersampled == true then
+    -- KASC's current Crystal-primary lane is a native 56x56 card painted 1:1
+    -- into the ordinary 160x144 side canvas.  Treating it as the older 96px
+    -- illustrated master applied 56/96 twice and made Gorochu smaller than
+    -- Raichu.  The provider already publishes the exact asset lane: use that
+    -- narrow receipt for the reviewed Gorochu-only presentation adjustment.
+    -- Its 1.08 factor makes the measured painted area approximately 1.5x
+    -- Raichu while its visible height remains just below Blastoise under the
+    -- same anchor, room scale and camera.  Unknown or illustrated lanes keep
+    -- the legacy fail-open conversion below.
+    if tex.kantoAscendantGorochuAssetLane == "crystal-primary" then
+      return GOROCHU_CRYSTAL_PRIMARY_DENSITY, "gorochu-crystal-primary"
+    end
     return legacy, "gorochu-legacy"
   end
   return 1, "native"
 end
 
 function BattleScene.speciesScale(tex)
-  if not tex or tex.trainer then return 1 end
+  if not tex or BattleScene.isTrainerTexture(tex) then return 1 end
   local height = tonumber(tex.heightIn)
   if not (height and height == height and height > 0
           and height < math.huge) then
@@ -373,12 +547,12 @@ function BattleScene.speciesScale(tex)
                   math.min(BattleScene.SPECIES_SCALE_MAX, scale))
 end
 
-function BattleScene.presentationMetrics(tex, actorScale)
+function BattleScene.presentationMetrics(tex, actorScale, profileObject)
   local cw, ch = BattleScene.textureDimensions(tex)
   local room = tonumber(actorScale) or 1
   if not (room == room and room > 0 and room < math.huge) then room = 1 end
   local combined = room
-  if not (tex and tex.trainer) then
+  if not BattleScene.isTrainerTexture(tex) then
     combined = math.min(BattleScene.PRESENTATION_SCALE_MAX,
                         room * BattleScene.speciesScale(tex))
   end
@@ -386,9 +560,22 @@ function BattleScene.presentationMetrics(tex, actorScale)
   local k = (BattleBillboard.FULL_W / BattleBillboard.FULL_PIC)
     * combined * density
   local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
+  local anchorX = BattleScene.textureAnchorX(tex)
+  local baseline = BattleScene.textureBaseline(tex)
+  local foot = type(profileObject) == "table" and profileObject.footAnchor
+  if type(foot) == "table" then
+    local fx, fy = tonumber(foot.x), tonumber(foot.y)
+    if fx and fx == fx and fx >= 0 and fx <= 1 then anchorX = fx * cw end
+    if fy and fy == fy and fy >= 0 and fy <= 1 then baseline = fy * ch end
+  elseif type(profileObject) == "table" then
+    local authored = tonumber(profileObject.baseline)
+    if authored and authored == authored and authored >= 0
+        and authored <= 1 then baseline = authored * ch end
+  end
   return {
     canvasWidth = cw, canvasHeight = ch,
-    baseline = BattleScene.textureBaseline(tex),
+    anchorX = anchorX,
+    baseline = baseline,
     scale = k, combinedScale = combined, densityScale = density,
     densityPolicy = densityPolicy,
     inkX0 = x0, inkY0 = y0, inkX1 = x1, inkY1 = y1,
@@ -399,12 +586,76 @@ function BattleScene.presentationMetrics(tex, actorScale)
   }
 end
 
-local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale)
-  local metrics = BattleScene.presentationMetrics(tex, actorScale)
+-- Resolve one role's user correction after source-density/species metrics are
+-- known.  The neutral answer is byte-for-byte the historical presentation,
+-- which keeps authored arena anchors and existing saves unchanged.
+function BattleScene.actorPresentation(side, tex, baseScale, context)
+  baseScale = tonumber(baseScale) or 1
+  local metrics = tex and BattleScene.presentationMetrics(tex, baseScale)
+  local adjustment, target = { x=0, y=0, scale=1 }, nil
+  local controller = battleLayout()
+  if controller and type(controller.actorAdjustment) == "function" then
+    local ok, got, id = pcall(controller.actorAdjustment, side, tex, metrics,
+                              context)
+    if ok and type(got) == "table" then
+      adjustment, target = got, id
+    end
+  end
+  local scale = tonumber(adjustment.scale) or 1
+  if not (scale == scale and scale > 0 and scale < math.huge) then scale = 1 end
+  return {
+    x = tonumber(adjustment.x) or 0,
+    y = tonumber(adjustment.y) or 0,
+    scale = baseScale * scale,
+    factor = scale,
+    target = target,
+    metrics = metrics,
+    normalizedX = tonumber(adjustment.normalizedX),
+    normalizedY = tonumber(adjustment.normalizedY),
+    flipX = type(adjustment.flipX) == "boolean" and adjustment.flipX or nil,
+    profileObject = adjustment.profileObject,
+  }
+end
+
+function BattleScene.presentationFitDistance(arena, textures, map)
+  -- Authored paintings already open on their reviewed 3X master and own the
+  -- exact clearings/foot positions. The fit floor is for steerable MAP and
+  -- DISCS close-ups only.
+  if arena and arena.arenaStyle then return 1 end
+  if type(textures) ~= "table" then return 1 end
+  local stage = V.require("VoxelBattleStage")
+  local actorScale = stage and type(stage.presentationScale) == "function"
+                     and stage.presentationScale(arena) or 1
+  local context = battleLayoutContext(arena, map)
+  local fit = 1
+  for _, side in ipairs({ "player", "enemy" }) do
+    local tex = textures[side]
+    if tex then
+      local role = BattleScene.actorPresentation(side, tex, actorScale,
+                                                  context)
+      local metrics = BattleScene.presentationMetrics(
+        tex, role.scale, role.profileObject)
+      local h, w = tonumber(metrics.worldInkHeight),
+                   tonumber(metrics.worldInkWidth)
+      if h and h > 0 then
+        fit = math.max(fit, h / BattleScene.ACTOR_FIT_WORLD_HEIGHT)
+      end
+      if w and w > 0 then
+        fit = math.max(fit, w / BattleScene.ACTOR_FIT_WORLD_WIDTH)
+      end
+    end
+  end
+  return math.max(1, math.min(tonumber(BattleCam.ZOOM_MAX) or 3, fit))
+end
+
+local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale,
+                         profileObject)
+  local metrics = BattleScene.presentationMetrics(tex, actorScale,
+                                                   profileObject)
   local k = metrics.scale
   local w = metrics.canvasWidth * k
   local h = metrics.canvasHeight * k
-  local ax = tonumber(tex and tex.ax) or metrics.canvasWidth / 2
+  local ax = metrics.anchorX
   local ox = -((ax / metrics.canvasWidth) - 0.5) * w
   local oy = -((metrics.canvasHeight - metrics.baseline)
                / metrics.canvasHeight) * h
@@ -427,26 +678,231 @@ end
 -- its original right-side HUD. This preserves size (rather than shrinking a
 -- Mega/Onix), and it applies to the card, shadow and returned HUD/effect pins
 -- through one common layout.
-function BattleScene.presentationLayout(arena, groundY, textures)
+-- Return a world's x/z point on a fixed ground plane for a normalized
+-- full-viewport screen anchor. This is the inverse of the VP projection for
+-- the two free coordinates, and therefore stays resolution/aspect agnostic.
+function BattleScene.worldAtNormalized(vp, normalizedX, normalizedY, worldY)
+  if type(vp) ~= "table" then return nil end
+  local nx = tonumber(normalizedX)
+  local ny = tonumber(normalizedY)
+  local y = tonumber(worldY) or 0
+  if not (nx and ny and nx == nx and ny == ny
+          and nx >= 0 and nx <= 1 and ny >= 0 and ny <= 1) then return nil end
+  nx, ny = nx * 2 - 1, ny * 2 - 1
+  local ax, az = vp[1] - nx * vp[13], vp[3] - nx * vp[15]
+  local bx, bz = vp[5] - ny * vp[13], vp[7] - ny * vp[15]
+  local ar = nx * (vp[14] * y + vp[16]) - (vp[2] * y + vp[4])
+  local br = ny * (vp[14] * y + vp[16]) - (vp[6] * y + vp[8])
+  local determinant = ax * bz - az * bx
+  if not (determinant == determinant and math.abs(determinant) > 1e-9) then
+    return nil
+  end
+  return (ar * bz - az * br) / determinant,
+         (ax * br - ar * bx) / determinant
+end
+
+local function normalizedProjection(vp, x, y, z)
+  if type(vp) ~= "table" then return nil end
+  local cx = vp[1] * x + vp[2] * y + vp[3] * z + vp[4]
+  local cy = vp[5] * x + vp[6] * y + vp[7] * z + vp[8]
+  local cw = vp[13] * x + vp[14] * y + vp[15] * z + vp[16]
+  if not (cw and cw > 1e-9) then return nil end
+  return cx / cw * .5 + .5, cy / cw * .5 + .5
+end
+
+-- Conservative screen-space envelope used by the STADIUM director before a
+-- frame is drawn.  It deliberately describes a large battle card rather than
+-- a species id: camera safety stays generation/provider neutral, while the
+-- final renderer may still use tighter per-texture metrics for presentation.
+BattleScene.CAMERA_SAFE_ACTOR_RADIUS = 16
+BattleScene.CAMERA_SAFE_ACTOR_HEIGHT = 32
+
+-- Assigned after monCards is defined.  Camera-safety candidates and the real
+-- renderer deliberately share this exact alpha-ink projection path.
+local actorVisualsFor
+local projectedArenaGeometry
+
+local function projectedPixels(vp, x, y, z, pw, ph)
+  local nx, ny = normalizedProjection(vp, x, y, z)
+  if not (nx and ny) then return nil end
+  return nx * pw, ny * ph
+end
+
+function BattleScene.projectedActorHull(vp, x, y, z, pw, ph,
+                                         radius, height)
+  radius = tonumber(radius) or BattleScene.CAMERA_SAFE_ACTOR_RADIUS
+  height = tonumber(height) or BattleScene.CAMERA_SAFE_ACTOR_HEIGHT
+  local left, top, right, bottom
+  -- A camera-facing card can expose either world axis over a 360-degree orbit.
+  -- Project the complete conservative prism so no bearing gets a thinner hull
+  -- merely because its billboard has not yet been built.
+  for _, ox in ipairs({ -radius, radius }) do
+    for _, oz in ipairs({ -radius, radius }) do
+      for _, oy in ipairs({ 0, height }) do
+        local px, py = projectedPixels(vp, x + ox, y + oy, z + oz, pw, ph)
+        if not px then return nil end
+        left = left and math.min(left, px) or px
+        right = right and math.max(right, px) or px
+        top = top and math.min(top, py) or py
+        bottom = bottom and math.max(bottom, py) or py
+      end
+    end
+  end
+  local fx, fy = projectedPixels(vp, x, y, z, pw, ph)
+  if not fx then return nil end
+  return { left, top, right - left, bottom - top }, { fx, fy }
+end
+
+-- Build the candidate shot record consumed by public HUD camera-bounds
+-- providers. This is the exact BattleScene projection/letterbox transform but
+-- does not bind a canvas or mutate Voxel3D's live camera.
+function BattleScene.cameraSafetyShot(arena, groundY, camera, textures, map,
+                                      renderToken)
+  if not (arena and arena.player and arena.enemy and camera
+          and camera.eye and camera.focus and camera.fov) then return nil end
+  local lx, ly, s, pw, ph = BattleScene.letterbox()
+  if not (pw > 0 and ph > 0 and s > 0) then return nil end
+  -- Match the real renderer's complete finishing pass. fitPortrait mutates
+  -- the camera, so operate on a private copy: camera-safety queries must be
+  -- observational and may not tilt the director's live rig.
+  local fitted = {
+    eye={ camera.eye[1], camera.eye[2], camera.eye[3] },
+    focus={ camera.focus[1], camera.focus[2], camera.focus[3] },
+    up=camera.up and { camera.up[1], camera.up[2], camera.up[3] }
+                    or { 0, 1, 0 },
+    fov=BattleScene.letterboxFov(camera.fov, ph, s),
+    curve=camera.curve,
+  }
+  fitted = BattleCam.fitPortrait(fitted, nil, pw, ph, arena)
+  local fov = fitted.fov
+  local dx = fitted.eye[1] - fitted.focus[1]
+  local dy = fitted.eye[2] - fitted.focus[2]
+  local dz = fitted.eye[3] - fitted.focus[3]
+  local dist = math.max(1, math.sqrt(dx * dx + dy * dy + dz * dz))
+  local proj = Mat4.perspective(fov, pw / ph,
+    math.max(1, dist * .05), dist * 4 + 4096)
+  proj = Mat4.mul(Mat4.scale(1, -1, 1), proj)
+  local vp = Mat4.mul(proj, Mat4.lookAt(
+    fitted.eye, fitted.focus, fitted.up))
+  local shot = {
+    lx=lx, ly=ly, scale=s, pw=pw, ph=ph,
+    actorHulls={}, actorFeet={}, cameraSafety=true,
+    renderToken=renderToken,
+    layoutContext=battleLayoutContext(arena, map or arena.map),
+  }
+  groundY = tonumber(groundY) or 0
+  local geometry = projectedArenaGeometry and projectedArenaGeometry(
+    arena, groundY, textures, map or arena.map, vp, pw, ph, lx, ly, s)
+  if not geometry then return nil end
+  shot.player, shot.enemy = geometry.player, geometry.enemy
+  shot.playerSpan, shot.enemySpan = geometry.playerSpan, geometry.enemySpan
+  shot.actorHulls, shot.actorFeet = geometry.actorHulls, geometry.actorFeet
+  if textures and actorVisualsFor then
+    shot.actorVisuals = actorVisualsFor(
+      arena, groundY, textures, map or arena.map, vp, pw, ph,
+      renderToken, fitted.eye)
+  end
+  return shot
+end
+
+function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
   local stage = V.require("VoxelBattleStage")
-  local layout = {}
+  local layout = { actorScale={}, target={}, flipX={}, profileObject={},
+                   profilePosition={} }
+  local baseScale = stage.presentationScale(arena)
+  local context = battleLayoutContext(arena, map)
+  vp = vp or Voxel3D.vp
   for _, side in ipairs({ "player", "enemy" }) do
-    local x, y, z = stage.presentationPosition(arena, side, groundY)
-    if x then layout[side] = { x, y, z } end
+    local texture = textures and textures[side]
+    local x, y, z = stage.presentationPosition(
+      arena, side, groundY, texture and texture.trainer == true)
+    if x then
+      local role = BattleScene.actorPresentation(side, texture, baseScale,
+                                                  context)
+      local normalizedX, normalizedY = role.normalizedX, role.normalizedY
+      if (normalizedX or normalizedY) and vp then
+        local currentX, currentY = normalizedProjection(vp, x, y, z)
+        normalizedX = normalizedX or currentX
+        normalizedY = normalizedY or currentY
+        local authoredX, authoredZ = BattleScene.worldAtNormalized(
+          vp, normalizedX, normalizedY, y)
+        if authoredX and authoredZ then
+          x, z = authoredX, authoredZ
+          layout.profilePosition[side] = true
+        end
+      end
+      -- Menu axes follow screen convention: positive Y moves down.  World Y
+      -- grows upward, hence the subtraction here.
+      layout[side] = { x + role.x, y - role.y, z }
+      layout.actorScale[side] = role.scale
+      layout.target[side] = role.target
+      layout.flipX[side] = role.flipX
+      layout.profileObject[side] = role.profileObject
+    end
+  end
+
+  -- Portable ARENA paintings may be replaced or selected per route by an
+  -- Injector content pack. Their historical world offsets can then put both
+  -- actors on one clearing, in transparent sky or against a frame edge.
+  -- VoxelBattleStage analyses the exact chosen bitmap once and publishes two
+  -- open-ground foot marks. Apply those marks only when no imported Battle
+  -- Layout profile explicitly owns either actor; inverse projection keeps
+  -- cards, shadows, effects and HUD receipts on one shared world contract.
+  if arena and arena.arenaStyle and vp
+      and not layout.profilePosition.player
+      and not layout.profilePosition.enemy
+      and layout.player and layout.enemy
+      and type(stage.presentationComposition) == "function" then
+    local playerTexture = textures and textures.player
+    local enemyTexture = textures and textures.enemy
+    local playerComposition = stage.presentationComposition(
+      arena, playerTexture and playerTexture.trainer == true)
+    local enemyComposition = stage.presentationComposition(
+      arena, enemyTexture and enemyTexture.trainer == true)
+    local playerMark = playerComposition and playerComposition.player
+    local enemyMark = enemyComposition and enemyComposition.enemy
+    if playerMark and enemyMark then
+      local pnx, pny = normalizedProjection(
+        vp, layout.player[1], layout.player[2], layout.player[3])
+      local enx, eny = normalizedProjection(
+        vp, layout.enemy[1], layout.enemy[2], layout.enemy[3])
+      local pairUnsafe = not (pnx and pny and enx and eny)
+        or math.abs(enx - pnx) < .27
+        or pnx < .14 or pnx > .86 or enx < .14 or enx > .86
+        or pny < .46 or pny > .74 or eny < .46 or eny > .74
+        or math.abs(pnx - playerMark.x) + math.abs(pny - playerMark.y) > .20
+        or math.abs(enx - enemyMark.x) + math.abs(eny - enemyMark.y) > .20
+      if pairUnsafe then
+        local px, pz = BattleScene.worldAtNormalized(
+          vp, playerMark.x, playerMark.y, layout.player[2])
+        local ex, ez = BattleScene.worldAtNormalized(
+          vp, enemyMark.x, enemyMark.y, layout.enemy[2])
+        if px and ex then
+          layout.player[1], layout.player[3] = px, pz
+          layout.enemy[1], layout.enemy[3] = ex, ez
+          layout.smartArenaComposition = playerComposition.source
+            or enemyComposition.source or "automatic"
+        end
+      end
+    end
   end
   if not (textures and layout.player and layout.enemy) then return layout end
-  local actorScale = stage.presentationScale(arena)
   local playerMetrics = textures.player
-    and BattleScene.presentationMetrics(textures.player, actorScale)
+    and BattleScene.presentationMetrics(textures.player,
+      layout.actorScale.player or baseScale, layout.profileObject.player)
   local enemyMetrics = textures.enemy
-    and BattleScene.presentationMetrics(textures.enemy, actorScale)
+    and BattleScene.presentationMetrics(textures.enemy,
+      layout.actorScale.enemy or baseScale, layout.profileObject.enemy)
   local playerWidth = playerMetrics
     and tonumber(playerMetrics.worldInkWidth)
   local enemyWidth = enemyMetrics and tonumber(enemyMetrics.worldInkWidth)
   if not (playerWidth and playerWidth > 0
           and enemyWidth and enemyWidth > 0) then return layout end
+  if layout.profilePosition.player or layout.profilePosition.enemy then
+    return layout
+  end
   local excess = playerWidth + enemyWidth
-    - BattleScene.PAIR_SPREAD_WIDTH * actorScale
+    - BattleScene.PAIR_SPREAD_WIDTH * baseScale
   if excess <= 0 then return layout end
   local spread = excess * BattleScene.PAIR_SPREAD_FACTOR
   layout.player[1] = layout.player[1] - spread
@@ -454,18 +910,69 @@ function BattleScene.presentationLayout(arena, groundY, textures)
   return layout
 end
 
+-- One pure projection record shared by candidate safety and the actual frame.
+-- Profile positions, pair spread, actor-specific Y/Z and species scale must be
+-- reflected in both places; projecting raw arena cells in one path lets a
+-- camera pass safety for actors that the renderer subsequently moves.
+projectedArenaGeometry = function(
+    arena, groundY, textures, map, vp, pw, ph, lx, ly, s)
+  local stage = V.require("VoxelBattleStage")
+  local layout = BattleScene.presentationLayout(
+    arena, groundY, textures, map, vp)
+  local player = layout.player
+  local enemy = layout.enemy
+  local playerX, playerY, playerZ = player and player[1],
+    player and player[2], player and player[3]
+  local enemyX, enemyY, enemyZ = enemy and enemy[1],
+    enemy and enemy[2], enemy and enemy[3]
+  if not (playerX and enemyX) then return nil end
+  local pmx, pmy = BattleScene.toGB(
+    vp, playerX, playerY, playerZ, lx, ly, s, pw, ph)
+  local emx, emy = BattleScene.toGB(
+    vp, enemyX, enemyY, enemyZ, lx, ly, s, pw, ph)
+  if not (pmx and emx) then return nil end
+  local half = BattleScene.CELL / 2
+  local pl = BattleScene.toGB(
+    vp, playerX - half, playerY, playerZ, lx, ly, s, pw, ph)
+  local pr = BattleScene.toGB(
+    vp, playerX + half, playerY, playerZ, lx, ly, s, pw, ph)
+  local el = BattleScene.toGB(
+    vp, enemyX - half, enemyY, enemyZ, lx, ly, s, pw, ph)
+  local er = BattleScene.toGB(
+    vp, enemyX + half, enemyY, enemyZ, lx, ly, s, pw, ph)
+  if not (pl and pr and el and er) then return nil end
+  local playerHull, playerFoot = BattleScene.projectedActorHull(
+    vp, playerX, playerY, playerZ, pw, ph)
+  local enemyHull, enemyFoot = BattleScene.projectedActorHull(
+    vp, enemyX, enemyY, enemyZ, pw, ph)
+  if not (playerHull and playerFoot and enemyHull and enemyFoot) then return nil end
+  return {
+    layout=layout,
+    player={ pmx, pmy }, enemy={ emx, emy },
+    playerSpan=math.abs(pr - pl)
+      * (layout.actorScale.player or stage.presentationScale(arena)),
+    enemySpan=math.abs(er - el)
+      * (layout.actorScale.enemy or stage.presentationScale(arena)),
+    actorHulls={ player=playerHull, enemy=enemyHull },
+    actorFeet={ player=playerFoot, enemy=enemyFoot },
+  }
+end
+
 -- Every mon that has something to show this frame. `model` is the
 -- camera-facing presentation card; `shadowModel` is the same silhouette
 -- standing on the same feet but facing its opponent. Keeping those separate
 -- matters because camera drift is a property of the shot, not movement by the
 -- Pokemon: using `model` for the sun made the shadow rotate and slide while
--- its owner stood still.
-local function monCards(arena, groundY, textures)
+-- its owner stood still. Authored full-frame backdrops cannot receive that
+-- silhouette through ShadowMap, so they also retain one conservative contact
+-- footprint derived from the visible ink width.
+local function monCards(arena, groundY, textures, map, vp, eye)
   local out = {}
   if not textures then return out end
   local stage = V.require("VoxelBattleStage")
-  local actorScale = stage.presentationScale(arena)
-  local layout = BattleScene.presentationLayout(arena, groundY, textures)
+  local baseScale = stage.presentationScale(arena)
+  local layout = BattleScene.presentationLayout(arena, groundY, textures,
+                                                 map, vp)
   for _, side in ipairs({ "enemy", "player" }) do
     local tex = textures[side]
     local cell = (side == "player") and arena.player or arena.enemy
@@ -473,7 +980,14 @@ local function monCards(arena, groundY, textures)
     local cardX, cardY, cardZ = position and position[1],
       position and position[2], position and position[3]
     if tex and tex.canvas and cell and cardX then
-      local mirror = (side == "player") and not tex.trainer
+      local explicit = type(tex.flipX) == "boolean"
+        or type(tex.vascFlipX) == "boolean"
+      local mirror
+      if not explicit and type(layout.flipX[side]) == "boolean" then
+        mirror = layout.flipX[side]
+      else
+        mirror = BattleScene.textureFlipX(side, tex)
+      end
       local otherSide = (side == "player") and "enemy" or "player"
       local other = layout[otherSide]
       local otherX, otherZ = other and other[1], other and other[3]
@@ -481,18 +995,116 @@ local function monCards(arena, groundY, textures)
                         and BattleBillboard.yawToward(
                               cardX, cardZ, { otherX, 0, otherZ })
                         or 0
-      out[#out + 1] = { tex = tex.canvas,
+      local actorScale = layout.actorScale[side] or baseScale
+      local profileObject = layout.profileObject[side]
+      local visibleYaw = BattleBillboard.yawToward(
+        cardX, cardZ, eye or Voxel3D.eye)
+      local metrics = BattleScene.presentationMetrics(
+        tex, actorScale, profileObject)
+      local inkWidth = tonumber(metrics.worldInkWidth) or BattleScene.CELL
+      local contactRadiusX = math.max(2.5, math.min(7.5, inkWidth * .28))
+      local contactRadiusZ = math.max(1.8,
+        math.min(4.2, contactRadiusX * .58))
+      out[#out + 1] = { side=side, tex = tex.canvas, source=tex,
+                        metrics=metrics,
+                        -- Authored backdrops move each reviewed foot mark in
+                        -- Y independently.  Keep the projected contact plane
+                        -- on that exact mark; flattening both silhouettes to
+                        -- the arena's unadjusted groundY shears them away from
+                        -- their owners before they ever reach screen space.
+                        shadowGroundY=cardY,
+                        shadowFoot={cardX, cardY, cardZ},
+                        shadowRadius={contactRadiusX, contactRadiusZ},
                         model = monMatrix(tex, cardX, cardY, cardZ,
-                                          mirror, nil, actorScale),
+                                          mirror, visibleYaw,
+                                          actorScale, profileObject),
                         shadowModel = monMatrix(tex, cardX, cardY,
                                                 cardZ, mirror, objectYaw,
-                                                actorScale) }
+                                                actorScale, profileObject) }
     end
   end
   return out
 end
 
 BattleScene.monCards = monCards
+
+local function projectedModelPoint(mvp, x, y, pw, ph)
+  local cx = mvp[1] * x + mvp[2] * y + mvp[4]
+  local cy = mvp[5] * x + mvp[6] * y + mvp[8]
+  local cw = mvp[13] * x + mvp[14] * y + mvp[16]
+  if not (cw and cw > 1e-9) then return nil end
+  return (cx / cw * .5 + .5) * pw,
+         (cy / cw * .5 + .5) * ph
+end
+
+-- Exact visible alpha envelope of the same billboard matrix sent to Voxel3D.
+-- This is intentionally distinct from projectedActorHull's conservative
+-- 16x32 world prism: HUD ownership needs the real species/form/model head,
+-- while collision safety may still retain the conservative hull as a floor.
+local function actorVisualForCard(card, vp, pw, ph, renderToken)
+  local metrics = card and card.metrics
+  local source = card and card.source
+  if not (metrics and card.model and source
+      and tonumber(metrics.canvasWidth) and metrics.canvasWidth > 0
+      and tonumber(metrics.canvasHeight) and metrics.canvasHeight > 0
+      and tonumber(metrics.inkX0) and tonumber(metrics.inkY0)
+      and tonumber(metrics.inkX1) and tonumber(metrics.inkY1)) then
+    return nil
+  end
+  local cw, ch = metrics.canvasWidth, metrics.canvasHeight
+  local x0 = metrics.inkX0 / cw - .5
+  local x1 = (metrics.inkX1 + 1) / cw - .5
+  local y0 = 1 - metrics.inkY0 / ch
+  local y1 = 1 - (metrics.inkY1 + 1) / ch
+  local mvp = Mat4.mul(vp, card.model)
+  local left, top, right, bottom
+  for _, point in ipairs({ {x0,y0}, {x1,y0}, {x0,y1}, {x1,y1} }) do
+    local x, y = projectedModelPoint(mvp, point[1], point[2], pw, ph)
+    if not x then return nil end
+    left = left and math.min(left, x) or x
+    right = right and math.max(right, x) or x
+    top = top and math.min(top, y) or y
+    bottom = bottom and math.max(bottom, y) or y
+  end
+  if not (right > left and bottom > top) then return nil end
+  return {
+    schema="voxel-ascendant/actor-render/v1",
+    side=card.side, renderToken=renderToken,
+    hull={ left, top, right - left, bottom - top },
+    head={ x=(left + right) * .5, y=top },
+    foot={ x=(left + right) * .5, y=bottom },
+    battler=source.vascRenderBattler,
+    mon=source.vascRenderMon,
+    modelKey=source.vascRenderModelKey,
+    inkIdentity=source.inkIdentity,
+    textureToken=source.vascRenderTextureToken,
+    canvas=source.canvas,
+    view=source.vascSpriteView,
+    viewportW=pw, viewportH=ph,
+  }
+end
+
+actorVisualsFor = function(arena, groundY, textures, map, vp, pw, ph,
+                           renderToken, eye)
+  local visuals = {}
+  for _, card in ipairs(monCards(
+      arena, groundY, textures, map, vp, eye)) do
+    local receipt = actorVisualForCard(card, vp, pw, ph, renderToken)
+    if receipt then visuals[card.side] = receipt end
+  end
+  local okStadium, stadium = pcall(V.require, "Stadium")
+  if okStadium and type(stadium) == "table"
+      and type(stadium.visualReceipt) == "function" then
+    for _, side in ipairs({ "player", "enemy" }) do
+      local okReceipt, receipt = pcall(
+        stadium.visualReceipt, side, vp, pw, ph, renderToken)
+      if okReceipt and type(receipt) == "table" then
+        visuals[side] = receipt
+      end
+    end
+  end
+  return visuals
+end
 
 -- The MOVE-ANIMATION layer's place in the world: a BILLBOARD facing the
 -- eye, for the GB-frame effects texture OverworldBattle.animTexture
@@ -588,73 +1200,232 @@ end
 -- -- goes in the signature; the terrain half of the answer would otherwise
 -- keep a stale pass alive and freeze the shadows in whatever pose they were
 -- first drawn in.
-local function shadowSignature(state, arena, terrain, nbMesh, token)
+local function shadowSignature(state, arena, terrain, nbMesh, token, horizon,
+                               backdropIdentity)
   local host = arena.map or state.map
   local parts = { "battle", host.id, arena.x, arena.y, arena.shape,
                   tostring(terrain), tostring(token or 0),
+                  tostring(backdropIdentity),
                   -- the cycle keeps running through a fight, and an arena lit
                   -- from somewhere new must be re-cast from there
                   math.floor(ShadowMap.KX * 128),
                   math.floor(ShadowMap.KZ * 128) }
   for i = 1, #nbMesh do parts[#parts + 1] = tostring(nbMesh[i]) end
+  for _, rim in ipairs(horizon or {}) do
+    if rim.castsShadow then
+      -- The fountain's water/jet batch animates independently and never
+      -- casts.  Pin a possible animated solid caster to frame zero so visual
+      -- UV animation cannot invalidate the complete arena shadow map.
+      parts[#parts + 1] = tostring(
+        rim.animationMeshes and rim.animationMeshes[1] or rim.mesh)
+      parts[#parts + 1] = tostring(rim.ox or 0)
+      parts[#parts + 1] = tostring(rim.oy or 0)
+    end
+  end
   return table.concat(parts, ",")
 end
 
 local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
                            atlasFor, cards, token, host, neighbors,
-                           water, nbWater, groundY)
+                           water, nbWater, groundY, horizon, screenBackdrop,
+                           backdropIdentity)
   if not Shadows.enabled() then return end
   if not ShadowMap.available() then return end
-  local sig = shadowSignature(state, arena, terrain, nbMesh, token)
+  local sig = shadowSignature(state, arena, terrain, nbMesh, token, horizon,
+                              backdropIdentity)
   if not ShadowMap.stale(sig) then return end
   if not ShadowMap.begin(cx, cy, vw, vh) then return end
-
-  -- A DISC RUNG: the two discs are the only ground there is, so they are the
-  -- only thing the sun has to see besides the Pokemon themselves. Everything
-  -- below this is a map that is not in the shot.
-  if arena.discs then
-    pcall(function()
+  local ok, err = pcall(function()
+    -- A DISC RUNG: the two discs are the only ground there is, so they are the
+    -- only thing the sun has to see besides the Pokemon themselves. Everything
+    -- below this is a map that is not in the shot.
+    if arena.discs then
       V.require("VoxelBattleStage").cast(ShadowMap, arena, groundY or 0)
+    else
+      ShadowMap.draw(terrain, atlasFor(host), nil)
+      for i, nb in ipairs(neighbors) do
+        ShadowMap.draw(nbMesh[i], atlasFor(nb.map),
+                       Mat4.translate(nb.ox, 0, nb.oy))
+      end
+      -- the water surface is its own reflective pass now (see Water) and so is
+      -- no longer inside the terrain mesh; the sun still has to see it, or the
+      -- light's map has a hole at every lake
+      ShadowMap.draw(water, atlasFor(host), nil)
+      for i, nb in ipairs(neighbors) do
+        ShadowMap.draw(nbWater and nbWater[i], atlasFor(nb.map),
+                       Mat4.translate(nb.ox, 0, nb.oy))
+      end
+      -- Ground-standing scenery-editor models are retained by HorizonWall
+      -- rather than ChunkMesher. Only their explicitly static solid batches
+      -- enter the sun pass; animated fountain water and crossed jet planes
+      -- publish `castsShadow = false` and are therefore excluded here.
+      for _, rim in ipairs(horizon or {}) do
+        if rim.castsShadow then
+          local caster = rim.animationMeshes and rim.animationMeshes[1]
+                         or rim.mesh
+          ShadowMap.draw(caster, rim.texture,
+                         Mat4.translate(rim.ox or 0, 0, rim.oy or 0))
+        end
+      end
+      -- thin cards are snugged toward the sun (ShadowMap.snug) so their
+      -- shadows keep contact with their bases instead of starting a
+      -- bias-width away
+      ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host),
+                     ShadowMap.snug(nil))
+      for _, nb in ipairs(neighbors) do
+        ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
+                       ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
+      end
+    end
+
+    -- the mons themselves, with the same texture/silhouette the camera sees
+    -- but on the stable opponent-facing transform monCards prepared. The
+    -- camera-facing presentation card is allowed to drift; its owner and the
+    -- shadow on the floor are not.
+    -- marked as the CAST, so a fight staged at the water's edge does not lay a
+    -- cut-out of a Pokemon across the lake (see ShadowMap.sprites); the arena's
+    -- own floor still takes them, which is the shadow that matters here
+    -- A reviewed full-frame battle painting has no 3D receiver: storing the
+    -- cards here can only make those same visible cards compare against their
+    -- own packed depth. Its ground-contact silhouettes are composited in the
+    -- camera pass below instead. Physical MAP/DISCS stages retain the real
+    -- shadow-map caster path so terrain, walls and platforms receive them.
+    if not screenBackdrop then
+      ShadowMap.sprites(true)
+      for _, card in ipairs(cards or {}) do
+        ShadowMap.draw(BattleBillboard.mesh(), card.tex,
+                       ShadowMap.snug(card.shadowModel))
+      end
+      ShadowMap.sprites(false)
+    end
+    local okCast, casted, castErr = pcall(function()
+      return V.require("Stadium").cast(ShadowMap)
     end)
-    ShadowMap.finish(sig)
-    return
-  end
+    if not okCast or casted == false then
+      local okStadium, stadium = pcall(V.require, "Stadium")
+      if okStadium and type(stadium.report) == "function" then
+        pcall(stadium.report, castErr or casted)
+      end
+    end
+  end)
 
-  ShadowMap.draw(terrain, atlasFor(host), nil)
-  for i, nb in ipairs(neighbors) do
-    ShadowMap.draw(nbMesh[i], atlasFor(nb.map), Mat4.translate(nb.ox, 0, nb.oy))
+  local closed, closeErr
+  if ok then
+    closed, closeErr = pcall(ShadowMap.finish, sig)
+  elseif type(ShadowMap.abort) == "function" then
+    closed, closeErr = pcall(ShadowMap.abort)
+  else
+    closed, closeErr = pcall(ShadowMap.finish, nil)
   end
-  -- the water surface is its own reflective pass now (see Water) and so is
-  -- no longer inside the terrain mesh; the sun still has to see it, or the
-  -- light's map has a hole at every lake
-  ShadowMap.draw(water, atlasFor(host), nil)
-  for i, nb in ipairs(neighbors) do
-    ShadowMap.draw(nbWater and nbWater[i], atlasFor(nb.map),
-                   Mat4.translate(nb.ox, 0, nb.oy))
+  if not ok then
+    if not closed then
+      error(tostring(err) .. "; shadow cleanup failed: "
+            .. tostring(closeErr), 0)
+    end
+    error(err, 0)
   end
-  -- thin cards are snugged toward the sun (ShadowMap.snug) so their shadows
-  -- keep contact with their bases instead of starting a bias-width away
-  ShadowMap.draw(ChunkMesher.flowers(host), atlasFor(host),
-                 ShadowMap.snug(nil))
-  for _, nb in ipairs(neighbors) do
-    ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
-                   ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
-  end
+  if not closed then error(closeErr, 0) end
+end
 
-  -- the mons themselves, with the same texture/silhouette the camera sees
-  -- but on the stable opponent-facing transform monCards prepared. The
-  -- camera-facing presentation card is allowed to drift; its owner and the
-  -- shadow on the floor are not.
-  -- marked as the CAST, so a fight staged at the water's edge does not lay a
-  -- cut-out of a Pokemon across the lake (see ShadowMap.sprites); the arena's
-  -- own floor still takes them, which is the shadow that matters here
-  ShadowMap.sprites(true)
-  for _, card in ipairs(cards or {}) do
-    ShadowMap.draw(BattleBillboard.mesh(), card.tex,
-                   ShadowMap.snug(card.shadowModel))
+-- Full-frame arena paintings have no depth receiver. Projecting an entire
+-- Pokemon alpha silhouette onto that flat image produced a sharp black
+-- wing/star shape (and could overlap the visible card). The authored stage
+-- therefore gets a deliberately narrow contact cue instead: a small world-
+-- space disc under the reviewed feet. Perspective flattens it into an ellipse
+-- and three translucent rings feather the edge without ever sampling or
+-- recolouring a Pokemon texture.
+local backdropShadowMeshCache = nil
+local function backdropShadowMesh()
+  if backdropShadowMeshCache ~= nil then
+    return backdropShadowMeshCache or nil
   end
-  ShadowMap.sprites(false)
-  ShadowMap.finish(sig)
+  if type(Voxel3D.newMesh) ~= "function" then
+    backdropShadowMeshCache = false
+    return nil
+  end
+  local segments = 32
+  local verts = { { 0, 0, 0, .5, .5, 1 } }
+  local indices = {}
+  for i = 0, segments - 1 do
+    local angle = i * math.pi * 2 / segments
+    verts[#verts + 1] = { math.cos(angle), 0, math.sin(angle), .5, .5, 1 }
+  end
+  for i = 1, segments do
+    indices[#indices + 1] = 1
+    indices[#indices + 1] = i + 1
+    indices[#indices + 1] = (i % segments) + 2
+  end
+  backdropShadowMeshCache = Voxel3D.newMesh(verts, indices) or false
+  return backdropShadowMeshCache or nil
+end
+
+local BACKDROP_SHADOW_LAYERS = {
+  { scale=1.00, alpha=.12 },
+  { scale=.76, alpha=.15 },
+  { scale=.50, alpha=.18 },
+}
+
+local function drawBackdropShadows(cards, groundY, opaqueBackdrop)
+  if not Shadows.enabled() then return 0 end
+  local mesh = backdropShadowMesh()
+  if not (mesh and opaqueBackdrop) then return 0 end
+  local drawn = 0
+  local savedAlpha = tonumber(Voxel3D.SHADOW_ALPHA) or BattleScene.SHADOW_ALPHA
+  local eps = tonumber(Voxel3D.SHADOW_EPS) or .25
+  Voxel3D.seams(false)
+  Voxel3D.glass(false)
+  local ok, err = pcall(function()
+    for _, card in ipairs(cards or {}) do
+      local foot = type(card.shadowFoot) == "table" and card.shadowFoot or nil
+      local radius = type(card.shadowRadius) == "table"
+                     and card.shadowRadius or nil
+      local x, y, z = foot and tonumber(foot[1]), foot and tonumber(foot[2]),
+                      foot and tonumber(foot[3])
+      local rx, rz = radius and tonumber(radius[1]),
+                     radius and tonumber(radius[2])
+      if x and z and rx and rz and rx > 0 and rz > 0 then
+        y = y or tonumber(card.shadowGroundY) or tonumber(groundY) or 0
+        -- Bias the oval slightly toward the camera: most of it remains under
+        -- the feet, while its lower rim stays visible instead of disappearing
+        -- completely behind the upright card's conservative hull.
+        local eye = Voxel3D.eye
+        local dx = type(eye) == "table" and tonumber(eye[1]) and eye[1] - x or 0
+        local dz = type(eye) == "table" and tonumber(eye[3]) and eye[3] - z or 0
+        local dl = math.sqrt(dx * dx + dz * dz)
+        if dl > 1e-6 then
+          x = x + dx / dl * rz * .35
+          z = z + dz / dl * rz * .35
+        end
+        for _, layer in ipairs(BACKDROP_SHADOW_LAYERS) do
+          local model = Mat4.mul(
+            Mat4.translate(x, y + eps, z),
+            Mat4.scale(rx * layer.scale, 1, rz * layer.scale))
+          Voxel3D.SHADOW_ALPHA = savedAlpha * layer.alpha
+          Voxel3D.beginShadows()
+          Voxel3D.draw(mesh, opaqueBackdrop, model, 0, model)
+          drawn = drawn + 1
+        end
+      end
+    end
+  end)
+  Voxel3D.SHADOW_ALPHA = savedAlpha
+  Voxel3D.glass(true)
+  Voxel3D.seams(true)
+  Voxel3D.endShadows()
+  if not ok then error(err, 0) end
+  return drawn
+end
+
+-- The card must CAST onto the stage, but must not RECEIVE its own precision-
+-- packed silhouette. Always restore the world receiver state, including when
+-- a texture/driver draw fails, so the following grass and scenery stay lit.
+local function withoutCardShadowReception(draw)
+  local toggle = type(Voxel3D.shadowReception) == "function"
+                 and Voxel3D.shadowReception or nil
+  if toggle then toggle(false) end
+  local ok, err = pcall(draw)
+  if toggle then toggle(true) end
+  if not ok then error(err, 0) end
 end
 
 -- The height of the arena floor: the ground the two mons stand on. Both
@@ -706,12 +1477,25 @@ BattleScene.FLASH_STRENGTH = 0.5
 
 -- Resolve the arena's weather from the map that actually supplies its floor,
 -- not blindly from the overworld map. Authored battles may move the camera to
--- another floor of the same building/cave, and Weather.mode is also the one
--- authority that keeps every interior clear. Kept as a tiny seam so the
+-- another floor of the same building/cave. skyMode also observes the optional
+-- Weather-FX/VASC presentation bridge, so the exact overworld spell survives
+-- the battle transition; both paths keep every interior clear. Kept as a seam so the
 -- battle/weather contract can be exercised without constructing a full GPU
 -- scene in the Lua test runner.
 function BattleScene.weatherMode(host)
+  if Weather.skyMode then return Weather.skyMode(host) end
   return Weather.mode(host)
+end
+
+function BattleScene.groundWeather(host, mode, nativeGround)
+  if nativeGround == nil then nativeGround = true end
+  local baseMode = type(Weather.mode) == "function" and Weather.mode(host)
+                   or mode
+  local outdoor = type(Weather.isOutdoor) == "function"
+                  and Weather.isOutdoor(host) or nil
+  WeatherTweak.observe(host, baseMode, Weather.clock, outdoor)
+  return WeatherTweak.groundMode(host, mode, nativeGround),
+         WeatherTweak.groundAmount(host, mode, nativeGround)
 end
 
 function BattleScene.applyWeather(canvas, w, h, host, cell, mode)
@@ -746,9 +1530,17 @@ local function tickTiles()
   pcall(require("src.render.TileRenderer").tick)
 end
 
+local function decline(reason)
+  BattleScene.lastDeclineReason = tostring(reason or "unspecified")
+  return nil
+end
+
 function BattleScene.render(state, arena, textures, token)
-  if not (state and state.map and arena) then return nil end
-  if not Voxel3D.available() then return nil end
+  BattleScene.lastDeclineReason = nil
+  if not (state and state.map and arena) then
+    return decline("missing-state-map-or-arena")
+  end
+  if not Voxel3D.available() then return decline("voxel-unavailable") end
   tickTiles()
 
   -- the floor the fight is staged on: normally the player's own, sometimes
@@ -789,14 +1581,16 @@ function BattleScene.render(state, arena, textures, token)
     nbMesh, water, nbWater, horizon = {}, nil, {}, {}
   else
     local stage = prefetchArena(state, host)
-    if not stage then return nil end
+    if not stage then return decline("arena-prefetch-pending") end
     terrain, water = stage.terrain, stage.water
     neighbors, nbMesh = stage.neighbors, stage.meshes
     nbWater, horizon = stage.waters, stage.horizon
   end
 
   local lx, ly, s, pw, ph = BattleScene.letterbox()
-  if not (pw > 0 and ph > 0 and s > 0) then return nil end
+  if not (pw > 0 and ph > 0 and s > 0) then
+    return decline("invalid-letterbox")
+  end
 
   local palette = paletteFor(state, host)
   local function atlasFor(map)
@@ -807,17 +1601,48 @@ function BattleScene.render(state, arena, textures, token)
   local sceneryEnabled = HorizonWall.enabled()
   PanoramaBackdrop.setEnabled(sceneryEnabled)
   local panoramaReady = not discs and outdoor and sceneryEnabled
+                         and HorizonWall.allowsFarBackdrop({
+                           map=host, neighbors=neighbors,
+                         })
                          and PanoramaBackdrop.prepare()
   local portableBackdrop = nil
+  local screenBackdrop = false
   if discs and arena.arenaStyle then
-    portableBackdrop = V.require("VoxelBattleStage").backdropFor(arena, outdoor)
+    local Stage = V.require("VoxelBattleStage")
+    portableBackdrop = Stage.backdropFor(arena, outdoor)
     -- ARENA promises a complete picture.  If this driver's image path cannot
-    -- prepare it, decline this frame instead of silently falling back to the
-    -- old empty-sky platform.
-    if not portableBackdrop then return nil end
+    -- prepare it, an authored replacement still declines this frame. A v1
+    -- ADD over an otherwise unpainted portable stage is different: its image
+    -- is optional, so a late decode/upload failure keeps ARENA and lets the
+    -- established generated stage below draw instead of changing provider.
+    if not portableBackdrop
+        and not Stage.customAddPortableFallback(arena) then
+      return decline("arena-backdrop-pending")
+    end
+    -- Only an authored/REPLACE composition lacks a 3D receiver. ADD keeps the
+    -- portable stage, including its ordinary physical Pokemon shadows; its
+    -- full-frame image is merely behind that stage.
+    screenBackdrop = portableBackdrop ~= nil
+      and Stage.hasAuthoredBackdrop(arena)
+  end
+  local actorFit = BattleScene.presentationFitDistance(arena, textures, host)
+  BattleCam.setPresentationFit(actorFit)
+  if type(BattleCam.noteViewport) == "function" then
+    BattleCam.noteViewport(pw, ph)
   end
   local cam, pitch = BattleCam.rig(arena, groundY)
+  -- The final provider-neutral safety gate may deliberately decline this
+  -- voxel frame when neither the eased camera nor its last safe snapshot fits
+  -- the current immutable HUD/actor geometry. Native battle rendering stays
+  -- available and the next update may retry with a recovered camera.
+  if not cam then
+    local cameraState = type(BattleCam.directorState) == "function"
+      and BattleCam.directorState() or nil
+    return decline("camera-unavailable:"
+      .. tostring(cameraState and cameraState.screenReason or "unknown"))
+  end
   cam.fov = BattleScene.letterboxFov(cam.fov, ph, s)
+  cam, pitch = BattleCam.fitPortrait(cam, pitch, pw, ph, arena)
 
   local cx, cy = arena.mid[1], arena.mid[2]
   -- the world extents the sun frustum is fitted to; the camera itself is
@@ -833,11 +1658,12 @@ function BattleScene.render(state, arena, textures, token)
   -- beginScene calls -- so a provisional one is taken here for the sun pass
   -- and the real one is rebuilt inside the scene below.
   Voxel3D.camera = cam
-  Voxel3D.viewProjection(cx, cy, vw, vh)
-  local cards = monCards(arena, groundY, textures)
+  local provisionalVP = Voxel3D.viewProjection(cx, cy, vw, vh)
+  local cards = monCards(arena, groundY, textures, host, provisionalVP)
   Voxel3D.camera = nil
   castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh, atlasFor,
-              cards, token, host, neighbors, water, nbWater, groundY)
+              cards, token, host, neighbors, water, nbWater, groundY, horizon,
+              screenBackdrop, portableBackdrop)
 
   -- An opaque void either way. Outdoors the camera is low enough that the
   -- horizon is genuinely in frame, so it is sky; indoors it is the dark end
@@ -846,6 +1672,12 @@ function BattleScene.render(state, arena, textures, token)
   -- geometry stops.
   local mapSky = VoxelScene.skyColor(host, 1)
   local sky = mapSky or VoxelScene.skyShade(INDOOR_SHADE, 1)
+  local diskBackground = discs and arena.diskStyle
+      and V.require("VoxelBattleStage").diskBackgroundColor(arena) or nil
+  -- FRLG-like DISCS deliberately use a near-white flat renderer clear tinted
+  -- to their material.  It is not an authored backdrop and carries no image
+  -- or sky bands; the later weather overlay still belongs to the live map.
+  if diskBackground then sky = diskBackground end
   -- On a disc rung the void is not a backdrop behind the scenery -- it IS the
   -- scenery, because the map is not drawn. So outdoors it gets the full
   -- treatment the free-roam camera gets: the banded gradient and the hour's
@@ -856,7 +1688,7 @@ function BattleScene.render(state, arena, textures, token)
   -- A canopy colour closes Viridian Forest's void, but is explicitly not an
   -- open sky: even a disc-only arena must not punch sun, moon, clouds or
   -- stars through the leaves.
-  if discs and mapSky and not mapSky.canopy then
+  if discs and not diskBackground and mapSky and not mapSky.canopy then
     local Sky = V.require("Sky")
     local okDress, dressed = pcall(Sky.dress, sky)
     if okDress and dressed then sky = dressed end
@@ -866,7 +1698,9 @@ function BattleScene.render(state, arena, textures, token)
   -- sky. Pass the already-resolved mode to both sky dressing and the final
   -- overlay so AUTO cannot roll differently within one frame. Indoors this
   -- is always clear, including disc fights staged in caves or buildings.
-  local weatherMode = BattleScene.weatherMode(host)
+  local weatherMode, nativeGround = BattleScene.weatherMode(host)
+  local groundWeather, groundAmount = BattleScene.groundWeather(
+    host, weatherMode, nativeGround)
 
   Voxel3D.camera = cam
   -- the sun is turned up for the arena and put back afterwards, so the
@@ -881,6 +1715,8 @@ function BattleScene.render(state, arena, textures, token)
   local gridWas = VoxelGrid.override
   VoxelGrid.override = VoxelGrid.battleEnabled()
   local out = nil
+  local declineReason = nil
+  local renderedCards = {}
   local ok, err = pcall(function()
     -- its own canvas slot: this renders at the window's pixel size and the
     -- free-roam pass does too, but the two are alive at different moments
@@ -896,14 +1732,36 @@ function BattleScene.render(state, arena, textures, token)
     local rw, rh = AntiAlias.expand(pw, ph)
     if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle", {
       weather = weatherMode,
+      groundWeather = groundWeather,
+      groundAmount = groundAmount,
+      mapId = host and host.id or nil,
       arena = discs and arena.arenaStyle and true or false,
+      battleView = true,
     }) then
+      declineReason = "begin-scene-declined"
       return
     end
     if discs then
       if arena.arenaStyle then
-        assert(V.require("VoxelBattleStage").drawBackdrop(
-          arena, outdoor, portableBackdrop), "ARENA backdrop draw failed")
+        if portableBackdrop then
+          local Stage = V.require("VoxelBattleStage")
+          local backdropDrawn, backdropReason = Stage.drawBackdrop(
+            arena, outdoor, portableBackdrop)
+          if not backdropDrawn then
+            if backdropReason == "backdrop-selection-changed" then
+              -- Stage rejected this custom selection. Close and discard the
+              -- already-started scene: its camera and shadow receipts were
+              -- computed for that bitmap, so the fallback must be selected
+              -- before the next frame rather than mixed into this one.
+              Voxel3D.endScene()
+              declineReason = backdropReason
+              return
+            end
+            if not Stage.customAddPortableFallback(arena) then
+              error("ARENA backdrop draw failed", 0)
+            end
+          end
+        end
       end
       -- discs: the two platforms, and nothing else. No terrain, no
       -- neighbouring maps, no water, no grass and no flowers -- see the
@@ -916,14 +1774,19 @@ function BattleScene.render(state, arena, textures, token)
         V.require("VoxelBattleStage").draw(arena, groundY)
       end
     else
-    if panoramaReady then
-      PanoramaBackdrop.drawAt(arena.mid[1], groundY, arena.mid[2])
-    end
+      local surfaceWeather = Voxel3D.weatherGround(true) == true
+      if panoramaReady then
+        PanoramaBackdrop.drawAt(arena.mid[1], groundY, arena.mid[2], {
+          weather=groundWeather, amount=groundAmount, outdoor=outdoor,
+          surfaces=surfaceWeather,
+        })
+      end
     Voxel3D.draw(terrain, atlasFor(host), nil)
     for i, nb in ipairs(neighbors) do
       Voxel3D.draw(nbMesh[i], atlasFor(nb.map),
                    Mat4.translate(nb.ox, 0, nb.oy))
     end
+    Voxel3D.weatherGround(false)
     -- The same compact panorama that closes the overworld union closes MAP
     -- battles. It is prepared before beginScene, so this pass only draws
     -- known-good meshes and a cold neighbour can never become a sky-coloured
@@ -963,6 +1826,12 @@ function BattleScene.render(state, arena, textures, token)
     end
     Voxel3D.glass(true)
     end
+    -- A full-frame painting owns the visible ground pixels and has no depth
+    -- surface for ShadowMap to shade. Put the bounded soft contact ellipses
+    -- onto that painting before the Pokemon themselves; OFF performs no draw.
+    if screenBackdrop then
+      drawBackdropShadows(cards, groundY, portableBackdrop)
+    end
     -- The mons, standing on their tiles. Depth-tested like everything else,
     -- so a ledge or a tree between the camera and a Pokemon really is in
     -- front of it, and the alpha discard cuts the sprite's own outline out of
@@ -985,15 +1854,27 @@ function BattleScene.render(state, arena, textures, token)
     -- and no glass either: the cards wear the battle screen, not the
     -- tileset atlas, so the mask's coordinates mean nothing on them
     Voxel3D.glass(false)
-    for _, card in ipairs(monCards(arena, groundY, textures)) do
-      -- The visible billboard faces the camera, but the sun stored the stable
-      -- opponent-facing caster. Read that same transform for the shadow
-      -- lookup, so camera drift cannot drag the silhouette across the floor.
-      Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
-                   BattleBillboard.PULL, ShadowMap.snug(card.shadowModel))
-    end
+    renderedCards = monCards(arena, groundY, textures, host,
+                             Voxel3D.vp, Voxel3D.eye)
+    withoutCardShadowReception(function()
+      for _, card in ipairs(renderedCards) do
+        -- The visible card keeps its authored colour. Its stable opponent-
+        -- facing twin was submitted only as a caster/ground silhouette.
+        Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model,
+                     BattleBillboard.PULL, ShadowMap.snug(card.shadowModel))
+      end
+    end)
     Voxel3D.glass(true)
     Voxel3D.seams(true)
+    local okModel, drawn, drawErr = pcall(function()
+      return V.require("Stadium").draw(BattleBillboard.PULL)
+    end)
+    if not okModel or drawn == false then
+      local okStadium, stadium = pcall(V.require, "Stadium")
+      if okStadium and type(stadium.report) == "function" then
+        pcall(stadium.report, drawErr or drawn)
+      end
+    end
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the
@@ -1001,11 +1882,13 @@ function BattleScene.render(state, arena, textures, token)
     -- pull is also what keeps a tuft from z-fighting the floor it stands on
     local pull = VoxelScene.pull(math.max(pitch, 0.05))
     if not discs then
+      Voxel3D.weatherGrass(true)
       Voxel3D.draw(ChunkMesher.grass(host), atlasFor(host), nil, pull)
       for _, nb in ipairs(neighbors) do
         Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
                      Mat4.translate(nb.ox, 0, nb.oy), pull)
       end
+      Voxel3D.weatherGrass(false)
       local fpull = math.max(0, pull - 8 * math.sin(math.max(pitch, 0.05)))
       Voxel3D.draw(ChunkMesher.flowers(host), atlasFor(host), nil, fpull,
                    ShadowMap.snug(nil))
@@ -1023,49 +1906,58 @@ function BattleScene.render(state, arena, textures, token)
     rendered = BattleScene.applyWeather(rendered, rw, rh, host,
                                         Voxel3D.cell, weatherMode)
     local canvas = AntiAlias.resolve(rendered, pw, ph, "battle")
-    if not canvas then return end
+    if not canvas then
+      declineReason = "anti-alias-resolve-pending"
+      return
+    end
 
     local vp = Voxel3D.vp
-    local stage = V.require("VoxelBattleStage")
-    local layout = BattleScene.presentationLayout(arena, groundY, textures)
-    local player = layout.player
-    local enemy = layout.enemy
-    local playerX, playerY, playerZ = player and player[1],
-      player and player[2], player and player[3]
-    local enemyX, enemyY, enemyZ = enemy and enemy[1],
-      enemy and enemy[2], enemy and enemy[3]
-    if not (playerX and enemyX) then return end
-    local pmx, pmy = BattleScene.toGB(vp, playerX, playerY,
-                                      playerZ, lx, ly, s, pw, ph)
-    local emx, emy = BattleScene.toGB(vp, enemyX, enemyY,
-                                      enemyZ, lx, ly, s, pw, ph)
-    if not (pmx and emx) then return end
-    -- How wide one overworld square is on screen where each mon stands, in
-    -- GB pixels. This is what the pics are scaled to: a mon covers its own
-    -- square and no more, at whatever the drift has done to the distance.
-    local half = BattleScene.CELL / 2
-    local pl = BattleScene.toGB(vp, playerX - half, playerY,
-                                playerZ, lx, ly, s, pw, ph)
-    local pr = BattleScene.toGB(vp, playerX + half, playerY,
-                                playerZ, lx, ly, s, pw, ph)
-    local el = BattleScene.toGB(vp, enemyX - half, enemyY,
-                                enemyZ, lx, ly, s, pw, ph)
-    local er = BattleScene.toGB(vp, enemyX + half, enemyY,
-                                enemyZ, lx, ly, s, pw, ph)
-    if not (pl and pr and el and er) then return end
+    local geometry = projectedArenaGeometry(
+      arena, groundY, textures, host, vp, pw, ph, lx, ly, s)
+    if not geometry then
+      declineReason = "projected-geometry-unavailable"
+      return
+    end
+    local actorVisuals = {}
+    for _, card in ipairs(renderedCards) do
+      local receipt = actorVisualForCard(card, vp, pw, ph, token)
+      if receipt then actorVisuals[card.side] = receipt end
+    end
+    local okStadium, stadium = pcall(V.require, "Stadium")
+    if okStadium and type(stadium) == "table"
+        and type(stadium.visualReceipt) == "function" then
+      for _, side in ipairs({ "player", "enemy" }) do
+        local okReceipt, receipt = pcall(
+          stadium.visualReceipt, side, vp, pw, ph, token)
+        if okReceipt and type(receipt) == "table" then
+          actorVisuals[side] = receipt
+        end
+      end
+    end
     out = {
       canvas = canvas,
-      player = { pmx, pmy },
-      enemy = { emx, emy },
-      playerSpan = math.abs(pr - pl) * stage.presentationScale(arena),
-      enemySpan = math.abs(er - el) * stage.presentationScale(arena),
+      player = geometry.player,
+      enemy = geometry.enemy,
+      playerSpan = geometry.playerSpan,
+      enemySpan = geometry.enemySpan,
+      -- Full-frame conservative envelopes are shared with the active HUD owner.
+      -- They keep status/menu furniture away from the complete visible actors,
+      -- while player/enemy above remain the historical GB-coordinate pins.
+      actorHulls = geometry.actorHulls,
+      actorFeet = geometry.actorFeet,
+      actorVisuals = actorVisuals,
+      renderToken = token,
+      actorFit = actorFit,
+      layoutContext = battleLayoutContext(arena, host),
+      smartArenaComposition = geometry.layout
+        and geometry.layout.smartArenaComposition or nil,
       -- the letterbox, so the depth-of-field pass can put its sharp band on
       -- the two marks rather than on a fraction of the window
       lx = lx, ly = ly, scale = s, pw = pw, ph = ph,
-      -- and the hour's light, for anything drawn over this shot that is NOT
-      -- geometry and so never went past the shader that applied it -- the back
-      -- pic pinned to the menu (see OverworldBattle.backPinned). Neutral
-      -- indoors, which is what DayNight.tint answers for a room.
+      -- and the hour's light, retained for optional non-geometry overlays and
+      -- companion capability consumers. Battler front/rear cards themselves
+      -- are geometry and already pass through this tint. Neutral indoors,
+      -- which is what DayNight.tint answers for a room.
       tint = Voxel3D.tint,
     }
   end)
@@ -1081,6 +1973,9 @@ function BattleScene.render(state, arena, textures, token)
     pcall(love.graphics.setDepthMode)
     pcall(love.graphics.setCanvas)
     error(err, 0)
+  end
+  if not out then
+    BattleScene.lastDeclineReason = declineReason or "render-incomplete"
   end
   return out
 end

@@ -56,6 +56,22 @@ sind nur Buchstaben, Ziffern, Unterstrich, Punkt und Bindestrich erlaubt. Eine
 in der Kategorie ausgewaehlte Datei hat absichtlich Vorrang. Nach RESCAN zeigt
 EXACT SONG REPLACEMENTS, welche Dateien VASC angenommen hat.
 
+ORIGINAL UND EIGENE DATEIEN VORHOEREN
+------------------------------------
+In einer Kategorie MUSIC A/B PREVIEW waehlen. VASC kann jede eigene
+Datei und die zuletzt fuer diese Kategorie tatsaechlich beobachtete Spiel-/KASC-
+Musik abspielen, ohne ORIGINAL / SHUFFLE / Dateiauswahl zu speichern oder zu
+aendern. STOP + RESTORE oder das Verlassen der Vorschau beendet das Vorhoeren
+und setzt die vorher laufende Musik fort.
+
+ORIGINAL bleibt nicht verfuegbar, bis eine passende Musik in dieser Spielsitzung
+wirklich aufgeloest wurde. Eine Kategorie kann viele Karten- oder Trainermusiken
+enthalten; VASC zeigt deshalb bewusst LAST ORIGINAL und erfindet keine feste
+Standarddatei. Unter EXACT SONG REPLACEMENTS oeffnet die Wahl einer angenommenen
+Song-ID denselben A/B-Vergleich. Auch dort ist das Original erst nach Beobachtung
+genau dieser Game-/KASC-ID verfuegbar. ROM- und synthetisierte Chip-Musik laeuft
+ueber den normalen Spielplayer und braucht keine externe Audiodatei.
+
 SPIEL-/KASC-STANDARD WIEDERHERSTELLEN
 ------------------------------------
 - In einer einzelnen Kategorie ORIGINAL waehlen.

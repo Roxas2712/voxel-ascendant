@@ -33,6 +33,10 @@ local V = ...
 local Assets = require("src.render.Assets")
 local TileRenderer = require("src.render.TileRenderer")
 local PaletteFX = require("src.render.PaletteFX")
+local CanvasPresentation = V.require("CanvasPresentation")
+
+local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
+  or CanvasPresentation.OS == "Android"
 
 local TerrainAtlas = {}
 
@@ -414,11 +418,15 @@ local function rendererPixels(map)
     if ok and data then return data end
   end
   if renderer.gbcAtlas then
-    -- The engine's Image is already the exact per-map RED++ bake. A tiny
-    -- 128x48 readback avoids repeating its thousands of getPixel/setPixel
-    -- calls in Lua; the deterministic CPU mirror remains the fallback for a
-    -- driver that refuses Canvas readback.
-    return readback(renderer.image) or gbcPixels(map)
+    -- Phones must never enter Canvas:newImageData: it is a synchronous GPU
+    -- wait and a pcall cannot recover from a native driver that blocks there.
+    -- Desktop keeps the exact texture readback as its primary path; rebuilding
+    -- every tile on the CPU there is only the compatibility fallback when the
+    -- driver refuses that small readback.
+    if MOBILE_RUNTIME then return gbcPixels(map) end
+    local copied = readback(renderer.image)
+    if copied then return copied end
+    return gbcPixels(map)
   end
   local ok, data = pcall(Assets.imageData, map.tileset.image)
   return ok and data or nil
@@ -532,6 +540,15 @@ function TerrainAtlas.animate(map, colors, base, baked)
   -- exist at all.
   local perMap = map.renderer and map.renderer.gbcAtlas and map.id or nil
   local key = animationKey(map, colors)
+  -- The phone path keeps the static, correctly coloured atlas. The previous
+  -- implementation uploaded a mutable atlas with Image:replacePixels every
+  -- animation step; current mobile validation has not proved that seam safe.
+  -- Mark the key as prepared so VoxelScene does not withhold the terrain or
+  -- retry preparation every frame.
+  if MOBILE_RUNTIME then
+    if animated[key] == nil then animated[key] = false end
+    return nil
+  end
   local entry = animated[key]
   if entry == nil then
     entry = newEntry(map, base, baked)

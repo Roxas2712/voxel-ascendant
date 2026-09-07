@@ -1,0 +1,99 @@
+{
+  "schema": "voxel-ascendant/gen1-modern-dex-source-receipt/v1",
+  "source_package": {
+    "id": "vasc_modern_pokedex",
+    "version": "0.4.0",
+    "archive_filename": "vasc-modern-pokedex-0.4.0.zip",
+    "archive_size_bytes": 20189,
+    "archive_sha256": "31644f8f054f62d3821a1a71e96fca866a2f8b768545dba149bbee64644b14ef",
+    "archive_file_count": 9,
+    "archive_members": [
+      {
+        "path": "README.md",
+        "bytes": 3097,
+        "sha256": "6117f2ac8ca618bd2888009ad1de385304f68771fbd5bbe3d69982a102e0b18b"
+      },
+      {
+        "path": "lib/ModernDex.lua",
+        "bytes": 37430,
+        "sha256": "54a8876aa9af58ae912a93ded8590241a7adfa8aa119cf92919b623180d7356d"
+      },
+      {
+        "path": "main.lua",
+        "bytes": 1695,
+        "sha256": "6d7f5381254edd5b4446e218a2614078747479ed68647c22c3f72610c793f4a5"
+      },
+      {
+        "path": "manifest.json",
+        "bytes": 677,
+        "sha256": "fc8e41b1b40fc8f3394eaf823ba88d6e95cebeadadf3fd127172d8040fefbb03"
+      },
+      {
+        "path": "mod.card",
+        "bytes": 1516,
+        "sha256": "e96ef43660f77f968f2fd7a17c30e6297b43e901eee40dbdb34bd356b6c76608"
+      },
+      {
+        "path": "tests/kasc_integration_test.lua",
+        "bytes": 1171,
+        "sha256": "1b10ed4f4bc6d81a1ea351317cb5890b361f1677f04fd32c850c6ef29bec9c7c"
+      },
+      {
+        "path": "tests/modern_dex_test.lua",
+        "bytes": 6766,
+        "sha256": "aa41738d80047ea1f5c9fa302fa3f50c3e55f9b70b04631c835a18095e54c7c5"
+      },
+      {
+        "path": "tests/visual_driver.lua",
+        "bytes": 5076,
+        "sha256": "e24e0350026982fb1b77261bdca7c006f3f40fe36e6605c1c5092c9f90525fa0"
+      },
+      {
+        "path": ".modkit/pack.json",
+        "bytes": 1490,
+        "sha256": "c7ff31a79748cd45e9cf940e268eb8bd5834fc488747b027d2b65e40d406659b"
+      }
+    ]
+  },
+  "reviewed_source": {
+    "path": "lib/ModernDex.lua",
+    "size_bytes": 37430,
+    "sha256": "54a8876aa9af58ae912a93ded8590241a7adfa8aa119cf92919b623180d7356d"
+  },
+  "integrated_renderer": {
+    "path": "lib/ModernDex.lua",
+    "byte_for_byte_preserved": true,
+    "sha256": "54a8876aa9af58ae912a93ded8590241a7adfa8aa119cf92919b623180d7356d"
+  },
+  "integration_host": {
+    "path": "lib/ModernDexHost.lua",
+    "target_package": "VOXEL_ASCENDANT",
+    "target_version": "3.0.0-rc.12",
+    "public_option_keys": [
+      "pokedexStyle",
+      "modernDexSpriteSource"
+    ],
+    "owned_screen_ids": [
+      "PokedexMenu",
+      "DexEntryMenu"
+    ],
+    "area_contract": "Consumes only VOXEL_ASCENDANT.exports.kantoFlyMap.pokedexAreaProvider. The private widescreen AREA shell exists only for a valid provider; missing, thrown or invalid providers open the exact native TownMap with the original nestSpecies.",
+    "fail_open_contract": "Install, construction, update, palette and draw failures for the list, entry and private AREA shell delegate to the exact native Gen1 screen factory with the original arguments."
+  },
+  "engine_authority_retained": [
+    "save.pokedex.seen",
+    "save.pokedex.owned",
+    "pokemon species records",
+    "Sound.playCry",
+    "scripted forceOwned previews",
+    "StartMenu item ownership",
+    "screen stack and callbacks"
+  ],
+  "excluded_from_intake": [
+    "Generation 2 runtime",
+    "battle presentation",
+    "weather",
+    "Fly/Surf/Fishing cinematics",
+    "content injector"
+  ]
+}
