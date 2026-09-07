@@ -17,6 +17,15 @@ The notice waits for the start menu or a settled idle world, not combat, story
 or movement. Later/B remembers the offered revisions in the shared profile.
 Choosing downloads opens package selection; it does not itself download files.
 
+## Alternative download source
+
+If the main source fails, VASC retries the failed content request once through
+an alternative HTTPS source and uses that source for the rest of the session.
+The menu only displays “Using alternative download source.” All checksums and
+package checks remain required; Cancel retains verified chunks for resumption.
+This additional hostname can help with restrictions affecting the main hostname,
+but both hosting routes use Cloudflare and are not independent outage protection.
+
 ## Installation and use
 
 1. Install this VASC ZIP; disable standalone APO to avoid duplicate providers.

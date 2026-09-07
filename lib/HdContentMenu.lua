@@ -46,6 +46,10 @@ local function message(d,de)
 end
 local function warnings(d,de)
   local value=""
+  if d.warnings and d.warnings.fallback_used then
+    value=value.."\n\n"..(de and "Alternative Downloadquelle wird verwendet."
+      or "Using alternative download source.")
+  end
   if d.warnings and d.warnings.receipt_unconfirmed then
     value=value.."\n\n"..(de and "Download-Zählung nicht bestätigt. Geprüfte Pakete bleiben nutzbar."
       or "Download count not confirmed. Verified packages remain usable.")

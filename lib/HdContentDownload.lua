@@ -1,11 +1,12 @@
 -- Data-only HTTPS downloader. Rendering uses a separate, frozen boot mount:
 -- downloading never replaces textures referenced by a running scene.
 -- Neutral public origin: sealed RC32 payload verified end-to-end 2026-09-07.
--- Never fall back to a private NAS hostname or a share-link service.
+-- FALLBACK is an optional verified HTTPS content API origin. A browser share
+-- page is not a content API. Configure only after testing its payload routes.
 -- Existing games may follow redirects internally: the approved service must
 -- serve directly. A newer bounded transport is preferred, not required.
 -- Legacy bodies are capped/verified after receipt, not during native receive.
-local M={BASE="https://vasc-downloads.ascendant-content.workers.dev"}
+local M={BASE="https://vasc-downloads.ascendant-content.workers.dev",FALLBACK="https://vasc-content.maarten-paus.chatgpt.site"}
 local LIMIT=4*1024*1024
 local GEN_ENDS={151,251,386,493,649,721,809,905,1025}
 local function hash(s) return type(s)=="string" and #s==64 and not s:find("[^0-9a-f]") end
@@ -46,13 +47,14 @@ function M.new(d)
     return ok and type(caps)=="table" and caps.boundedHttpsGet==1
       and type(caps.maxResponseBytes)=="number" and caps.maxResponseBytes>=LIMIT
   end
+  local function originValid(origin)
+    return type(origin)=="string" and origin:match("^https://([^/%?#@%s]+)$")~=nil
+  end
   local function configured()
     -- Configuration is an origin, never a URL carrying credentials, query
     -- tokens or a path. Approval/redirect verification is a separate release
     -- gate; this syntax check is NOT proof of a neutral public host.
-    if type(M.BASE)~="string"then return false end
-    local authority=M.BASE:match("^https://([^/%?#@%s]+)$")
-    return authority~=nil
+    return originValid(M.BASE)
   end
   local function receipt(kind)return kind=="start" or kind=="complete" or kind=="replay_complete"end
   local function warnReceipt()self.warnings.receipt_unconfirmed=true end
@@ -82,20 +84,38 @@ function M.new(d)
     release();self.status="error";self.message=tostring(reason or "Download failed")
     self.queue={};self.pending=nil
   end
-  local function request(path,kind)
+  local request
+  local function retryContent(path,kind)
+    if receipt(kind) or self.usingFallback or not originValid(M.FALLBACK)
+        or M.FALLBACK==M.BASE then return false end
+    self.usingFallback=true;self.warnings.fallback_used=true
+    release();self.pending=nil
+    request(path,kind)
+    return true
+  end
+  local function payloadFailure(reason)
+    if retryContent(self.requestPath,self.requestKind)then return end
+    return fail(reason)
+  end
+  request=function(path,kind)
     local function rejected(reason)
+      if not receipt(kind) and retryContent(path,kind)then return self.job~=nil end
       if receipt(kind)then warnReceipt() else fail(reason)end
       return false
     end
     if not configured()then return rejected("Public download source not configured")end
     if not self:available()then return rejected("Network unavailable in this engine")end
+    -- Receipt tickets belong to the primary origin and never reach a mirror.
+    -- Skip optional counting while the primary is known to be unavailable.
+    if receipt(kind) and self.usingFallback then warnReceipt();return false end
+    self.requestPath,self.requestKind=path,kind
     local ceiling=LIMIT
     if receipt(kind)then ceiling=4096
     elseif kind=="manifest"then ceiling=self.current.manifestBytes
     elseif kind=="chunk"then ceiling=self.chunks[self.chunkIndex].bytes end
     local options={maxSeconds=30}
     if boundedAvailable()then options.boundedHttpsGet=1;options.maxBytes=ceiling end
-    local ok,job,err=pcall(fetch.get,fetch,M.BASE..path,options)
+    local ok,job,err=pcall(fetch.get,fetch,(self.usingFallback and M.FALLBACK or M.BASE)..path,options)
     if not ok or not job then return rejected(err or "Network unavailable")end
     self.job,self.pending,self.responseLimit=job,kind,ceiling;return true
   end
@@ -180,18 +200,18 @@ function M.new(d)
       if kind=="start"then warnReceipt();return nextChunk()end
       if kind=="complete"then warnReceipt();return nextPackage()end
       if kind=="replay_complete"then warnReceipt();replayRow=nil;return end
-      return fail(r.err or "Request failed; choose download to resume")
+      return payloadFailure(r.err or "Request failed; choose download to resume")
     end
     local body=r.body
     if type(body)~="string" or #body>(self.responseLimit or LIMIT) then
       if kind=="start"then warnReceipt();return nextChunk()end
       if kind=="complete"then warnReceipt();return nextPackage()end
       if kind=="replay_complete"then warnReceipt();replayRow=nil;return end
-      return fail("Response exceeds content limit")
+      return payloadFailure("Response exceeds content limit")
     end
     if kind=="catalog"then
       local c=M.catalog(body,decode)
-      if not c then return fail("Invalid content catalog")end
+      if not c then return payloadFailure("Invalid content catalog")end
       -- Retain installations from a previous catalog and reject advertised
       -- downgrades. Saved activations themselves remain checksum-protected.
       for _,p in ipairs(c.packages)do
@@ -209,13 +229,13 @@ function M.new(d)
       local m=self.store:inspect(body,self.current.manifestSha256)
       if not m or m.id~=self.current.id or m.revision~=self.current.revision
           or m.rosterGeneration~=self.current.rosterGeneration or #body~=self.current.manifestBytes then
-        return fail("Manifest does not match catalog")
+        return payloadFailure("Manifest does not match catalog")
       end
       self.manifestRaw=body;self.chunks={};local bytes=0
       for _,f in ipairs(m.files)do
         for _,c in ipairs(f.chunks)do self.chunks[#self.chunks+1]=c;bytes=bytes+c.bytes end
       end
-      if bytes~=self.current.fileBytes then return fail("Package size mismatch")end
+      if bytes~=self.current.fileBytes then return payloadFailure("Package size mismatch")end
       if not request("/downloads/start/"..self.current.manifestSha256,"start")then nextChunk()end
     elseif kind=="start"then
       local parsed,t=pcall(decode,body)
@@ -226,9 +246,12 @@ function M.new(d)
       nextChunk()
     elseif kind=="chunk"then
       local c=self.chunks[self.chunkIndex]
-      if #body~=c.bytes then return fail("Truncated chunk")end
+      if #body~=c.bytes then return payloadFailure("Truncated chunk")end
       local stored,reason=self.store:putChunk(c.sha256,body)
-      if not stored then return fail(reason)end
+      if not stored then
+        if reason=="chunk_verification_failed"then return payloadFailure(reason)end
+        return fail(reason)
+      end
       self.doneBytes=self.doneBytes+c.bytes;self.chunkIndex=self.chunkIndex+1
       self.pending="advance"
     elseif kind=="complete"then

@@ -1,13 +1,16 @@
 {
   "id": "VOXEL_ASCENDANT",
   "name": "Voxel Ascendant",
-  "version": "3.0.0-rc.15",
+  "version": "3.0.0-rc.15.1",
   "github": "Roxas2712/voxel-ascendant",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
   "category": "GRAPHICS",
-  "games": ["gen1", "gen2"],
+  "games": [
+    "gen1",
+    "gen2"
+  ],
   "gen2compat": true,
   "game_version": ">=0.1.90 <2.0.0",
   "priority": 100,
@@ -26,17 +29,27 @@
   ],
   "compatibility_conflicts": [
     {
-      "ids": ["ascendant_pokemon_overworld"],
+      "ids": [
+        "ascendant_pokemon_overworld"
+      ],
       "policy": "replace",
-      "areas": ["Overworld Pokemon sprites", "HD characters", "follower visual providers"],
+      "areas": [
+        "Overworld Pokemon sprites",
+        "HD characters",
+        "follower visual providers"
+      ],
       "reason_en": "This VASC test build integrates APO RC32 with bundled HD characters and optional Pokemon HD downloads. Loading standalone APO too would install duplicate providers.",
       "reason_de": "Dieser VASC-Teststand integriert APO RC32 mit enthaltenen HD-Charakteren und optionalen Pokemon-HD-Downloads. Zusätzliches APO würde Provider doppelt installieren.",
       "resolution_en": "Use the integrated VASC Card, or keep the standalone APO package with a VASC version that does not embed it.",
       "resolution_de": "Die integrierte VASC-Card verwenden oder APO separat mit einer VASC-Version ohne eingebautes APO betreiben."
     },
     {
-      "ids": ["VASC4J"],
-      "repositories": ["Roxas2712/vasc4j"],
+      "ids": [
+        "VASC4J"
+      ],
+      "repositories": [
+        "Roxas2712/vasc4j"
+      ],
       "policy": "replace",
       "areas": [
         "voxel renderer",
@@ -50,10 +63,19 @@
       "resolution_de": "Voxel Ascendant aktiviert lassen; der Launcher deaktiviert das ausgemusterte VASC4J-Paket automatisch."
     },
     {
-      "ids": ["vasc_kanto_fly_map", "vasc_kanto_fly_map_widescreen"],
-      "repositories": ["Roxas2712/voxel-ascendant"],
+      "ids": [
+        "vasc_kanto_fly_map",
+        "vasc_kanto_fly_map_widescreen"
+      ],
+      "repositories": [
+        "Roxas2712/voxel-ascendant"
+      ],
       "policy": "replace",
-      "areas": ["Town Map", "Fly destination picker", "Kanto map menu"],
+      "areas": [
+        "Town Map",
+        "Fly destination picker",
+        "Kanto map menu"
+      ],
       "reason_en": "Voxel Ascendant 3.0 integrates the reviewed Kanto Widescreen Map 1.0.0 and retains the older compact renderer only as an internal fail-open fallback.",
       "reason_de": "Voxel Ascendant 3.0 integriert die geprüfte Kanto-Widescreen-Karte 1.0.0 und behält die ältere kompakte Darstellung nur als internen Fail-open-Fallback.",
       "resolution_en": "Keep Voxel Ascendant enabled; the launcher disables the obsolete standalone map automatically.",
@@ -79,7 +101,9 @@
       "resolution_de": "Voxel Ascendant aktiviert lassen; der Launcher deaktiviert die ausgemusterten Cinematic-Einzelpakete automatisch."
     },
     {
-      "ids": ["vasc_oras_storage_ui"],
+      "ids": [
+        "vasc_oras_storage_ui"
+      ],
       "policy": "replace",
       "areas": [
         "Start-menu party presentation",
@@ -92,7 +116,9 @@
       "resolution_de": "Voxel Ascendant aktiviert lassen; der Launcher deaktiviert das ausgemusterte UI-Einzelpaket automatisch."
     },
     {
-      "ids": ["vasc_modern_pokedex"],
+      "ids": [
+        "vasc_modern_pokedex"
+      ],
       "policy": "replace",
       "areas": [
         "Generation 1 Pokedex list",
