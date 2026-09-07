@@ -2218,7 +2218,9 @@ local function vascPatch(self)
             breathLift + (rideVisual and rideVisual.dy or 0))
           if breathScale ~= 1 then
             cardModel = matMul(cardModel, scale(1, breathScale, 1))
-            cardSun = matMul(cardSun, scale(1, breathScale, 1))
+            -- The mobile render path can omit its optional shadow matrix.
+            -- Breathing must keep that absence intact, not fail the world.
+            if cardSun then cardSun = matMul(cardSun, scale(1, breathScale, 1)) end
           end
           if self.debugLog and type(self.debugLog.event) == "function"
               and record.dex then

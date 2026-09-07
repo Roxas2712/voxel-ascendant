@@ -40,23 +40,23 @@ Settings.bagSkinSetting:aliasLegacy("frlg", "frlg_wide")
 -- AUTO follows KASC's public character identity; no provider identity means
 -- the long-standing red fallback.
 Settings.bagColorSetting = ModSetting.new(
-  "qol_bag_color", "TASCHEN-AKZENT",
+  "qol_bag_color", "BAG ACCENT",
   { "auto", "red", "blue", "green" },
-  { "AUTO", "ROT", "BLAU", "GRÜN" }, "auto")
+  { "AUTO", "RED", "BLUE", "GREEN" }, "auto")
 
 -- Body/edition colour is a second, independent choice. It is consumed only
 -- after a VASC Bag renderer owns draw, so GAME/KASC remains a strict no-touch
 -- path. AUTO follows the active edition and ORAS preserves source pixels.
 Settings.bagBodySetting = ModSetting.new(
-  "qol_bag_body", "TASCHENKÖRPER",
+  "qol_bag_body", "BAG BODY",
   { "auto", "oras", "red", "blue", "yellow", "gold", "silver", "crystal" },
-  { "AUTO", "ORAS", "ROT", "BLAU", "GELB", "GOLD", "SILBER", "CRYSTAL" },
+  { "AUTO", "ORAS", "RED", "BLUE", "YELLOW", "GOLD", "SILVER", "CRYSTAL" },
   "auto")
 
 Settings.bagFormSetting = ModSetting.new(
-  "qol_bag_form", "TASCHENFORM",
+  "qol_bag_form", "BAG SHAPE",
   { "auto", "round", "handle" },
-  { "AUTO", "NORMAL", "HENKEL" }, "auto")
+  { "AUTO", "NORMAL", "HANDLE" }, "auto")
 
 Settings.styleSetting = ModSetting.new(
   "battleHudStyle", "BATTLE HUD",

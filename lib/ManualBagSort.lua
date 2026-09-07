@@ -10,15 +10,29 @@ local V = ...
 local M = {
   apiVersion = 1,
   schema = "voxel-ascendant/manual-oras-bag-sort/v2",
-  LABEL = "SORTIEREN",
-  INPUT_LABEL = "START: SORTIEREN",
+  LABEL = "SORT",
+  INPUT_LABEL = "START: SORT",
   MODES = { "alphabetical", "relevance", "strength" },
   MODE_LABELS = {
     alphabetical = "A-Z",
-    relevance = "RELEVANZ",
-    strength = "STÄRKE ↑",
+    relevance = "RELEVANCE",
+    strength = "STRENGTH ↑",
   },
 }
+
+local DE = {
+  LABEL="SORTIEREN", INPUT_LABEL="START: SORTIEREN",
+  MODE_LABELS={alphabetical="A-Z", relevance="RELEVANZ", strength="STÄRKE ↑"},
+}
+function M.labels()
+  local mod=V and V.mod
+  if mod and type(mod.find)=='function' then
+    local ok,handle=pcall(mod.find,'translation-german-universal')
+    if ok and type(handle)=='table' and type(handle.exports)=='table'
+        and handle.exports.bootLanguage=='de' then return DE end
+  end
+  return M
+end
 
 local installed = false
 local pointerUnregister
@@ -163,7 +177,7 @@ function M.nextMode(owner, pocket)
   byPocket[pocket] = index
   owner.__vascManualBagSortModeIndex = index
   owner.__vascManualBagSortMode = M.MODES[index]
-  owner.__vascManualBagSortModeLabel = M.MODE_LABELS[M.MODES[index]]
+  owner.__vascManualBagSortModeLabel = M.labels().MODE_LABELS[M.MODES[index]]
   return M.MODES[index], index
 end
 
@@ -310,13 +324,14 @@ local function drawButton(list, Font)
   else
     g.setColor(1, 1, 1, 1)
   end
-  local modeLabel = rawget(list, "__vascManualBagSortModeLabel")
+  local labels=M.labels()
+  local modeLabel = labels.MODE_LABELS[rawget(list, "__vascManualBagSortMode")]
   local label
   if wide then
-    label = modeLabel and ("START: " .. modeLabel) or M.INPUT_LABEL
+    label = modeLabel and ("START: " .. modeLabel) or labels.INPUT_LABEL
   else
     local compact = {
-      alphabetical="A-Z", relevance="REL", strength="RANG",
+      alphabetical="A-Z", relevance="REL", strength="RANK",
     }
     local mode = rawget(list, "__vascManualBagSortMode")
     label = mode and ("START:" .. (compact[mode] or "SORT")) or "START:SORT"
