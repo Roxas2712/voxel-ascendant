@@ -1202,26 +1202,30 @@ end
 -- one-frame mismatch used to reject an otherwise healthy MAP scene and latch
 -- the complete native 2-D battle for the rest of the encounter.
 --
--- Recover only the two definitive actor-envelope failures observed at the
--- rendered boundary, only for a physical MAP, and only by widening the exact
--- same eye/focus lens.  HUD collisions, malformed provider bounds, world
--- clearance and manual-camera failures retain their fail-closed behaviour.
+-- Recover definitive actor-envelope and HUD-overlap failures at the rendered
+-- boundary, only for a physical MAP, by widening the same eye/focus lens.
+-- Every candidate must pass the complete actor/HUD check. Unknown provider
+-- bounds, world clearance and manual-camera failures still decline.
 local function renderedActorFrameRescue(arena, groundY, camera, pitch, reason,
                                         context)
   if not (arena and arena.map and not arena.discs and camera
       and type(reason) == "string"
       and (reason == "player-outside-safe-frame"
-        or reason == "enemy-outside-safe-frame")) then
+        or reason == "enemy-outside-safe-frame"
+        or reason == "owner-render-unsafe"
+        or reason == "status-card-overlap"
+        or reason:match("^player%-under%-.+$")
+        or reason:match("^enemy%-under%-.+$"))) then
     return nil
   end
   if context and context.manual then return nil end
   local base = tonumber(camera.fov)
   if not (base and base > 0 and base < math.pi) then return nil end
   local tangent = math.tan(base * .5)
-  -- Do not turn a transient phone/HUD reflow into a nearly orthographic,
-  -- postage-stamp battle. Wider layouts are retried by the owner transaction;
-  -- this one-frame rescue remains inside a comfortable 1.75x optical bound.
-  for _, factor in ipairs({ 1.15, 1.30, 1.45, 1.60, 1.75 }) do
+  -- A narrow phone needs up to 2x to keep a wide posed model clear of the
+  -- edge during send-out. Test modest optical steps against the complete HUD
+  -- receipt; widening alone never authorizes a clipped or obscured actor.
+  for _, factor in ipairs({ 1.15, 1.30, 1.45, 1.60, 1.75, 1.85, 2.0 }) do
     local candidate = copyCamera(camera)
     candidate.fov = 2 * math.atan(tangent * factor)
     local safe, safeReason = screenSafeCamera(
@@ -1261,10 +1265,12 @@ local function renderedPortableFrameRescue(arena, groundY, camera, pitch, contex
   if not (base and base > 0 and base < math.pi) then return nil end
   local x = camera.eye[1] - camera.focus[1]
   local z = camera.eye[3] - camera.focus[3]
+  local frames = arena.arenaStyle and {1,1.25,1.5,1.75}
+    or {1,1.25,1.5,1.75,2}
   for _, angle in ipairs(arena.arenaStyle and {0}
       or {0,15,-15,30,-30,45,-45,60,-60,90,-90}) do
     local c, s = math.cos(math.rad(angle)), math.sin(math.rad(angle))
-    for _, factor in ipairs({1,1.25,1.5,1.75}) do
+    for _, factor in ipairs(frames) do
       local candidate = copyCamera(camera)
       candidate.eye[1] = camera.focus[1] + x*c - z*s
       candidate.eye[3] = camera.focus[3] + x*s + z*c

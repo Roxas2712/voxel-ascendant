@@ -1770,6 +1770,26 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
     local visual = shot.actorVisuals and shot.actorVisuals[side]
     local hiddenCurrentActor = false
     if type(shot.actorVisuals) == "table" and visual == nil then
+      -- During an exact send-out the engine deliberately has no body yet.
+      -- A nominal full-size prism for that absent actor can intersect the
+      -- other side's HP card and reject every replacement camera. Require an
+      -- explicit engine hide flag, no trainer occupying the slot, and no
+      -- rendered visual: a growing Stadium model already has a receipt and
+      -- must still pass the ordinary complete-hull checks below.
+      if live and battle then
+        local battler = battle[side]
+        local zeroScale = false
+        if battler and type(battle.growInScale) == "function" then
+          local ok, scale = pcall(battle.growInScale, battle, battler)
+          zeroScale = ok and scale == 0
+        end
+        hiddenCurrentActor = (side == "enemy"
+          and not battle.showEnemyTrainer
+          and (battle.enemySendingOut == true or battle.enemyHidden == true
+            or zeroScale))
+          or (side == "player" and not battle.showPlayerBack
+            and (battle.sendingOut == true or zeroScale))
+      end
       for _, rect in ipairs(bounds.reserved) do
         if rect.ownerSide == side and rect.ownerVisualGap == true
             and rect.allowOwnActorOverlap == true then

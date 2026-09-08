@@ -22,3 +22,13 @@ print('Portable camera recovery: ok')
 local painted={arenaStyle={}};local seen=false
 env.screenSafeCamera=function(_,stage,_,c)assert(stage==painted);assert(c.eye[1]==0,'bitmap recovery rotated the view');seen=true;return c.fov>.9 end
 assert(recover(painted,0,camera,.5,{}));assert(seen)
+
+-- Narrow portrait displays may need more than the former 1.75x lens while
+-- keeping both platform anchors fixed. A painted composition retains its cap.
+env.screenSafeCamera=function(_,stage,_,c)
+  local factor=math.tan(c.fov*.5)/math.tan(camera.fov*.5)
+  return factor>1.9
+end
+assert(recover(arena,0,camera,.5,{}),'portrait platform lens stayed capped at 1.75x')
+assert(not recover(painted,0,camera,.5,{}),'authored bitmap optical limit changed')
+print('Portrait platform optical recovery: ok')
