@@ -544,7 +544,7 @@ local function surfaceArtAt(map, cx, cy)
   return type(shape) == "table" and shape.art or nil
 end
 
-local function heightAt(map, wx, wz)
+local function groundAt(map, wx, wz)
   local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
   if not map:inBounds(cx, cy) then
     -- off the map the border ring is drawn, and on most outdoor maps that
@@ -558,7 +558,15 @@ local function heightAt(map, wx, wz)
   if not (visibilityVoxelScene
           and type(visibilityVoxelScene.groundAt) == "function") then return 0 end
   local ok, h = pcall(visibilityVoxelScene.groundAt, map, cx, cy)
-  h = (ok and tonumber(h)) or 0
+  return (ok and tonumber(h)) or 0
+end
+
+-- Footing uses the terrain surface. Camera rays additionally see the tops
+-- of grass, flowers and collision columns; those are not another floor.
+local function heightAt(map, wx, wz)
+  local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
+  if not map:inBounds(cx, cy) then return BattleArena.BORDER_H end
+  local h = groundAt(map, wx, wz)
   -- Ground height alone cannot see a house: buildings, walls and trees occupy
   -- collision cells above an otherwise level route. Treat blocked non-water
   -- cells as conservative vertical columns. This matches their gameplay
@@ -681,8 +689,8 @@ function BattleArena.clearance(map, arena)
   -- the CANONICAL shot: whether a fight fits somewhere is a fact about the
   -- ground, so it must not depend on the drift's phase or on where the
   -- player last swung the camera (see BattleCam.rig's third argument)
-  local eh = heightAt(map, arena.enemy[1], arena.enemy[2])
-  local ph = heightAt(map, arena.player[1], arena.player[2])
+  local eh = groundAt(map, arena.enemy[1], arena.enemy[2])
+  local ph = groundAt(map, arena.player[1], arena.player[2])
   local groundY = tonumber(arena.anchorHeight) or (eh + ph) / 2
   local ok, rig = pcall(BattleCam.rig, arena, groundY, true)
   if not (ok and rig and rig.eye) then return true end
@@ -734,7 +742,7 @@ function BattleArena.find(map, fromX, fromY, surfing)
   local entries = entryList(pick)
   local authoredBest, authoredScore = nil, nil
   local grids = {}
-  local originHeight = heightAt(map, fromX * CELL + CELL / 2,
+  local originHeight = groundAt(map, fromX * CELL + CELL / 2,
                                 fromY * CELL + CELL / 2)
   for index, entry in ipairs(entries) do
     local shape = nil
@@ -766,8 +774,8 @@ function BattleArena.find(map, fromX, fromY, surfing)
         local arena = place(shape, entry.x, entry.y)
         arena.map, arena.cam = host, entry.cam
         arena.anchorSource, arena.anchorIndex = "authored", index
-        local eh = heightAt(host, arena.enemy[1], arena.enemy[2])
-        local ph = heightAt(host, arena.player[1], arena.player[2])
+        local eh = groundAt(host, arena.enemy[1], arena.enemy[2])
+        local ph = groundAt(host, arena.player[1], arena.player[2])
         arena.anchorHeight = (eh + ph) / 2
         local dx = arena.mid[1] / CELL - fromX
         local dy = arena.mid[2] / CELL - fromY
@@ -886,8 +894,8 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear, options)
                 allowed = false
               end
               if options and options.height ~= nil then
-                local eh = heightAt(map, cand.enemy[1], cand.enemy[2])
-                local ph = heightAt(map, cand.player[1], cand.player[2])
+                local eh = groundAt(map, cand.enemy[1], cand.enemy[2])
+                local ph = groundAt(map, cand.player[1], cand.player[2])
                 if math.abs(eh - options.height) > 0.01
                    or math.abs(ph - options.height) > 0.01 then
                   allowed = false
