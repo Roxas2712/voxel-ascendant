@@ -239,8 +239,25 @@ function M.sortCurrentPocket(list)
   ids = M.sortIds(ids, list.game, mode)
 
   local before = copyArray(order)
-  local selected = type(list.items) == "table" and list.items[list.index]
-  selected = type(selected) == "table" and selected.value or nil
+  local selectedRow = type(list.items) == "table" and list.items[list.index]
+  local selected = type(selectedRow) == "table" and selectedRow.value or nil
+  local rebuilt
+  if type(list.__project) ~= "function" then
+    local byId, slots = {}, {}
+    rebuilt = copyArray(list.items)
+    for index, item in ipairs(rebuilt) do
+      if type(item) == "table" and item.value ~= nil and member[item.value] then
+        if byId[item.value] then return false, "pocket-rows-mismatch" end
+        byId[item.value] = item
+        slots[#slots + 1] = index
+      end
+    end
+    if #slots ~= #ids then return false, "pocket-rows-mismatch" end
+    for index, id in ipairs(ids) do
+      if not byId[id] then return false, "pocket-rows-mismatch" end
+      rebuilt[slots[index]] = byId[id]
+    end
+  end
   local nextId = 1
   for index, id in ipairs(order) do
     if member[id] then
@@ -263,18 +280,15 @@ function M.sortCurrentPocket(list)
       return false, "project-failed"
     end
   else
-    local byId = {}
-    for _, item in ipairs(list.items or {}) do
-      if type(item) == "table" then byId[item.value] = item end
-    end
-    local rebuilt = {}
-    for _, id in ipairs(ids) do rebuilt[#rebuilt + 1] = byId[id] end
+    -- Native bags include CANCEL (no item id); other providers may include
+    -- headers. Keep those rows and their callbacks in their original slots.
     list.items = rebuilt
   end
 
-  if selected ~= nil then
+  if selectedRow ~= nil then
     for index, item in ipairs(list.items or {}) do
-      if type(item) == "table" and item.value == selected then
+      if item == selectedRow or (selected ~= nil
+          and type(item) == "table" and item.value == selected) then
         list.index = index
         break
       end

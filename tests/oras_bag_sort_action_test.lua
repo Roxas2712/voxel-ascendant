@@ -307,6 +307,33 @@ eq(rollbackOK, false, "failed projection reported success")
 eq(rollbackReason, "project-failed", "failed projection reason")
 eq(table.concat(rollbackOrder, ","), "potion,antidote", "order rollback")
 
+-- Native BagMenu ends with CANCEL rather than a provider __project callback.
+-- Sort all three modes repeatedly without treating that row as an item id.
+for _,wideFlag in ipairs({'__vascOrasBagWidePresentation','__vascOrasFrlgBagWidePresentation'}) do
+ for _,count in ipairs({0,1,3}) do
+  local order={};local items={};local ids={'potion','antidote','ether'}
+  local inventory={}
+  for n=1,count do order[n]=ids[n];items[n]={value=ids[n],count=n};inventory[ids[n]]=n end
+  local cancel={cancel=true,label='CANCEL'};items[#items+1]=cancel
+  local raw={__vascOrasBagPresentation=true,items=items,index=#items,rows=8,
+    game={save={inventory=inventory,bagOrder=order},data=list.game.data,
+      input={wasPressed=function(_,key)return key=='start' end}},
+    draw=function()end,update=function()error('START leaked to native bag')end}
+  raw[wideFlag]=true;Sort.decorate(raw,{Font=Font})
+  for n=1,6 do
+   check(raw:update(),'native START failed')
+   eq(#raw.items,count+1,'CANCEL was dropped')
+   eq(raw.items[#raw.items],cancel,'CANCEL identity/callback lost')
+   eq(raw.items[raw.index],cancel,'selected CANCEL moved')
+   for id,qty in pairs(inventory)do eq(qty,({potion=1,antidote=2,ether=3})[id],'quantity changed')end
+  end
+  if count>1 then
+   raw.index=1;local chosen=raw.items[1];raw:update()
+   eq(raw.items[raw.index],chosen,'selected native item moved to another item')
+  end
+ end
+end
+
 eq(Sort.deactivate(), true, "sort segment deactivation")
 eq(pointerRemoved, true, "sort pointer hook was not removed")
 eq(Sort.health().state, "inactive", "sort segment remained active")
