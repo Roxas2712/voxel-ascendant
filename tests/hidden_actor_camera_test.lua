@@ -4,7 +4,7 @@ local O={};local shot={pw=960,ph=600,actorVisuals={},actorHulls={player={-50,480
 local owner={id='player-status',x=10,y=10,w=200,h=60,ownerSide='player',ownerVisualGap=true,allowOwnActorOverlap=true}
 local bounds={safeInsets={0,0,0,0},reserved={owner,{id='command',x=200,y=500,w=500,h=90}}}
 O.battleHudCameraBounds=function()return bounds end
-local fn=assert(loadstring(s:sub(a,b-1)));setfenv(fn,setmetatable({OverworldBattle=O,BattleScene={cameraSafetyShot=function()return shot end}},{__index=_G}));fn()
+local fn=assert(loadstring(s:sub(a,b-1)));local env={OverworldBattle=O,BattleScene={cameraSafetyShot=function()return shot end},sameBattle=function(a,b)return a==b end};setfenv(fn,setmetatable(env,{__index=_G}));fn()
 local battle={player={mon={}},enemy={mon={}}}
 assert(O.battleHudCameraSafe(battle,{},0,{}),'same-owner hidden body collided with command UI')
 owner.ownerVisualGap=nil;owner.allowOwnActorOverlap=nil;owner.ownerSide=nil
@@ -13,3 +13,12 @@ owner.ownerVisualGap=true;owner.allowOwnActorOverlap=true;owner.ownerSide='playe
 shot.actorVisuals.player={hull={-50,480,200,150},foot={x=0,y=610}}
 assert(O.battleHudCameraSafe(battle,{},0,{})==false,'visible actor bypassed screen safety')
 print('Hidden actor camera ownership: ok')
+
+shot.actorVisuals.player=nil;bounds.reserved={{id='command',x=200,y=500,w=500,h=90}}
+O.playerBackPinned=function()return false end
+battle.picFx={[battle.player]={hidden=true}};env.session={battle=battle,presentationCommitted=true}
+assert(O.battleHudCameraSafe(battle,{},0,{}),'STANDARD hidden body still collides with its nominal prism')
+env.session.pendingSwitch={};assert(O.battleHudCameraSafe(battle,{},0,{})==false,'deployment gap accepted as an animation hide')
+env.session.pendingSwitch=nil;battle.picFx=nil;O.playerBackPinned=function()return true end
+assert(O.battleHudCameraSafe(battle,{},0,{}),'native pinned rear was counted as world geometry')
+print('STANDARD hidden actor camera ownership: ok')

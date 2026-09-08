@@ -1777,6 +1777,24 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
         end
       end
     end
+    if not hiddenCurrentActor and type(shot.actorVisuals) == "table"
+        and visual == nil and live and live.presentationCommitted == true
+        and live.pendingSwitch == nil then
+      -- STANDARD's native HUD has no floating owner-gap receipt. Its pinned
+      -- player picture and the engine's explicit hide programs still do not
+      -- produce world geometry. Restrict this to an established deployment;
+      -- missing assets during initial send-out/switch remain a pending error.
+      local battler = battle and battle[side]
+      local pic = battler and battle.picFx and battle.picFx[battler]
+      local blink = false
+      if battler and type(battle.fxHidden) == "function" then
+        local ok, hidden = pcall(battle.fxHidden, battle, battler)
+        blink = ok and hidden == true
+      end
+      hiddenCurrentActor = (side == "player"
+        and OverworldBattle.playerBackPinned(battle))
+        or (battler ~= nil and (blink or (pic and pic.hidden == true)))
+    end
     -- Fly/Dig and simultaneous damage blinks have no body pixels. The HUD's
     -- exact same-battler owner receipt authorizes that absence; a nominal
     -- prism must not collide with command buttons during the hidden frame.
