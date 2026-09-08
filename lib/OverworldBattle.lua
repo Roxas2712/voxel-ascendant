@@ -67,7 +67,7 @@ end
 local OverworldBattle = {}
 local supported = false
 -- The engine classes outlive a module instance.  Their wrappers therefore
--- need one process-local owner which a later copy can retire but never replace.
+-- need one process-local owner. A reload retires the old owner before replacing it.
 -- Keeping the lease on OverworldController makes the first wrapper's kill
 -- switch reachable without exposing its renderer/session table.
 local RUNTIME_LEASE_SLOT = "voxelAscendantBattleRuntimeLeaseV1"
@@ -4985,6 +4985,15 @@ function OverworldBattle.install()
       retired = called and (value == true or incumbent.state == "retired")
       if not called then retireReason = tostring(value) end
     end
+    if retired and incumbent.replaceable == true then
+      -- Every wrapper of this lease delegates unchanged after retirement.
+      -- Remove owned outer wrappers where possible; foreign outer wrappers
+      -- retain an inert inner link and are never overwritten.
+      if type(incumbent.detach) == "function" then incumbent.detach() end
+      OverworldState.voxelAscendantBattleHook = nil
+      BattleState.voxelAscendantBattleHook = nil
+      rawset(OverworldState, RUNTIME_LEASE_SLOT, nil)
+    else
     runtimeState = "rejected"
     battleLifecycleReady = false
     battleLifecycleReason = valid
@@ -4994,6 +5003,7 @@ function OverworldBattle.install()
       or "invalid battle wrapper runtime lease; restart required"
     nativeBattlePreflight = nil
     return false, battleLifecycleReason
+    end
   end
 
   -- A marker without the versioned kill switch belongs to a pre-lease or
@@ -5043,8 +5053,17 @@ function OverworldBattle.install()
     schema=RUNTIME_LEASE_SCHEMA,
     apiVersion=1,
     state="installing",
+    replaceable=true,
   }
   runtimeLease.retire = retireRuntime
+  -- Stadium owns its independent wrappers/marker. Capture our inner methods
+  -- after its installation so detaching this runtime retains that owner.
+  pcall(function() V.require("Stadium").install() end)
+  local originalMethods = {}
+  for _, class in ipairs({OverworldState, BattleState}) do
+    originalMethods[class] = {}
+    for key, fn in pairs(class) do originalMethods[class][key] = fn end
+  end
 
   if not OverworldState.voxelAscendantBattleHook then
     local inner = OverworldState.pushBattle
@@ -5070,10 +5089,6 @@ function OverworldBattle.install()
     end
     OverworldState.voxelAscendantBattleHook = true
   end
-
-  -- Dormant until a built-in Stadium-2 source is selected. The wrappers are
-  -- idempotent and keep native cards authoritative for every uncovered side.
-  pcall(function() V.require("Stadium").install() end)
 
   if BattleState.voxelAscendantBattleHook then
     supported = true
@@ -5170,6 +5185,7 @@ function OverworldBattle.install()
 
   local innerDraw = BattleState.draw
   function BattleState:draw(...)
+    if not runtimeLeaseActive() then return innerDraw(self, ...) end
     local shot = OverworldBattle.shot()
     -- AskName blanks the field on purpose (the nickname prompt is meant to
     -- sit on nothing); leave that one alone.
@@ -5226,7 +5242,7 @@ function OverworldBattle.install()
   -- textbox, while the opponent remains a world billboard.
   innerPics = BattleState.drawPicsLayer
   function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip, ...)
-    local shot = self.voxelAscendantShot
+    local shot = runtimeLeaseActive() and self.voxelAscendantShot
     if not shot then
       if runtimeLeaseActive()
           and self._vascNativeCartridgeFrontAnchor == true then
@@ -5257,7 +5273,7 @@ function OverworldBattle.install()
   -- what earns it its contrast (see BattleHud).
   innerText = BattleState.drawTextArea
   function BattleState:drawTextArea(...)
-    if not self.voxelAscendantShot then return innerText(self, ...) end
+    if not runtimeLeaseActive() or not self.voxelAscendantShot then return innerText(self, ...) end
     if snapped(self, self.voxelAscendantShot) then return end
     return withoutBoxFill(self, innerText, ...)
   end
@@ -5269,7 +5285,7 @@ function OverworldBattle.install()
   -- aimed at instead of drifting off it.
   innerAnim = BattleState.drawAnimLayer
   function BattleState:drawAnimLayer(colorized, ...)
-    local shot = self.voxelAscendantShot
+    local shot = runtimeLeaseActive() and self.voxelAscendantShot
     if not shot then return innerAnim(self, colorized, ...) end
     if shot.pendingActors then
       -- An authored attack is positioned between two concrete deployment
@@ -5342,7 +5358,7 @@ function OverworldBattle.install()
   -- here is the map, so what the shake vacates should show the map.
   local innerZone = BattleState.drawZonePass
   function BattleState:drawZonePass(src, sx, sy, ...)
-    if not self.voxelAscendantShot then
+    if not runtimeLeaseActive() or not self.voxelAscendantShot then
       return innerZone(self, src, sx, sy, ...)
     end
     -- shadow the method on the instance for this call only; putting the
@@ -5366,7 +5382,7 @@ function OverworldBattle.install()
 
   innerHUDs = BattleState.drawHUDs
   function BattleState:drawHUDs(slide, ...)
-    if not self.voxelAscendantShot then
+    if not runtimeLeaseActive() or not self.voxelAscendantShot then
       return innerHUDs(self, slide, ...)
     end
     -- Normally the HUDs have already been drawn this frame, snapped out to the
@@ -5378,6 +5394,23 @@ function OverworldBattle.install()
     return innerHUDs(self, slide, ...)
   end
 
+  local replacements = {}
+  for class, before in pairs(originalMethods) do
+    for key, fn in pairs(class) do
+      if type(fn) == "function" and fn ~= before[key] then
+        replacements[#replacements + 1] = {class=class, key=key, wrapper=fn, original=before[key]}
+      end
+    end
+  end
+  runtimeLease.detach = function()
+    if runtimeLease.state ~= "retired" then return false end
+    for _, row in ipairs(replacements) do
+      if rawget(row.class, row.key) == row.wrapper then
+        row.class[row.key] = row.original
+      end
+    end
+    return true
+  end
   BattleState.voxelAscendantBattleHook = true
   runtimeState = "installed"
   runtimeLease.state = "active"

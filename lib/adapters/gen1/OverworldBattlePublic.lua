@@ -302,8 +302,14 @@ function Public.new(owner)
   local installed, installReason = owner.setLegacyCompatibilityBridge(bridge)
   if installed ~= true then
     pcall(bridge.retire)
-    error("VOXEL_ASCENDANT: OverworldBattle legacy bridge rejected: "
-      .. tostring(installReason or "unknown reason"), 2)
+    -- The renderer already reports its rejected/unsupported lifecycle state.
+    -- Keep the public facade inert instead of turning a native battle fallback
+    -- into a fatal error for every VASC feature during launcher reload.
+    return setmetatable({}, {
+      __index=function() return nil end,
+      __newindex=function() end,
+      __metatable="VOXEL_ASCENDANT inactive Gen-1 battle compatibility boundary",
+    })
   end
 
   return setmetatable(proxy, {
