@@ -3039,6 +3039,14 @@ function OverworldBattle.ensure(battle)
       .. tostring(legacyReason or "declined")
     local exactRetired = retireRendererSessionToNative(battle, reason)
     if not exactRetired and not session then
+      -- Direct/scripted states can reach ensure without pushBattle/begin.
+      -- A deliberate native guard still needs an exact lifecycle owner;
+      -- otherwise the missing receipt aborts the router for later battles.
+      local current = lifecycle("current")
+      if current == nil then
+        claimLifecycle(battle, OverworldBattle.capturePresentationPlan(),
+          "DEFAULT", reason, "battle.started.ensure")
+      end
       lifecycle("nativeLatched", battle, reason)
     end
     return false, legacyReason
