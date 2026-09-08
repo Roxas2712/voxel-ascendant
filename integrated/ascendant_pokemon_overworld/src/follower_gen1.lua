@@ -60,6 +60,10 @@ function Gen1Follower.new(shouldSpawn)
 
   function Controller.onMapEntered(game, world, options, viaMapLoad)
     if not (world and world.map and world.player) then return end
+    -- The engine's native follower also waits for this transport record.
+    -- A data reload or unavailable provider must not reach NPC.new without it.
+    if not (game and game.data and game.data.sprites
+        and game.data.sprites.SPRITE_PIKACHU) then return end
     local kept = options and (options.keepPikachu or options.keepFollower)
     remove(world)
     if not shouldSpawn(game, world) then return end

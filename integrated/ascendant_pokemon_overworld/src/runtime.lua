@@ -313,13 +313,21 @@ end
 function Runtime:_registerSprite()
   local content = self.mod.content and self.mod.content.sprites
   if not content then return false, "sprite_content_registry_unavailable" end
+  local existing
+  if type(content.get) == "function" then
+    local ok, value = pcall(content.get, content, "SPRITE_PIKACHU")
+    if ok then existing = value end
+  end
   local relative = self.catalog.relative(25, false, false)
   if self.mod._vascIntegrated and not self.mod:info(relative) then
     -- The bootstrap record can be constructed before a party is adopted.
     -- Optional HD is not bundled; never publish a missing image to Gen2's
     -- eager SpriteRenderer. configure() selects the actual party art later.
-    relative = "assets/pokemmo-runtime/follower_025_none_normal_base.png"
-    if not self.mod:info(relative) then return true, "original_sprite_owner_retained" end
+    if existing then return true, "original_sprite_owner_retained" end
+    relative = "assets/pokemmo-runtime/follower_025_male_normal_base.png"
+    if not self.mod:info(relative) then
+      return false, "follower_bootstrap_sheet_unavailable"
+    end
   end
   local fallback = {
     id="SPRITE_PIKACHU",
@@ -330,11 +338,6 @@ function Runtime:_registerSprite()
     pokemonSpecies="PIKACHU",
     pokemonDex=25,
   }
-  local existing
-  if type(content.get) == "function" then
-    local ok, value = pcall(content.get, content, "SPRITE_PIKACHU")
-    if ok then existing = value end
-  end
   if existing and type(content.patch) == "function" then
     content:patch("SPRITE_PIKACHU", fallback)
   else
