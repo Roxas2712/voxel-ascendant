@@ -1680,6 +1680,16 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
       or arena and arena.map,
     live and live.token or nil)
   if not shot then return nil, "camera-projection-unavailable" end
+  if shot.groundRegions then
+    local Ground = V.require("ArenaGround")
+    for _, actor in pairs(shot.actorVisuals or {}) do
+      local f = actor.groundFootprint
+      if f and not Ground.supports(shot.groundRegions,
+          f[1]+f[3]*.5,f[2]+f[4]*.5,f[3]*.5+.002,f[4]*.5+.002) then
+        return false, "actor-contact-outside-ground"
+      end
+    end
+  end
   local bounds, reason = OverworldBattle.battleHudCameraBounds(battle, shot)
   if not bounds then
     -- The bundled ORAS provider uses this one reason only after it has exact
@@ -1758,6 +1768,19 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
   end
   for _, side in ipairs({ "player", "enemy" }) do
     local visual = shot.actorVisuals and shot.actorVisuals[side]
+    local hiddenCurrentActor = false
+    if type(shot.actorVisuals) == "table" and visual == nil then
+      for _, rect in ipairs(bounds.reserved) do
+        if rect.ownerSide == side and rect.ownerVisualGap == true
+            and rect.allowOwnActorOverlap == true then
+          hiddenCurrentActor = true; break
+        end
+      end
+    end
+    -- Fly/Dig and simultaneous damage blinks have no body pixels. The HUD's
+    -- exact same-battler owner receipt authorizes that absence; a nominal
+    -- prism must not collide with command buttons during the hidden frame.
+    if not hiddenCurrentActor then
     local hull = visual and visual.hull or shot.actorHulls[side]
     local visualFoot = visual and visual.foot
     local foot = visualFoot and { visualFoot.x, visualFoot.y }
@@ -1791,6 +1814,7 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
           return false, side .. "-under-" .. tostring(rect.id or "hud")
         end
       end
+    end
     end
   end
   if visibleActorHulls.player and visibleActorHulls.enemy
@@ -3130,14 +3154,17 @@ end
 -- reused on a switch, so holding that scene through a one-frame render miss
 -- is safe only while every published deployment identity still matches.
 local function actorMatchesTexture(actor, texture)
-  return type(actor) == "table" and type(texture) == "table"
-    and actor.schema == "voxel-ascendant/actor-render/v1"
-    -- A Canvas is a frame buffer, not deployment identity.  KASC's ordinary
-    -- Crystal-style fronts and its Mega fronts may both publish a fresh one
-    -- for the next authored frame.  Battler, mon, model key, stable texture
-    -- token and view below still reject a real switch (including one which
-    -- deliberately reuses the old Canvas) without mistaking animation for a
-    -- replacement.
+  if not (type(actor) == "table"
+      and actor.schema == "voxel-ascendant/actor-render/v1") then return false end
+  if actor.view == "stadium-model" then
+    -- A covered 3D side deliberately has no sprite canvas. Its rig and exact
+    -- battler/mon owner are the deployment identity instead.
+    return V.require("Stadium").matchesVisualReceipt(actor)
+      and (texture == nil or (type(texture) == "table"
+        and actor.battler == texture.vascRenderBattler
+        and actor.mon == texture.vascRenderMon))
+  end
+  return type(texture) == "table"
     and actor.battler == texture.vascRenderBattler
     and actor.mon == texture.vascRenderMon
     and actor.modelKey == texture.vascRenderModelKey
@@ -3151,7 +3178,7 @@ local function shotMatchesTextures(shot, textures)
   local matched = false
   for _, side in ipairs({ "player", "enemy" }) do
     local actor, texture = visuals[side], textures[side]
-    if (actor == nil) ~= (texture == nil) then return false end
+    if actor == nil and texture ~= nil then return false end
     if actor then
       if not actorMatchesTexture(actor, texture) then return false end
       matched = true

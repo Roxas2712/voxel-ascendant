@@ -538,7 +538,8 @@ local bagAction = {
     {label="WEGWERFEN"}},
   index=1, update=modalUpdate, draw=nativeDraw,
 }
-Overlay.decorateBagActionMenu(bagAction)
+Overlay.decorateBagActionMenu(bagAction, {wideBattle=true})
+eq(bagAction:isWideBattleLayout(), true, "battle Bag action was centered as a classic menu")
 eq(bagAction.__vascOrasWideBagAction, true)
 eq(bagAction.update, modalUpdate, "Bag action update owner changed")
 eq(bagAction.items[1].onSelect, bagActionCallback,
@@ -553,7 +554,8 @@ local bagQuantity = {
   qty=3, max=12, onDone=quantityDone,
   update=modalUpdate, draw=nativeDraw,
 }
-Overlay.decorateBagQuantity(bagQuantity)
+Overlay.decorateBagQuantity(bagQuantity, {wideBattle=true})
+eq(bagQuantity:isWideBattleLayout(), true, "battle Bag quantity was centered as a classic menu")
 eq(bagQuantity.__vascOrasWideBagQuantity, true)
 eq(bagQuantity.update, modalUpdate, "Bag quantity update owner changed")
 eq(bagQuantity.onDone, quantityDone, "Bag quantity callback owner changed")
@@ -566,7 +568,8 @@ local bagChoice = {
   labels={"YES", "NO"}, index=2, onChoose=bagChoiceDone,
   update=modalUpdate, draw=nativeDraw,
 }
-Overlay.decorateBagChoice(bagChoice)
+Overlay.decorateBagChoice(bagChoice, {wideBattle=true})
+eq(bagChoice:isWideBattleLayout(), true, "battle Bag choice was centered as a classic menu")
 eq(bagChoice.__vascOrasWideBagChoice, true)
 eq(bagChoice.update, modalUpdate, "Bag choice update owner changed")
 eq(bagChoice.onChoose, bagChoiceDone, "Bag choice callback owner changed")

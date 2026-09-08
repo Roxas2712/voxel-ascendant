@@ -404,7 +404,8 @@ local function installOverlayListener()
       local saved = snapshot(state)
       state.__ascendantGlobalUiSkinSkip = true
       local decorated, result = pcall(
-        OverlayPresentation.decorateBagActionMenu, state)
+        OverlayPresentation.decorateBagActionMenu, state,
+        { wideBattle=wideBattle(bagParent) })
       if not decorated then
         restore(state, saved)
         warn("ORAS Bag action presentation failed open: %s", tostring(result))
@@ -413,7 +414,8 @@ local function installOverlayListener()
       local saved = snapshot(state)
       state.__ascendantGlobalUiSkinSkip = true
       local decorated, result = pcall(
-        OverlayPresentation.decorateBagQuantity, state)
+        OverlayPresentation.decorateBagQuantity, state,
+        { wideBattle=wideBattle(bagParent) })
       if not decorated then
         restore(state, saved)
         warn("ORAS Bag quantity presentation failed open: %s", tostring(result))
@@ -434,7 +436,8 @@ local function installOverlayListener()
       local saved = snapshot(state)
       state.__ascendantGlobalUiSkinSkip = true
       local decorated, result = pcall(
-        OverlayPresentation.decorateBagChoice, state)
+        OverlayPresentation.decorateBagChoice, state,
+        { wideBattle=wideBattle(bagParent) })
       if not decorated then
         restore(state, saved)
         warn("ORAS Bag choice presentation failed open: %s", tostring(result))

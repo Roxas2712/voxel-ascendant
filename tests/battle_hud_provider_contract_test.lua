@@ -809,6 +809,9 @@ FloatingHud._testDiagnosticWrites = function() return diagnosticWrites end
   "@actual-vasc-owner-attachment")
 assert(attachChunk, attachCompileError)
 local AttachHud = attachChunk()
+-- This ownership fixture supplies one opaque dock; production icon geometry
+-- has its own localization/focus/MEGA bounds contract.
+AttachHud.orasCommandBounds = function(_, rect) return {rect} end
 local pikachu = { species="PIKACHU" }
 local tentacool = { species="TENTACOOL" }
 local battle = {
@@ -1543,8 +1546,8 @@ local offscreen = assert(AttachHud.projectOwnerStatusRect({
   pw=1280, ph=720, scale=2, renderToken=6,
   actorVisuals={ player={ head={x=0,y=350} } },
 }, "player"))
-check(offscreen[1] < 8,
-  "strict outside card was silently detached/clamped from its owner head")
+check(offscreen[1] >= 8 and offscreen[1]+offscreen[3] <= 1280-8,
+  "outside card was not bounded to the physical safe frame")
 
 -- The three public anchor choices are real geometry contracts, not dead menu
 -- values. Exercise them against an adversarial 1024x768 frame whose player
@@ -1568,16 +1571,11 @@ check(offscreen[1] < 8,
     viewportKeys[mode] = AttachHud.statusViewportKey(anchorShot)
     local proposal = AttachHud.proposeStatusLatch(
       anchorBattle, anchorShot, true, true, {})
-    if mode == "outside" then
-      check(not proposal.complete,
-        "unsafe strict outside anchors were silently relocated")
-    else
-      check(proposal.complete,
-        "1024x768 " .. mode .. " anchor did not produce a safe complete pair")
-    end
+    check(proposal.complete,
+      "1024x768 " .. mode .. " anchor did not produce a safe complete pair")
     for _, side in ipairs({ "player", "enemy" }) do
       local rect = assert(proposal.slots[side] and proposal.slots[side].rect)
-      if mode ~= "outside" then
+      if proposal.complete then
         check(rect[1] >= 0 and rect[2] >= 0
             and rect[1] + rect[3] <= anchorShot.pw
             and rect[2] + rect[4] <= anchorShot.ph,

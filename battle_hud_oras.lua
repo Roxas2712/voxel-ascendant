@@ -2316,15 +2316,13 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
 
   local mode = optionChoice("status_anchor", "outside"):lower()
   if mode ~= "above" and mode ~= "corners" then mode = "outside" end
-  -- A strict side-behind-head seat is intentionally preserved on desktop and
-  -- landscape. On a phone portrait it consumes most of the narrow axis, so
+  -- Prefer the side behind the head in landscape. In portrait it consumes
+  -- most of the narrow axis, so
   -- SMART can satisfy it only by pulling the battle camera dramatically away
   -- (and can still reject the owner frame). Keep the same semantic owner and
   -- rearward bias there, but lift the default seat diagonally above the head.
   -- Explicit ABOVE/CORNERS choices remain untouched.
-  local mobilePortraitOutside = mode == "outside"
-    and shot.pw < shot.ph
-    and (PLATFORM_OS == "iOS" or PLATFORM_OS == "Android")
+  local mobilePortraitOutside = mode == "outside" and shot.pw < shot.ph
   local insetLeft, insetTop, insetRight, insetBottom =
     FloatingHud.safeInsets(shot)
   local margin = math.max(8,
@@ -2336,7 +2334,7 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
   local maxY = math.max(minY,
     shot.ph - (insetBottom or 0) - margin - h)
 
-  -- OUTSIDE is the battle default and its geometry is strict: player sprites
+  -- OUTSIDE is the battle default: player sprites
   -- face right, so the rear of their head is left; enemy sprites face left,
   -- so the rear is right. The card's lower edge stays a fixed clearance above
   -- the exact rendered head. Ownership remains semantic even when a Stadium
@@ -2379,13 +2377,11 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
     y = y + yOffset * baseScale
   end
 
-  -- ABOVE/CORNERS remain explicit user-selected alternatives and retain their
-  -- bounded placement. OUTSIDE is never clamped or silently relocated: an
-  -- off-screen/overlap result rejects that camera seat so camera search can
-  -- preserve the reviewed head-relative contract in a different 3D framing.
-  if mode ~= "outside" then
-    x, y = clamp(x, minX, maxX), clamp(y, minY, maxY)
-  end
+  -- Keep the head-relative seat inside the physical safe area. A fixed
+  -- bitmap ground anchor cannot move sideways with camera recovery, so an
+  -- overflowing card must be bounded here. The same frame still rejects any
+  -- resulting actor/card collision below; no safety gate is disabled.
+  x, y = clamp(x, minX, maxX), clamp(y, minY, maxY)
   local padding = math.max(8,
     math.floor(math.min(shot.pw, shot.ph) * .012))
   local function hitsActor(px, py)
@@ -2403,7 +2399,7 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
     end
     return false
   end
-  if mode ~= "outside" and hitsActor(x, y) then
+  if (mode ~= "outside" or mobilePortraitOutside) and hitsActor(x, y) then
     local cornerX = side == "player" and minX or maxX
     local candidates = {
       { cornerX, minY },
@@ -3947,88 +3943,8 @@ function FloatingHud.commandAssetMetrics(image, logicalW, logicalH,
   }
 end
 
-local function renderCommandCanvas(battle, k, logicalW, logicalH)
-  local style = hudStyle()
-  local plate = assetImage(COMMAND_PLATE_ASSET)
-  local selector = assetImage(COMMAND_SELECTOR_ASSET)
-  if style == "float" and not (plate and selector) then return nil end
-  if style ~= "float" and not FloatingHud.commandAssetsReady() then return nil end
-
-  local canvas, cw, ch, pad, raster, logicalCW, logicalCH =
-    panelCanvas("command", logicalW, logicalH)
-  if not canvas then return nil end
-
-  local layout = FloatingHud.COMMAND
-  local labels = battle.safari
-    and { "BALL", "BAIT", "ROCK", "RUN" }
-     or hudLanguage() == "de"
-       and { "KAMPF", "PKMN", "BEUTEL", "FLUCHT" }
-        or { "FIGHT", "PKMN", "ITEM", "RUN" }
-  if battle.safari and hudLanguage() == "de" then
-    labels = { "BALL", "KÖDER", "STEIN", "FLUCHT" }
-  end
+function FloatingHud.orasCommandLayout(battle, logicalW, logicalH)
   local selected = clamp(math.floor(tonumber(battle.menuIndex) or 1), 1, 4)
-  battle._ascendantBattleHudCommandLogicalHits = nil
-  local prevCanvas = g.getCanvas()
-  local prevBlend, prevAlpha = g.getBlendMode()
-  local prevShader = g.getShader()
-
-  local ok, err = pcall(function()
-    g.setCanvas(canvas)
-    g.origin()
-    g.clear(0, 0, 0, 0)
-    g.setBlendMode("alpha")
-    g.setShader()
-    g.setColor(1, 1, 1, 1)
-    g.push()
-    g.scale(raster, raster)
-    g.translate(pad, pad)
-
-    if style == "oras" and battle.safari then
-      -- Safari is a real four-action battle menu, but it has no acting player
-      -- battler and therefore cannot reuse FIGHT/PKMN/ITEM icon semantics.
-      -- Keep the ORAS glass language while rendering its native BALL / BAIT /
-      -- ROCK / RUN actions as explicit cards. Input remains the engine's
-      -- menuIndex, so this is presentation-only and preserves Safari logic.
-      FloatingHud.drawStyleSurface("command", logicalW, logicalH, k)
-      local gap = 6
-      local marginX, marginY = 8, 7
-      local cardW = (logicalW - marginX * 2 - gap) * 0.5
-      local cardH = (logicalH - marginY * 2 - gap) * 0.5
-      local commandHits = {}
-      local cursorX, cursorY = logicalW * 0.5, logicalH * 0.5
-      for i = 1, 4 do
-        local col = (i - 1) % 2
-        local row = math.floor((i - 1) / 2)
-        local x = marginX + col * (cardW + gap)
-        local y = marginY + row * (cardH + gap)
-        local focused = i == selected
-        local pulse = 0.5 + 0.5 * math.sin((battle.frame or 0) * 0.12)
-        g.setColor(0.012, 0.038, 0.055, 0.95)
-        g.rectangle("fill", x, y, cardW, cardH, 7, 7)
-        g.setColor(0.22, 0.86, 1.00,
-          focused and (0.28 + pulse * 0.16) or 0.12)
-        g.rectangle("fill", x + 2, y + 2, cardW - 4, cardH - 4, 6, 6)
-        g.setColor(focused and 1 or 0.28,
-                   focused and 1 or 0.88,
-                   1, focused and 0.98 or 0.78)
-        g.setLineWidth(focused and 2 or 1)
-        g.rectangle("line", x, y, cardW, cardH, 7, 7)
-        g.setLineWidth(1)
-        drawShadowTextCentered(labels[i], x + cardW * 0.5,
-                               y + cardH * 0.5 - 4, k, 0.82)
-        commandHits[#commandHits + 1] = {
-          action="command", index=i, x=x, y=y, w=cardW, h=cardH,
-        }
-        if focused then cursorX, cursorY = x + cardW * 0.5, y end
-      end
-      battle._ascendantBattleHudCommandLogicalHits = commandHits
-      FloatingHud.drawHandCursor(cursorX, cursorY, 0.82, battle.frame)
-    elseif style == "oras" then
-      -- No enclosing dock. Measure the actual localized sprites, flow the
-      -- secondary actions into one compact centred row, then place FIGHT just
-      -- above that row. Neither ultrawide nor phone canvases can stretch the
-      -- spaces because the gaps have fixed responsive bounds.
       local rowEntries = {
         { index=3, key="bag",     maxW=0.18, maxH=0.32 },
         { index=2, key="pokemon", maxW=0.18, maxH=0.32 },
@@ -4129,6 +4045,119 @@ local function renderCommandCanvas(battle, k, logicalW, logicalH)
 
       local entries = { fightEntry }
       for _, entry in ipairs(rowEntries) do entries[#entries + 1] = entry end
+  return rowEntries, fightEntry, entries, rowTop, actionGap, megaArmed, frame
+end
+
+function FloatingHud.orasCommandBounds(battle, rect, scale, logicalW, logicalH)
+  local _, _, entries = FloatingHud.orasCommandLayout(battle, logicalW, logicalH)
+  local bounds = {}
+  for _, entry in ipairs(entries) do
+    if entry.image and entry.layoutX then
+      local x = entry.layoutX
+      local y = entry.layoutY or (logicalH - entry.layoutH)
+      -- Include the largest focus/MEGA glow, not the transparent dock canvas.
+      local marginX = entry.layoutW * .13 + 2
+      local marginY = entry.layoutH * .24 + 2
+      local top = math.max(0, y - marginY)
+      local bottom = math.min(logicalH, y + entry.layoutH + marginY)
+      bounds[#bounds+1] = {rect[1]+(x-marginX)*scale,
+        rect[2]+top*scale, (entry.layoutW+marginX*2)*scale,
+        (bottom-top)*scale}
+      if entry.focused then
+        local cx = entry.x + entry.width*.5
+        local cursorTop = entry.y - 18
+        bounds[#bounds+1] = {rect[1]+(cx-8)*scale,
+          rect[2]+cursorTop*scale, 16*scale, 20*scale}
+      end
+    end
+  end
+  return bounds
+end
+
+local function renderCommandCanvas(battle, k, logicalW, logicalH)
+  local style = hudStyle()
+  local plate = assetImage(COMMAND_PLATE_ASSET)
+  local selector = assetImage(COMMAND_SELECTOR_ASSET)
+  if style == "float" and not (plate and selector) then return nil end
+  if style ~= "float" and not FloatingHud.commandAssetsReady() then return nil end
+
+  local canvas, cw, ch, pad, raster, logicalCW, logicalCH =
+    panelCanvas("command", logicalW, logicalH)
+  if not canvas then return nil end
+
+  local layout = FloatingHud.COMMAND
+  local labels = battle.safari
+    and { "BALL", "BAIT", "ROCK", "RUN" }
+     or hudLanguage() == "de"
+       and { "KAMPF", "PKMN", "BEUTEL", "FLUCHT" }
+        or { "FIGHT", "PKMN", "ITEM", "RUN" }
+  if battle.safari and hudLanguage() == "de" then
+    labels = { "BALL", "KÖDER", "STEIN", "FLUCHT" }
+  end
+  local selected = clamp(math.floor(tonumber(battle.menuIndex) or 1), 1, 4)
+  battle._ascendantBattleHudCommandLogicalHits = nil
+  local prevCanvas = g.getCanvas()
+  local prevBlend, prevAlpha = g.getBlendMode()
+  local prevShader = g.getShader()
+
+  local ok, err = pcall(function()
+    g.setCanvas(canvas)
+    g.origin()
+    g.clear(0, 0, 0, 0)
+    g.setBlendMode("alpha")
+    g.setShader()
+    g.setColor(1, 1, 1, 1)
+    g.push()
+    g.scale(raster, raster)
+    g.translate(pad, pad)
+
+    if style == "oras" and battle.safari then
+      -- Safari is a real four-action battle menu, but it has no acting player
+      -- battler and therefore cannot reuse FIGHT/PKMN/ITEM icon semantics.
+      -- Keep the ORAS glass language while rendering its native BALL / BAIT /
+      -- ROCK / RUN actions as explicit cards. Input remains the engine's
+      -- menuIndex, so this is presentation-only and preserves Safari logic.
+      FloatingHud.drawStyleSurface("command", logicalW, logicalH, k)
+      local gap = 6
+      local marginX, marginY = 8, 7
+      local cardW = (logicalW - marginX * 2 - gap) * 0.5
+      local cardH = (logicalH - marginY * 2 - gap) * 0.5
+      local commandHits = {}
+      local cursorX, cursorY = logicalW * 0.5, logicalH * 0.5
+      for i = 1, 4 do
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        local x = marginX + col * (cardW + gap)
+        local y = marginY + row * (cardH + gap)
+        local focused = i == selected
+        local pulse = 0.5 + 0.5 * math.sin((battle.frame or 0) * 0.12)
+        g.setColor(0.012, 0.038, 0.055, 0.95)
+        g.rectangle("fill", x, y, cardW, cardH, 7, 7)
+        g.setColor(0.22, 0.86, 1.00,
+          focused and (0.28 + pulse * 0.16) or 0.12)
+        g.rectangle("fill", x + 2, y + 2, cardW - 4, cardH - 4, 6, 6)
+        g.setColor(focused and 1 or 0.28,
+                   focused and 1 or 0.88,
+                   1, focused and 0.98 or 0.78)
+        g.setLineWidth(focused and 2 or 1)
+        g.rectangle("line", x, y, cardW, cardH, 7, 7)
+        g.setLineWidth(1)
+        drawShadowTextCentered(labels[i], x + cardW * 0.5,
+                               y + cardH * 0.5 - 4, k, 0.82)
+        commandHits[#commandHits + 1] = {
+          action="command", index=i, x=x, y=y, w=cardW, h=cardH,
+        }
+        if focused then cursorX, cursorY = x + cardW * 0.5, y end
+      end
+      battle._ascendantBattleHudCommandLogicalHits = commandHits
+      FloatingHud.drawHandCursor(cursorX, cursorY, 0.82, battle.frame)
+    elseif style == "oras" then
+      -- No enclosing dock. Measure the actual localized sprites, flow the
+      -- secondary actions into one compact centred row, then place FIGHT just
+      -- above that row. Neither ultrawide nor phone canvases can stretch the
+      -- spaces because the gaps have fixed responsive bounds.
+      local rowEntries, fightEntry, entries, rowTop, actionGap, megaArmed, frame =
+        FloatingHud.orasCommandLayout(battle, logicalW, logicalH)
       local commandHits = {}
       -- Split the visual gap at one shared boundary. FIGHT owns the upper half
       -- and every lower-row action owns the lower half, so padded touch targets
@@ -7820,6 +7849,17 @@ do
     ChoiceBox.__floatingBattleHudChoicePatched = true
     local baseNew = ChoiceBox.new
 
+    local function isDirectBattleChoice(game, choice, battle)
+      local states = game and game.stack and game.stack.states
+      if type(states) ~= "table" then return false end
+      for index, state in ipairs(states) do
+        if state == choice then return states[index - 1] == battle end
+      end
+      -- Construction happens before push. A bag/party confirmation belongs
+      -- to that screen even while the underlying battle waits in messages.
+      return states[#states] == battle
+    end
+
     local function claimBattleChoice(choice, battle, sourceText)
       if not floatingCommandsEnabled(battle) then return choice end
       if not (choice and battle) then return choice end
@@ -7894,7 +7934,8 @@ do
             and nicknameText.__floatingBattleNicknameText == battle then
           return claimBattleChoice(choice, battle, nicknameText)
         end
-        if choice and battle and battle.phase == "messages" then
+        if choice and battle and battle.phase == "messages"
+            and isDirectBattleChoice(game, choice, battle) then
           return claimBattleChoice(choice, battle, nil)
         end
         return choice
@@ -7921,7 +7962,8 @@ do
           and getmetatable(state) == ChoiceBox
         local isBattleChoice = state and battle and battle.phase == "messages"
           and (state.__floatingBattleChoice == battle
-               or getmetatable(state) == ChoiceBox)
+               or (getmetatable(state) == ChoiceBox
+                 and isDirectBattleChoice(game, state, battle)))
         if isLearnChoice or isNicknameChoice or isBattleChoice then
           claimBattleChoice(state, battle,
                             (isLearnChoice or isNicknameChoice) and sourceText or nil)
@@ -8222,10 +8264,15 @@ function FloatingHud.cameraBounds(battle, shot)
     end
   end
 
-  local flowRect, flowId
+  local flowRect, flowId, commandBounds
   if floatingCommandsEnabled(battle) and not battle.introBalls then
     if battle.phase == "menu" then
-      flowRect, flowId = HudRuntime.commandRectFor(shot), "command"
+      local k, w, h
+      flowRect, k, w, h = HudRuntime.commandRectFor(shot)
+      flowId = "command"
+      if flowRect and hudStyle() == "oras" and not battle.safari then
+        commandBounds = FloatingHud.orasCommandBounds(battle, flowRect, k, w, h)
+      end
     elseif battle.phase == "moveSelect" and not battle.safari then
       flowRect, flowId = HudRuntime.fightRectFor(shot), "fight"
     elseif battle.phase == "messages" or battleMessageActive(battle) then
@@ -8235,7 +8282,7 @@ function FloatingHud.cameraBounds(battle, shot)
 
   -- Calculate this once before proposing status geometry. The identical rect
   -- is both a latch obstacle and the public camera reservation below.
-  local statusReserved = flowRect and { flowRect } or {}
+  local statusReserved = commandBounds or (flowRect and { flowRect } or {})
   local safariRect = FloatingHud.safariBallCountBounds(battle, shot)
   if safariRect then statusReserved[#statusReserved + 1] = safariRect end
 
@@ -8285,7 +8332,15 @@ function FloatingHud.cameraBounds(battle, shot)
     and (flowId == "command" or flowId == "fight" or flowId == "message")
     and math.abs((flowRect[2] or 0) + (flowRect[4] or 0) - shot.ph) < 1e-6
     and "physical-bottom-dock" or nil
-  add(flowId, flowRect, nil, nil, nil, flowSafeAreaPolicy)
+  if commandBounds then
+    for _, rect in ipairs(commandBounds) do
+      local policy = math.abs(rect[2]+rect[4]-shot.ph) < 1e-6
+        and "physical-bottom-dock" or nil
+      add("command", rect, nil, nil, nil, policy)
+    end
+  else
+    add(flowId, flowRect, nil, nil, nil, flowSafeAreaPolicy)
+  end
 
   local left, top, right, bottom = FloatingHud.safeInsets(shot)
   return {

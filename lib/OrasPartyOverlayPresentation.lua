@@ -93,9 +93,9 @@ local function drawString(value, x, y, scale)
   end
 end
 
-local function bagDialogPanel(title)
+local function bagDialogPanel(title, top)
   local g = love.graphics
-  local x, y, w, h = 184, 211, 316, 65
+  local x, y, w, h = 184, top or 211, 316, 65
   rounded(C.navy2, x, y, w, h, 6)
   rounded(C.cream, x + 4, y + 4, w - 8, h - 8, 5)
   rounded(C.paper, x + 8, y + 8, w - 16, h - 16, 4)
@@ -224,11 +224,11 @@ function O.drawBagActionMenu(self)
 end
 
 
-function O.decorateBagActionMenu(state)
+function O.decorateBagActionMenu(state, opts)
   if type(state) ~= "table" then return state end
   if state.__vascOrasWideBagAction then return state end
   state.__vascOrasWideBagAction = true
-  prepareWide(state, false)
+  prepareWide(state, opts)
   state.draw = O.drawBagActionMenu
   state.drawWidescreen = state.draw
   return state
@@ -254,11 +254,11 @@ function O.drawBagQuantity(self)
 end
 
 
-function O.decorateBagQuantity(state)
+function O.decorateBagQuantity(state, opts)
   if type(state) ~= "table" then return state end
   if state.__vascOrasWideBagQuantity then return state end
   state.__vascOrasWideBagQuantity = true
-  prepareWide(state, false)
+  prepareWide(state, opts)
   state.draw = O.drawBagQuantity
   state.drawWidescreen = state.draw
   return state
@@ -266,7 +266,7 @@ end
 
 
 function O.drawBagChoice(self)
-  local x, y = bagDialogPanel(Strings("CONFIRM"))
+  local x, y = bagDialogPanel(Strings("CONFIRM"), 118)
   local labels = type(self.labels) == "table" and self.labels
     or { "YES", "NO" }
   local cellW = 132
@@ -285,11 +285,11 @@ function O.drawBagChoice(self)
 end
 
 
-function O.decorateBagChoice(state)
+function O.decorateBagChoice(state, opts)
   if type(state) ~= "table" then return state end
   if state.__vascOrasWideBagChoice then return state end
   state.__vascOrasWideBagChoice = true
-  prepareWide(state, false)
+  prepareWide(state, opts)
   state.draw = O.drawBagChoice
   state.drawWidescreen = state.draw
   return state

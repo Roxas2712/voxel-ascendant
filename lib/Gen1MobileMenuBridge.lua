@@ -112,6 +112,11 @@ local function logicalSize(state, hasWide)
 end
 
 function M.attach(state)
+  if type(MobileMenuPresentation) == "table"
+      and type(MobileMenuPresentation.isMobileRuntime) == "function"
+      and not MobileMenuPresentation.isMobileRuntime() then
+    return state, false, "desktop-native-path"
+  end
   if type(state) == "table" and state.__vascGen1MobileMenuBridge then
     return state, true, state.__vascMobileMenuOwner or "already-attached"
   end

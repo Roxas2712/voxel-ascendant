@@ -1246,6 +1246,43 @@ local function renderedActorFrameRescue(arena, groundY, camera, pitch, reason,
   return nil
 end
 
+-- DISCS has no terrain corridors to solve, but a new large battler still
+-- needs a readable camera. Keep both platforms/actors fixed and test a small
+-- set of bearings against the same final HUD/actor evaluator.
+local function renderedPortableFrameRescue(arena, groundY, camera, pitch, context)
+  if not (arena and (arena.discs or arena.arenaStyle) and camera)
+      or (context and context.manual) then return nil end
+  if sameScreenOwner(lastScreenSafe, arena, activeBattle) then
+    local safe = screenSafeCamera(activeBattle, arena, groundY,
+      lastScreenSafe.camera, context)
+    if safe == true then return copyCamera(lastScreenSafe.camera), lastScreenSafe.pitch end
+  end
+  local base = tonumber(camera.fov)
+  if not (base and base > 0 and base < math.pi) then return nil end
+  local x = camera.eye[1] - camera.focus[1]
+  local z = camera.eye[3] - camera.focus[3]
+  for _, angle in ipairs(arena.arenaStyle and {0}
+      or {0,15,-15,30,-30,45,-45,60,-60,90,-90}) do
+    local c, s = math.cos(math.rad(angle)), math.sin(math.rad(angle))
+    for _, factor in ipairs({1,1.25,1.5,1.75}) do
+      local candidate = copyCamera(camera)
+      candidate.eye[1] = camera.focus[1] + x*c - z*s
+      candidate.eye[3] = camera.focus[3] + x*s + z*c
+      candidate.fov = 2 * math.atan(math.tan(base*.5)*factor)
+      local safe = screenSafeCamera(activeBattle, arena, groundY, candidate, {
+        phase="portable-rendered-recovery",actual=true,
+      })
+      if safe == true then
+        pendingScreenProbe = nil
+        lastScreenSafe = {arena=arena,battle=activeBattle,
+          camera=copyCamera(candidate),pitch=pitch}
+        return candidate, pitch
+      end
+    end
+  end
+  return nil
+end
+
 -- Definitive provider-neutral safety gate for the camera that will actually
 -- be rendered. Candidate search is deliberately allowed to be approximate;
 -- this check runs after easing and after the physical-world fallback in rig,
@@ -1286,6 +1323,14 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
   end
 
   if safe == false then
+    local portable, portablePitch = renderedPortableFrameRescue(
+      arena, groundY, camera, pitch, context)
+    if portable then
+      BattleCam.screenSafetyOK = true
+      BattleCam.screenSafetyReason = "portable-rendered-recovery"
+      BattleCam.screenSafetyFallbackUsed = true
+      return portable, portablePitch
+    end
     local rescued, rescuedPitch = renderedActorFrameRescue(
       arena, groundY, camera, pitch, reason, context)
     if rescued then return rescued, rescuedPitch end

@@ -1,0 +1,10 @@
+local f=assert(io.open('gen2/lib/StadiumRig.lua'));local s=f:read('*a');f:close()
+local a=assert(s:find('function StadiumRig:groundBounds',1,true));local b=assert(s:find('-- Conservative full-3D',a,true))
+local Rig={};local fn=assert(loadstring(s:sub(a,b-1)));setfenv(fn,setmetatable({StadiumRig=Rig,finite=function(v)return type(v)=='number' and v==v end},{__index=_G}));fn()
+local I={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}
+local actor=setmetatable({parts={{rows={{-.2,0,0},{.4,0,0},{5,10,0}}}},posedBounds=function()return -.2,0,0,5,10,0 end},{__index=Rig})
+local b=actor:groundBounds(I,I,0)
+assert(math.abs(b[1]-.4)<1e-6 and math.abs(b[3]-.3)<1e-6,'feet not measured or upper body used as floor')
+I[4]=.2;local moved=actor:groundBounds(I,{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},0)
+assert(math.abs(moved[1]-.5)<1e-6,'resolver model position missing from contact receipt')
+print('Stadium ground footprint: ok')

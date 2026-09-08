@@ -244,6 +244,13 @@ function VoxelScene.skyColor(map, t)
   return sceneSkyColor(map, t, false)
 end
 
+-- Authored arena paintings expose transparent sky even on the compact mobile
+-- world path. Resolve that background independently of overworld scenery;
+-- indoor/canopy rules and the user's SKY setting still apply.
+function VoxelScene.arenaSkyColor(map, t)
+  return sceneSkyColor(map, t, true)
+end
+
 -- The free-roam sky: the flat one above, dressed with the banded gradient
 -- (lib/Sky.lua).
 --

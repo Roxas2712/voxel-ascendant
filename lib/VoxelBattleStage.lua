@@ -1106,7 +1106,8 @@ local function backdropImage(arena, outdoor)
       if data.release then pcall(data.release, data) end
       error("Arena Scenery dimensions changed")
     end
-    local analysed = analyseBackdropComposition(data, w, h)
+    local analysed = V.require("ArenaGround").resolve(selectedPath, data, w, h)
+      or analyseBackdropComposition(data, w, h)
     local okImage, out = pcall(love.graphics.newImage, data)
     if data.release then pcall(data.release, data) end
     if not okImage or not out then
@@ -1185,8 +1186,8 @@ function VoxelBattleStage.presentationComposition(arena, trainer)
       and enemy.x - player.x >= .27
       and player.x >= .14 and player.x <= .86
       and enemy.x >= .14 and enemy.x <= .86
-      and player.y >= .46 and player.y <= .74
-      and enemy.y >= .46 and enemy.y <= .74) then
+      and player.y >= .46 and player.y <= .86
+      and enemy.y >= .46 and enemy.y <= .86) then
     return nil
   end
   -- Do not expose the mutable cache record to scene/profile consumers.
@@ -1194,6 +1195,9 @@ function VoxelBattleStage.presentationComposition(arena, trainer)
     player={x=player.x, y=player.y},
     enemy={x=enemy.x, y=enemy.y},
     source=composition.source,
+    regions=composition.regions,
+    contactRadiusX=composition.contactRadiusX,
+    contactRadiusY=composition.contactRadiusY,
   }
 end
 

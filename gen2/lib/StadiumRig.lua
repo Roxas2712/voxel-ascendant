@@ -744,6 +744,36 @@ function StadiumRig:projectedBounds(mvp, pw, ph)
     lo1, lo2, lo3, hi1, hi2, hi3
 end
 
+-- Project the lower contact band onto the arena floor. This measures the
+-- actual posed feet/base, rather than assuming every species has one point
+-- of support or using an upper tail/wing as its footprint.
+function StadiumRig:groundBounds(model, vp, groundY)
+  local _, low, _, _, high = self:posedBounds()
+  if not (low and high) then return nil end
+  local cutoff = low + (high-low)*.08
+  local left, top, right, bottom
+  for _, part in ipairs(self.parts or {}) do
+    for _, row in ipairs(part.rows or {}) do
+      local x,y,z = row[1],row[2],row[3]
+      if finite(x) and finite(y) and finite(z) and y <= cutoff then
+        local wx = model[1]*x + model[2]*y + model[3]*z + model[4]
+        local wz = model[9]*x + model[10]*y + model[11]*z + model[12]
+        local cx = vp[1]*wx + vp[2]*groundY + vp[3]*wz + vp[4]
+        local cy = vp[5]*wx + vp[6]*groundY + vp[7]*wz + vp[8]
+        local cw = vp[13]*wx + vp[14]*groundY + vp[15]*wz + vp[16]
+        if not (finite(cw) and cw > 1e-9) then return nil end
+        local sx,sy = cx/cw*.5+.5,cy/cw*.5+.5
+        left = left and math.min(left,sx) or sx
+        right = right and math.max(right,sx) or sx
+        top = top and math.min(top,sy) or sy
+        bottom = bottom and math.max(bottom,sy) or sy
+      end
+    end
+  end
+  if not left then return nil end
+  return {left,top,right-left,bottom-top}
+end
+
 -- Conservative full-3D version of StadiumBuild.idleIsBroken.  This one runs
 -- from the already-packed DSM data, so users keep protection even when their
 -- cache predates the extractor fix and no Stadium 2 ROM is currently mounted.

@@ -803,6 +803,49 @@ function Stadium.guard(side, mon, what, fn)
   return false, tostring(err)
 end
 
+-- Candidate camera queries must not move the live actor. Compute the same
+-- floor/facing transform from the shared scene layout on a temporary pose.
+function Stadium.groundFootprint(side, vp, groundY, matrix)
+  local mon = session and session[side]
+  if not (mon and mon.visible and mon.rig and mon.rig.groundBounds) then return nil end
+  return mon.rig:groundBounds(matrix or mon.model_matrix, vp, groundY)
+end
+
+function Stadium.matchesVisualReceipt(actor)
+  local side = type(actor) == "table" and actor.side
+  local mon = session and session[side]
+  local battler = session and session.at and session.at[side]
+  return mon ~= nil and battler ~= nil and mon.visible == true
+    and mon.rig ~= nil and actor.battler == battler
+    and actor.mon == battler.mon and actor.textureToken == mon.rig
+    and actor.modelKey == "stadium:" .. tostring(mon.species)
+end
+
+function Stadium.presentationMatrices(layout)
+  local matrices = {}
+  if not (session and type(layout) == "table") then return matrices end
+  for _, side in ipairs({ "player", "enemy" }) do
+    local mon = session[side]
+    local point = layout[side]
+    local other = layout[side == "player" and "enemy" or "player"]
+    if mon and mon.model and point and other then
+      local pose = setmetatable({
+        scale=(mon.scale or 1) * (layout.actorScale and layout.actorScale[side] or 1),
+      }, { __index=mon })
+      matrices[side] = pose:matrix(point[1], point[2], point[3],
+        other[1] - point[1], other[3] - point[3])
+    end
+  end
+  return matrices
+end
+
+function Stadium.commitPresentation(layout)
+  local matrices = Stadium.presentationMatrices(layout)
+  for side, matrix in pairs(matrices) do
+    session[side].model_matrix = matrix
+  end
+end
+
 function Stadium.draw(pull)
   if not session then return true end
   local failures = {}
@@ -954,10 +997,12 @@ end
 
 Stadium._receiptAnchors = receiptAnchors
 
-function Stadium.visualReceipt(side, vp, pw, ph, renderToken)
+function Stadium.visualReceipt(side, vp, pw, ph, renderToken, presentationMatrix)
   if side ~= "player" and side ~= "enemy" then return nil end
   local mon = session and session[side]
   if not (mon and mon.visible and mon.rig and mon.model_matrix) then return nil end
+
+  local modelMatrix = presentationMatrix or mon.model_matrix
 
   -- First ask the rig for the screen envelope of the exact skinned vertices
   -- already submitted to its meshes. Projecting a model-space AABB's eight
@@ -965,9 +1010,9 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken)
   -- corner often does not belong to the visible Pokemon at all. That phantom
   -- corner was the remaining vertical difference from Gen 1's alpha-ink head
   -- receipt even though card size and layout were already identical.
-  local hull, exactHeadY
+  local hull, exactHeadY, inkHull
   if type(mon.rig.projectedBounds) == "function" then
-    local mvpOk, mvp = pcall(Mat4.mul, vp, mon.model_matrix)
+    local mvpOk, mvp = pcall(Mat4.mul, vp, modelMatrix)
     if mvpOk then
       local exactOk, left, top, width, height,
         x0, y0, z0, x1, y1, z1 = pcall(
@@ -975,13 +1020,11 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken)
       if exactOk and tonumber(left) and tonumber(top)
           and tonumber(width) and tonumber(height)
           and width > 0 and height > 0 then
-        -- Preserve the reviewed conservative actor hull, head X and foot.
-        -- Only the vertical head owner uses the visible vertex top. The
-        -- model-space AABB was collected by projectedBounds in the same rows
-        -- scan, so SMART recovery does not pay for a second vertex walk.
-        hull = projectPosedBounds(vp, mon.model_matrix,
-          { x0, y0, z0, x1, y1, z1 }, pw, ph)
-        if hull then exactHeadY = top end
+        inkHull = { left, top, width, height }
+        -- Every submitted vertex is enclosed by this screen rectangle.
+        -- Projected model-space AABB corners can contain large empty areas;
+        -- treating them as ink rejects valid ground/HUD placements.
+        hull, exactHeadY = inkHull, top
       end
     end
   end
@@ -991,7 +1034,7 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken)
   if not hull and type(mon.rig.posedBounds) == "function" then
     local ok, x0, y0, z0, x1, y1, z1 = pcall(mon.rig.posedBounds, mon.rig)
     if ok then
-      hull = projectPosedBounds(vp, mon.model_matrix,
+      hull = projectPosedBounds(vp, modelMatrix,
         { x0, y0, z0, x1, y1, z1 }, pw, ph)
     end
   end
@@ -1004,6 +1047,7 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken)
     schema="voxel-ascendant/actor-render/v1",
     side=side, renderToken=renderToken,
     hull=hull,
+    inkHull=inkHull,
     head=head,
     foot=foot,
     battler=battler, mon=semanticMon,

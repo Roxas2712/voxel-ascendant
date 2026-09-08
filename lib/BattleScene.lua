@@ -808,12 +808,13 @@ function BattleScene.cameraSafetyShot(arena, groundY, camera, textures, map,
   local geometry = projectedArenaGeometry and projectedArenaGeometry(
     arena, groundY, textures, map or arena.map, vp, pw, ph, lx, ly, s)
   if not geometry then return nil end
+  shot.groundRegions = geometry.layout and geometry.layout.groundRegions
   shot.player, shot.enemy = geometry.player, geometry.enemy
   shot.playerSpan, shot.enemySpan = geometry.playerSpan, geometry.enemySpan
   shot.actorHulls, shot.actorFeet = geometry.actorHulls, geometry.actorFeet
-  if textures and actorVisualsFor then
+  if actorVisualsFor then
     shot.actorVisuals = actorVisualsFor(
-      arena, groundY, textures, map or arena.map, vp, pw, ph,
+      arena, groundY, textures or {}, map or arena.map, vp, pw, ph,
       renderToken, fitted.eye)
   end
   return shot
@@ -886,6 +887,9 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
         or pny < .46 or pny > .74 or eny < .46 or eny > .74
         or math.abs(pnx - playerMark.x) + math.abs(pny - playerMark.y) > .20
         or math.abs(enx - enemyMark.x) + math.abs(eny - enemyMark.y) > .20
+      if playerComposition.regions then
+        pairUnsafe = true
+      end
       if pairUnsafe then
         local px, pz = BattleScene.worldAtNormalized(
           vp, playerMark.x, playerMark.y, layout.player[2])
@@ -894,8 +898,33 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
         if px and ex then
           layout.player[1], layout.player[3] = px, pz
           layout.enemy[1], layout.enemy[3] = ex, ez
+          layout.groundRegions = playerComposition.regions
           layout.smartArenaComposition = playerComposition.source
             or enemyComposition.source or "automatic"
+        end
+      end
+    end
+  end
+  if layout.groundRegions and V.stadium2ForGen1 then
+    local stadium, Ground = V.require("Stadium"), V.require("ArenaGround")
+    if stadium.presentationMatrices and stadium.groundFootprint then
+      for _=1,2 do
+        local matrices=stadium.presentationMatrices(layout)
+        for _,side in ipairs({"player","enemy"}) do
+          local point=layout[side]
+          local footprint=stadium.groundFootprint(side,vp,point[2],matrices[side])
+          if footprint then
+            local x,y=normalizedProjection(vp,unpack(point))
+            local other=side=="player" and layout.enemy or layout.player
+            local ox=normalizedProjection(vp,unpack(other))
+            local minX=side=="player" and .20 or math.max(.54,ox+.27)
+            local maxX=side=="player" and .46 or .80
+            local mark=Ground.fit(layout.groundRegions,{x=x,y=y},footprint,minX,maxX)
+            if mark then
+              local wx,wz=BattleScene.worldAtNormalized(vp,mark.x,mark.y,point[2])
+              if wx and wz then point[1],point[3]=wx,wz end
+            end
+          end
         end
       end
     end
@@ -912,7 +941,10 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
   local enemyWidth = enemyMetrics and tonumber(enemyMetrics.worldInkWidth)
   if not (playerWidth and playerWidth > 0
           and enemyWidth and enemyWidth > 0) then return layout end
-  if layout.profilePosition.player or layout.profilePosition.enemy then
+  if layout.profilePosition.player or layout.profilePosition.enemy
+      or layout.smartArenaComposition == "reviewed-ground/v1" then
+    -- A later width spread must not move a reviewed contact patch into water
+    -- or across a wall. Camera framing handles large pairs at these marks.
     return layout
   end
   local excess = playerWidth + enemyWidth
@@ -1109,10 +1141,18 @@ actorVisualsFor = function(arena, groundY, textures, map, vp, pw, ph,
   local okStadium, stadium = pcall(V.require, "Stadium")
   if okStadium and type(stadium) == "table"
       and type(stadium.visualReceipt) == "function" then
+    local presentation = V.stadium2ForGen1 and BattleScene.presentationLayout(
+      arena, groundY, textures, map, vp)
+    local matrices = presentation and stadium.presentationMatrices
+      and stadium.presentationMatrices(presentation) or {}
     for _, side in ipairs({ "player", "enemy" }) do
       local okReceipt, receipt = pcall(
-        stadium.visualReceipt, side, vp, pw, ph, renderToken)
+        stadium.visualReceipt, side, vp, pw, ph, renderToken, matrices[side])
       if okReceipt and type(receipt) == "table" then
+        if V.stadium2ForGen1 and arena.arenaStyle and stadium.groundFootprint then
+          receipt.groundFootprint = stadium.groundFootprint(side, vp,
+            presentation[side] and presentation[side][2] or groundY, matrices[side])
+        end
         visuals[side] = receipt
       end
     end
@@ -1673,6 +1713,13 @@ function BattleScene.render(state, arena, textures, token)
   -- and the real one is rebuilt inside the scene below.
   Voxel3D.camera = cam
   local provisionalVP = Voxel3D.viewProjection(cx, cy, vw, vh)
+  if V.stadium2ForGen1 then
+    local stadium = V.require("Stadium")
+    if type(stadium.commitPresentation) == "function" then
+      stadium.commitPresentation(BattleScene.presentationLayout(
+        arena, groundY, textures, host, provisionalVP))
+    end
+  end
   local cards = monCards(arena, groundY, textures, host, provisionalVP)
   Voxel3D.camera = nil
   castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh, atlasFor,
@@ -1684,7 +1731,12 @@ function BattleScene.render(state, arena, textures, token)
   -- of the same ramp, which is a room's "past the wall". Transparent -- the
   -- free-roam default -- would let the letterbox clear through wherever the
   -- geometry stops.
-  local mapSky = VoxelScene.skyColor(host, 1)
+  local mapSky
+  if discs and arena.arenaStyle then
+    mapSky = VoxelScene.arenaSkyColor(host, 1)
+  else
+    mapSky = VoxelScene.skyColor(host, 1)
+  end
   local sky = mapSky or VoxelScene.skyShade(INDOOR_SHADE, 1)
   local diskBackground = discs and arena.diskStyle
       and V.require("VoxelBattleStage").diskBackgroundColor(arena) or nil
@@ -1844,7 +1896,23 @@ function BattleScene.render(state, arena, textures, token)
     -- surface for ShadowMap to shade. Put the bounded soft contact ellipses
     -- onto that painting before the Pokemon themselves; OFF performs no draw.
     if screenBackdrop then
-      drawBackdropShadows(cards, groundY, portableBackdrop)
+      local contacts = {}
+      for _, card in ipairs(cards) do contacts[#contacts+1] = card end
+      if V.stadium2ForGen1 then
+        local stadium = V.require("Stadium")
+        local layout = BattleScene.presentationLayout(
+          arena, groundY, textures, host, provisionalVP)
+        for _, side in ipairs({ "player", "enemy" }) do
+          local actor = stadium.stage1Actor(side)
+          local point = layout[side]
+          if actor and actor.visible and actor.model and point then
+            local radius = math.max(2.5, math.min(7.5, actor:worldRadius()*.4))
+            contacts[#contacts+1] = {shadowFoot=point,
+              shadowRadius={radius, math.min(4.2, radius*.58)}}
+          end
+        end
+      end
+      drawBackdropShadows(contacts, groundY, portableBackdrop)
     end
     -- The mons, standing on their tiles. Depth-tested like everything else,
     -- so a ledge or a tree between the camera and a Pokemon really is in
@@ -1881,7 +1949,18 @@ function BattleScene.render(state, arena, textures, token)
     Voxel3D.glass(true)
     Voxel3D.seams(true)
     local okModel, drawn, drawErr = pcall(function()
-      return V.require("Stadium").draw(BattleBillboard.PULL)
+      local stadium = V.require("Stadium")
+      if screenBackdrop then
+        -- The bitmap has no physical shadow receiver. Use the same contact
+        -- treatment as sprites instead of darkening a model with its own
+        -- packed depth silhouette.
+        local accepted, reason
+        withoutCardShadowReception(function()
+          accepted, reason = stadium.draw(BattleBillboard.PULL)
+        end)
+        return accepted, reason
+      end
+      return stadium.draw(BattleBillboard.PULL)
     end)
     if not okModel or drawn == false then
       local okStadium, stadium = pcall(V.require, "Stadium")

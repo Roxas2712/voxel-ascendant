@@ -1858,10 +1858,12 @@ V.stadiumRomOptionsInstalled = V.StadiumRomMenu.installOptionsHook(mod)
 V.stadiumRomManagerOptionsInstalled =
   V.StadiumRomMenu.installModManagerOptions(mod)
 if mod.events and type(mod.events.on) == "function" then
-  mod.events:on("game.ready", function(game)
+  mod.events:on("game.ready", function(payload)
     -- Stadium's shared actor path needs the live Gen1 species catalogue.
     -- The safe Stadium-2 bind-pose policy comes from stadium2ForGen1 above,
     -- not Gold's game.world field (Gen1 owns game.overworld).
+    local game = type(payload) == "table" and (payload.game or payload) or nil
+    if not (game and game.data) then return end
     V.game = game
     pcall(V.StadiumRomMenu.poll, game)
   end)
