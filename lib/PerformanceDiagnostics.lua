@@ -774,9 +774,10 @@ function PerformanceDiagnostics.reportHud(receipt)
   local signature = table.concat({ tostring(receipt.hud), tostring(w), tostring(h),
     tostring(receipt.orientation), tostring(receipt.axis), tostring(bad),
     tostring(receipt.target), tostring(receipt.contract),
-    tostring(receipt.presentationApplied),
-    tostring(receipt.playerX), tostring(receipt.playerY),
-    tostring(receipt.enemyX), tostring(receipt.enemyY) }, "|")
+    tostring(receipt.presentationApplied), tostring(receipt.reason) }, "|")
+  -- Moving cameras and animations change anchor coordinates every frame.
+  -- Keep the live receipt above, but log coordinates on the periodic sample
+  -- or a structural/health change instead of turning motion into log traffic.
   local shouldLog = signature ~= PerformanceDiagnostics.lastHudSignature
     or now() - PerformanceDiagnostics.lastHudLogAt >= 10
   if shouldLog then

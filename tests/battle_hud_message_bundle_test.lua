@@ -116,6 +116,7 @@ check(mainSource:find(
 local factory = assert(loadfile("battle_hud_oras.lua"))()
 local hud = assert(factory(mod, {
   MessageLayout=MessageLayout,
+  ReportHud=function() end,
   RegisterDefaultBattleHudProvider=
     ownerOverworldBattle.setDefaultBattleHudProvider,
 }))
@@ -136,6 +137,8 @@ eq(ownerOverworldBattle.partyRects, ownerPartyRects,
   "ORAS factory replaced the private party-placement owner")
 
 for _, name in ipairs(publicLookups) do
+  check(name ~= "PerformanceDiagnostics",
+    "bundled HUD tried to access private monitor through companion facade")
   check(name ~= "OrasBattleMessageLayout",
     "private message layout leaked through the public facade")
 end

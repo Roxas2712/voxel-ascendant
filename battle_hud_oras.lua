@@ -73,12 +73,16 @@ do
     Diagnostics = value
   end
 end
-local PerformanceDiagnostics
-do
+-- The public companion facade intentionally hides the monitor. The bundled
+-- HUD receives only a report callback; no diagnostics settings or storage
+-- capabilities need to become public just to acknowledge the first frame.
+local reportPerformanceHud = type(Bundle.ReportHud) == "function"
+  and Bundle.ReportHud or nil
+if not reportPerformanceHud then
   local ok, value = pcall(V.require, "PerformanceDiagnostics")
   if ok and type(value) == "table"
       and type(value.reportHud) == "function" then
-    PerformanceDiagnostics = value
+    reportPerformanceHud = value.reportHud
   end
 end
 local EditionAccent = ds.exports.editionAccent
@@ -6326,7 +6330,7 @@ local function drawFloatingSceneUI(battle, shot, includeTextGlass, deferCommit)
   end
 
   battle._floatingBattleBottomDrawn = bottomKind
-  if PerformanceDiagnostics then
+  if reportPerformanceHud then
     local player = statusProposal and statusProposal.slots
       and statusProposal.slots.player
     local enemy = statusProposal and statusProposal.slots
@@ -6339,7 +6343,7 @@ local function drawFloatingSceneUI(battle, shot, includeTextGlass, deferCommit)
       local sampled, value = pcall(love.window.getDisplayOrientation)
       if sampled then orientation = value end
     end
-    pcall(PerformanceDiagnostics.reportHud, {
+    pcall(reportPerformanceHud, {
       hud="GEN1-ORAS", viewportWidth=shot.pw, viewportHeight=shot.ph,
       orientation=orientation, source=PLATFORM_OS or "desktop",
       inBounds=not statusProposal or statusProposal.safe ~= false,

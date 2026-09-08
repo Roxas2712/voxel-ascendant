@@ -2296,6 +2296,9 @@ mod.events:once("mods.loaded", function()
       local factory = chunkFor("battle_hud_oras.lua")()
       return factory(mod, {
         MessageLayout=V.require("OrasBattleMessageLayout"),
+        ReportHud=function(receipt)
+          return PerformanceDiagnostics.reportHud(receipt)
+        end,
         -- Keep the public OverworldBattle facade read-only.  The bundled HUD
         -- receives only the exact default-provider registration capability it
         -- needs; neither the raw renderer nor its external provider slot
