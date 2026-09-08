@@ -47,6 +47,10 @@ local function presentationLanguage(game)
   return "en"
 end
 
+local function localized(game, english, german)
+  return presentationLanguage(game) == "de" and german or english
+end
+
 local function diagnostic(event, fields)
   if type(Diagnostics.write) == "function" then
     pcall(Diagnostics.write, event, fields)
@@ -1543,7 +1547,7 @@ local function namingRenderer(screen, ww, wh)
   local metaFont = font(math.max(11 * s, wh * 0.014))
   if titleFont then G.setFont(titleFont) end
   G.setColor(1, 1, 1, 0.98)
-  G.print(screen.monName and "SPITZNAME" or "NAMENSEINGABE",
+  G.print(screen.monName and localized(screen.game, "NICKNAME", "SPITZNAME") or localized(screen.game, "NAME ENTRY", "NAMENSEINGABE"),
     x + w * 0.035, y + headerH * 0.20)
   if metaFont then G.setFont(metaFont) end
   G.setColor(1, 1, 1, 0.58)
@@ -1582,7 +1586,7 @@ local function namingRenderer(screen, ww, wh)
   end
   if metaFont then G.setFont(metaFont) end
   G.setColor(1, 1, 1, 0.48)
-  G.printf("DEIN NAME", px + gap, py + ph * 0.73, pw - gap * 2, "center")
+  G.printf(localized(screen.game, "YOUR NAME", "DEIN NAME"), px + gap, py + ph * 0.73, pw - gap * 2, "center")
   local nameFont = font(math.max(19 * s, wh * 0.025))
   if nameFont then G.setFont(nameFont) end
   G.setColor(1, 1, 1, 0.98)
@@ -1624,7 +1628,7 @@ local function namingRenderer(screen, ww, wh)
     end
   end
   local bottomY = ky + rowGap + #rows * (cellH + rowGap)
-  local bottomLabels = { screen.lower and "GROSS" or "klein", "LÖSCHEN", "FERTIG" }
+  local bottomLabels = { screen.lower and localized(screen.game, "UPPER", "GROSS") or localized(screen.game, "lower", "klein"), localized(screen.game, "DELETE", "LÖSCHEN"), localized(screen.game, "DONE", "FERTIG") }
   local target = type(screen.bottomTarget) == "function" and screen:bottomTarget()
     or math.floor((tonumber(screen.col) or 0) / 3) + 1
   local onBottom = tonumber(screen.row) == #rows
@@ -1645,7 +1649,7 @@ local function namingRenderer(screen, ww, wh)
     G.printf(label, bx, bottomY + cellH * 0.27, bw, "center")
   end
 
-  footer(G, "STEUERKREUZ: AUSWAHL   A: EINGEBEN   B: LÖSCHEN   START: FERTIG",
+  footer(G, localized(screen.game, "D-PAD: SELECT   A: ENTER   B: DELETE   START: DONE", "STEUERKREUZ: AUSWAHL   A: EINGEBEN   B: LÖSCHEN   START: FERTIG"),
     x, y, w, h, gap, wh, s)
   endDraw()
   return true
@@ -2368,7 +2372,8 @@ M.decoratePackSortButton = decoratePackSortButton
 local function packBagAdapter(screen)
   local adapter = rawget(screen, "_vascGen2OrasBagAdapter")
   local style = selectedBagStyle()
-  if adapter and adapter._vascGen2BagStyle == style then return adapter end
+  local language = presentationLanguage(screen.game)
+  if adapter and adapter._vascGen2BagStyle == style and adapter.language == language then return adapter end
   local provider = style == "frlg_wide" and SharedFrlgBag or SharedBag
   if style == "external" then return nil, "GAME DEFAULT selected" end
   if not (provider and type(provider.decorate) == "function") then
@@ -2376,12 +2381,12 @@ local function packBagAdapter(screen)
   end
   adapter = {
     game=screen.game,
-    title="TASCHE",
+    title=localized(screen.game, "BAG", "TASCHE"),
     items={}, index=1, scroll=0, rows=9,
     draw=function() end,
     __pockets=PACK_POCKETS,
     __pocketCount=#PACK_POCKETS,
-    _vascGen2BagStyle=style,
+    _vascGen2BagStyle=style, language=language,
   }
   local ok, decorated, claimed, reason = pcall(provider.decorate, adapter, {
     wide=true,
@@ -2415,7 +2420,7 @@ local function packBagAdapter(screen)
       return editionChromeFor(screen)
     end,
     describeItem=function(item)
-      return item and item.description or "Wähle ein Item."
+      return item and item.description or localized(screen.game, "Choose an item.", "Wähle ein Item.")
     end,
   })
   if not ok or decorated ~= adapter or claimed ~= true then
@@ -2451,7 +2456,8 @@ local function drawPackBag(screen, ww, wh)
     }
   end
   items[#items + 1] = {
-    label="ZURÜCK", value="__cancel", description="Zurück zum START-Menü.",
+    label=localized(screen.game, "CANCEL", "ZURÜCK"), value="__cancel",
+    description=localized(screen.game, "Return to the START menu.", "Zurück zum START-Menü."),
   }
   local pocket = type(screen.pocket) == "function" and screen:pocket() or {}
   adapter.game = screen.game
@@ -2689,13 +2695,15 @@ local TRAINER_CARD_BADGE_CASE_ART =
   "assets/ui/gen2/trainer_card/hgss_badge_case_runtime.png"
 local TRAINER_CARD_REGIONS = {
   johto = {
-    title = "JOHTO-ORDEN",
+    title = "JOHTO-ORDEN", titleEn = "JOHTO BADGES",
+    leadersEn = { "FALKNER", "BUGSY", "WHITNEY", "MORTY", "CHUCK", "JASMINE", "PRYCE", "CLAIR" },
     badges = JOHTO_BADGES,
     leaders = { "FALK", "KAI", "BIANKA", "JENS", "HARTWIG", "JASMIN", "NORBERT", "SANDRA" },
     atlasRow = 0,
   },
   kanto = {
-    title = "KANTO-ORDEN",
+    title = "KANTO-ORDEN", titleEn = "KANTO BADGES",
+    leadersEn = { "BROCK", "MISTY", "LT. SURGE", "ERIKA", "JANINE", "SABRINA", "BLAINE", "BLUE" },
     badges = KANTO_BADGES,
     leaders = { "ROCKO", "MISTY", "MAJOR BOB", "ERIKA", "JANINA", "SABRINA", "PYRO", "BLAU" },
     atlasRow = 1,
@@ -2877,7 +2885,7 @@ local function drawTrainerBadgeSprite(regionName, index, cx, cy, size, owned)
   return true
 end
 
-local function drawTrainerLeaderTile(regionName, index, x, y, w, h, s, player)
+local function drawTrainerLeaderTile(regionName, index, x, y, w, h, s, player, game)
   local G = love.graphics
   local region = TRAINER_CARD_REGIONS[regionName]
   local owned = trainerRegionBadgeOwned(player, regionName, index)
@@ -2910,11 +2918,22 @@ local function drawTrainerLeaderTile(regionName, index, x, y, w, h, s, player)
 
   local textX = portraitX + portraitSize + 8*s
   local textW = w - (textX-x) - 40*s
-  local leaderFont = font(math.max(9*s, h*.14))
-  local badgeFont = font(math.max(7*s, h*.105))
+  local leaderText = localized(game, region.leadersEn[index], region.leaders[index])
+  local function fittedFont(text, size)
+    local pixels = math.max(5, math.floor(size + 0.5))
+    local result = font(pixels)
+    while result and textW > 0 and pixels > 5
+        and result:getWidth(text) > textW do
+      pixels = pixels - 1
+      result = font(pixels)
+    end
+    return result
+  end
+  local leaderFont = fittedFont(leaderText, math.max(9*s, h*.14))
+  local badgeFont = fittedFont(region.badges[index], math.max(7*s, h*.105))
   if leaderFont then G.setFont(leaderFont) end
   G.setColor(1, 1, 1, owned and .98 or .58)
-  G.printf(region.leaders[index], textX, y+h*.24, textW, "left")
+  G.printf(leaderText, textX, y+h*.24, textW, "left")
   if badgeFont then G.setFont(badgeFont) end
   G.setColor(accent[1], accent[2], accent[3], owned and .92 or .42)
   G.printf(region.badges[index], textX, y+h*.56, textW, "left")
@@ -2923,7 +2942,7 @@ local function drawTrainerLeaderTile(regionName, index, x, y, w, h, s, player)
   G.setLineWidth(1)
 end
 
-local function trainerBadgeCasePage(ww, wh, player, regionName)
+local function trainerBadgeCasePage(ww, wh, player, regionName, game)
   local G = love.graphics
   local region = TRAINER_CARD_REGIONS[regionName]
   local s = uiScaleFor(ww, wh)
@@ -2953,7 +2972,7 @@ local function trainerBadgeCasePage(ww, wh, player, regionName)
   local small = font(math.max(9*s, h*.022))
   if title then G.setFont(title) end
   G.setColor(1, 1, 1, .98)
-  G.print(region.title, x+pad*1.7, y+pad*1.55)
+  G.print(localized(game, region.titleEn, region.title), x+pad*1.7, y+pad*1.55)
   if small then G.setFont(small) end
   G.setColor(accent[1], accent[2], accent[3], 1)
   G.printf(tostring(trainerRegionBadgeCount(player, regionName)) .. " / 8",
@@ -2970,11 +2989,11 @@ local function trainerBadgeCasePage(ww, wh, player, regionName)
     local column = (index-1)%4
     local row = math.floor((index-1)/4)
     drawTrainerLeaderTile(regionName, index,
-      bodyX+column*(tileW+gap), bodyY+row*(tileH+gap), tileW, tileH, s, player)
+      bodyX+column*(tileW+gap), bodyY+row*(tileH+gap), tileW, tileH, s, player, game)
   end
   if small then G.setFont(small) end
   G.setColor(1, 1, 1, .58)
-  G.printf("LINKS/RECHTS: SEITE    A/B: ZURÜCK",
+  G.printf(localized(game, "LEFT/RIGHT: PAGE    A/B: BACK", "LINKS/RECHTS: SEITE    A/B: ZURÜCK"),
     x+pad, y+h-pad*1.25, w-pad*2, "center")
   return true
 end
@@ -3017,7 +3036,7 @@ local function trainerCardMainPage(screen, ww, wh, save, player)
   G.setColor(accent[1],accent[2],accent[3],1)
   G.print("VOXEL ASCENDANT",x+pad*1.7,y+pad*1.45)
   if title then G.setFont(title) end
-  G.setColor(1,1,1,.98); G.print("TRAINERKARTE",x+pad*1.7,y+pad*2.35)
+  G.setColor(1,1,1,.98); G.print(localized(screen.game, "TRAINER CARD", "TRAINERKARTE"),x+pad*1.7,y+pad*2.35)
   if small then G.setFont(small) end
   G.setColor(TRAINER_CARD_ACCENT.crystal[1],TRAINER_CARD_ACCENT.crystal[2],
     TRAINER_CARD_ACCENT.crystal[3],1)
@@ -3069,17 +3088,17 @@ local function trainerCardMainPage(screen, ww, wh, save, player)
   G.setLineWidth(math.max(1,1.5*s)); roundRect("line",rightX,bodyY,rightW,summaryH,r*.38)
   local badgeCount = trainerRegionBadgeCount(player,"johto")
     + trainerRegionBadgeCount(player,"kanto")
-  local rank = badgeCount >= 16 and "INDIGO-CHAMPION"
-    or badgeCount >= 8 and "JOHTO-CHAMPION" or "TRAINER AUS JOHTO"
+  local rank = badgeCount >= 16 and localized(screen.game, "INDIGO CHAMPION", "INDIGO-CHAMPION")
+    or badgeCount >= 8 and localized(screen.game, "JOHTO CHAMPION", "JOHTO-CHAMPION") or localized(screen.game, "JOHTO TRAINER", "TRAINER AUS JOHTO")
   if label then G.setFont(label) end
-  G.setColor(1,1,1,.50); G.print("AKTUELLER TITEL",rightX+pad,bodyY+pad*.55)
+  G.setColor(1,1,1,.50); G.print(localized(screen.game, "CURRENT TITLE", "AKTUELLER TITEL"),rightX+pad,bodyY+pad*.55)
   if title then G.setFont(title) end
   G.setColor(accent[1],accent[2],accent[3],1)
   G.print(rank,rightX+pad,bodyY+pad*1.38)
   local values = {
-    {"GELD","¥"..tostring(math.floor(tonumber(player.money) or 0))},
-    {"SPIELZEIT",("%d:%02d"):format(tonumber(time.hours) or 0,tonumber(time.minutes) or 0)},
-    {"POKéDEX",tostring(caught).." GEFANGEN"},
+    {localized(screen.game, "MONEY", "GELD"),"¥"..tostring(math.floor(tonumber(player.money) or 0))},
+    {localized(screen.game, "PLAY TIME", "SPIELZEIT"),("%d:%02d"):format(tonumber(time.hours) or 0,tonumber(time.minutes) or 0)},
+    {"POKéDEX",tostring(caught)..localized(screen.game, " CAUGHT", " GEFANGEN")},
   }
   local vx=rightX+pad; local vw=(rightW-pad*2)/3
   for i,row in ipairs(values) do
@@ -3096,7 +3115,7 @@ local function trainerCardMainPage(screen, ww, wh, save, player)
   G.setColor(accent[1],accent[2],accent[3],.65)
   G.setLineWidth(math.max(1,1.5*s)); roundRect("line",rightX,badgesY,rightW,badgesH,r*.38)
   if label then G.setFont(label) end
-  G.setColor(1,1,1,.55); G.print("JOHTO-ORDEN",rightX+pad,badgesY+pad*.55)
+  G.setColor(1,1,1,.55); G.print(localized(screen.game, "JOHTO BADGES", "JOHTO-ORDEN"),rightX+pad,badgesY+pad*.55)
   G.setColor(accent[1],accent[2],accent[3],1)
   G.printf(tostring(trainerRegionBadgeCount(player,"johto")).." / 8",
     rightX,badgesY+pad*.55,rightW-pad,"right")
@@ -3112,12 +3131,12 @@ local function trainerCardMainPage(screen, ww, wh, save, player)
     local row=math.floor((i-1)/4)
     drawTrainerLeaderTile("johto",i,
       tilesX+column*(tileW+tileGap),tilesY+row*(tileH+tileGap),
-      tileW,tileH,s,player)
+      tileW,tileH,s,player,screen.game)
   end
 
   if small then G.setFont(small) end
   G.setColor(1,1,1,.58)
-  G.printf("LINKS/RECHTS: SEITE    A: ORDEN    B: ZURÜCK",
+  G.printf(localized(screen.game, "LEFT/RIGHT: PAGE    A: BADGES    B: BACK", "LINKS/RECHTS: SEITE    A: ORDEN    B: ZURÜCK"),
     x+pad,y+h-pad*1.30,w-pad*2,"center")
   diagnosticOnce(screen, "trainer-card-dedicated", "gen2-menu-provider", {
     screen="TRAINER_CARD", provider="gen2-dedicated-card", result="drawn",
@@ -3138,7 +3157,7 @@ local function trainerRenderer(screen, ww, wh)
   if page == 1 then
     trainerCardMainPage(screen, ww, wh, save, player)
   else
-    trainerBadgeCasePage(ww, wh, player, page == 3 and "kanto" or "johto")
+    trainerBadgeCasePage(ww, wh, player, page == 3 and "kanto" or "johto", screen.game)
   end
   endDraw()
   return true
