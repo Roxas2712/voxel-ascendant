@@ -32,8 +32,9 @@ local function traceback(errorValue)
   return tostring(errorValue)
 end
 
-local Diagnostics, MobileMenuPresentation
+local Diagnostics, MobileMenuPresentation, OverlayPresentation
 if type(V) == "table" and type(V.require) == "function" then
+  pcall(function() OverlayPresentation = V.require("OrasPartyOverlayPresentation") end)
   pcall(function() Diagnostics = V.require("Diagnostics") end)
   pcall(function()
     MobileMenuPresentation = V.require("MobileMenuPresentation")
@@ -247,7 +248,11 @@ local function textShader(graphics, color)
   return nil
 end
 
-local function drawText(graphics, Font, value, x, y, scale, color)
+local function drawText(graphics, Font, value, x, y, scale, color, maxWidth)
+  if type(Font.width) == "function" then
+    local width = Font.width(tostring(value or ""))
+    if width > 0 then scale = math.min(scale or 2, (maxWidth or (WIDTH - x - 20)) / width) end
+  end
   color = color or C.navy2
   local previousShader
   if type(graphics.getShader) == "function" then
@@ -272,6 +277,29 @@ local function drawText(graphics, Font, value, x, y, scale, color)
   end
 end
 
+local function language()
+  local mod = V and V.mod
+  local function find(id)
+    if not (mod and type(mod.find) == "function") then return nil end
+    local ok, value = pcall(mod.find, id)
+    if not ok then ok, value = pcall(mod.find, mod, id) end
+    return ok and value or nil
+  end
+  local universal = find("translation-german-universal")
+  local boot = universal and universal.exports and universal.exports.bootLanguage
+  if boot == "de" or boot == "en" then return boot end
+  local kasc = find("kanto_ascendant")
+  local resolve = kasc and kasc.exports and kasc.exports.language
+  if type(resolve) == "function" then
+    local ok, value = pcall(resolve)
+    if ok and (value == "de" or value == "en") then return value end
+  end
+  for _, id in ipairs({"universal_german", "deutsch", "deutsch-blau", "deutsch-gelb"}) do
+    if find(id) then return "de" end
+  end
+  return "en"
+end
+
 local function drawWideMoveLearn(state)
   local graphics = love and love.graphics
   local Font = classFor("src.render.Font")
@@ -290,13 +318,14 @@ local function drawWideMoveLearn(state)
     graphics.setBlendMode("alpha", "alphamultiply")
   end
 
+  local german = language() == "de"
   rounded(graphics, C.navy2, 0, 0, WIDTH, HEIGHT)
   state.__vascMoveLearnBackdropStyle = "oras-wide"
   rounded(graphics, C.blue, 14, 13, 484, 43, 8)
   rounded(graphics, C.paper, 18, 17, 476, 35, 6)
   outline(graphics, C.gold, 18, 17, 476, 35, 6, 2)
   drawText(graphics, Font, "ASCENDANT", 32, 27, 2, C.navy)
-  drawText(graphics, Font, "ATTACKE LERNEN", 246, 27, 2, C.navy)
+  drawText(graphics, Font, german and "ATTACKE LERNEN" or "LEARN A MOVE", 246, 27, 2, C.navy)
 
   rounded(graphics, C.navy, 18, 66, 476, 156, 9)
   rounded(graphics, C.paper, 23, 71, 466, 146, 7)
@@ -306,8 +335,8 @@ local function drawWideMoveLearn(state)
   local moveDef = state.game and state.game.data and state.game.data.moves
     and state.game.data.moves[state.newMoveId]
   local moveName = type(moveDef) == "table" and moveDef.name
-    or tostring(state.newMoveId or "ATTACKE")
-  drawText(graphics, Font, monName, 39, 82, 2, C.navy)
+    or tostring(state.newMoveId or (german and "ATTACKE" or "MOVE"))
+  drawText(graphics, Font, monName, 39, 82, 2, C.navy, 232)
   drawText(graphics, Font, moveName, 289, 82, 2, C.orange)
 
   if state.selecting then
@@ -319,15 +348,6 @@ local function drawWideMoveLearn(state)
       rows[#rows + 1] = type(def) == "table" and def.name
         or tostring(moveId or "—")
     end
-    local cancel = "CANCEL"
-    local okStrings, Strings = pcall(require, "src.core.Strings")
-    if okStrings and (type(Strings) == "function"
-        or (type(Strings) == "table" and getmetatable(Strings)
-          and type(getmetatable(Strings).__call) == "function")) then
-      local okCancel, localized = pcall(Strings, "CANCEL")
-      if okCancel and localized ~= nil then cancel = localized end
-    end
-    rows[#rows + 1] = cancel
     for index, label in ipairs(rows) do
       local x = index <= 3 and 39 or 267
       local y = 111 + ((index - 1) % 3) * 31
@@ -336,18 +356,18 @@ local function drawWideMoveLearn(state)
         outline(graphics, C.navy, x - 7, y - 7, 207, 27, 5, 1)
       end
       drawText(graphics, Font, label, x, y, 2,
-        state.index == index and C.white or C.navy2)
+        state.index == index and C.white or C.navy2, 193)
     end
   else
-    drawText(graphics, Font, "WÄHLE EINE ATTACKE,", 52, 126, 2, C.gray)
-    drawText(graphics, Font, "DIE VERGESSEN WERDEN SOLL.", 52, 158, 2, C.gray)
+    drawText(graphics, Font, german and "WÄHLE EINE ATTACKE," or "CHOOSE A MOVE", 52, 126, 2, C.gray)
+    drawText(graphics, Font, german and "DIE VERGESSEN WERDEN SOLL." or "TO FORGET.", 52, 158, 2, C.gray)
   end
 
   rounded(graphics, C.orange, 18, 232, 476, 42, 8)
   rounded(graphics, C.paper, 22, 236, 468, 34, 6)
   drawText(graphics, Font, state.selecting
-    and "WELCHE ATTACKE SOLL VERGESSEN WERDEN?"
-    or "A BESTÄTIGEN   B ZURÜCK", 34, 246, 2, C.navy2)
+    and (german and "WELCHE ATTACKE SOLL VERGESSEN WERDEN?" or "WHICH MOVE SHOULD BE FORGOTTEN?")
+    or (german and "A BESTÄTIGEN   B ZURÜCK" or "A CONFIRM   B BACK"), 34, 246, 1, C.navy2)
   setColor(graphics, C.white)
   return true
 end
@@ -385,6 +405,36 @@ local function restoreCanvas(graphics, captured, canvas)
   if captured and type(graphics.setCanvas) == "function" then
     if canvas == nil then pcall(graphics.setCanvas)
     else pcall(graphics.setCanvas, canvas) end
+  end
+end
+
+local MODAL_FIELDS = {
+  "draw", "drawWidescreen", "uiSize", "isWideBattleLayout", "sgbPalettes",
+  "drawsWidescreen", "wantsFillScale", "letterboxWhite",
+  "__vascOrasWideBattleOverlay", "__vascOrasWideTextBox", "__vascOrasWideChoiceBox",
+}
+local function reconcileModals(owner, record)
+  if not OverlayPresentation then return end
+  local states = owner.game and owner.game.stack and owner.game.stack.states or {}
+  local found = false
+  for _, state in ipairs(states) do
+    if state == owner then found = true
+    elseif found then
+      if state.isOpaque then break end
+      local method
+      if classInstance(state, classFor("src.render.TextBox")) then
+        method = "decorateTextBox"
+      elseif classInstance(state, classFor("src.ui.ChoiceBox")) then
+        method = "decorateChoiceBox"
+      end
+      if method and not record.modals[state] then
+        local before, after = {}, {}
+        for _, key in ipairs(MODAL_FIELDS) do before[key] = rawget(state, key) end
+        OverlayPresentation[method](state, {wideBattle=true})
+        for _, key in ipairs(MODAL_FIELDS) do after[key] = rawget(state, key) end
+        record.modals[state] = {before=before, after=after}
+      end
+    end
   end
 end
 
@@ -482,6 +532,7 @@ restore = function(state, reason, handoffToLegacy)
     rawset(state, "__vascMoveLearnPresentationSchema", nil)
     rawset(state, "__vascMoveLearnSourceCode", nil)
     rawset(state, "uiSize", record.rawUiSize)
+    rawset(state, "isWideBattleLayout", record.rawIsWideBattleLayout)
     rawset(state, "drawWidescreen", record.rawDrawWidescreen)
     rawset(state, "drawsWidescreen", record.rawDrawsWidescreen)
     rawset(state, "wantsFillScale", record.rawWantsFillScale)
@@ -489,6 +540,11 @@ restore = function(state, reason, handoffToLegacy)
     rawset(state, "letterboxWhite", record.rawLetterboxWhite)
   end
 
+  for modal, saved in pairs(record.modals) do
+    for _, key in ipairs(MODAL_FIELDS) do
+      if rawget(modal, key) == saved.after[key] then rawset(modal, key, saved.before[key]) end
+    end
+  end
   decorated[state] = nil
   decoratedCount = math.max(0, decoratedCount - 1)
   local handedOff = handoffToLegacy == true
@@ -533,6 +589,8 @@ function M.decorate(state)
     return state, false, "not-drawable"
   end
   local record = {
+    modals=setmetatable({}, {__mode="k"}),
+    rawIsWideBattleLayout=rawget(state, "isWideBattleLayout"),
     originalDraw=originalDraw,
     hadRawDraw=rawget(state, "draw") ~= nil,
     rawDraw=rawget(state, "draw"),
@@ -563,6 +621,7 @@ function M.decorate(state)
   state.isOpaque = true
   state.letterboxWhite = true
   state.uiSize = function() return WIDTH, HEIGHT end
+  state.isWideBattleLayout = function() return true end
   state.drawsWidescreen = function() return true end
   state.wantsFillScale = function() return true end
   state.sgbPalettes = function()
@@ -577,6 +636,7 @@ function M.decorate(state)
   state.__vascMoveLearnSourceCode = stackSource(state)
   decorated[state] = record
   decoratedCount = decoratedCount + 1
+  reconcileModals(state, record)
   if type(MobileMenuPresentation) == "table"
       and type(MobileMenuPresentation.attach) == "function" then
     pcall(MobileMenuPresentation.attach, state, {
@@ -621,6 +681,7 @@ function M.install(mod)
 
   local ok, reason = listen(mod, "screen.pushed", function(event)
     local state = type(event) == "table" and event.state or nil
+    for owner, record in pairs(decorated) do reconcileModals(owner, record) end
     local decoratedOK, _, claimed, claimReason = pcall(M.decorate, state)
     if not decoratedOK then
       lastError = tostring(_)
