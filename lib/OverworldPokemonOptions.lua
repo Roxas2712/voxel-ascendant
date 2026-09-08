@@ -95,9 +95,9 @@ function M.section(key)
   for _, r in ipairs(rows) do if key==M.PREFIX..r[1] then return r[4] end end
 end
 local collisionKey=M.PREFIX.."pokemon_collision_mode"
-local hdKeys={apo_hd_pokemon_followers=true,apo_hd_pokemon_grass=true,
-  apo_hd_pokemon_city=true,apo_hd_pokemon_wilds_towns=true,
-  apo_living_follower_animation=true,apo_pokemon_card_style=true,
+local pokemonToggleKeys={apo_hd_pokemon_followers=true,apo_hd_pokemon_grass=true,
+  apo_hd_pokemon_city=true,apo_hd_pokemon_wilds_towns=true}
+local hdKeys={apo_living_follower_animation=true,apo_pokemon_card_style=true,
   apo_voxel_pokemon_finish=true,apo_pikachu_head_ride=true}
 local function hdReady(mod)
   local api=mod and mod.exports and mod.exports.pokemonHdContent
@@ -125,14 +125,16 @@ end
 -- Native VASC pages always have a two-stop ladder. Preserve the stored SOFT
 -- intent and display its blocked state, but never cycle back into it.
 function M.decorateSetting(mod, setting)
-  if setting.key == "apo_hd_walking_sprites" and not setting._apoLivePeople then
+  if (setting.key == "apo_hd_walking_sprites" or pokemonToggleKeys[setting.key])
+      and not setting._apoLivePeople then
     -- VASC's own ModSetting writes do not emit the Manager's option event.
     -- Refresh all bound people immediately, even while the player is still.
     local original = setting.setIndex
     setting.setIndex = function(self, index, game, silent)
       local value = original(self, index, game, silent)
       local api = mod.exports and mod.exports.overworldPokemon
-      local walking = api and api.walkingSprites
+      local walking = api and (pokemonToggleKeys[self.key]
+        and api.pokemonWorldSprites or api.walkingSprites)
       if walking and type(walking.refresh) == "function" then
         walking.refresh(game)
       end
