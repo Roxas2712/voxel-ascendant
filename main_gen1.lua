@@ -2333,6 +2333,11 @@ end, POKEMON_UI_OUTER_HOST_PRIORITY)
 -- active and the overworld is actually on top of the state stack.
 FirstPerson.install()
 FreeMove.install()
+-- KASC installs its native follower transport on game.ready. Keep the
+-- camera-to-world input adapter outside that transport, including reloads.
+mod.events:on("game.ready", function()
+  V.require("FollowerMovementInput").install()
+end, -12000)
 CamControl.install()
 ShortcutToast.install(require("src.core.Game"), {
   enabled = function() return ShortcutToastSetting:get() ~= false end,
