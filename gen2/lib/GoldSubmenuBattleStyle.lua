@@ -2268,15 +2268,21 @@ local function gen2SearchText(screen, value)
   return value ~= "" or newline ~= nil
 end
 
+local gen2TextInputBridgeInstalled = false
 local function installGen2TextInputBridge()
-  if not love or love.__vascGen2BoxSearchTextBridge then return end
+  if not love or gen2TextInputBridgeInstalled then return end
   local previous = love.textinput
-  love.textinput = function(value, ...)
-    if activeGen2SearchScreen
-        and gen2SearchText(activeGen2SearchScreen, value) then return true end
-    if type(previous) == "function" then return previous(value, ...) end
-  end
-  love.__vascGen2BoxSearchTextBridge = true
+  -- The sandbox permits selected callback chains, but no private fields on
+  -- love. Older hosts may reject even callbacks; their screen input remains
+  -- available and opening the PC must still succeed.
+  local installed = pcall(function()
+    love.textinput = function(value, ...)
+      if activeGen2SearchScreen
+          and gen2SearchText(activeGen2SearchScreen, value) then return true end
+      if type(previous) == "function" then return previous(value, ...) end
+    end
+  end)
+  gen2TextInputBridgeInstalled = installed
 end
 
 local function handleGen2SearchInput(screen)
