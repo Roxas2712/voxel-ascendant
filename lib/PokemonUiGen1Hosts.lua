@@ -344,7 +344,10 @@ local function pokemonDescriptor(game, mon)
   return {
     species=mon.species, form=mon.form, gender=gender,
     shiny=shiny, egg=false,
-    nickname=mon.nickname, level=math.max(0, tonumber(mon.level) or 0),
+    -- Backend species keep private registry IDs; the public model needs the
+    -- resolved display name when the player has not assigned a nickname.
+    nickname=mon.nickname or (def and def.name),
+    level=math.max(0, tonumber(mon.level) or 0),
     hp=math.max(0, tonumber(mon.hp) or 0),
     maxHp=stats.hp,
     attack=stats.attack, defense=stats.defense,

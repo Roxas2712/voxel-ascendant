@@ -213,6 +213,14 @@ local function decoratePushedPartyMenu(state, origin)
     return state, false, "already_handled"
   end
   state.__vascPartyMenuPushHandled = true
+  -- Battle pickers have already resolved pokemonUiBattleParty, including
+  -- GAME DEFAULT and Host-v1 providers. The Start/Bag skin must not replace
+  -- that renderer or wrap the host's controller as a native PartyMenu.
+  local host = state.__pokemonUiHostV1
+  if type(state.onSwitch) == "function"
+      or (type(host) == "table" and host.surface == "battle_party") then
+    return state, false, "battle-owner"
+  end
   local result, decorated, reason = M.decorate(state, M.style())
   if not decorated and reason ~= "game_default" then
     warn("%s PartyMenu skin failed open: %s",

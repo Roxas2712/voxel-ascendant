@@ -27,7 +27,6 @@ local MENU_IDS = {
   BoxMenu=true,
   DexEntryMenu=true,
   FlyMenu=true,
-  MoveLearnMenu=true,
   NamingScreen=true,
   OptionsMenu=true,
   PartyMenu=true,
@@ -79,7 +78,14 @@ local function eligible(state)
   -- Its logo, animation, palette and Press Start screen must remain native;
   -- TitleMenuHub handles only the menu states pushed after it.
   if isNativeTitleRoot(state) then return false, "native-title-owner" end
+  -- Floating battle pickers paint in the final window-space HUD pass. Their
+  -- draw resets the transform; capturing it in a menu canvas clips the panel.
+  if state.__floatingBattleParty then return false, "battle-hud-owner" end
   local id = screenId(state)
+  -- MoveLearnPresentation owns its complete surface and phone attachment.
+  -- Nested enter() prompts can expose this state before screen.pushed; taking
+  -- it here would permanently capture the old 160x144 draw before decoration.
+  if id == "MoveLearnMenu" then return false, "move-learn-owner" end
   if id == "StartMenu" or id:match("^Gen2") then
     return false, "separate-owner"
   end
