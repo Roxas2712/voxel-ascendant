@@ -377,15 +377,27 @@ local function distanceScale() return 1 end
 local HudRuntime = {}
 ]=] .. orasSource:sub(touchStart, touchEnd) .. "\n"
   .. orasSource:sub(messageRectStart, messageRectEnd) .. [=[
-return FloatingHud, HudRuntime
+return FloatingHud, HudRuntime, function() TouchControls.visible=function() return false end end
 ]=], "@actual-mobile-message-control-clearance")
 assert(geometryChunk, geometryError)
-local GeometryHud, GeometryRuntime = geometryChunk()
+local GeometryHud, GeometryRuntime, disableTouch = geometryChunk()
 local shot = { pw=956, ph=440, scale=2, player={80,96}, enemy={80,56} }
 local controlTop = assert(GeometryHud.touchStartSelectTop(shot))
 local rect = assert(GeometryRuntime.messageRectFor(shot))
 check(rect[2] + rect[4] < controlTop,
   "mobile message plate still overlaps START/SELECT")
+-- The same reviewed arena foot marks are used on desktop. A low contact
+-- must not make a trainer intro/faint message retire the entire renderer.
+disableTouch()
+shot.actorVisuals = { player={hull={300,250,180,100}},
+                     enemy={hull={610,180,70,100}} }
+local fitted, scale = GeometryRuntime.messageRectFor(shot)
+check(fitted[2] > 350 + 8, "desktop message covers exact actor ink")
+check(fitted[2] + fitted[4] == shot.ph, "desktop message lost bottom dock")
+check(scale >= 1, "dialog text shrank below native scale")
+shot.actorVisuals = nil
+local ordinary = GeometryRuntime.messageRectFor(shot)
+check(ordinary[4] > fitted[4], "ordinary dialog did not restore preferred size")
 end)()
 
 -- Execute the actual enable predicate: live option edits must not change the

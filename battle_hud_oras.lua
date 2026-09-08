@@ -5728,6 +5728,11 @@ function HudRuntime.messageRectFor(shot)
       local gutter = math.max(6, math.floor(math.min(shot.pw, shot.ph) * 0.015))
       y = math.min(y, controlTop - gutter - h)
       y = math.max(safe, y)
+    end
+    do
+      -- Painted arenas can place a valid ground contact near the bottom on
+      -- desktop too. Fit the dialog beneath the exact visible actors for
+      -- every viewport; optical camera changes cannot move bitmap foot marks.
       -- Raising the mobile dialog above START/SELECT can overlap an actor
       -- and permanently retire the 3D battle. Fit its proportional plate in
       -- the clear gap below exact visible ink, without moving the controls.

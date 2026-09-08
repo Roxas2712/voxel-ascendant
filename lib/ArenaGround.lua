@@ -109,22 +109,34 @@ function Ground.resolve(path, data, width, height)
     end)
     return choices
   end
-  local players, enemies = ranked(30,46,.34,.62), ranked(54,74,.65,.58)
-  local best, score
+  local players, enemies = ranked(30,49,.34,.62), ranked(54,80,.65,.58)
+  local best, score, raised, raisedScore
+  local function composition(p,e)
+    return {player={x=p.x,y=p.y},enemy={x=e.x,y=e.y},
+      trainerPlayer={x=p.x,y=p.y},trainerEnemy={x=e.x,y=e.y},
+      source="reviewed-ground/v1",regions=spec.regions,
+      contactRadiusX=rx,contactRadiusY=ry,digest=digest}
+  end
   for _, p in ipairs(players) do
     for _, e in ipairs(enemies) do
       if e.x-p.x >= .27 then
         local candidate = p.score+e.score+math.abs((p.y-e.y)-.04)*.4
-        if not score or candidate < score then
-          score=candidate
-          best={player={x=p.x,y=p.y},enemy={x=e.x,y=e.y},
-            trainerPlayer={x=p.x,y=p.y},trainerEnemy={x=e.x,y=e.y},
-            source="reviewed-ground/v1",regions=spec.regions,
-            contactRadiusX=rx,contactRadiusY=ry,digest=digest}
+        if p.x <= .46 and e.x <= .74 and (not score or candidate < score) then
+          score, best = candidate, composition(p,e)
+        end
+        -- Deep foreground marks can intersect the command dock even with an
+        -- arbitrarily small actor. If the ordinary pair sits low, prefer a
+        -- slightly more central pair higher on the SAME verified floor.
+        -- Neither the contact radius nor the wall/water mask is relaxed.
+        local dockScore = candidate
+          + 100 * (math.max(0,p.y-.72) + math.max(0,e.y-.72))
+        if not raisedScore or dockScore < raisedScore then
+          raisedScore, raised = dockScore, composition(p,e)
         end
       end
     end
   end
-  return best
+  if best and best.player.y <= .72 and best.enemy.y <= .72 then return best end
+  return raised or best
 end
 return Ground

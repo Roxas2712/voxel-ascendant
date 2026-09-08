@@ -92,6 +92,13 @@ BattleCam.RIGS = {
     side = 41.98, back = 41.16, height = 28.48,
     lookX = -3.24, lookY = -1.35, frameH = 55.62,
   },
+  -- Ship cabins/corridors cannot admit either low shoulder rig. This short
+  -- aisle seat keeps its sideways offset inside the corridor. Clearance and
+  -- actor/HUD projection checks still decide whether it may be used.
+  ship = {
+    side = 4, back = 60, height = 56,
+    lookX = 0, lookY = 6, frameH = 35,
+  },
 }
 
 BattleCam.DEFAULT_RIG = "tele"
@@ -1270,10 +1277,18 @@ local function renderedPortableFrameRescue(arena, groundY, camera, pitch, contex
   for _, angle in ipairs(arena.arenaStyle and {0}
       or {0,15,-15,30,-30,45,-45,60,-60,90,-90}) do
     local c, s = math.cos(math.rad(angle)), math.sin(math.rad(angle))
+    -- Painted foot marks are inverse-projected onto a fixed image. On a
+    -- portrait screen widening the lens alone can leave a large actor just
+    -- as wide at that fixed mark. Moving the eye back along the same bearing
+    -- also reduces its projected size, without rotating the painting or
+    -- relocating either reviewed ground contact. Every candidate still needs
+    -- the complete current actor/HUD receipt.
+    for _, dolly in ipairs(arena.arenaStyle and {1,1.25,1.5,1.75,2} or {1}) do
     for _, factor in ipairs(frames) do
       local candidate = copyCamera(camera)
-      candidate.eye[1] = camera.focus[1] + x*c - z*s
-      candidate.eye[3] = camera.focus[3] + x*s + z*c
+      candidate.eye[1] = camera.focus[1] + (x*c - z*s)*dolly
+      candidate.eye[2] = camera.focus[2] + (camera.eye[2]-camera.focus[2])*dolly
+      candidate.eye[3] = camera.focus[3] + (x*s + z*c)*dolly
       candidate.fov = 2 * math.atan(math.tan(base*.5)*factor)
       local safe = screenSafeCamera(activeBattle, arena, groundY, candidate, {
         phase="portable-rendered-recovery",actual=true,
@@ -1284,6 +1299,7 @@ local function renderedPortableFrameRescue(arena, groundY, camera, pitch, contex
           camera=copyCamera(candidate),pitch=pitch}
         return candidate, pitch
       end
+    end
     end
   end
   return nil

@@ -1,6 +1,6 @@
 local root=os.getenv('QA_VASC_SOURCE') or '.'
 local catalog=assert(loadfile(root..'/data/arena_ground.lua'))()
-local Ground=assert(loadfile(root..'/lib/ArenaGround.lua'))({data=function()return catalog end})
+local Ground=assert(loadfile(os.getenv('QA_GROUND_MODULE') or root..'/lib/ArenaGround.lua'))({data=function()return catalog end})
 local out=os.getenv('QA_GROUND_RESULT') and assert(io.open(os.getenv('QA_GROUND_RESULT'),'w'))
 local count,failed=0,0
 for path,spec in pairs(catalog)do
@@ -10,6 +10,10 @@ for path,spec in pairs(catalog)do
  count=count+1
  if result then
   assert(result.source=='reviewed-ground/v1')
+  if path:find('arena_ship-cabins.',1,true) then
+   assert(result.player.y<=.74 and result.enemy.y<=.72,'cabin ground marks overlap command dock')
+   assert(result.enemy.x-result.player.x>=.27,'cabin pair lost readable separation')
+  end
   for _,side in ipairs({'player','enemy','trainerPlayer','trainerEnemy'})do
    local p=result[side];assert(Ground.supports(spec.regions,p.x,p.y,.055,.025))
   end

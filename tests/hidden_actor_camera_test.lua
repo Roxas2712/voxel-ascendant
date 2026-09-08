@@ -65,3 +65,24 @@ assert(O.battleHudCameraSafe(battle,{},0,{}),'absent player send-out body blocke
 battle.showPlayerBack=true
 assert(O.battleHudCameraSafe(battle,{},0,{})==false,'missing back trainer authorized hide')
 print('Send-out camera visibility and exact battle ownership: ok')
+
+-- After fainting the status card disappears too, so there is no owner-gap
+-- rectangle. Only absent body pixels of this exact fainted battler are free.
+battle.showPlayerBack=false; battle.sendingOut=false; battle.player.fainted=true
+assert(O.battleHudCameraSafe(battle,{},0,{}),'fainted player phantom body blocked camera')
+shot.actorVisuals.player={hull=shot.actorHulls.player,foot={x=-25,y=290}}
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'visible faint animation bypassed safety')
+shot.actorVisuals.player=nil; battle.player.fainted=false
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'replacement inherited faint visibility')
+battle.player.fainted=true; env.session={battle={}}
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'foreign faint owner accepted')
+print('Fainted actor camera ownership: ok')
+
+env.session={battle=battle};battle.player.fainted=false
+shot.actorVisuals={player={hull={20,230,50,60},foot={x=45,y=290}}}
+shot.actorHulls.enemy={-50,480,200,150};shot.actorFeet.enemy={0,610}
+battle.enemy.fainted=true
+assert(O.battleHudCameraSafe(battle,{},0,{}),'fainted enemy phantom body blocked camera')
+battle.showEnemyTrainer=true
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'trainer replacing fainted enemy was hidden')
+print('Enemy faint camera ownership: ok')

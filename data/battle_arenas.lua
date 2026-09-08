@@ -134,6 +134,14 @@ return {
   ["SILPH_CO_7F"] = { x = 1, y = 2, shape = "wide", cam = "wide" },
   ["SILPH_CO_8F"] = { x = 8, y = 6, shape = "narrow" },
   ["SILPH_CO_9F"] = { x = 20, y = 11, shape = "wide", cam = "wide" },
+  -- Horizontal aisles need an authored axis; keep automatic route search
+  -- north/south. These anchors retain the exact ship map and collision grid.
+  ["SS_ANNE_B1F"] = { spots = {
+    { x = 4, y = 4, shape = "narrow_east", cam = "ship" },
+    { x = 20, y = 4, shape = "narrow_east", cam = "ship" },
+  } },
+  ["SS_ANNE_3F"] = { x = 7, y = 2, shape = "narrow_east", cam = "ship" },
+  ["SS_ANNE_CAPTAINS_ROOM"] = { x = 1, y = 4, shape = "narrow_east", cam = "ship" },
   ["SS_ANNE_1F_ROOMS"] = { x = 10, y = 1, shape = "narrow", cam = "wide" },
   -- the ship is all two-cell corridors, so the wide arena shape fits nowhere
   -- aboard and the long lens always lands outside the hull
@@ -176,6 +184,9 @@ return {
   ["SILPH_CO_11F"] = { x = 1, y = 11, shape = "wide", cam = "wide" },
   -- the upper corridor (cols 4-5, rows 1-4) is sealed at runtime by the
   -- gym's barrier, so arenas there silently fail the fit test
+  -- The western apron is clear but excluded by the generic city one-cell
+  -- padding rule. A reviewed same-map anchor also serves the southwest shore.
+  ["VERMILION_CITY"] = { x = 16, y = 4, shape = "wide", cam = "wide" },
   ["VERMILION_GYM"] = { x = 4, y = 11, shape = "narrow" },
   ["VICTORY_ROAD_1F"] = { x = 11, y = 2, shape = "narrow" },
   ["VIRIDIAN_FOREST"] = { x = 16, y = 34, shape = "narrow" },

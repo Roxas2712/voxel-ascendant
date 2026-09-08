@@ -1770,7 +1770,9 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
     local visual = shot.actorVisuals and shot.actorVisuals[side]
     local hiddenCurrentActor = false
     if type(shot.actorVisuals) == "table" and visual == nil then
-      -- During an exact send-out the engine deliberately has no body yet.
+      -- During an exact send-out or completed faint the engine has no body.
+      -- A fainted side has no status owner left to publish an owner-gap
+      -- receipt. Its absent nominal prism must not reject the next message.
       -- A nominal full-size prism for that absent actor can intersect the
       -- other side's HP card and reject every replacement camera. Require an
       -- explicit engine hide flag, no trainer occupying the slot, and no
@@ -1786,9 +1788,10 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
         hiddenCurrentActor = (side == "enemy"
           and not battle.showEnemyTrainer
           and (battle.enemySendingOut == true or battle.enemyHidden == true
-            or zeroScale))
+            or zeroScale or (battler and battler.fainted == true)))
           or (side == "player" and not battle.showPlayerBack
-            and (battle.sendingOut == true or zeroScale))
+            and (battle.sendingOut == true or zeroScale
+              or (battler and battler.fainted == true)))
       end
       for _, rect in ipairs(bounds.reserved) do
         if rect.ownerSide == side and rect.ownerVisualGap == true

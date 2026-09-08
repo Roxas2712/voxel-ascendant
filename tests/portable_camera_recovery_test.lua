@@ -32,3 +32,15 @@ end
 assert(recover(arena,0,camera,.5,{}),'portrait platform lens stayed capped at 1.75x')
 assert(not recover(painted,0,camera,.5,{}),'authored bitmap optical limit changed')
 print('Portrait platform optical recovery: ok')
+
+-- Screen-fixed painted foot marks can keep a broad sprite overlapping even
+-- at the widest allowed lens. Back away on the same bearing, with no turn.
+env.screenSafeCamera=function(_,stage,_,c)
+ assert(stage==painted and c.eye[1]==0)
+ assert(c.focus[1]==0 and c.focus[2]==0 and c.focus[3]==0)
+ assert(math.abs(c.eye[2]/c.eye[3]-.2)<1e-8,'painted camera bearing changed')
+ return c.eye[3]>=150
+end
+local backed=assert(recover(painted,0,camera,.5,{}),'portrait painting could not fit a wide actor')
+assert(backed.eye[3]>=150 and camera.eye[3]==100,'live camera mutated')
+print('Painted portrait camera distance recovery: ok')

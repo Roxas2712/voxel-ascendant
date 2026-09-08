@@ -706,14 +706,18 @@ function BattleArena.clearance(map, arena)
 end
 
 -- Promote an otherwise safe placement to the short physical rig when the
--- telephoto eye has no collision-backed room. If neither complete canonical
--- composition is safe, decline staging rather than accepting an occluded
--- second-pass arena.
+-- telephoto eye has no collision-backed room. Ship interiors may additionally
+-- use a close aisle seat. Every option must pass the same complete visibility
+-- and camera-clearance checks before it can own a physical arena.
 function BattleArena.keepAnchorSafe(map, arena)
   if BattleArena.clearance(map, arena) then return true end
   local previous = arena and arena.cam
   if arena then arena.cam = "wide" end
   if BattleArena.clearance(map, arena) then return true end
+  if arena and tostring(map and map.id or ""):match("^SS_ANNE_") then
+    arena.cam = "ship"
+    if BattleArena.clearance(map, arena) then return true end
+  end
   if arena then arena.cam = previous end
   return false
 end
