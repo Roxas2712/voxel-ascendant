@@ -142,6 +142,9 @@ function WalkingSprites:_savedPlayerRole(game)
   if self.generation ~= 2 or type(player) ~= "table" then return nil end
   local key = tostring(player.characterKey or ""):lower()
   local route = tostring(player.routeKey or ""):lower()
+  if key == "kris" or key == "crystal" then return "kris" end
+  if key == "gold" or key == "ethan" then return "gold" end
+  if key == "silver" then return "silver" end
   if key == "johto.kris" or route == "jasc.crystal_path" then return "kris" end
   if key == "johto.gold" or route == "jasc.gold_path" then return "gold" end
   if key == "johto.silver" or route == "jasc.silver_path" then return "silver" end
@@ -542,8 +545,12 @@ function WalkingSprites:apply(game, refreshAuthority)
   if player then count = count + self:_bindPlayer(game, player, playerRole) end
   local mapId = world.map and world.map.id
   local kascActive = self:_kasc() ~= nil
+  -- Gen 2 includes the player in entities. Its authoritative hero/action
+  -- binding above must never pass through the generic NPC sprite lookup.
   local seen = {}
-  for _, bucket in ipairs({ world.npcs, world.entities, world.objects }) do
+  if player then seen[player] = true end
+  for _, name in ipairs({ "npcs", "entities", "objects" }) do
+    local bucket = world[name]
     if type(bucket) == "table" then
       for _, entity in pairs(bucket) do
         if type(entity) == "table" and not seen[entity] then
@@ -628,7 +635,20 @@ function WalkingSprites:install()
   self.installed = true
   if self.mod.events and type(self.mod.events.on) == "function" then
     local binder = self
-    for _, event in ipairs({ "game.ready", "save.loaded", "map.entered",
+    for _, event in ipairs({ "save.loaded", "save.created" }) do
+      self.mod.events:on(event, function(ev)
+        local game = ev and ev.game or binder.activeGame
+        -- A different save is a new identity authority. Keep the movement
+        -- latch within a save, but never carry Gold over into a Kris save.
+        if binder.generation == 2 then
+          binder.playerRole = binder:_savedPlayerRole(game)
+          binder:apply(game, binder.playerRole == nil)
+        elseif event == "save.loaded" then
+          binder:apply(game, false)
+        end
+      end)
+    end
+    for _, event in ipairs({ "game.ready", "map.entered",
         "map.reloaded" }) do
       self.mod.events:on(event, function(ev)
         binder:apply(ev and ev.game or binder.activeGame, false)
