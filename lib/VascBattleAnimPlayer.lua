@@ -324,7 +324,9 @@ function Player:update()
     end
     return
   end
-  if self:isDone() then return end
+  -- The custom frames may finish before native picture/palette cleanup.
+  -- Keep ticking native above without advancing beyond our final frame.
+  if self.steps[self.stepIndex] == nil then return end
   self.stepLeft = self.stepLeft - 1
   while self.stepLeft <= 0 do
     self.stepIndex = self.stepIndex + 1
@@ -335,7 +337,12 @@ function Player:update()
 end
 
 function Player:isDone()
-  if self.custom then return self.steps[self.stepIndex] == nil end
+  if self.custom then
+    -- BattleState stops polling effects as soon as we report completion.
+    -- Both timelines must finish so late SHOW/RESET effects are delivered.
+    return self.steps[self.stepIndex] == nil
+      and (not self.nativeStarted or self.native:isDone())
+  end
   return not self.nativeStarted or self.native:isDone()
 end
 
