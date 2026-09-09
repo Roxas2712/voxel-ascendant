@@ -411,6 +411,9 @@ function TileShape.forMap(map)
   end
 
   local shapes = { classes = {}, cond = authoredConditions(id, heights) }
+  local profile = load()
+  local entry = profile and profile.tilesets and profile.tilesets[id]
+  shapes.caveElevation = entry and entry.cave_elevation
   for class in pairs(FALLBACK_HEIGHTS) do
     shapes.classes[class] = shapeFor(class, heights)
   end
@@ -454,6 +457,9 @@ function TileShape.forMap(map)
     local class = authored[t]
     if class then
       shapes[t] = shapeFor(class, heights, true)
+      if class == 'cliff' then
+        shapes[t].surfaceTiles = entry and entry.cliff_surface_tiles
+      end
     elseif perTile and t == tileset.grassTile then
       -- derived pin: every tileset already names its tall-grass tile, so
       -- the standing-tuft treatment needs no profile entry anywhere
@@ -631,8 +637,203 @@ end
 -- resolution including the cell-granularity steps (see the header).
 -- `shapes` is the table forMap returned for this map; `tile` is
 -- map:tileAt(tx, ty), passed in because every caller already has it.
+local elevationCache = setmetatable({}, { __mode = 'k' })
+local caveEdges={{0,-1},{0,1},{-1,0},{1,0}}
+function TileShape.invalidateElevation(mapId)
+  for map in pairs(elevationCache) do
+    if not mapId or map.id == mapId then elevationCache[map] = nil end
+  end
+end
+function TileShape.elevation(map, shapes)
+  if not shapes.caveElevation or not map.def or map.def.environment ~= 'CAVE' then return nil end
+  local e = elevationCache[map]
+  if not e or e.blocks ~= map.blocks or e.tileset ~= map.tileset then
+    e = V.require('CaveElevation').build(map, shapes.caveElevation)
+    -- Refuse inconsistent inferred geometry; preserve the authored fallback.
+    e.valid = #e.conflicts == 0
+    e.shapeCache = {}
+    e.blocks, e.tileset = map.blocks, map.tileset
+    elevationCache[map] = e
+  end
+  return e.valid and e or nil
+end
+-- A blocked round rock is not a floor node. Like the adjacent retaining
+-- cliff, its foundation reaches the highest directly touching dry floor.
+-- Requiring equal neighbours leaves alternate rocks buried along a terrace
+-- edge. Never flood this height through a whole connected rock mass.
+function TileShape.cavePropBase(map, shapes, cx, cy)
+  local e = TileShape.elevation(map, shapes)
+  if not e or cx < 0 or cy < 0 or cx >= map.widthCells or cy >= map.heightCells then return 0 end
+  local base = 0
+  for _,d in ipairs(caveEdges) do
+    local nx,ny=cx+d[1],cy+d[2]
+    if nx>=0 and ny>=0 and nx<map.widthCells and ny<map.heightCells then
+      local h=e.floors[ny*e.width+nx]
+      if h~=nil then base=math.max(base,h) end
+    end
+  end
+  return base
+end
+local BLACKTHORN_LAVA_TILES = { [0x02]=true, [0x38]=true, [0x39]=true, [0x5b]=true }
+local BLACKTHORN_LAVA_SHAPE = {class='ground',art='flat',h=0,flat=true,authored=true}
+local BLACKTHORN_FLOOR_LINKS = {
+  BLACKTHORN_GYM_1F={tiles={0x2c,0x2d,0x3c,0x3d},target='BLACKTHORN_GYM_2F',
+    shape={class='stair_e',art='stair',h=16,flat=false,authored=true,surface='blackthorn_brick'}},
+  BLACKTHORN_GYM_2F={tiles={0x40,0x41,0x42,0x43},target='BLACKTHORN_GYM_1F',
+    shape={class='stair_down_e',art='stair',h=16,flat=false,authored=true,surface='blackthorn_brick'}},
+}
+local BLACKTHORN_SHAFT={class='floor_shaft',art='floor_shaft',h=0,depth=16,flat=false,authored=true,surface='blackthorn_brick'}
+local BLACKTHORN_SHAFT_TILES={0x13,0x13,0x12,0x12}
+-- The Tower atlas is also used by gyms. Only native inter-floor warps in
+-- these two towers receive flights; teleport pads and reused art stay flat.
+local TOWER_FLOORS={SPROUT_TOWER_1F='sprout',SPROUT_TOWER_2F='sprout',SPROUT_TOWER_3F='sprout',
+  TIN_TOWER_1F='tin',TIN_TOWER_2F='tin',TIN_TOWER_3F='tin',TIN_TOWER_4F='tin',
+  TIN_TOWER_5F='tin',TIN_TOWER_6F='tin',TIN_TOWER_7F='tin',TIN_TOWER_8F='tin',
+  TIN_TOWER_9F='tin',TIN_TOWER_ROOF='tin'}
+local TOWER_FLIGHTS={
+  [0x0c]={tiles={0x0c,0x0d,0x1c,0x1d},
+    shape={class='stair_n',art='stair',h=16,flat=false,authored=true,surface='tower_timber'}},
+  [0x0e]={tiles={0x0e,0x0f,0x1e,0x1f},
+    -- A 16-deep well over one 16px cell hides its 45-degree flight behind
+    -- the floor lip at the standard 40-degree viewing elevation. Compress
+    -- only this decorative descent to 8px; native warp/floor data is intact.
+    shape={class='stair_down_n',art='stair',h=8,flat=false,authored=true,surface='tower_timber'}},
+}
+local BURNED_HOLE={class='floor_shaft',art='floor_shaft',h=0,depth=16,
+  flat=false,authored=true,surface='burned_timber',sideTile=0x5e,bottomTile=0x01}
+local FUCHSIA_HIDDEN_FLOOR={class='ground',art='flat',h=0,flat=true,authored=true}
 function TileShape.at(map, shapes, tile, tx, ty)
+  -- Native Fuchsia's invisible maze is blocked FLOOR ART, not visible
+  -- masonry. Rendering it flat must never alter collision or reveal a route.
+  local def=map.def
+  if map.id=='FUCHSIA_GYM' and def and def.generation==2
+      and def.tileset=='TILESET_LAB' and def.width==5 and def.height==9
+      and def.environment=='INDOOR' and def.outdoor~=true
+      and next(def.connections or {})==nil and tile==0x37
+      and tx>=0 and ty>=0 and tx<map.widthCells*2 and ty<map.heightCells*2 then
+    local cx,cy=math.floor(tx/2),math.floor(ty/2)
+    if map:cellCollision(cx,cy)==0x07
+        and map:tileAt(cx*2,cy*2)==0x37 and map:tileAt(cx*2+1,cy*2)==0x37
+        and map:tileAt(cx*2,cy*2+1)==0x37 and map:tileAt(cx*2+1,cy*2+1)==0x37 then
+      return FUCHSIA_HIDDEN_FLOOR
+    end
+  end
+  -- The rival-event hole is a fall cell, not a 32px cliff. Read current
+  -- collision/art so the native callback's pre-event floor stays closed.
+  if map.id=='BURNED_TOWER_1F' and map.def and map.def.tileset=='TILESET_TOWER'
+      and map.def.width==10 and map.def.height==9
+      and tx>=20 and tx<=21 and ty>=18 and ty<=19
+      and map:cellCollision(10,9)==0x60 then
+    local hit=map:warpAtCell(10,9);local w=hit and hit.def
+    if w and w.destMap=='BURNED_TOWER_B1F' and w.destWarp==1
+        and map:tileAt(20,18)==0x5e and map:tileAt(21,18)==0x5e
+        and map:tileAt(20,19)==0x01 and map:tileAt(21,19)==0x01 then
+      return BURNED_HOLE
+    end
+  end
+  local tower=TOWER_FLOORS[map.id]
+  if tower and map.def and map.def.tileset=='TILESET_TOWER'
+      and tx>=0 and ty>=0 and tx<map.widthCells*2 and ty<map.heightCells*2 then
+    local cx,cy=math.floor(tx/2),math.floor(ty/2)
+    if map:cellCollision(cx,cy)==0x72 then
+      local hit=map:warpAtCell(cx,cy);local warp=hit and hit.def
+      local flight=TOWER_FLIGHTS[map:tileAt(cx*2,cy*2)]
+      if flight and warp and warp.destMap~=map.id and TOWER_FLOORS[warp.destMap]==tower then
+        local matched=true
+        for dy=0,1 do for dx=0,1 do
+          if map:tileAt(cx*2+dx,cy*2+dy)~=flight.tiles[dy*2+dx+1]then matched=false end
+        end end
+        if matched then return flight.shape end
+      end
+    end
+  end
+  local link=BLACKTHORN_FLOOR_LINKS[map.id]
+  if link and map.def and map.def.tileset=='TILESET_ELITE_FOUR_ROOM'
+      and tx>=0 and ty>=0 and tx<map.widthCells*2 and ty<map.heightCells*2 then
+    local cx,cy=math.floor(tx/2),math.floor(ty/2)
+    local hit=map:warpAtCell(cx,cy)
+    -- Gen2 Map returns a lookup receipt, not the native warp definition.
+    local warp=hit and hit.def
+    if warp and warp.destMap==link.target then
+      local coll=map:cellCollision(cx,cy)
+      local pattern=coll==0x72 and link.tiles
+        or (map.id=='BLACKTHORN_GYM_2F' and coll==0x60 and BLACKTHORN_SHAFT_TILES)
+      if pattern then
+        local matched=true
+        for dy=0,1 do for dx=0,1 do
+          if map:tileAt(cx*2+dx,cy*2+dy)~=pattern[dy*2+dx+1] then matched=false end
+        end end
+        if matched then return coll==0x72 and link.shape or BLACKTHORN_SHAFT end
+      end
+    end
+  end
+  -- Lava is blocked to movement, but not a wall. Keep the native lava art
+  -- flat without routing it through water shaders/SFX or changing collision.
+  -- Verify the whole native cell, including its painted north rim ($39),
+  -- not just a reusable blank atlas tile. The rim is not a tall barrier.
+  if map.id=='BLACKTHORN_GYM_1F' and map.def
+      and map.def.tileset=='TILESET_ELITE_FOUR_ROOM' and BLACKTHORN_LAVA_TILES[tile]
+      and tx>=0 and ty>=0 and tx<map.widthCells*2 and ty<map.heightCells*2 then
+    local cx,cy=math.floor(tx/2),math.floor(ty/2)
+    if map:cellCollision(cx,cy)==0x07 then
+      local lava=true
+      for dy=0,1 do for dx=0,1 do
+        if not BLACKTHORN_LAVA_TILES[map:tileAt(cx*2+dx,cy*2+dy)] then lava=false end
+      end end
+      if lava then return BLACKTHORN_LAVA_SHAPE end
+    end
+  end
+  local e = TileShape.elevation(map, shapes)
+  if e and tx >= 0 and ty >= 0 and tx < map.widthCells*2 and ty < map.heightCells*2 then
+    local cell = math.floor(ty/2)*e.width + math.floor(tx/2)
+    local wh=e.waterLevels and e.waterLevels[cell]
+    if wh and wh>0 and (not shapes[tile] or shapes[tile].class=='water') then
+      local key='water'..wh
+      if not e.shapeCache[key]then
+        local s={};for k,v in pairs(shapes.classes.water)do s[k]=v end
+        s.h=wh;e.shapeCache[key]=s
+      end
+      return e.shapeCache[key]
+    end
+    local stair = e.stairs[cell]
+    if stair then
+      local key = 's'..stair.low
+      if not e.shapeCache[key] then
+        e.shapeCache[key] = {class='cave_stair',art='cave_stair',h=stair.high,
+          low=stair.low,high=stair.high,authored=true,flat=false}
+      end
+      return e.shapeCache[key]
+    end
+    local h = e.floors[cell]
+    if h ~= nil then
+      if not e.shapeCache[h] then
+        e.shapeCache[h] = {class=h>0 and 'terrace' or 'ground',
+          art=h>0 and 'top' or 'flat',h=h,authored=true,flat=h==0}
+      end
+      return e.shapeCache[h]
+    end
+  end
   local s = shapes[tile]
+  -- A rock retaining face must reach the connected terrace it supports.
+  -- Do not propagate the height through a whole chamber or into water.
+  if e and shapes.caveElevation.preserveUnconnected and s and s.class == 'cliff' then
+    local cx,cy=math.floor(tx/2),math.floor(ty/2)
+    local h=s.h
+    for _,d in ipairs(caveEdges)do
+      local nx,ny=cx+d[1],cy+d[2]
+      if nx>=0 and ny>=0 and nx<map.widthCells and ny<map.heightCells then
+        h=math.max(h,e.floors[ny*e.width+nx] or h)
+      end
+    end
+    if h>s.h then
+      local key='cliff'..h
+      if not e.shapeCache[key]then
+        local raised={};for k,v in pairs(s)do raised[k]=v end
+        raised.h=h;e.shapeCache[key]=raised
+      end
+      s=e.shapeCache[key]
+    end
+  end
   -- conditional pins first: they are authored answers that need the
   -- POSITION to resolve, so they outrank both the flat pin on the same
   -- tile and the cell rules below (see authoredConditions)
@@ -878,6 +1079,28 @@ end
 local SHADES = { black = true, dark = true, light = true, white = true,
                  none = true }
 
+-- Explicit outline pixels whose shade also occurs in the surrounding ground.
+-- Sparse per-tile coordinates avoid retaining a whole cast-shadow shade.
+function TileShape.propSolidPixels(tilesetId)
+  local s=load()
+  local entry=s and s.tilesets and s.tilesets[tilesetId]
+  local rules=entry and entry.prop_solid_pixels
+  if type(rules)~="table" then return nil end
+  local out={}
+  for _,rule in ipairs(rules) do
+    if type(rule)=="table" and type(rule.tile)=="number" and type(rule.pixels)=="table" then
+      local points={}
+      for _,p in ipairs(rule.pixels) do
+        local x,y=type(p)=="table" and p[1],type(p)=="table" and p[2]
+        if type(x)=="number" and type(y)=="number" and x>=0 and x<8
+            and y>=0 and y<8 and x%1==0 and y%1==0 then points[y*8+x]=true end
+      end
+      out[rule.tile]=points
+    end
+  end
+  return out
+end
+
 function TileShape.propBg(tilesetId)
   local hit = bgCache[tilesetId]
   if hit ~= nil then return hit or nil end
@@ -931,6 +1154,18 @@ function TileShape.railFace(tilesetId)
   return #out > 0 and out or nil
 end
 
+-- Complete floor-standing props must not inherit the height of adjacent
+-- furniture. This is opt-in per source drawing; existing props keep their
+-- automatic support behaviour.
+function TileShape.propGrounded(tilesetId, tile)
+  local s = load()
+  local entry = s and s.tilesets and s.tilesets[tilesetId]
+  for _, id in ipairs(entry and entry.prop_grounded or {}) do
+    if id == tile then return true end
+  end
+  return false
+end
+
 -- What a bookcase rank does with the rows it VACATES -- the ones behind the
 -- one-cell-deep box it collapses onto (a tileset entry's
 -- bookcase_backfill).  Returns the mode name, or nil for the default.
@@ -971,6 +1206,7 @@ end
 -- Drop the cache: a mod that shadows data/voxel_heights.lua or a tileset
 -- record needs the next lookup to re-resolve (hot reload, mod toggle).
 function TileShape.invalidate()
+  elevationCache = setmetatable({}, { __mode = 'k' })
   spec = nil
   cache = {}
   sealCache = setmetatable({}, { __mode = "k" })

@@ -47,6 +47,7 @@ local DayNight = V.require("DayNight")
 local AntiAlias = V.require("AntiAlias")
 local Weather = V.require("Weather")
 local HorizonWall = V.require("HorizonWall")
+local ArenaScenery = V.require("SceneryWeather")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local okWeatherTweak, WeatherTweak = pcall(V.require, "WeatherTweak")
 if not okWeatherTweak or type(WeatherTweak) ~= "table"
@@ -202,6 +203,25 @@ local function prefetchArena(state, host)
   if host == state.map then
     local terrain, nbMesh, water, nbWater, plan = VoxelScene.prefetch(state)
     if not (terrain and plan and plan.state) then return nil end
+
+    -- A cold encounter may cover the overworld before its first BODY canvas
+    -- is presented. The mobile scenery lane deliberately waits for that
+    -- publication, so waiting for it here would deadlock the battle. Close
+    -- the current-only bootstrap explicitly; never admit its bare BODY as
+    -- a complete arena or wait for unrelated connected maps.
+    if plan.mobileCoreBootstrap and not plan.mobileClosedFull then
+      if HorizonWall.preferBody(host) then
+        local horizon, ready = HorizonWall.meshes(plan.state)
+        if not ready then return nil end
+        return { terrain=terrain, water=water, neighbors={}, meshes={},
+                 waters={}, horizon=horizon or {} }
+      end
+      ChunkMesher.request(host, false, nil, true)
+      local full, fullWater = ChunkMesher.pair(host, false)
+      if not full then return nil end
+      return { terrain=full, water=fullWater, neighbors={}, meshes={},
+               waters={}, horizon={} }
+    end
 
     -- VoxelScene's fifth result is the hole-free subset of connected maps:
     -- every included body already exists, and HorizonWall closes each seam
@@ -919,7 +939,14 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
             local ox=normalizedProjection(vp,unpack(other))
             local minX=side=="player" and .20 or math.max(.54,ox+.27)
             local maxX=side=="player" and .46 or .80
-            local mark=Ground.fit(layout.groundRegions,{x=x,y=y},footprint,minX,maxX)
+            -- Refining a large 3D model's actual contact must preserve the
+            -- landscape dialogue clearance selected by the composition.
+            -- Otherwise this second fit can move it back under the HUD.
+            local _,_,_,pw,ph=BattleScene.letterbox()
+            local maxY=pw>ph and
+              (.66-(footprint[2]+footprint[4]-y)) or nil
+            local mark=Ground.fit(layout.groundRegions,{x=x,y=y},footprint,
+              minX,maxX,maxY)
             if mark then
               local wx,wz=BattleScene.worldAtNormalized(vp,mark.x,mark.y,point[2])
               if wx and wz then point[1],point[3]=wx,wz end
@@ -1860,8 +1887,13 @@ function BattleScene.render(state, arena, textures, token)
     Voxel3D.glass(false)
     for _, rim in ipairs(horizon or {}) do
       if rim.kind ~= "water" then
-        Voxel3D.draw(rim.mesh, rim.texture,
-                     Mat4.translate(rim.ox, 0, rim.oy))
+        if HorizonWall.architecturalRoom and HorizonWall.architecturalRoom(host) then
+          ArenaScenery.draw(Voxel3D, rim, rim.texture,
+            Mat4.translate(rim.ox, 0, rim.oy), {outdoor=false, surfaces=false})
+        else
+          Voxel3D.draw(rim.mesh, rim.texture,
+                       Mat4.translate(rim.ox, 0, rim.oy))
+        end
       end
     end
     Voxel3D.glass(true)

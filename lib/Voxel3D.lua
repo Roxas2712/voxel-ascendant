@@ -332,6 +332,7 @@ local SHADER = [[
   uniform vec3 ghostColor;    // the flat silhouette colour
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
   uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
+  uniform float prismTransmission; // arena stained-glass pass only
   uniform float weatherGround;// 0 off, 1 wet, 2 snow, 3 heat-dried green tops
   uniform float weatherGrass; // 1 snow / 2 heat, only during grass mesh draws
   uniform float weatherAmount;// 0..1 accumulated coat / draining wetness
@@ -463,6 +464,8 @@ local SHADER = [[
     // solid silhouette. Last in the chain, so neither the sun nor a voxel
     // seam can mottle it.
     rgb = mix(rgb, ghostColor, ghost);
+    if (prismTransmission > 0.0)
+      return vec4(mix(vec3(1.0), p.rgb, prismTransmission), 1.0);
     return vec4(rgb, 1.0) * color;
   }
 #endif
@@ -594,6 +597,7 @@ varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
   uniform vec3 ghostColor;
   uniform float ghost;
   uniform vec3 dayTint;
+  uniform float prismTransmission; // arena stained-glass pass only
   uniform vec4 cutaway;
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
@@ -602,6 +606,8 @@ varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
     if (p.a < 0.5) discard;
     vec3 rgb = p.rgb * vShade * dayTint;
     rgb = mix(rgb, ghostColor, ghost);
+    if (prismTransmission > 0.0)
+      return vec4(mix(vec3(1.0), p.rgb, prismTransmission), 1.0);
     return vec4(rgb, 1.0) * color;
   }
 #endif
@@ -2552,6 +2558,14 @@ function Voxel3D.invalidate()
   V.require("Water").invalidate()
   -- and the glass masks are textures of this context too
   GlassMask.invalidate()
+end
+
+function Voxel3D.prismTransmission(amount)
+  if not (active and activeShader) then return false end
+  amount=tonumber(amount) or 0
+  if amount~=amount then amount=0 end
+  return pcall(activeShader.send,activeShader,"prismTransmission",
+    math.max(0,math.min(1,amount)))
 end
 
 return Voxel3D

@@ -45,8 +45,10 @@ if not okWeatherTweak or type(WeatherTweak) ~= "table"
   }
 end
 local HorizonWall = V.require("HorizonWall")
+local SceneryWeather = V.require("SceneryWeather")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local InteriorCutaway = V.require("InteriorCutaway")
+local TowerPillar = V.require("Gen2TowerPillar")
 local WallDecals = V.require("WallDecals")
 local CanvasPresentation = V.require("CanvasPresentation")
 local MobileSceneryGate = V.require("Gen2MobileSceneryGate")
@@ -528,7 +530,10 @@ end
 -- void to wants -- the overworld battle's arena shot is one of those. The
 -- gradient is added on top of this by skyFor, for the free-roam camera alone.
 function VoxelScene.skyColor(map, t)
-  if not (map and map.def and Map.isOutdoor(map.def)) then return nil end
+  if not (map and map.def and (Map.isOutdoor(map.def)
+      or type(HorizonWall.towerViewFor)=='function' and HorizonWall.towerViewFor(map)
+      or type(HorizonWall.exitViewFor)=='function' and HorizonWall.exitViewFor(map)
+      or type(HorizonWall.arenaViewFor)=='function' and HorizonWall.arenaViewFor(map))) then return nil end
   if not t or t <= 0 then return nil end
   local sky = VoxelScene.skyShade(SKY_SHADE, t)
   -- outdoors the flat fill follows the CLOCK: it becomes the hour's haze --
@@ -601,6 +606,9 @@ local function groundAt(map, cellX, cellY)
   -- warp fires as they step in -- lifting them onto the geometry read as
   -- climbing an invisible block
   if s.art == "stair" then return 0 end
+  -- A traversable cave stair has no room-changing warp. Its cell-centre
+  -- support is the middle of the flight, including before mesh upload.
+  if s.art == 'cave_stair' then return (s.low+s.high)/2 end
   -- ...and a cell the mesher gave a MEASURED height to answers with that
   -- one, not with its class default: the river above a waterfall is drawn
   -- at the fall's crest (Structures.buildFalls), and a surfer reading the
@@ -614,6 +622,36 @@ VoxelScene.YAW = YAW
 -- shared with the overworld battle, which stands its mons on map cells and
 -- needs the same answer about what height "the floor" is there
 VoxelScene.groundAt = groundAt
+
+-- Native cellX/Y stay at the departure cell until a 16-frame step completes.
+-- Cave flights have four treads inside that cell: sample the rendered foot
+-- (casterMatrix's px+8, py+8), not the discrete gameplay destination. This
+-- also handles continuous free-camera motion and NPC interpolation without
+-- changing any entity coordinates or collision decisions.
+local function groundForPose(map, entity)
+  local shapes = TileShape.forMap(map)
+  local elevation = TileShape.elevation and TileShape.elevation(map, shapes)
+  if not elevation or entity.px == nil or entity.py == nil then
+    return groundAt(map, entity.cellX, entity.cellY)
+  end
+  local wx, wz = entity.px + 8, entity.py + 8
+  local cx, cy = math.floor(wx / 16), math.floor(wz / 16)
+  if not map:inBounds(cx, cy) then return 0 end
+  local s = elevation.stairs[cy * elevation.width + cx]
+  if s then
+    local tread = math.min(3, math.floor((wz - cy * 16) / 4))
+    return s.high - tread * (s.high - s.low) / 4
+  end
+  -- Only a solved floor/water region participates. Props, room-changing
+  -- staircase warps and unsupported profiles retain the old cell contract.
+  local cell = cy * elevation.width + cx
+  if elevation.floors[cell] ~= nil
+      or (elevation.waterLevels and elevation.waterLevels[cell] ~= nil) then
+    return groundAt(map, cx, cy)
+  end
+  return groundAt(map, entity.cellX, entity.cellY)
+end
+VoxelScene.groundForPose = groundForPose
 
 -- Camera-ward pull distance for billboards (and the grass rows, which
 -- must keep their relative depth to feet): just enough that a leaned-back
@@ -853,7 +891,7 @@ end
 
 local function cutawayRimVisible(rim, enabled)
   if type(InteriorCutaway.rimVisible) ~= "function" then return true end
-  return InteriorCutaway.rimVisible(rim, enabled)
+  return InteriorCutaway.rimVisible(rim, enabled, Voxel.level)
 end
 
 local function setCutaway(plane)
@@ -1026,34 +1064,35 @@ end
 -- fallback while the first slices run.
 -- OPEN WORLD is not a flat overview. Every map admitted by the camera/zoom
 -- residency radius is meshed with the same FULL voxel geometry the current map
--- uses. Internal seams are masked by cardinal neighbours, while the outside edge
+-- uses. Resident bodies mask every overlapping apron, while the outside edge
 -- keeps the normal 32-tile voxel border/apron. This preserves a continuous 3D
 -- perimeter without retaining the whole connected region.
-local function openWorldFullMasks(state, rec)
-  if not (state and state._stadiumOpenWorldNeighbors) then return nil end
-  local placements = { [state.map.id] = { map = state.map, ox = 0, oy = 0 } }
-  for _, nb in ipairs(state.neighbors or {}) do
-    placements[nb.map.id] = { map = nb.map, ox = nb.ox, oy = nb.oy }
-  end
-  local here = rec or placements[state.map.id]
+local function residentFullMasks(state, rec)
+  if not (state and state.map) then return nil end
+  local here = rec or { map=state.map, ox=0, oy=0 }
   if not (here and here.map and here.map.def) then return nil end
-  local masks = {}
-  for _, conn in pairs(here.map.def.connections or {}) do
-    local id = conn and (conn.mapId or conn.map)
-    local other = id and placements[id]
-    if other and other.map and other.map.def then
-      -- ChunkMesher masks are LOCAL to the map being built. Convert the other
-      -- body's solved world rectangle back into this map's local coordinates.
-      local ox = (tonumber(other.ox) or 0) - (tonumber(here.ox) or 0)
-      local oy = (tonumber(other.oy) or 0) - (tonumber(here.oy) or 0)
+  local masks, seen = {}, { [here.map.id]=true }
+  local function add(map, x, y)
+    if map and map.def and not seen[map.id] then
+      seen[map.id] = true
+      -- Synthetic trees must never own another resident's real ground, even
+      -- when the maps meet diagonally or via a third map rather than a direct
+      -- connection. Convert the solved BODY rectangle to this mesh's space.
+      local ox = (tonumber(x) or 0) - (tonumber(here.ox) or 0)
+      local oy = (tonumber(y) or 0) - (tonumber(here.oy) or 0)
       masks[#masks + 1] = {
-        ox, oy,
-        ox + other.map.def.width * 32,
-        oy + other.map.def.height * 32,
+        ox, oy, ox + map.def.width * 32, oy + map.def.height * 32,
       }
     end
   end
+  add(state.map, 0, 0)
+  for _, nb in ipairs(state.neighbors or {}) do add(nb.map, nb.ox, nb.oy) end
   return masks
+end
+
+local function openWorldFullMasks(state, rec)
+  if not (state and state._stadiumOpenWorldNeighbors) then return nil end
+  return residentFullMasks(state, rec)
 end
 
 local function readyNeighbor(state, i)
@@ -1106,14 +1145,7 @@ function VoxelScene.prefetch(state)
   if state._stadiumOpenWorldNeighbors then
     masks = openWorldFullMasks(state, { map = state.map, ox = 0, oy = 0 })
   else
-    masks = {}
-    for _, nb in ipairs(state.neighbors or {}) do
-      if nb.depth == nil or nb.depth <= 1 then
-        masks[#masks + 1] = { nb.ox, nb.oy,
-                              nb.ox + nb.map.def.width * 32,
-                              nb.oy + nb.map.def.height * 32 }
-      end
-    end
+    masks = residentFullMasks(state)
   end
 
   -- Builds are asynchronous (ChunkMesher.pump runs in the pipeline's
@@ -1131,11 +1163,13 @@ function VoxelScene.prefetch(state)
   -- always come from the same slot and a lake is never drawn twice or left
   -- as a hole.
   local currentBodyOnly = state._stadiumCurrentBodyOnly == true
+    or type(InteriorCutaway.terrainBodyOnly) == "function"
+       and InteriorCutaway.terrainBodyOnly(state.map)
   local terrain, water
   if currentBodyOnly then
-    -- Do not start/expose FULL until every direct connected-map body has been
-    -- adapted and can contribute its exact seam mask. BODY is already the
-    -- complete playable map and carries no synthetic apron fragments.
+    -- BODY is the complete native map: use it for pending direct seams and
+    -- when the semantic enclosure owns the surround. Do not set the pending
+    -- seam flag for indoor policy; mobile scenery must still finish staging.
     ChunkMesher.request(state.map, true, nil, true, 3)
     terrain, water = ChunkMesher.pair(state.map, true)
   else
@@ -1148,7 +1182,11 @@ function VoxelScene.prefetch(state)
   local nbMesh, nbWater = {}, {}
   local openWorld = state._stadiumOpenWorldNeighbors == true
   for i, nb in ipairs(state.neighbors or {}) do
-    if openWorld then
+    if nb.handoffBodyOnly == true then
+      -- Already uploaded previous map, re-positioned under the new root.
+      -- A first-frame handoff must not request/expose an old synthetic apron.
+      nbMesh[i], nbWater[i] = ChunkMesher.pair(nb.map, true)
+    elseif openWorld then
       -- Full meshes on ALL connected maps. This is the important difference
       -- from the old one-ring streamer: body-only meshes have no border/apron,
       -- so a world-scale camera exposes empty void at the outside perimeter.
@@ -1203,7 +1241,7 @@ local function posesOf(state, spriteColors)
     posed[#posed + 1] = {
       sprite = sprite, px = vx + g.ox, py = g.npc.py + g.oy,
       facing = facing, phase = phase, flip = flip,
-      gh = groundAt(g.map or state.map, g.npc.cellX, g.npc.cellY),
+      gh = groundForPose(g.map or state.map, g.npc),
       lift = g.npc.py - vy, colors = spriteColors(g.map or state.map),
     }
   end
@@ -1214,7 +1252,7 @@ local function posesOf(state, spriteColors)
       posed[#posed + 1] = {
         sprite = sprite, px = vx, py = e.py,
         facing = facing, phase = phase, flip = flip,
-        gh = groundAt(state.map, e.cellX, e.cellY),
+        gh = groundForPose(state.map, e),
         lift = e.py - vy, colors = colors,
       }
       if e == state.player then
@@ -1519,9 +1557,13 @@ end
 -- left out on purpose: thousands of tufts would cast a speckle no bigger
 -- than the pixels it lands on, at the cost of the mesh being drawn twice.
 local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
-                           atlasFor, water, nbWater, battleCards, battleToken)
+                           atlasFor, water, nbWater, battleCards, battleToken,
+                           towerMesh, towerModel)
   if not ShadowMap.available() then return end
   local sig = shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh)
+  if towerMesh then
+    sig = sig .. "|tower:" .. tostring(towerMesh) .. ":" .. tostring(towerModel[2])
+  end
   -- a staged fight's pics move every frame the animation does, and the sun
   -- has to follow them (VR frames only; see render)
   if battleToken then sig = sig .. "|btl" .. tostring(battleToken) end
@@ -1531,6 +1573,7 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   local ok, err = pcall(function()
 
   ShadowMap.draw(terrain, atlasFor(state.map), nil)
+  if towerMesh then ShadowMap.draw(towerMesh, atlasFor(state.map), towerModel) end
   for i, nb in ipairs(state.neighbors or {}) do
     if nbMesh[i] then
       ShadowMap.draw(nbMesh[i], atlasFor(nb.map),
@@ -1760,11 +1803,33 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   if type(Weather.skyState) == "function" then
     skyWeatherMode, nativeGround = Weather.skyState(state.map)
   end
-  WeatherTweak.observe(state.map, weatherMode, Weather.clock, outdoor)
+  local towerView=type(HorizonWall.towerViewFor)=='function'
+    and HorizonWall.towerViewFor(state.map)
+    or type(HorizonWall.exitViewFor)=='function' and HorizonWall.exitViewFor(state.map)
+    or type(HorizonWall.arenaViewFor)=='function' and HorizonWall.arenaViewFor(state.map)
+  local windowMap,windowMode,windowSurfaces
+  if towerView and state.worldMaps and state.worldMaps[towerView.city]
+    and type(Weather.peekSkyState)=='function' then
+    windowMap={id=towerView.city,def=state.worldMaps[towerView.city]}
+    windowMode,windowSurfaces=Weather.peekSkyState(windowMap)
+    skyWeatherMode=windowMode
+  end
+  -- The visible regional exterior keeps accumulating/thawing while the room
+  -- itself remains dry. The particle/audio owner still sees the indoor map.
+  WeatherTweak.observe(windowMap or state.map, windowMode or weatherMode,
+    Weather.clock, windowMap~=nil or outdoor)
+  local windowAmount,windowKind=0,0
+  if windowMap then
+    windowAmount,windowKind=SceneryWeather.values({
+      outdoor=true,surfaces=windowSurfaces,
+      weather=WeatherTweak.groundMode(windowMap,windowMode,windowSurfaces),
+      amount=WeatherTweak.groundAmount(windowMap,windowMode,windowSurfaces),
+    })
+  end
   local groundWeather = WeatherTweak.groundMode(
-    state.map, skyWeatherMode, nativeGround)
+    state.map, windowMap and weatherMode or skyWeatherMode, nativeGround)
   local groundAmount = WeatherTweak.groundAmount(
-    state.map, skyWeatherMode, nativeGround)
+    state.map, windowMap and weatherMode or skyWeatherMode, nativeGround)
   Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(state.map))
   -- and the window glass: the tileset's own panes (found in its art --
   -- GlassMask), lit after dark. Outdoors only, like everything the clock
@@ -1827,6 +1892,13 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
     if okHorizon and type(built) == "table" then horizon = built end
   end
   local indoorCutaway = cutawayActive(state.map)
+  -- Only the upper shaft is dynamic; its fixed collar lives in the terrain.
+  -- Native tower maps have no connections. Read the current cached mesh only,
+  -- never trigger an auxiliary build from render/reflection/shadow callbacks.
+  local towerMesh = not indoorCutaway and type(ChunkMesher.towerPillar) == "function"
+    and ChunkMesher.towerPillar(state.map) or nil
+  local towerModel = towerMesh and TowerPillar.modelMatrix(
+    state._vascNativeTileAnimTimer or 0) or nil
 
   local atlasCache = {}
   local function atlasFor(map)
@@ -1923,7 +1995,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   if type(Shadows.enabled) ~= "function" or Shadows.enabled() then
     castShadows(state, terrain, nbMesh, posed, shCx, shCy,
                 renderVw, renderVh, atlasFor,
-                water, nbWater, battleCards, battleToken)
+                water, nbWater, battleCards, battleToken, towerMesh, towerModel)
   end
 
   -- Everything between beginScene and endScene, as one function: the flat
@@ -1934,11 +2006,13 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
 
   if panoramaReady then
     PanoramaBackdrop.drawAt(me and me.px or cx, 0, me and me.py or cy, {
-      weather=skyWeatherMode, outdoor=outdoor, surfaces=nativeGround,
+      weather=groundWeather, amount=groundAmount,
+      outdoor=outdoor, surfaces=nativeGround,
     })
   end
 
   if liveBattleArena then Voxel3D.battleOcclusion(liveBattleArena, liveBattleGround) end
+  Voxel3D.weatherGround(true)
   Voxel3D.draw(terrain, atlasFor(state.map), nil)
   for i, nb in ipairs(state.neighbors or {}) do
     if nbMesh[i] then
@@ -1947,6 +2021,11 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
     end
   end
   if liveBattleArena then Voxel3D.battleOcclusion(nil) end
+  Voxel3D.weatherGround(false)
+
+  if towerMesh then
+    Voxel3D.draw(towerMesh, atlasFor(state.map), towerModel, nil, towerModel)
+  end
 
   -- Near scenery/enclosure layer from current VASC. Profiles authored for
   -- Kanto are used on Gen2's Kanto maps; every other Johto/Gen2 map receives
@@ -1959,13 +2038,24 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
       if indoorCutaway and rim.kind == "wall"
           and type(InteriorCutaway.wallPlane) == "function" then
         local nx, nz, offset = InteriorCutaway.wallPlane(
-          Voxel3D.eye, Voxel3D.focus)
+          Voxel3D.eye, Voxel3D.focus, state.map, Voxel.level)
         if nx then setCutaway({ nx, nz, offset }) else setCutaway() end
       else
         setCutaway()
       end
-      Voxel3D.draw(rim.mesh, rimTexture,
-                   Mat4.translate(rim.ox or 0, 0, rim.oy or 0))
+      if rim.class=='tower_city' or type(rim.class)=='string' and rim.class:match('^johto_view_') then
+        Voxel3D.drawTinted(rim.mesh,rimTexture,
+          Mat4.translate(rim.ox or 0,0,rim.oy or 0),DayNight.tint(true),
+          windowAmount,windowKind)
+      else
+        SceneryWeather.draw(Voxel3D, rim, rimTexture,
+          Mat4.translate(rim.ox or 0, 0, rim.oy or 0), {
+            weather=groundWeather, amount=groundAmount,
+            prismLight=(rim.class=="garden_light" or rim.class=="garden_prism") and SceneryWeather.prismLight(DayNight,skyWeatherMode) or 0,
+            prismClock=rim.class=="garden_light" and DayNight or nil,
+            outdoor=outdoor, surfaces=nativeGround,
+          })
+      end
     end
   end
   setCutaway()
@@ -2004,6 +2094,24 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
     if nbWater and nbWater[i] then
       waterDraws[#waterDraws + 1] = { nbWater[i], atlasFor(nb.map),
                                       Mat4.translate(nb.ox, 0, nb.oy) }
+    end
+  end
+  -- The opaque scenery pass deliberately skips water. Its exterior sea mesh
+  -- must join this queue, otherwise coastlines end at the real map rectangle
+  -- even though HorizonWall has already built the surrounding ocean. Keep it
+  -- in the same desktop reflection/mobile flat pass as native map water.
+  local seaTexture
+  for _, rim in ipairs(horizon) do
+    if rim.kind == "water" then
+      if seaTexture == nil then
+        local ok, texture = pcall(TerrainAtlas.seaForMap, state.map,
+          modeColors(paletteFor, state.map))
+        seaTexture = ok and texture or false
+      end
+      waterDraws[#waterDraws + 1] = {
+        rim.mesh, seaTexture or rim.texture,
+        Mat4.translate(rim.ox or 0, 0, rim.oy or 0),
+      }
     end
   end
   -- the cast goes into the reflection copy only -- see drawWater for why it
@@ -2130,6 +2238,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   local lean = math.max(leanAngle(), 0.05)
   local pull = VoxelScene.pull(lean)
   if liveBattleArena then Voxel3D.battleOcclusion(liveBattleArena, liveBattleGround) end
+  Voxel3D.weatherGrass(true)
   Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
   for i, nb in ipairs(state.neighbors or {}) do
     if readyNeighbor(state, i) then
@@ -2137,6 +2246,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
                    Mat4.translate(nb.ox, 0, nb.oy), pull)
     end
   end
+  Voxel3D.weatherGrass(false)
   -- flower billboards: pulled like the characters and the grass, MINUS
   -- the depth of 8 world pixels along the view (8 sin a -- the camera
   -- looks along (0, -cos a, -sin a), so that is exactly one tile row of
@@ -2202,11 +2312,11 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
       beginOK, began = pcall(Voxel3D.beginScene,
         w, h, cx, cy, renderVw, renderVh,
         skyFor(state.map, skyWeatherMode), sceneSlot,
-        skyContext)
+        skyContext, me and me.gh)
     else
       began = Voxel3D.beginScene(w, h, cx, cy, renderVw, renderVh,
                                  skyFor(state.map, skyWeatherMode), sceneSlot,
-                                 skyContext)
+                                 skyContext, me and me.gh)
     end
     if not beginOK or not began then
       if mobileScenery then

@@ -163,6 +163,20 @@ function BattleScene.letterboxFov(fovGB, ph, s)
   return 2 * math.atan(math.tan(fovGB / 2) * ph / span)
 end
 
+-- A searched MAP already has an inspected physical seat. The moving director
+-- can start there when its generic initial orbit lies outside a tiny room.
+-- Return a fresh, viewport-adjusted camera; never mutate the shared rig.
+function BattleScene.authoredSafetyCamera(arena, groundY)
+  if not (arena and arena.mapReframe) then return nil end
+  local camera=BattleCam.rig(arena,groundY,true)
+  local _,_,scale,_,height=BattleScene.letterbox()
+  local frameScale=math.max(1,tonumber(arena.mapFrameScale)or 1)
+  camera.fov=BattleScene.letterboxFov(
+    2*math.atan(math.tan(camera.fov/2)*frameScale),height,scale)
+  camera._stadiumBattleCinematic=true
+  return camera
+end
+
 -- ------- palette
 --
 -- The world palette a map draws under, in the shape VoxelScene's colour
@@ -244,7 +258,7 @@ function BattleScene.textureFlipX(side, tex)
   return side == "player"
 end
 
-local function monMatrix(tex, x, groundY, z, mirror, actorScale)
+local function monMatrix(tex, x, groundY, z, mirror, actorScale, pitched, camera)
   local captureW = tonumber(tex.captureW) or BattleScene.GB_W
   local captureH = tonumber(tex.captureH) or BattleScene.GB_H
   local k = tonumber(tex.pixelWorld)
@@ -268,10 +282,11 @@ local function monMatrix(tex, x, groundY, z, mirror, actorScale)
     visibleBottom = tonumber(tex.ay) or captureH
   end
   local oy = -((captureH - visibleBottom) / captureH) * h
-  local yaw = BattleBillboard.yawToward(x, z, Voxel3D.eye)
+  local rotation = BattleBillboard.orientation(x, groundY, z,
+    camera and camera.eye or Voxel3D.eye, pitched, camera or Voxel3D.camera)
   local card = Mat4.mul(Mat4.translate(ox, oy, 0), Mat4.scale(w, h, 1))
   if mirror then card = Mat4.mul(Mat4.scale(-1, 1, 1), card) end
-  return Mat4.mul(Mat4.mul(Mat4.translate(x, groundY, z), Mat4.rotateY(yaw)),
+  return Mat4.mul(Mat4.mul(Mat4.translate(x, groundY, z), rotation),
                   card)
 end
 
@@ -415,7 +430,7 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
 end
 
 -- Every mon that has something to show this frame, as (texture, matrix).
-local function monCards(arena, groundY, textures, map, vp)
+local function monCards(arena, groundY, textures, map, vp, camera)
   local out = {}
   if not textures then return out end
   local layout = BattleScene.presentationLayout(arena, groundY, textures,
@@ -440,7 +455,9 @@ local function monCards(arena, groundY, textures, map, vp)
                         shadowRadius={ contactRadiusX, contactRadiusZ },
                         model = monMatrix(tex, position[1], position[2],
                                           position[3], mirror,
-                                          layout.actorScale[side]) }
+                                          layout.actorScale[side],
+                                          arena and (arena.cam == "court"
+                                            or arena.cam == "court_lift"), camera) }
     end
   end
   return out
@@ -530,8 +547,10 @@ end
 local function projectedModelPoint(mvp, x, y, pw, ph)
   local cx = mvp[1] * x + mvp[2] * y + mvp[4]
   local cy = mvp[5] * x + mvp[6] * y + mvp[8]
+  local cz = mvp[9] * x + mvp[10] * y + mvp[12]
   local cw = mvp[13] * x + mvp[14] * y + mvp[16]
   if not (cw and cw > 1e-9) then return nil end
+  if cz / cw < -1 or cz / cw > 1 then return nil end
   return (cx / cw * .5 + .5) * pw,
          (cy / cw * .5 + .5) * ph
 end
@@ -540,8 +559,8 @@ end
 -- through the very same billboard matrix drawn below.  The old actorVisuals
 -- reused the 16x40 camera-safety prism; that prism intentionally extends far
 -- above a small Crystal sprite and made a genuinely head-owned HP card look
--- like a fixed top-corner HUD.  Collision safety keeps its conservative hull
--- separately in actorHulls; this receipt describes only visible pixels.
+-- like a fixed top-corner HUD. Unknown providers retain a separate fallback
+-- prism; fresh native captures can use these bounds for screen safety too.
 local function actorVisualForCard(card, vp, pw, ph, renderToken)
   local source = card and card.source
   local box = type(source) == "table" and source.visualBox or nil
@@ -927,7 +946,7 @@ function BattleScene.cameraSafetyShot(arena, groundY, camera, textures, map,
   shot.smartArenaComposition = layout.smartArenaComposition
   local exact = {}
   if textures then
-    for _, card in ipairs(monCards(arena, groundY, textures, host, vp)) do
+    for _, card in ipairs(monCards(arena, groundY, textures, host, vp, camera)) do
       local receipt = actorVisualForCard(
         card, vp, pw, ph, renderToken)
       if receipt then exact[card.side] = receipt end
@@ -940,10 +959,22 @@ function BattleScene.cameraSafetyShot(arena, groundY, camera, textures, map,
       vp, tonumber(mark[1]) or 0, tonumber(mark[2]) or groundY,
       tonumber(mark[3]) or 0,
       pw, ph)
+    local stadium = stadiumActorVisual(side, vp, pw, ph, renderToken)
+    local tex = textures and textures[side]
+    -- A fresh native capture publishes its actual ink bounds. Project those
+    -- through THIS candidate's billboard, not a fictitious 32x40 solid box.
+    -- Keep the physical ground mark and all terrain/path checks independent.
+    -- Unknown captures and model providers retain the conservative fallback.
+    if not stadium and tex and tex.source == "gen2-native-side-capture"
+        and type(tex.visualBox) == "table" then
+      if not exact[side] then return nil end
+      local fx, fy = projectedPixel(vp, mark[1], mark[2], mark[3], pw, ph)
+      if not fx then return nil end
+      hull, foot = exact[side].hull, {fx, fy}
+    end
     if not hull then return nil end
     shot.actorHulls[side], shot.actorFeet[side] = hull, foot
-    shot.actorVisuals[side] = stadiumActorVisual(
-      side, vp, pw, ph, renderToken) or exact[side]
+    shot.actorVisuals[side] = stadium or exact[side]
       or { hull=hull, foot={x=foot[1], y=foot[2]}, head=head }
   end
   return shot

@@ -107,6 +107,7 @@ Voxel3D.FACE_SHADE = {
 
 local SHADER = [[
   varying float vShade;
+  varying float vWeatherTop;
   varying vec3 vSun;          // this fragment's place in the sun's view
   varying vec3 vWorld;        // uncurved world position; battle visibility uses it
 #ifdef VOXEL_GRID
@@ -130,7 +131,9 @@ local SHADER = [[
   // this remains the exact historical vertex path for every other draw.
   attribute vec3 InstanceOffset;
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    vShade = VertexShade;
+    float encodedShade = abs(VertexShade);
+    vWeatherTop = step(1.5, encodedShade);
+    vShade = encodedShade - vWeatherTop * 2.0;
     vec4 placed = vertex_position;
     placed.xyz += InstanceOffset;
 #ifdef VOXEL_GRID
@@ -267,13 +270,20 @@ local SHADER = [[
 
   uniform vec3 ghostColor;    // the flat silhouette colour
   uniform float ghost;        // 0 = shade normally, 1 = flatten to it
-  uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
+ uniform vec3 dayTint;       // the hour's light on the world; 1,1,1 = noon
+  uniform float prismTransmission; // scoped stained-glass filtering; 0 normally
   uniform Image glassMask;    // opaque where the atlas texel is window glass
   uniform vec2 glassSize;     // the mask's dimensions: tc -> atlas texels
   uniform float glassNight;   // 0 = daylight .. 1 = the lamps are on
   uniform float glassPhase;   // the glint's phase: advances with TRAVEL
   uniform float glassGlint;   // and its strength: 0 while standing still
   uniform float glassOn;      // 0 for sprite-sheet draws (see Voxel3D.glass)
+  uniform float weatherGround;
+  uniform float weatherGrass;
+  uniform float weatherAmount;
+  uniform float weatherTime;
+  uniform float weatherPanorama;
+  uniform float weatherPanoramaKind;
 
   float segmentDistance2D(vec2 p, vec2 a, vec2 b) {
     vec2 ab = b - a;
@@ -316,6 +326,86 @@ local SHADER = [[
     // the hour's tint multiplies like the sun terms do: it is LIGHT, the
     // same warm or moonlit cast on every surface, not a palette swap
     vec3 rgb = p.rgb * vShade * sunlight(vSun) * dayTint;
+    vec3 weatherLight = vShade * sunlight(vSun) * dayTint;
+    // VASC_SURFACE_WEATHER_BEGIN
+    // Authored panoramas have no upper-face geometry. Scope their coat to
+    // the backdrop draw, and keep the existing scene light/night tint.
+    if (weatherPanorama > 0.0) {
+      float coat = clamp(weatherPanorama, 0.0, 1.0);
+      if (weatherPanoramaKind < 1.5) {
+        // The flat artwork cannot carry real pools; a restrained wet/dark
+        // grade connects it to the actual world-space puddles on terrain.
+        rgb *= 1.0 - .24 * coat;
+      } else if (weatherPanoramaKind < 2.5) {
+        rgb = mix(rgb, vec3(.965, .975, .985) * weatherLight, .86 * coat);
+      } else {
+        float green = smoothstep(.015, .13, p.g - max(p.r, p.b));
+        vec3 earth = vec3(.43, .285, .125) * (.72 + p.g * .34);
+        rgb = mix(rgb, earth * weatherLight, green * .72 * coat);
+      }
+    }
+    // This bit is geometric, not chromatic. Ground, sloped/flat roofs and
+    // tree crowns receive weather; vertical house art never can, even when a
+    // facade deliberately uses the same brightness as an upper surface.
+    if (weatherGround > 0.5 && vWeatherTop > 0.5) {
+      // Broad world-fixed basins, each with its own birth/drain phase. They
+      // live on real upward voxel surfaces, so perspective, roofs, occlusion
+      // and camera motion all come for free. No screen-space ellipses remain
+      // when VASC owns the ground.
+      float seed = fract(sin(dot(floor(vWorld.xz / 11.0),
+                                  vec2(12.9898, 78.233))) * 43758.5453);
+      float life = fract(weatherTime * (0.020 + seed * 0.012) + seed);
+      float born = smoothstep(0.02, 0.20, life);
+      float drained = 1.0 - smoothstep(0.70, 0.98, life);
+      float basin = sin(vWorld.x * 0.075 + seed * 5.0)
+                  + cos(vWorld.z * 0.069 - seed * 4.0)
+                  + sin((vWorld.x + vWorld.z) * 0.031);
+      float weatherPatch = smoothstep(0.25, 1.05, basin) * born * drained;
+      if (weatherGround < 1.5) {
+        // Wet ground is darker at its rim and carries a moving grey-sky glint
+        // through its centre, which reads much closer to shallow water than a
+        // blue tint. Every pool still returns completely to the source tile.
+        vec3 wet = mix(rgb * 0.48, vec3(0.34, 0.39, 0.40) * weatherLight, 0.46);
+        float glint = max(0.0, sin((vWorld.x - vWorld.z) * 0.18
+                                  + weatherTime * 0.72));
+        wet += vec3(0.13, 0.15, 0.15) * weatherLight * glint * weatherPatch;
+        rgb = mix(rgb, wet,
+                  weatherPatch * 0.72 * clamp(weatherAmount, 0.0, 1.0));
+      } else if (weatherGround < 2.5) {
+        // Snow must read as snow even on a red or blue authored roof. Keep a
+        // little world-fixed variation, but guarantee a dense near-white coat
+        // on every real upper surface for the whole active snow spell. The
+        // source colour returns as the weather owner's accumulated coat melts.
+        float cover = .78 + smoothstep(-0.55, .75, basin) * .16;
+        rgb = mix(rgb, vec3(.965, .975, .985) * weatherLight,
+                  cover * .96 * clamp(weatherAmount, 0.0, 1.0));
+      } else {
+        // HEAT dries only authored green texels. The upward-face gate above
+        // keeps facades and trunks intact, while a broad slow world pattern
+        // prevents the terrain from becoming one perfectly flat brown plate.
+        float green = smoothstep(.015, .13, p.g - max(p.r, p.b));
+        float dry = .68 + .12 * sin(vWorld.x * .055 - vWorld.z * .047
+                                    + weatherTime * .025);
+        vec3 earth = vec3(.43, .285, .125) * (.72 + p.g * .34);
+        rgb = mix(rgb, earth * weatherLight, green * dry);
+      }
+    }
+    if (weatherGrass > 0.5) {
+      // Tall-grass blades are camera-facing cards, not upward terrain faces,
+      // so they use a separately gated draw state. The texture's alpha was
+      // discarded above; only the authored blades become frosted white.
+      if (weatherGrass < 1.5) {
+        float frost = 0.72 + 0.10 * sin(vWorld.x * .31 + vWorld.z * .23
+                                        + weatherTime * .08);
+        rgb = mix(rgb, vec3(.86, .89, .89) * weatherLight,
+                  frost * clamp(weatherAmount, 0.0, 1.0));
+      } else {
+        float green = smoothstep(.015, .12, p.g - max(p.r, p.b));
+        vec3 straw = vec3(.46, .30, .12) * (.76 + p.g * .30);
+        rgb = mix(rgb, straw * weatherLight, green * .82);
+      }
+    }
+    // VASC_SURFACE_WEATHER_END
 #ifdef VOXEL_GRID
     // darken what is there rather than painting a colour, so a seam across
     // dark grass and one across a white roof each stay in their own palette
@@ -358,6 +448,8 @@ local SHADER = [[
     // solid silhouette. Last in the chain, so neither the sun nor a voxel
     // seam can mottle it.
     rgb = mix(rgb, ghostColor, ghost);
+    if (prismTransmission > 0.0)
+      return vec4(mix(vec3(1.0), p.rgb, prismTransmission), 1.0);
     return vec4(rgb, 1.0) * color;
   }
 #endif
@@ -492,6 +584,43 @@ end
 -- The scene shader. `grid` asks for the wireframe variant, and nil comes
 -- back when that one will not build -- callers then fall back to the plain
 -- one rather than losing the whole 3D pass.
+function Voxel3D.weatherGround(on)
+  if not (active and activeShader) then return false end
+  local amount = on and (Voxel3D.weatherKind or 0) or 0
+  local ok = pcall(activeShader.send, activeShader, "weatherGround", amount)
+  return ok and amount > 0
+end
+
+function Voxel3D.weatherGrass(on)
+  if not (active and activeShader) then return false end
+  local amount = on and ((Voxel3D.weatherKind == 2 and 1)
+                         or (Voxel3D.weatherKind == 3 and 2) or 0) or 0
+  local ok = pcall(activeShader.send, activeShader, "weatherGrass", amount)
+  return ok and amount > 0
+end
+
+function Voxel3D.prismTransmission(amount)
+  if not (active and activeShader) then return false end
+  amount=tonumber(amount) or 0
+  if amount~=amount then amount=0 end
+  return pcall(activeShader.send,activeShader,"prismTransmission",
+    math.max(0,math.min(1,amount)))
+end
+
+function Voxel3D.weatherPanorama(amount, kind)
+  if not (active and activeShader) then return false end
+  amount = tonumber(amount) or 0
+  if amount ~= amount then amount = 0 end
+  kind = kind == 1 and 1 or kind == 3 and 3 or 2
+  local ok = pcall(activeShader.send, activeShader, "weatherPanoramaKind", kind)
+  if not ok then
+    pcall(activeShader.send, activeShader, "weatherPanorama", 0)
+    return false
+  end
+  return pcall(activeShader.send, activeShader, "weatherPanorama",
+    math.max(0, math.min(1, amount)))
+end
+
 function Voxel3D.shader(grid)
   grid = grid and true or false
   if shaders[grid] == nil then
@@ -504,6 +633,11 @@ function Voxel3D.shader(grid)
     end
   end
   return shaders[grid] or nil
+end
+
+-- Read-only production-source seam for real-driver pixel regression tests.
+function Voxel3D._shaderSource(_, grid)
+  return grid and ("#define VOXEL_GRID 1\n" .. SHADER) or SHADER
 end
 
 -- Whether the 3D path can run at all. False on a headless test run (no
@@ -644,7 +778,7 @@ end
 
 -- View and projection for a `vw` x `vh` world-pixel view centred on
 -- (cx, cy) in world pixels. Returns the combined matrix.
-function Voxel3D.viewProjection(cx, cy, vw, vh)
+function Voxel3D.viewProjection(cx, cy, vw, vh, orbitGroundY)
   local cam = Voxel3D.camera
   if cam then
     local eye, focus = cam.eye, cam.focus
@@ -725,8 +859,11 @@ function Voxel3D.viewProjection(cx, cy, vw, vh)
   local fov = 2 * math.atan(1 / (2 * focal))
   Voxel3D.fovY = fov
 
-  local focus = { cx, 0, cy }
-  local eye = { cx, dist * math.cos(a), cy + dist * math.sin(a) }
+  -- A raised cave landing is the orbit's datum, not sea level. Keep this
+  -- draw-local: battle/VR cameras and later previews must not inherit it.
+  local groundY = tonumber(orbitGroundY) or 0
+  local focus = { cx, groundY, cy }
+  local eye = { cx, groundY + dist * math.cos(a), cy + dist * math.sin(a) }
   -- exposed for camera-facing billboards (VoxelScene yaws sprites at it)
   Voxel3D.eye = eye
   Voxel3D.focus = focus
@@ -964,7 +1101,7 @@ end
 -- void transparent, which is what every rung below it wants.
 -- `slot` names which cached canvas to render into (see `slots` above);
 -- omitted is the free-roam world pass.
-function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
+function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext, orbitGroundY)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
   local grid = VoxelGrid.enabled()
@@ -1017,7 +1154,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   end
   -- Ahead of the clear, because the sky's bands are placed off the ground
   -- plane's vanishing line and that is a property of this matrix.
-  Voxel3D.vp = Voxel3D.viewProjection(cx, cy, vw, vh)
+  Voxel3D.vp = Voxel3D.viewProjection(cx, cy, vw, vh, orbitGroundY)
   -- This frame's pixels per WORLD pixel: the size a diorama pixel is on
   -- screen. The sky's dither grid is cut to it, and so is the water's --
   -- one number, so the two break up on the same checkerboard.
@@ -1119,6 +1256,19 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
   -- on until a sprite pass says otherwise, reset per frame like `ghost`
   pcall(sh.send, sh, "glassOn", 1)
+  local weather = skyContext and (skyContext.groundWeather or skyContext.weather)
+  Voxel3D.weatherKind = (weather == "heat" and 3)
+    or (weather == "snow" and 2)
+    or ((weather == "rain" or weather == "storm") and 1) or 0
+  local amount = tonumber(skyContext and skyContext.groundAmount) or 1
+  if amount ~= amount then amount = 0 end
+  pcall(sh.send, sh, "weatherGround", 0)
+  pcall(sh.send, sh, "weatherGrass", 0)
+  pcall(sh.send, sh, "weatherPanorama", 0)
+  pcall(sh.send, sh, "weatherPanoramaKind", 2)
+  Voxel3D.weatherAmount = math.max(0, math.min(1, amount))
+  pcall(sh.send, sh, "weatherAmount", Voxel3D.weatherAmount)
+  pcall(sh.send, sh, "weatherTime", Sky.clock or 0)
   -- Battle obstruction dissolve is opt-in per terrain draw. Resetting it at
   -- scene start prevents a failed/early battle frame from leaking visibility
   -- rules into Pokemon cards, attack FX, or the next free-roam frame.
@@ -1718,7 +1868,13 @@ end
 function Voxel3D.battleOcclusion(arena, groundY)
   if not (active and activeShader) then return false end
   local sh = activeShader
-  if not arena then
+  -- Court selection checks pitched card bands as well as the camera seat.
+  -- Keep its real surroundings intact: the old low-camera cutout exposed
+  -- blue room voids behind dissolved wall/planter surfaces at this angle.
+  -- A measured-rock retry likewise obtains visibility from real hull heights,
+  -- not from deleting their surfaces. Keep the enclosing cave rendered.
+  if not arena or arena.cam == "court" or arena.cam == "court_lift"
+      or arena.rockOcclusion then
     pcall(sh.send, sh, "battleOccOn", 0)
     return true
   end
@@ -1809,6 +1965,19 @@ end
 -- machine, the Fly bird, the fishing rod) draw in voxel mode completely
 -- unchanged: they stay ordinary 2D draws, anchored to wherever their ground
 -- point lands under the same camera the 3D pass used.
+-- Exterior seen through a room window follows the clock without darkening
+-- indoor floors/actors. Restore the active uniform even if the draw fails.
+function Voxel3D.drawTinted(mesh,texture,model,tint,amount,kind)
+  if not activeShader then return end
+  local sh=activeShader
+  sh:send("dayTint",tint)
+  Voxel3D.weatherPanorama(amount or 0,kind)
+  local ok,err=pcall(Voxel3D.draw,mesh,texture,model)
+  Voxel3D.weatherPanorama(0)
+  sh:send("dayTint",Voxel3D.tint or {1,1,1})
+  if not ok then error(err,0) end
+end
+
 function Voxel3D.project(wx, wy, wz)
   local m = Voxel3D.vp
   if not m then return nil end

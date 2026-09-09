@@ -293,7 +293,33 @@ BattleArena.DECOR_H = 12         -- grass standees can hide a small species
 BattleArena.FLOOR_TOLERANCE = 2  -- one battle court, not two ledge levels
 BattleArena.MIN_MARK_DISTANCE = 40 -- 2.5 cells; never shoulder-to-shoulder
 
-local function heightAt(map, wx, wz)
+local function hasCaveRocks(map)
+  local id = map and map.tileset and map.tileset.id
+  return id == "TilesetCave" or id == "TilesetDarkCave"
+end
+
+local function caveRockTop(map, cx, cy)
+  -- Structures.buildCylinders carves these four tiles into a 16px hull,
+  -- placed on cavePropBase. groundAt already includes the class height:
+  -- another generic 48px collision column invents an invisible tower.
+  -- Do not infer this from collision alone or apply it to outdoor trees,
+  -- grouped props, wall bands, bins, or incomplete/custom cell drawings.
+  if not hasCaveRocks(map) then return nil end
+  if type(map.tileAt) ~= "function" then return nil end
+  local Shape = V.require("TileShape")
+  local shapes = Shape.forMap(map)
+  for dy = 0, 1 do
+    for dx = 0, 1 do
+      local tx, ty = cx * 2 + dx, cy * 2 + dy
+      local s = Shape.at(map, shapes, map:tileAt(tx, ty), tx, ty)
+      if not s or s.class ~= "cylinder" or s.art ~= "cylinder"
+          or s.h ~= 16 then return nil end
+    end
+  end
+  return Shape.cavePropBase(map, shapes, cx, cy) + 16
+end
+
+local function heightAt(map, wx, wz, rockOcclusion)
   local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
   if not map:inBounds(cx, cy) then
     -- off the map the border ring is drawn, and on most outdoor maps that
@@ -313,7 +339,10 @@ local function heightAt(map, wx, wz)
       water = okWater and value and true or false
     end
     if okWalk and not walkable and not water then
-      h = h + BattleArena.SOLID_H
+      local known, rockTop
+      if rockOcclusion then known, rockTop = pcall(caveRockTop, map, cx, cy) end
+      h = known and rockTop and math.max(h, rockTop)
+          or h + BattleArena.SOLID_H
     end
   end
   if type(map.isGrassCell) == "function" then
@@ -358,7 +387,7 @@ end
 BattleArena.floorProfile = floorProfile
 
 -- Whether the segment from `eye` to (tx, ty, tz) clears the terrain.
-local function lineClear(map, eye, tx, ty, tz)
+local function lineClear(map, eye, tx, ty, tz, rockOcclusion)
   local dx, dy, dz = tx - eye[1], ty - eye[2], tz - eye[3]
   local len = math.sqrt(dx * dx + dy * dy + dz * dz)
   if len <= 1 then return true end
@@ -370,7 +399,7 @@ local function lineClear(map, eye, tx, ty, tz)
     local wx = eye[1] + dx * t
     local wy = eye[2] + dy * t
     local wz = eye[3] + dz * t
-    if heightAt(map, wx, wz) > wy + BattleArena.CLEAR_EPS then return false end
+    if heightAt(map, wx, wz, rockOcclusion) > wy + BattleArena.CLEAR_EPS then return false end
   end
   return true
 end
@@ -379,7 +408,7 @@ end
 -- camera.  Three means feet/body/head are all visible; zero means terrain
 -- blocks the whole actor.  This stays presentation-only and never changes
 -- collision or the native battle state.
-function BattleArena.visibility(map, eye, mark, groundY, height)
+function BattleArena.visibility(map, eye, mark, groundY, height, rockOcclusion)
   if not (map and type(map.inBounds) == "function"
       and type(eye) == "table" and type(mark) == "table") then
     return 3
@@ -388,7 +417,7 @@ function BattleArena.visibility(map, eye, mark, groundY, height)
   height = math.max(4, tonumber(height) or BattleArena.MON_H)
   local score = 0
   for _, hy in ipairs({ 1, height * 0.5, height }) do
-    if lineClear(map, eye, mark[1], groundY + hy, mark[2]) then
+    if lineClear(map, eye, mark[1], groundY + hy, mark[2], rockOcclusion) then
       score = score + 1
     end
   end
@@ -399,7 +428,7 @@ end
 -- the rendered map or inside a solid column.  This is the missing safeguard
 -- behind the sky/tree shots seen when a Kanto-authored seat happened to fit a
 -- Johto floor rectangle.
-function BattleArena.cameraClear(map, eye, edgeMargin)
+function BattleArena.cameraClear(map, eye, edgeMargin, rockOcclusion)
   if not (map and type(map.inBounds) == "function"
       and type(eye) == "table") then return true end
   local wx, wy, wz = tonumber(eye[1]) or 0, tonumber(eye[2]) or 0,
@@ -418,7 +447,7 @@ function BattleArena.cameraClear(map, eye, edgeMargin)
   }) do
     local x, z = wx + offset[1], wz + offset[2]
     local cx, cy = math.floor(x / CELL), math.floor(z / CELL)
-    if not map:inBounds(cx, cy) or heightAt(map, x, z) + 3 >= wy then
+    if not map:inBounds(cx, cy) or heightAt(map, x, z, rockOcclusion) + 3 >= wy then
       return false
     end
   end
@@ -427,7 +456,7 @@ end
 
 -- Validate a real camera move as well as its destination; a safe point behind
 -- a house is not a valid orbit if reaching it crosses that house.
-function BattleArena.cameraPathClear(map, fromEye, toEye)
+function BattleArena.cameraPathClear(map, fromEye, toEye, rockOcclusion)
   if not (type(fromEye) == "table" and type(toEye) == "table") then return true end
   if not (map and type(map.inBounds) == "function") then return true end
   local dx = (toEye[1] or 0) - (fromEye[1] or 0)
@@ -441,7 +470,7 @@ function BattleArena.cameraPathClear(map, fromEye, toEye)
       (fromEye[1] or 0) + dx * t,
       (fromEye[2] or 0) + dy * t,
       (fromEye[3] or 0) + dz * t,
-    }) then return false end
+    }, nil, rockOcclusion) then return false end
   end
   return true
 end
@@ -452,23 +481,61 @@ local function cameraSeatClear(map, arena)
   if groundY == nil then return false end
   local ok, rig = pcall(BattleCam.rig, arena, groundY, true)
   if not (ok and rig and rig.eye) then return true end
-  return BattleArena.cameraClear(map, rig.eye)
+  return BattleArena.cameraClear(map, rig.eye, nil, arena.rockOcclusion)
 end
 
 -- Whether both mons would be in plain view from the battle camera.
-function BattleArena.clearance(map, arena)
+function BattleArena.clearance(map, arena, camera)
   local BattleCam = V.require("BattleCam")
   -- the CANONICAL shot: whether a fight fits somewhere is a fact about the
   -- ground, so it must not depend on the drift's phase or on where the
   -- player last swung the camera (see BattleCam.rig's third argument)
   local groundY = tonumber(arena.anchorHeight) or floorProfile(map, arena)
   if groundY == nil then return false end
-  local ok, rig = pcall(BattleCam.rig, arena, groundY, true)
-  if not (ok and rig and rig.eye) then return true end
+  -- Selection uses the canonical rig; the moving director supplies the exact
+  -- candidate it intends to render. Never validate its old starting angle.
+  local ok, rig = true, camera
+  if camera == nil then ok, rig = pcall(BattleCam.rig, arena, groundY, true) end
+  if not (ok and rig and rig.eye and rig.focus) then return camera == nil end
   local eye = rig.eye
-  if not BattleArena.cameraClear(map, eye) then return false end
+  if not BattleArena.cameraClear(map, eye, nil, arena.rockOcclusion) then return false end
+  local pitched = arena.cam == "court" or arena.cam == "court_lift"
+  if pitched or arena.rockOcclusion then
+    -- A pitched bitmap occupies space behind its foot. Testing only the old
+    -- upright centreline accepts walls through its head or shoulders. Cover
+    -- feet/body/head bands of the baseline card in the same view basis as
+    -- drawing. This is sampling, not proof for arbitrarily enlarged imports.
+    local dx,dy,dz = eye[1]-rig.focus[1],eye[2]-rig.focus[2],eye[3]-rig.focus[3]
+    local horizontal = math.sqrt(dx*dx+dz*dz)
+    local length = math.sqrt(horizontal*horizontal+dy*dy)
+    if horizontal < 1e-6 or length < 1e-6 then return false end
+    local rx,rz = dz/horizontal,-dx/horizontal
+    local ux,uy,uz = -dx*dy/(horizontal*length),horizontal/length,
+                       -dz*dy/(horizontal*length)
+    for _,mark in ipairs({arena.player,arena.enemy}) do
+      local bands={{1,2},{12,8},{26,10}}
+      if not pitched then
+        -- Low rigs draw an upright card yawed separately at each foot.
+        -- In narrow rock lanes its shoulders can intersect a boulder even
+        -- when all centre rays pass. Cover the native 32px baseline width.
+        local vx,vz=eye[1]-mark[1],eye[3]-mark[2]
+        local flat=math.sqrt(vx*vx+vz*vz)
+        if flat<1e-6 then return false end
+        rx,rz=vz/flat,-vx/flat;ux,uy,uz=0,1,0
+        bands={{1,2},{8,12},{16,16},{26,16},{32,12}}
+      end
+      for _,band in ipairs(bands) do
+        local h,halfWidth=band[1],band[2]
+        for _,w in ipairs({-halfWidth,0,halfWidth}) do
+          local x,y,z = mark[1]+rx*w+ux*h,groundY+uy*h,mark[2]+rz*w+uz*h
+          if heightAt(map,x,z,arena.rockOcclusion) > y+BattleArena.CLEAR_EPS
+              or not lineClear(map,eye,x,y,z,arena.rockOcclusion) then return false end
+        end
+      end
+    end
+  end
   for _, mark in ipairs({ arena.player, arena.enemy }) do
-    if BattleArena.visibility(map, eye, mark, groundY) < 3 then return false end
+    if BattleArena.visibility(map, eye, mark, groundY, nil, arena.rockOcclusion) < 3 then return false end
   end
   return true
 end
@@ -587,7 +654,23 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear)
   local grid, gw, gh = openGrid(map, surfing)
   -- Search every shape for a clear shot before accepting an obstructed one.
   -- Within each pass the wide authored composition still wins over narrow.
-  for _, needClear in ipairs({ true, false }) do
+  for _, pass in ipairs({
+    { clear=true, lenses={false, "wide"} },
+    { clear=true, lenses={"court"} },
+    { clear=true, lenses={"court_lift"} },
+    -- Keep every previously clear composition first. Only otherwise blocked
+    -- maps retry with the renderer's bounded cave-rock hull height.
+    { clear=true, lenses={"court", "court_lift", false, "wide"}, rockOcclusion=true },
+    -- Last resort stays inside each already validated 16px floor cell.
+    -- Preserve actor size, separation, terrain and native entity positions.
+    { clear=true, lenses={"court", "court_lift", "wide"}, rockOcclusion=true,
+      offsets={{-4,0},{4,0},{0,-4},{0,4},{-4,-4},{4,-4},{-4,4},{4,4},
+               {-7,0},{7,0},{0,-7},{0,7},{-7,-7},{7,-7},{-7,7},{7,7}} },
+    { clear=false, lenses={false, "wide"} },
+  }) do
+    if not pass.rockOcclusion or hasCaveRocks(map) then
+    local needClear = pass.clear
+    if wantClear and not needClear then return nil end
     for _, shape in ipairs(BattleArena.SHAPES) do
       local best, bestD = nil, nil
       -- A corridor may only fit when the whole arena is turned. Test the four
@@ -603,29 +686,35 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear)
                                    my - (tonumber(fromY) or 0)
               local d = dx * dx + dy * dy
               if not bestD or d < bestD then
-                local cand = place(shape, x, y, turn)
-                local accepted = false
-                -- Bind every accepted candidate to the floor that was
-                -- actually inspected. BattleScene then uses the same level
-                -- for actors and camera instead of recomputing from only one
-                -- mark after a map/arena transition.
-                cand.anchorHeight = floorProfile(map, cand)
-                -- Default/tele first; small rooms receive the same bounded
-                -- wide-lens fallback as reviewed Kanto arenas.
-                for _, lens in ipairs({ false, "wide" }) do
-                  cand.cam = lens or nil
-                  local seat = cand.anchorHeight ~= nil
-                    and cameraSeatClear(map, cand)
-                  if seat and (not needClear
-                      or BattleArena.clearance(map, cand)) then
-                    accepted = true
+                for _, offset in ipairs(pass.offsets or {{0,0}}) do
+                  local cand = place(shape, x, y, turn)
+                  cand.rockOcclusion = pass.rockOcclusion
+                  if pass.offsets then
+                    cand.stageOffset={offset[1],offset[2]}
+                    for _,point in ipairs({cand.player,cand.enemy,cand.mid})do
+                      point[1],point[2]=point[1]+offset[1],point[2]+offset[2]
+                    end
+                  end
+                  local accepted = false
+                  -- Bind every accepted candidate to the floor that was
+                  -- actually inspected. BattleScene uses this same level.
+                  cand.anchorHeight = floorProfile(map, cand)
+                  for _, lens in ipairs(pass.lenses) do
+                    cand.cam = lens or nil
+                    local seat = cand.anchorHeight ~= nil
+                      and cameraSeatClear(map, cand)
+                    if seat and (not needClear
+                        or BattleArena.clearance(map, cand)) then
+                      accepted = true
+                      break
+                    end
+                  end
+                  if accepted then
+                    cand.anchorSource = needClear and "dynamic-gen2-clear"
+                      or "dynamic-gen2-obstructed"
+                    best, bestD = cand, d
                     break
                   end
-                end
-                if accepted then
-                  cand.anchorSource = needClear and "dynamic-gen2-clear"
-                    or "dynamic-gen2-obstructed"
-                  best, bestD = cand, d
                 end
               end
             end
@@ -634,7 +723,7 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear)
       end
       if best then return best end
     end
-    if wantClear and needClear then return nil end
+    end
   end
   return nil
 end

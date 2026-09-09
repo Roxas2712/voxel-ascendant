@@ -1066,7 +1066,9 @@ local function exactGoldArena(state)
     -- the full desktop viewport, where that same vertical reach magnifies the
     -- pixel cards into HUDs and screen edges. Open only the lens, without
     -- moving the already validated eye or either terrain-safe mark.
-    searched.mapFrameScale = searched.cam == "wide" and 1.6 or 2.2
+    searched.mapFrameScale = (searched.cam == "wide" or searched.cam == "court"
+      or searched.cam == "court_lift")
+      and 1.6 or 2.2
     world._stadiumEncounterSnapshot = nil
     return attachMetadata(searched, "dynamic-gen2-clear")
   end
@@ -2661,6 +2663,9 @@ local function goldSideTexture(screen, side)
   -- visibility/faint state and disables the unrelated enemy-trainer override.
   local renderBack = portableTrainerCapture and true or false
   local captureScreen = screen
+  if enemyTrainerCapture and type(Gen2TrainerArt.nativeCaptureScreen)=="function"then
+    captureScreen=Gen2TrainerArt.nativeCaptureScreen(screen,side)
+  end
   if portableTrainerCapture then
     -- drawScene temporarily raises this flag while the native intro bands are
     -- moving, because presentSlide draws the trainer separately. Our isolated

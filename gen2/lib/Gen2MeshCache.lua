@@ -4,10 +4,30 @@
 local V = ...
 local MeshParts = V.require("MeshParts")
 local Budget = V.require("BuildBudget")
--- A2 invalidates the pre-instancing A1 streams.  Loading those expanded
--- forests would both defeat the new memory/performance path and could render
--- geometry that no longer matches the current build plan.
-local Cache = { REVISION = "vasc-g2-mesh-a2", hits = 0, misses = 0,
+-- A9 resolves shore stairs, land terraces and cascading water on one datum.
+-- A17 adds solid Ice Path rock hulls and atlas-local perimeter materials.
+-- A20 includes the exact Facility and TraditionalHouse furniture templates.
+-- A22 adds Kurt's full L-workbench with a sealed wooden arm silhouette.
+-- A23 separates Elm's workstation; A24 builds the healing machine's recessed bed.
+-- A25 separates the shared Elm/Oak terminal desk into standing and flat parts.
+-- A26 separates the Center's low counter return from its isometric terminal.
+-- A27 adds its upstairs apron variant and Indigo's terminal-free return.
+-- A28 keeps each Center lounge seat's top emblem single across both tile ranks.
+-- A29 separates nurse-counter top details from its vertical apron.
+-- A30 gives the Center healing bay one upright head and a recessed bed.
+-- A31 folds the blue cabinet once and separates PC screen/keyboard/stand.
+-- A32 places upstairs symbol plaques against a normal-height wall backing.
+-- A33 gives complete upstairs dividers one light cap and one front panel.
+-- A34 limits that control face to the front, keeping its casing sides blue.
+-- A35 separates the pink link unit's display from its plain horizontal lid.
+-- Previous Ice Path/weather/furniture corrections are retained.
+-- A44 removes exterior facade copies and retains only warp-backed rear doors.
+-- A51 keeps Blackthorn's blocked lava AND painted rims flat, not extruded walls.
+-- A52 models its verified inter-floor stairs and three open fall shafts.
+-- A53 adds exact native Kanto city buildings and the Celadon Mansion rear door.
+-- Blackthorn material pass tiles brick at native scale on stair/shaft faces.
+-- Johto props replace the exact sixteen entrance boxes with shared rounded markers.
+local Cache = { REVISION = "vasc-g2-mesh-a64-blackthorn-tex1-tower3-roof1-burned1-fuchsia1-johto-props1-cianwood-rocks1-olivine-rocks1-johto-planters1-viridian-hedges1-saffron-partitions1-tower-pillar1-tin-rail-base1", hits = 0, misses = 0,
   writes = 0, errors = 0, enqueues = 0, rejects = 0,
   bytesRead = 0, bytesWritten = 0, lastError = nil }
 local PART_BYTES, MOD = 1024 * 1024, 2147483647

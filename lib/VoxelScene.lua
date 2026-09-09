@@ -29,6 +29,7 @@ local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local FirstPerson = V.require("FirstPerson")
 local HorizonWall = V.require("HorizonWall")
+local ArenaScenery = V.require("SceneryWeather")
 local InteriorCutaway = V.require("InteriorCutaway")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local Weather = V.require("Weather")
@@ -219,7 +220,8 @@ local function sceneSkyColor(map, t, mobileScenery)
   -- the first frame to one colour/depth target and the compact scene shader.
   if MOBILE_RUNTIME and mobileScenery ~= true then return nil end
   local canopy = DayNight.isCanopy(map)
-  if not canopy and not HorizonWall.hasSky(map) then return nil end
+  if not canopy and not HorizonWall.hasSky(map)
+      and not HorizonWall.arenaViewFor(map) then return nil end
   if not Sky.enabled() then return nil end
   if not t or t <= 0 then return nil end
   if canopy then
@@ -2588,8 +2590,17 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
       else
         setCutaway()
       end
+      if HorizonWall.architecturalRoom(state.map) then
+        ArenaScenery.draw(Voxel3D, rim, rimTexture,
+          Mat4.translate(rim.ox, 0, rim.oy), {
+            outdoor=false, surfaces=false,
+            prismLight=ArenaScenery.prismLight(DayNight,skyWeatherMode),
+            prismClock=DayNight,
+          })
+      else
       Voxel3D.draw(rim.mesh, rimTexture,
                    Mat4.translate(rim.ox, 0, rim.oy))
+      end
     end
   end
   setCutaway()

@@ -58,14 +58,16 @@ end
 -- Move an asymmetric footprint as a whole: a curled Onix can have its
 -- contact centre well to one side of its model origin. Keep the measured
 -- offset and prefer the smallest move inside the side's half of the stage.
-function Ground.fit(regions, anchor, footprint, minX, maxX)
+function Ground.fit(regions, anchor, footprint, minX, maxX, maxY)
   local cx,cy=footprint[1]+footprint[3]*.5,footprint[2]+footprint[4]*.5
   local rx,ry=footprint[3]*.5+.004,footprint[4]*.5+.004
-  if Ground.supports(regions,cx,cy,rx,ry) then return anchor end
+  if anchor.x >= minX and anchor.x <= maxX
+      and (not maxY or anchor.y <= maxY)
+      and Ground.supports(regions,cx,cy,rx,ry) then return anchor end
   local offsetX,offsetY=cx-anchor.x,cy-anchor.y
   local best,score
   for xi=math.ceil(minX*100),math.floor(maxX*100) do
-    for yi=50,84 do
+    for yi=50,math.floor((maxY or .84)*100) do
       local x,y=xi/100,yi/100
       local cost=(x-anchor.x)^2+(y-anchor.y)^2
       if (not score or cost<score)

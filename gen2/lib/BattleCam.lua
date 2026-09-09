@@ -91,12 +91,23 @@ BattleCam.RIGS = {
     side = 41.98, back = 41.16, height = 28.48,
     lookX = -3.24, lookY = -1.35, frameH = 55.62,
   },
+  -- Last clear-shot option for enclosed courts; regular clear rigs win first.
+  court = {
+    side = 4, back = 48, height = 56,
+    lookX = 0, lookY = 0, frameH = 55.62,
+  },
+  -- Only after every existing clear rig fails: look over tall tower partitions
+  -- without deleting geometry. Raised aim keeps room for the landscape HUD.
+  court_lift = {
+    side = 4, back = 32, height = 72,
+    lookX = 0, lookY = 4, frameH = 55.62,
+  },
 }
 
 BattleCam.DEFAULT_RIG = "tele"
 
 -- The rig an arena asks for, falling back to the default for anything that
--- does not ask (and for a name that is not one of the two).
+-- does not ask (and for an unrecognized rig name).
 function BattleCam.rigFor(arena)
   local want = arena and arena.cam
   return BattleCam.RIGS[want] or BattleCam.RIGS[BattleCam.DEFAULT_RIG]

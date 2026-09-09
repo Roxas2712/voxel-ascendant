@@ -1143,6 +1143,7 @@ end
 -- arena owner, custom-choice identity, authored-path selection and GPU image
 -- still match the binding made by the actual backdrop request.  Imported
 -- Battle Layout positions remain authoritative in their later scene layer.
+local landscapeContacts = setmetatable({}, {__mode="k"})
 function VoxelBattleStage.presentationComposition(arena, trainer)
   local binding = type(arena) == "table"
     and backdropCompositionOwners[arena] or nil
@@ -1191,6 +1192,25 @@ function VoxelBattleStage.presentationComposition(arena, trainer)
     return nil
   end
   -- Do not expose the mutable cache record to scene/profile consumers.
+  local pw, ph = love.graphics.getDimensions()
+  if pw > ph and composition.regions then
+    local Ground = V.require("ArenaGround")
+    local function aboveDock(mark, minX, maxX)
+      local cached = landscapeContacts[mark]
+      if cached and cached.minX == minX then return cached.mark end
+      local rx = composition.contactRadiusX or .055
+      local ry = composition.contactRadiusY or .025
+      local fitted = Ground.fit(composition.regions, mark,
+        {mark.x-rx,mark.y-ry,rx*2,ry*2}, minX,maxX,.66) or mark
+      landscapeContacts[mark] = {minX=minX,mark=fitted}
+      return fitted
+    end
+    -- Keep the complete authored contact patch above the compact mobile
+    -- dialogue band. If no reviewed ground fits, retain the original mark
+    -- and let the unchanged actor/HUD safety check decide.
+    player = aboveDock(player,.20,.46)
+    enemy = aboveDock(enemy,math.max(.54,player.x+.27),.80)
+  end
   return {
     player={x=player.x, y=player.y},
     enemy={x=enemy.x, y=enemy.y},

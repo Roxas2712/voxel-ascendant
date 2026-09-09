@@ -298,11 +298,12 @@ local profile = {
       -- cell with something solid stood up as a 16px box: the two rows of
       -- turf above every ledge lip, the ground beside every cliff post,
       -- the verge inside every fence corner. Same for the shoreline, whose
-      -- cells are wall-class ($27) with nothing but water drawn in them.
-      -- $05/$06 and $14/$58 are never anything but flat ground and water
-      -- anywhere in the set.
+      -- $05/$06 and $14 are unambiguous plain ground / open water.
+      -- $58 is NOT open water: native Johto uses it for the repeated low
+      -- coastal rock barrier, always collision $27 in the reviewed Crystal
+      -- maps. It belongs on a low top-art ledge below, not recessed at -2.
       ground = { 0x05, 0x06 },
-      water = { 0x14, 0x58 },
+      water = { 0x14 },
       -- THE PLATEAU TOP.  Gen 2 records no elevation: the Ruins of Alph
       -- courtyard rim and the grass it looks down on are both collision
       -- $00, and the four cliff drawings around them are $07 like any
@@ -341,7 +342,7 @@ local profile = {
       -- and nothing in the drawing tells the two apart -- both sit under
       -- the same $3B/$3D cliff post. At a run's end they read as the
       -- corner post the cliff turns on, which is what they are drawn as.
-      ledge = { 0x4C },
+      ledge = { 0x4C, 0x58 },
       -- the wooden fence: $40 and $4A the vertical runs, $5A/$59 the top
       -- and bottom rows of a horizontal one. Across all 128 Johto blocks
       -- these four tiles are drawn NOWHERE else, and their cells' classes
@@ -5161,6 +5162,8 @@ profile.buildings.TilesetJohtoModern = {
     roofRows = 16, roofBack = 2, roofFront = 4, roofCycle = { 2, 11 },
     slab = 4, frontEave = 0, ledge = nil,
     seal = "e",
+    -- Native two-tile panel + window band; no entrance pixels.
+    wallCourse = { x=8, y=16, width=16, height=16, base=8 },
   },
   -- the east shaft, topping out six cells lower with its own dish
   {
@@ -5182,6 +5185,7 @@ profile.buildings.TilesetJohtoModern = {
     roofRows = 16, roofBack = 2, roofFront = 4, roofCycle = { 2, 11 },
     slab = 4, frontEave = 0, ledge = nil,
     seal = "w",
+    wallCourse = { x=8, y=16, width=16, height=16, base=8 },
   },
   -- the department store: six cells wide and EIGHT cells tall, storey
   -- bands of window ($26) every three courses.  It has to come first --
@@ -5418,6 +5422,7 @@ profile.buildings.TilesetKanto = {
   -- $12 over $17) with the $38/$19 verge down both sides.
   {
     id = "kanto_gym",
+    roofFlankPeriod = 2,
     tiles = {
       { 0x05, 0x06, 0x53, 0x53, 0x53, 0x53, 0x53, 0x53, 0x53, 0x53, 0x08, 0x09 },
       { 0x15, 0x38, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x38, 0x19 },
@@ -5452,13 +5457,12 @@ profile.buildings.TilesetKanto = {
     roofRows = 32, roofBack = 2, roofFront = 4, roofCycle = { 2, 27 },
     slab = 4, frontEave = 4, ledge = nil,
   },
-  -- THE KANTO HOUSE: 4 cells wide, 3 tall.  The roof runs four tile rows
-  -- deep here rather than the lab's four-over-a-taller-wall -- $05..$09
-  -- and $15..$19 the pitched field, $25/$26/$28/$29 the eave corners,
-  -- $5C/$5D closing the fascia -- over a single-cell facade with the
-  -- door ($0B/$0C over $1B/$1C, the cell the game marks $71) in it.
+  -- THE KANTO HOUSE: 4 cells wide, 3 tall. Only the first two tile rows
+  -- are roof. The next two contain the upper windows and wall course;
+  -- including them in roofRows repeats those windows across the roof.
   {
     id = "kanto_house",
+    roofFlankPeriod = 2,
     tiles = {
       { 0x05, 0x06, 0x07, 0x07, 0x07, 0x07, 0x08, 0x09 },
       { 0x15, 0x16, 0x17, 0x17, 0x17, 0x17, 0x18, 0x19 },
@@ -5467,7 +5471,7 @@ profile.buildings.TilesetKanto = {
       { 0x0F, 0x22, 0x0B, 0x0C, 0x0A, 0x0A, 0x22, 0x1F },
       { 0x1D, 0x1A, 0x1B, 0x1C, 0x1A, 0x1A, 0x1A, 0x3C },
     },
-    roofRows = 32, roofBack = 2, roofFront = 4, roofCycle = { 2, 27 },
+    roofRows = 16, roofBack = 2, roofFront = 4, roofCycle = { 2, 11 },
     slab = 4, frontEave = 4, ledge = nil,
   },
   -- THE COTTAGE: the same drawing with the upper wall course cut away, 4
@@ -5478,6 +5482,7 @@ profile.buildings.TilesetKanto = {
   -- rows and placement is first-claim-wins.
   {
     id = "kanto_cottage_door",
+    roofFlankPeriod = 2,
     tiles = {
       { 0x05, 0x06, 0x07, 0x07, 0x07, 0x07, 0x08, 0x09 },
       { 0x15, 0x16, 0x17, 0x17, 0x17, 0x17, 0x18, 0x19 },
@@ -5489,6 +5494,7 @@ profile.buildings.TilesetKanto = {
   },
   {
     id = "kanto_cottage_window",
+    roofFlankPeriod = 2,
     tiles = {
       { 0x05, 0x06, 0x07, 0x07, 0x07, 0x07, 0x08, 0x09 },
       { 0x15, 0x16, 0x17, 0x17, 0x17, 0x17, 0x18, 0x19 },
@@ -5680,8 +5686,16 @@ profile.tilesets.TilesetPlayersHouse = {
 -- contract keeps the largest connected shape and throws the rest away.
 -- Each takes its own pool so each is measured, and stands, alone.
 profile.tilesets.TilesetPlayersRoom = {
-  -- the bed, drawn from above like every bed in the game
-  bed = { 0x10, 0x11, 0x12, 0x20, 0x21, 0x22 },
+  -- Beds are the 2x4-tile drawing at the west edge,
+  -- installed by the room's decoration callback. These are graphics tile
+  -- IDs, not decoration/block IDs. Unpinned, it folded into a 16px wall.
+  bed = { 0x03, 0x04, 0x33, 0x34, -- shared head/foot
+          0x13, 0x14, 0x23, 0x24, -- feathery
+          0x09, 0x0A, 0x19, 0x1A, -- pink
+          0x29, 0x2A, 0x39, 0x3A, -- polkadot
+          0x49, 0x4A, 0x59, 0x5A }, -- Pikachu
+  -- These six tile IDs form the 4x2-tile TABLE in the room's middle.
+  table = { 0x10, 0x11, 0x12, 0x20, 0x21, 0x22 },
   -- the computer: monitor over keyboard, two cell rows of drawing on one
   -- cell of desk. A standee and not a box, because a box lids itself with
   -- its own north row -- which prints the screen a second time, lying
@@ -5701,22 +5715,31 @@ profile.tilesets.TilesetPlayersRoom = {
   -- collision class -- $97, the television -- and builds a SECOND standee
   -- from the leftovers, standing in the same place as the first.
   billboard = { 0x3B, 0x3C, 0x4B, 0x4C, 0x5B, 0x5C },
-  -- The six tiles are one low mattress (3x2 cells), not three bed-height
-  -- blocks. Five source pixels = 0.3125 of a 16px world course and matches
-  -- the requested 0.3-ish bedside profile without flattening other beds.
-  heights = { bed = 5 },
+  -- Low mattress, normal table-family height; only this room is affected.
+  heights = { bed = 5, table = 6 },
 }
 
 -- ---------------------------------------------------------------------------
--- TilesetLab -- Elm's lab, Oak's, and the Cinnabar and Union Cave labs.
+-- TilesetLab -- Elm/Oak, Earl's academy, Dragon Shrine and Fuchsia Gym.
 profile.tilesets.TilesetLab = {
+  -- A bookshelf's upper book row is COLL_WALL in native Crystal, while
+  -- its lower row is COLL_BOOKSHELF. Pin the complete drawing so the
+  -- upper books do not become a second cube/lid behind the shelf front.
+  bookcase = { 0x03, 0x04, 0x13, 0x14, 0x35, 0x36 },
   -- the long benches down the middle of the floor: one cell row with
   -- their own shadow drawn on the walkable cell south of them, so they
   -- are furniture standing in the room rather than anything against a
   -- wall.  6px is the table family's own height (see PLAYERS_HOUSE): at
   -- the global 12 the bench stood three quarters as tall as the player
   -- and lost its drawn rim off the lid.
-  table = { 0x05, 0x06, 0x07, 0x15, 0x16, 0x17, 0x0E, 0x0F, 0x1E, 0x1F },
+  table = { 0x05, 0x06, 0x07, 0x15, 0x16, 0x17, 0x0E, 0x0F, 0x1E, 0x1F,
+            -- Earl's classroom benches: all two drawn rows belong to
+            -- the low desk, not a collision-derived 16px wall block.
+            0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+            0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F },
+  -- These seats are drawn from above. Standing their whole drawing as
+  -- a billboard turns each blue cushion into a black-topped monitor.
+  relief = { 0x40, 0x41, 0x50, 0x51 },
   -- Elm's machine bank along the north and west walls -- the terminals,
   -- the incubator and the tape reels.  `console` rather than `desk` for
   -- the reason the PC classes take it: the upright fold repeats a box's
@@ -5724,7 +5747,16 @@ profile.tilesets.TilesetLab = {
   console = { 0x0A, 0x0B, 0x0C, 0x0D, 0x1A, 0x1B, 0x1C, 0x1D,
               0x22, 0x23, 0x32, 0x33,
               0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49,
-              0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59 },
+              0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
+              -- Elm's central workstation, including the upper monitor
+              -- rows on walkable cells. The lower rows alone defaulted to
+              -- a wall box with the keyboard duplicated across its lid.
+              0x81, 0x82, 0x83, 0x84, 0x85, 0x86,
+              0x91, 0x92, 0x93, 0x94, 0xA1, 0xA2, 0xA3, 0xA4 },
+  -- The complete workstation stands in front of the southern shelf.
+  -- Adjacency is not support: do not hoist the desk onto that shelf.
+  prop_grounded = { 0x81, 0x82, 0x83, 0x84, 0x85, 0x86,
+                    0x91, 0x92, 0x93, 0x94, 0xA1, 0xA2, 0xA3, 0xA4 },
   heights = { table = 6 },
 }
 
@@ -5924,6 +5956,18 @@ profile.tilesets.TilesetPark = {
 -- sheet (collision $33) and is shaped by class, not by tile id -- see
 -- profile.collision.
 local cave = {
+  -- $17 is the dark top/edge rock fill (38/64 pixels black), not the
+  -- face-on rock face. On the extruded cliff surfaces use this same atlas's
+  -- $26 rock texture. Floor art, palette and all geometry stay unchanged.
+  -- $10 is completely blank solid-rock fill (not a playable floor or pit).
+  -- Preserve its existing volume, but give it rock rather than a grey slab.
+  cliff_surface_tiles = { [0x17] = 0x26, [0x10] = 0x26 },
+  -- Land stairs and waterfalls share connected shore levels. The water's
+  -- two-pixel recess is retained only at datum zero; elevated pools use the
+  -- same absolute level as their measured fall crest and stair landing.
+  cave_elevation = {stairTiles={0x36,0x37,0x36,0x37},rise=16,
+    includeWater=true,waterfallTile=0x40,waterfallMax=96,
+    preserveUnconnected=true,minimumFloorTiles={[0x01]=0,[0x16]=16,[0x24]=16}},
   -- $01 is the LOW floor and $16/$24 the HIGH one.  Gen 2 records no
   -- elevation at all -- both are collision $00 -- so the only statement
   -- that a cave has two levels is the change of floor shade, and the rock
@@ -5976,6 +6020,33 @@ local cave = {
 profile.tilesets.TilesetCave = cave
 profile.tilesets.TilesetDarkCave = cave
 
+-- Ice Path shares its atlas with Hall of Fame, whose art uses only $0C-$5F.
+-- The icy rock/floor family lives at $80+. Name the raised snowy ground:
+-- an enclosed, reachable stair landing is not a sealed mountain pocket.
+-- The source draws one rock course between this surface and the ice below.
+profile.tilesets.TilesetIcePath = {
+  cave_elevation = { stairTiles = {0xAE, 0xAF, 0xBE, 0xBF}, rise = 16 },
+  ground = { 0xC6, 0xC7, 0xD6, 0xD7 },
+  terrace = { 0x12, 0x19, 0x9A, 0x9B, 0xAA, 0xAB },
+  -- Exactly 47 complete one-cell ice rocks in the five native Ice Path
+  -- maps, never Hall of Fame. Carve the native outline instead of printing
+  -- the rock on a flat cliff cap. cavePropBase supplies the two raised
+  -- terrace-edge foundations; the shared hull remains in local space.
+  cylinder = { 0x82, 0x83, 0x92, 0x93 },
+  cliff = { 0x80, 0x81, 0x84, 0x85, 0x86, 0x87,
+            0x88, 0x89, 0x8C, 0x8D, 0x90, 0x91,
+            0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9C, 0x9D,
+            0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+            0xA8, 0xA9, 0xAC, 0xAD, 0xAE, 0xAF,
+            0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7,
+            0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5,
+            0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD,
+            0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5 },
+  heights = { cliff = 16, terrace = 16 },
+  hop_lips = true,
+}
+
 -- ---------------------------------------------------------------------------
 -- TilesetLighthouse -- the Olivine Lighthouse (11 floors).
 --
@@ -5990,5 +6061,475 @@ profile.tilesets.TilesetLighthouse = {
   -- the crate/box props common to Lighthouse interiors
   table = { 0x20, 0x21, 0x22, 0x23, 0x30, 0x31, 0x32, 0x33 },
 }
+
+-- Mr Pokémon's table shares individual tiles with Facility wall caps.
+-- Match the complete drawing, never lower those tile IDs globally.
+profile.buildings.TilesetFacility = {
+  {
+    id = "facility_paper_table",
+    tiles = {
+      { 0x40, 0x41, 0x41, 0x42 },
+      { 0x50, 0x51, 0x51, 0x52 },
+      { 0x50, 0x48, 0x49, 0x52 },
+      { 0x53, 0x3A, 0x3A, 0x54 },
+    },
+    roofRows = 28, roofBack = 24, roofFront = 0, roofCycle = { 2, 23 },
+    slab = 3, frontEave = 0,
+  },
+}
+
+-- Traditional interiors reuse the tabletop's cap/face tiles as real timber
+-- walls. Only the complete free-standing table may become a low model.
+profile.buildings.TilesetTraditionalHouse = {
+  {
+    id = "kurt_l_workbench",
+    -- The narrow wooden arm continues beyond the sampled south edge.
+    -- Do not flood its open grain as background from that edge.
+    seal = "s",
+    tiles = {
+      { 0x23, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x24 },
+      { 0x33, 0x32, 0x32, 0x0C, 0x0D, 0x32, 0x07, 0x34 },
+      { 0x42, 0x15, 0x15, 0x32, 0x32, 0x1C, 0x1D, 0x43 },
+      { 0x23, 0x24, 0x51, 0x51, 0x51, 0x51, 0x51, 0x26 },
+      { 0x33, 0x34, 0x44, 0x45, 0x02, 0x03, 0x44, 0x45 },
+      { 0x33, 0x34, 0x54, 0x55, 0x12, 0x13, 0x54, 0x55 },
+      { 0x33, 0x34, 0x45, 0x46, 0x44, 0x45, 0x45, 0x46 },
+      { 0x33, 0x34, 0x55, 0x56, 0x54, 0x55, 0x55, 0x56 },
+    },
+    -- The full L and its seat disambiguate this drawing from timber walls.
+    -- Leave the seat, floor and front apron tiles in their original pass.
+    keep = { 0x51, 0x26, 0x44, 0x45, 0x46, 0x54, 0x55, 0x56,
+             0x02, 0x03, 0x12, 0x13 },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 8, panes = false,
+    desk = { x = { 16, 63 }, fascia = { 24, 26 }, base = { 27, 30 },
+             depthPx = 24, top = { 0, 23 } },
+    parts = {
+      -- Narrow south arm: top art lies along its actual footprint.
+      { kind = "flat", x = { 0, 15 }, rows = { 0, 63 }, at = 6, thick = 3 },
+      { kind = "flat", x = { 0, 2 }, rows = { 0, 2 }, at = 3, thick = 4 },
+      { kind = "flat", x = { 13, 15 }, rows = { 0, 2 }, at = 3, thick = 4 },
+      { kind = "flat", x = { 0, 2 }, rows = { 61, 63 }, at = 3, thick = 4 },
+      { kind = "flat", x = { 13, 15 }, rows = { 61, 63 }, at = 3, thick = 4 },
+      -- Two small workpieces, toolbox, and tools on the northern surface.
+      { kind = "upright", x = { 27, 32 }, top = { 8, 9 },
+        facade = { 10, 12 }, z = 8, depth = 4 },
+      { kind = "upright", x = { 33, 38 }, top = { 10, 11 },
+        facade = { 12, 14 }, z = 10, depth = 4 },
+      { kind = "upright", x = { 48, 56 }, top = { 8, 10 },
+        facade = { 11, 19 }, z = 10, depth = 6 },
+      { kind = "flat", x = { 40, 47 }, rows = { 16, 23 }, at = 7 },
+      { kind = "flat", x = { 48, 55 }, rows = { 21, 22 }, at = 7 },
+    },
+  },
+  {
+    id = "traditional_low_table",
+    tiles = {
+      { 0x23, 0x22, 0x22, 0x24 },
+      { 0x42, 0x15, 0x15, 0x43 },
+      { 0x42, 0x15, 0x15, 0x43 },
+      { 0x33, 0x32, 0x32, 0x34 },
+    },
+    roofRows = 28, roofBack = 24, roofFront = 0, roofCycle = { 2, 23 },
+    slab = 3, frontEave = 0,
+  },
+}
+
+-- Elm's complete workstation: monitor above, controls/receiver/paper drawn
+-- from above, front edge and feet below. Do not stand the entire image up.
+profile.buildings.TilesetLab = {
+  {
+    -- Elm and Oak share this complete computer desk. The source bands
+    -- match Gen1's DOJO lab_computers: screen/tower upright, keys/paper flat.
+    id = "johto_lab_computers",
+    tiles = {
+      { 0x0A, 0x0B, 0x0C, 0x0D },
+      { 0x1A, 0x1B, 0x1C, 0x1D },
+      { 0x25, 0x26, 0x26, 0x27 },
+    },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 2,
+    desk = { fascia = { 16, 18 }, base = { 19, 21 } },
+    parts = {
+      { kind = "upright", x = { 2, 13 }, top = { 0, 2 },
+        facade = { 3, 10 }, depth = 4 },
+      { kind = "flat", x = { 1, 13 }, rows = { 11, 14 } },
+      { kind = "upright", x = { 14, 21 }, top = { 0, 3 },
+        facade = { 4, 10 }, depth = 6 },
+      { kind = "flat", x = { 14, 21 }, rows = { 11, 14 } },
+      { kind = "flat", x = { 22, 30 }, rows = { 1, 14 } },
+    },
+  },
+  {
+    -- The healing apparatus has a rear control head and an open recessed
+    -- bed between side rails. Its dark centre is a horizontal surface,
+    -- not a 32-pixel-tall black facade. Match the entire native drawing.
+    id = "elm_healing_machine",
+    tiles = {
+      { 0x42, 0x43, 0x44, 0x45 },
+      { 0x52, 0x53, 0x54, 0x55 },
+      { 0x46, 0x47, 0x47, 0x49 },
+      { 0x56, 0x57, 0x58, 0x59 },
+    },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 4, panes = false,
+    tray = { top = { 8, 25 }, front = { 25, 31 },
+             x = { 0, 31 }, inner = { 8, 23 }, floor = 1 },
+    parts = {
+      { kind = "upright", x = { 0, 31 }, top = { 0, 1 },
+        facade = { 2, 7 }, z = 0, depth = 6 },
+    },
+  },
+  {
+    id = "elm_workstation",
+    tiles = {
+      { 0x10, 0x10, 0x85, 0x86 },
+      { 0x81, 0x82, 0x83, 0x84 },
+      { 0x91, 0x92, 0x93, 0x94 },
+      { 0xA1, 0xA2, 0xA3, 0xA4 },
+    },
+    keep = { 0x10 },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 4, panes = false,
+    desk = { fascia = { 27, 29 }, base = { 30, 31 },
+             z = 12, depthPx = 16, top = { 12, 26 } },
+    parts = {
+      { kind = "upright", x = { 18, 29 }, top = { 3, 5 },
+        facade = { 6, 12 }, z = 12, depth = 4 },
+      { kind = "flat", x = { 18, 28 }, rows = { 14, 20 }, at = 5 },
+      { kind = "flat", x = { 3, 14 }, rows = { 14, 20 }, at = 6, thick = 2 },
+      { kind = "flat", x = { 7, 14 }, rows = { 21, 26 }, at = 5 },
+      { kind = "flat", x = { 17, 28 }, rows = { 22, 26 }, at = 5 },
+    },
+  },
+}
+
+-- The counter's north/south return is horizontal, not a tall bookcase.
+-- Its small terminal is drawn isometrically on the wider front pedestal.
+profile.buildings.TilesetPokecenter = {
+  {
+    id = "center_counter_terminal",
+    tiles = {
+      { 0x02, 0x0F },
+      { 0x01, 0x0F },
+      { 0x03, 0x25 },
+      { 0x13, 0x35 },
+      { 0x46, 0x47 },
+    },
+    keep = { 0x02, 0x01 },
+    seal = "ne", -- the continuous white counter band exits these edges
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 5, panes = false,
+    desk = { fascia = { 32, 35 }, base = { 36, 39 },
+             z = 24, depthPx = 16, top = { 16, 31 } },
+    parts = {
+      { kind = "flat", x = { 8, 15 }, rows = { 0, 15 }, z = 0, at = 7, thick = 8 },
+      { kind = "flat", x = { 8, 15 }, rows = { 0, 7 }, z = 16, at = 7, thick = 8 },
+      { kind = "iso", x = { 3, 14 }, rows = { 16, 29 }, z = 30, plan = 6 },
+    },
+  },
+}
+
+-- Upstairs uses the same terminal but a continuous counter apron instead
+-- of the 1F pedestal. Keep the part geometry identical, match its own base.
+do
+  local upper = {}
+  for k, v in pairs(profile.buildings.TilesetPokecenter[1]) do upper[k] = v end
+  upper.id = "center_counter_terminal_upper"
+  upper.tiles = {
+    { 0x02, 0x0F }, { 0x01, 0x0F }, { 0x03, 0x25 },
+    { 0x13, 0x35 }, { 0x24, 0x24 },
+  }
+  profile.buildings.TilesetPokecenter[2] = upper
+  -- Indigo's sales counter has no terminal: three uninterrupted return
+  -- tiles ending at the standard counter lip/apron, which stay untouched.
+  profile.buildings.TilesetPokecenter[3] = {
+    id = "center_plain_counter_return",
+    tiles = { { 0x0F }, { 0x0F }, { 0x0F }, { 0x34 }, { 0x24 } },
+    keep = { 0x34, 0x24 }, seal = "ne",
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 3, panes = false,
+    parts = { { kind = "flat", x = { 0, 7 }, rows = { 0, 23 },
+                at = 7, thick = 8 } },
+  }
+end
+
+-- Each yellow lounge seat has one top emblem, not one per 8px tile rank.
+-- Separate its top band from the front/feet; only repeat plain upholstery.
+profile.buildings.TilesetPokecenter[4] = {
+  id = "center_lounge_seat",
+  tiles = { { 0x48, 0x49 }, { 0x58, 0x59 } },
+  roofRows = 13, roofBack = 10, roofFront = 0, roofCycle = { 8, 8 },
+  slab = 3, frontEave = 0,
+}
+
+-- One complete nurse-counter drawing: three ball details on a single top,
+-- not repeated on both tile rows by the ordinary upright counter fold.
+profile.buildings.TilesetPokecenter[5] = {
+  id = "center_nurse_counter",
+  tiles = {
+    { 0x34, 0x34, 0x34, 0x34, 0x0C, 0x0C, 0x34, 0x34, 0x34, 0x0C },
+    { 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24 },
+  },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 2, panes = false,
+  desk = { fascia = { 8, 10 }, base = { 11, 15 }, top = { 0, 7 } },
+  parts = {
+    { kind = "flat", x = { 33, 39 }, rows = { 2, 7 }, z = 5, at = 8 },
+    { kind = "flat", x = { 41, 47 }, rows = { 2, 7 }, z = 5, at = 8 },
+    { kind = "flat", x = { 73, 79 }, rows = { 2, 7 }, z = 5, at = 8 },
+  },
+}
+
+-- Center healing bay: the large dark band is a horizontal recess, not
+-- the facade of a cupboard. Keep its single monitor head at the back.
+profile.buildings.TilesetPokecenter[6] = {
+  id = "center_healing_bay",
+  tiles = {
+    { 0x1C, 0x1D, 0x1E, 0x1F },
+    { 0x2C, 0x2D, 0x2E, 0x2F },
+    { 0x3C, 0x3D, 0x3D, 0x3F },
+    { 0x4C, 0x4D, 0x4E, 0x4F },
+  },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 4, panes = false,
+  tray = { top = { 9, 25 }, front = { 25, 31 },
+           x = { 0, 31 }, inner = { 8, 23 }, floor = 1 },
+  parts = {
+    { kind = "upright", x = { 0, 31 }, top = { 0, 1 },
+      facade = { 2, 8 }, z = 0, depth = 6 },
+  },
+}
+
+-- Single blue cabinet: roof art is rows 0..5, the remaining drawing is
+-- its upright front, not another roof copied through the upper tile rank.
+profile.buildings.TilesetPokecenter[7] = {
+  id = "center_blue_cabinet",
+  tiles = { { 0x04, 0x05 }, { 0x14, 0x15 }, { 0x0A, 0x0B }, { 0x1A, 0x1B } },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 4, panes = false,
+  parts = {
+    { kind = "upright", x = { 0, 15 }, top = { 0, 5 },
+      facade = { 6, 31 }, z = 16, depth = 16 },
+  },
+}
+
+-- A PC on a low stand: screen upright, keyboard horizontal. Match the
+-- complete three tile ranks; do not change wall tile 02 above the unit.
+profile.buildings.TilesetPokecenter[8] = {
+  id = "center_wall_pc",
+  tiles = { { 0x20, 0x21 }, { 0x30, 0x31 }, { 0x40, 0x41 } },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 3, panes = false,
+  desk = { fascia = { 20, 21 }, base = { 22, 23 },
+           z = 8, depthPx = 16, top = { 11, 19 } },
+  parts = {
+    { kind = "upright", x = { 1, 14 }, top = { 0, 4 },
+      facade = { 5, 11 }, z = 8, depth = 6 },
+    { kind = "flat", x = { 2, 13 }, rows = { 12, 18 }, z = 16, at = 4 },
+  },
+}
+
+-- Upstairs link-room symbol plaques. The top two source rows are the
+-- striped wall behind each plaque, not a tall solid tower above it.
+for i, tiles in ipairs({
+  { { 0x08, 0x09 }, { 0x18, 0x19 } },
+  { { 0x26, 0x27 }, { 0x28, 0x29 } },
+}) do
+  profile.buildings.TilesetPokecenter[8 + i] = {
+    id = "center_link_panel_" .. i, tiles = tiles,
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 2, panes = false,
+    parts = {
+      { kind = "box", x = { 0, 15 }, rows = { 0, 1 },
+        cycle = { 0, 1 }, base = 0, z = 0, depth = 14 },
+      { kind = "upright", x = { 0, 15 }, top = { 0, 1 },
+        facade = { 2, 15 }, z = 14, depth = 2 },
+    },
+  }
+end
+
+-- Full upstairs divider strips, including the one with a front control
+-- panel. Keep their existing 16px wall body; the long repeated blue band
+-- is not extra height. Fold the light cap once along the whole partition.
+for i, front in ipairs({ { 0x36, 0x37 }, { 0x38, 0x39 } }) do
+  profile.buildings.TilesetPokecenter[10 + i] = {
+    id = "center_divider_" .. i,
+    seal = "n", -- the light longitudinal cap continues off the north edge
+    tiles = {
+      { 0x16, 0x17 }, { 0x16, 0x17 }, { 0x16, 0x17 }, { 0x0D, 0x0E },
+      { 0x36, 0x37 }, { 0x36, 0x37 }, front, { 0x46, 0x47 },
+    },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 8, panes = false,
+    parts = {
+      { kind = "box", x = { 0, 15 }, rows = { 32, 47 },
+        ground = 48, base = 0, z = 0, depth = 64 },
+      { kind = "box", x = { 0, 15 }, rows = { 56, 63 },
+        base = 0, z = 0, depth = 64 },
+      -- The optional control belongs to the front, never the long sides.
+      { kind = "upright", x = { 0, 15 }, top = { 48, 48 },
+        facade = { 48, 55 }, rise = 8, z = 63, depth = 1 },
+      -- Only the plain longitudinal cap repeats; its rounded front end
+      -- (source rows 26..31) appears once, at the end of the native plot.
+      { kind = "flat", x = { 0, 15 }, rows = { 0, 25 }, z = 0, at = 16 },
+      { kind = "flat", x = { 0, 15 }, rows = { 0, 25 }, z = 26, at = 16 },
+      { kind = "flat", x = { 0, 15 }, rows = { 20, 31 }, z = 52, at = 16 },
+    },
+  }
+end
+
+-- Pink link-room units: one front display and one plain top, rather
+-- than another screen repeated on each tile rank's horizontal face.
+profile.buildings.TilesetPokecenter[14] = {
+  id = "center_pink_link_unit",
+  tiles = { { 0x22, 0x23 }, { 0x32, 0x33 } },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 2, panes = false,
+  parts = {
+    { kind = "upright", x = { 0, 15 }, top = { 0, 1 },
+      facade = { 2, 15 }, z = 0, depth = 16 },
+  },
+}
+
+-- The right link-room station is a single casing, not stacked tile
+-- extrusions. It must claim its surrounding drawing before the small
+-- pink display, whose four cells and geometry remain independently owned.
+profile.buildings.TilesetPokecenter[13] = {
+  id = "center_link_station",
+  seal = "n",
+  tiles = {
+    { 0x06, 0x36, 0x1F, 0x5C, 0x37, 0x07 },
+    { 0x06, 0x36, 0x2D, 0x2E, 0x37, 0x07 },
+    { 0x3A, 0x3E, 0x3E, 0x3E, 0x3E, 0x3B },
+    { 0x36, 0x37, 0x56, 0x57, 0x36, 0x37 },
+    { 0x36, 0x37, 0x22, 0x23, 0x36, 0x37 },
+    { 0x46, 0x47, 0x32, 0x33, 0x46, 0x47 },
+  },
+  keep = { 0x22, 0x23, 0x32, 0x33 },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 6, panes = false,
+  parts = {
+    -- Long side tops end in the source drawing's inward-sloping rim;
+    -- their plain facade follows the same 16-high casing as adjacent bays.
+    { kind = "upright", x = { 0, 15 }, top = { 0, 23 },
+      facade = { 32, 47 }, z = 0, depth = 48, stretch = true },
+    { kind = "upright", x = { 32, 47 }, top = { 0, 23 },
+      facade = { 32, 47 }, z = 0, depth = 48, stretch = true },
+    -- Plain inset support, sampled from the central grey field, never
+    -- from a screen. It ends before the separate front display's plot.
+    { kind = "box", x = { 16, 31 }, rows = { 20, 23 },
+      cycle = { 20, 23 }, ground = 34, base = 0, z = 0, depth = 32 },
+    -- Original rear technical motif once on the front of a shallow head.
+    { kind = "upright", x = { 16, 31 }, top = { 12, 12 },
+      facade = { 0, 11 }, rise = 14, z = 0, depth = 6 },
+    -- The small switch panel sits above, not on, the pink screen's lid.
+    { kind = "upright", x = { 16, 31 }, top = { 24, 24 },
+      facade = { 24, 31 }, rise = 14, z = 30, depth = 2 },
+  },
+}
+
+-- Radio Tower desks share caps and cabinet tiles with longer counters.
+-- Only complete free-standing drawings are folded into a desk here.
+profile.buildings.TilesetRadioTower = {
+  {
+    id = "radio_workstation_drawers", seal = "n",
+    tiles = { { 0x05, 0x07, 0x24, 0x06 }, { 0x15, 0x16, 0x4C, 0x4D } },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 2, panes = false,
+    desk = { x = { 0, 15 }, fascia = { 10, 13 }, base = { 14, 15 }, top = { 0, 9 } },
+    parts = {
+      { kind = "box", x = { 16, 31 }, rows = { 8, 15 },
+        ground = 16, base = 0, z = 0, depth = 16 },
+      { kind = "flat", x = { 17, 30 }, rows = { 0, 15 },
+        z = 0, at = 7, texel = { 28, 4 } },
+      { kind = "flat", x = { 17, 23 }, rows = { 0, 7 }, z = 0, at = 8 },
+    },
+  },
+  {
+    id = "radio_workstation_paper", seal = "n",
+    tiles = { { 0x05, 0x07, 0x5A, 0x24 }, { 0x15, 0x17, 0x17, 0x8C } },
+    roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+    slab = 0, frontEave = 0, depth = 2, panes = false,
+    desk = { x = { 0, 23 }, fascia = { 10, 13 }, base = { 14, 15 }, top = { 0, 9 } },
+    parts = {
+      { kind = "flat", x = { 16, 22 }, rows = { 2, 7 }, z = 2, at = 6 },
+      { kind = "box", x = { 24, 31 }, rows = { 8, 15 },
+        ground = 16, base = 0, z = 0, depth = 16 },
+      { kind = "flat", x = { 25, 30 }, rows = { 0, 15 },
+        z = 0, at = 7, texel = { 26, 9 } },
+      { kind = "flat", x = { 24, 31 }, rows = { 0, 7 }, z = 0, at = 8 },
+    },
+  },
+}
+
+-- The radio stools are walkable native cells. Match their seat height for
+-- actors even before a mesh is built; every occurrence of these four tiles
+-- belongs to the same complete stool in the native six-map inventory.
+profile.tilesets.TilesetRadioTower = {
+  stool = { 0x2C, 0x2D, 0x3C, 0x3D }, heights = { stool = 6 },
+}
+profile.buildings.TilesetRadioTower[3] = {
+  id = "radio_stool",
+  voidSeeds = { { 5, 12 } }, -- enclosed original floor between the legs
+  tiles = { { 0x2C, 0x2D }, { 0x3C, 0x3D } },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 2, panes = false,
+  parts = { { kind = "upright", x = { 2, 13 }, top = { 1, 8 },
+              facade = { 9, 14 }, z = 1, depth = 9, topContour = true } },
+}
+
+-- Radio 3F's native interaction identifies this as the CARD KEY slot,
+-- not a free-standing PC. Keep a solid wall behind its single front.
+profile.buildings.TilesetRadioTower[4] = {
+  id = "radio_card_key_slot", seal = "new",
+  tiles = { { 0x11 }, { 0x5B }, { 0x5C } },
+  roofRows = 0, roofBack = 0, roofFront = 0, roofCycle = { 0, 0 },
+  slab = 0, frontEave = 0, depth = 3, panes = false,
+  parts = {
+    { kind = "box", x = { 0, 7 }, rows = { 0, 7 },
+      ground = 16, base = 0, z = 0, depth = 16 },
+    { kind = "upright", x = { 0, 7 }, top = { 8, 8 },
+      facade = { 8, 23 }, z = 16, depth = 1 },
+  },
+}
+
+-- Mahogany's north gate genuinely straddles Route43 (roof) and town (front).
+-- Each native map owns only its half of the same complete 64px-deep model.
+-- Exact layout/origin guards keep custom maps and similar civic houses out.
+do
+  local roof={
+    {0x31,0x36,0x36,0x36,0x36,0x36,0x36,0x34},
+    {0x41,0x48,0x48,0x48,0x48,0x48,0x48,0x44},
+    {0x41,0x48,0x48,0x48,0x48,0x48,0x48,0x44},
+    {0x51,0x52,0x52,0x52,0x52,0x52,0x52,0x54},
+  }
+  local front={
+    {0x1a,0x1b,0x1b,0x1b,0x1b,0x1b,0x1b,0x1c},
+    {0x1a,0x1b,0x1b,0x1b,0x1b,0x26,0x26,0x1c},
+    {0x1a,0x1b,0x37,0x38,0x1b,0x1b,0x1b,0x1c},
+    {0x01,0x02,0x39,0x3a,0x02,0x02,0x02,0x16},
+  }
+  local north={id='johto_mahogany_gate_north',tiles=roof,bottomRows=front,
+    nativePlacement={mapId='ROUTE_43',width=10,height=27,tx=16,ty=104},
+    depth=8,modelSlice={0,32,0,upperExclusive=true},
+    roofRows=32,roofBack=2,roofFront=8,roofCycle={2,23},slab=4,frontEave=4}
+  local south={id='johto_mahogany_gate_south',tiles=front,topRows=roof,
+    nativePlacement={mapId='MAHOGANY_TOWN',width=10,height=9,tx=16,ty=0},
+    depth=8,modelSlice={32,68,-32},
+    roofRows=32,roofBack=2,roofFront=8,roofCycle={2,23},slab=4,frontEave=4}
+  table.insert(profile.buildings.TilesetJohto,1,south)
+  table.insert(profile.buildings.TilesetJohto,1,north)
+end
+
+-- Johto's rounded sign frame has four dark corner pixels. Dark is also
+-- the cast shadow below its feet: keep only these measured outline points.
+-- Closing the outline also protects the white paint enclosed by the frame.
+for _,id in ipairs({"TilesetJohto","TilesetJohtoModern"}) do
+  profile.tilesets[id].prop_solid_pixels = {
+    {tile=0x4E,pixels={{1,1},{0,2}}},
+    {tile=0x4F,pixels={{6,1},{7,2}}},
+  }
+end
 
 return profile

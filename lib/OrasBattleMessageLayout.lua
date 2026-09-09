@@ -112,6 +112,9 @@ function Layout.layout(font, sourceRows, options)
     firstY = finite(options.line1Y, top)
     step = math.max(defaultStep,
       finite(options.line2Y, firstY + defaultStep) - firstY)
+    if firstY + step + glyphHeight * scale > logicalHeight - bottom then
+      firstY, step = top, defaultStep
+    end
   elseif count > 2 then
     local lastStart = logicalHeight - bottom - glyphHeight * scale
     step = count > 1 and (lastStart - top) / (count - 1) or 0

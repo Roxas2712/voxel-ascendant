@@ -425,7 +425,10 @@ uniform vec3 curve;          // xy = the focus in world XZ, z = k; 0 = off
 attribute float VertexShade;
 
 vec4 position(mat4 transform_projection, vec4 vertex_position) {
-  vShade = VertexShade;
+  // Water reuses ChunkMesher vertices: strip its top-face weather tag before
+  // lighting, just like Voxel3D. The tag must not brighten reflections.
+  float encodedShade = abs(VertexShade);
+  vShade = encodedShade - step(1.5, encodedShade) * 2.0;
   vec4 w = model * vertex_position;
   vSun = (sunVP * w).xyz;
   if (curve.z > 0.0) {

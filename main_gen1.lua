@@ -2153,6 +2153,20 @@ mod.exports.weatherMusic = {
 }
 VascMenu.install(mod, {
   settings=SETTINGS,
+  factoryResetPrepare=function(game)
+    assert(LocalContent.select("VASC_DEFAULT", game))
+  end,
+  factoryResetFinish=function(game)
+    local opts = game.save.options
+    opts.pipelines = opts.pipelines or {}
+    opts.pipelines.voxel = Voxel.FULL_LEVEL
+    -- Do not let the FULL transition overwrite the restored option defaults.
+    fullWas = true
+    require("src.render.Pipelines").applyOptions(opts)
+    Voxel.setLevel(Voxel.FULL_LEVEL)
+    ChunkMesher.invalidate()
+    HorizonWall.invalidate()
+  end,
   menuSkinSetting=VascMenuSkinSetting,
   battleLayout=BattleLayout,
   diagnostics=Diagnostics,

@@ -47,6 +47,8 @@ local V = ...
 local Assets = require("src.render.Assets")
 local Map = require("src.world.gen2.Map")
 local Buildings = V.require("Buildings")
+local KantoArenaProps = V.require("Gen2KantoArenaProps")
+local JohtoArenaProps = V.require("Gen2JohtoArenaProps")
 local TileShape = V.require("TileShape")
 local Budget = V.require("BuildBudget")
 local PerformancePolicy = V.require("Gen2PerformancePolicy")
@@ -654,6 +656,34 @@ function Structures.forMap(map, bodyOnly)
         grassQuads = {}, flowerQuads = {}, roundStamps = {}, figures = {} }
   Budget.phase("structure:buildings")
   Buildings.build(S, map, pixels(tileset), perRow)
+  if KantoArenaProps.build then
+    Budget.phase("structure:kanto-arena-props")
+    KantoArenaProps.build(S, map, pixels(tileset), Budget)
+  end
+  if JohtoArenaProps.build then
+    Budget.phase("structure:johto-arena-props")
+    JohtoArenaProps.build(S, map, pixels(tileset), Budget)
+  end
+
+  -- Pewter has a distinct native rock glyph. Keep this dependency lazy so
+  -- other Tower maps retain their own structures and collision contracts.
+  if map.id == "PEWTER_GYM" then
+    Budget.phase("structure:pewter-rocks")
+    V.require("Gen2PewterRocks").build(S, map, pixels(tileset), Budget)
+  end
+
+  -- Same Tower glyph, independent Cianwood placement contract. Only the
+  -- four fixed rocks; moving Strength entities and wooden rails stay native.
+  if map.id == "CIANWOOD_GYM" then
+    Budget.phase("structure:cianwood-rocks")
+    V.require("Gen2CianwoodRocks").build(S, map, pixels(tileset), Budget)
+  end
+
+  -- Celadon shares its tileset with stations; claim only its native plants.
+  if map.id == "CELADON_GYM" then
+    Budget.phase("structure:celadon-plants")
+    V.require("Gen2CeladonPlants").build(S, map, pixels(tileset), Budget)
+  end
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
   -- steps onto it to warp), so it resolves to ground and punches a hole in
@@ -734,6 +764,10 @@ function Structures.forMap(map, bodyOnly)
   -- ---- stairs: profile-pinned cells that render as real steps ----
   Budget.phase("structure:stairs")
   Structures.buildStairs(S, map, x0, x1, y0, y1)
+
+  -- One native roof drawing has a walkable ridge, not tall room walls.
+  -- Lazy-load only here so unrelated maps do not retain this small model.
+  if map.id=='TIN_TOWER_ROOF' then V.require('TinTowerRoof').build(S,map) end
 
   -- ---- falls: the drop between two river levels, measured off the art ----
   Budget.phase("structure:falls")
@@ -983,6 +1017,40 @@ function Structures.forMap(map, bodyOnly)
     if g == false then S.ground[k] = best end
   end
 
+  -- Replace native can plates after analysis, preserving the synthetic wall ring.
+  if map.id == "VERMILION_GYM" then
+    Budget.phase("structure:vermilion-cans")
+    V.require("Gen2VermilionCans").build(S, map, pixels(tileset), Budget)
+  end
+
+  if map.id == "OLIVINE_GYM" then
+    Budget.phase("structure:olivine-rocks")
+    V.require("Gen2OlivineRocks").build(S, map, pixels(tileset), Budget)
+    V.require("Gen2OlivineBoundary").build(S, map, pixels(tileset))
+  end
+
+  if map.id == "AZALEA_GYM" or map.id == "GOLDENROD_GYM" then
+    Budget.phase("structure:johto-planters")
+    V.require("Gen2JohtoPlanters").build(S, map, pixels(tileset), Budget)
+  end
+
+  if map.id == "VIRIDIAN_GYM" then
+    Budget.phase("structure:viridian-hedges")
+    V.require("Gen2ViridianHedges").build(S, map, pixels(tileset), Budget)
+  elseif map.id == "SAFFRON_GYM" then
+    Budget.phase("structure:saffron-partitions")
+    V.require("Gen2SaffronPartitions").build(S, map, pixels(tileset), Budget)
+  end
+
+  if map.id == "TIN_TOWER_6F" then
+    Budget.phase("structure:tin-rail-base")
+    V.require("Gen2TinTowerRailBase").build(S, map, pixels(tileset), Budget)
+  end
+  if map.id and (map.id:match("^SPROUT_TOWER_%dF$") or map.id:match("^TIN_TOWER_%dF$")) then
+    Budget.phase("structure:tower-pillar")
+    V.require("Gen2TowerPillar").build(S, map, pixels(tileset), Budget)
+  end
+
   if bodyOnly then
     c.body = S
   else
@@ -1081,11 +1149,14 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
   local atlasH = map.tileset.imageHeight or 48
 
   -- cell-space art access (NX x NY, row 0 = top), anchored at cell (cx, cy)
+  local rockTexels
   local function tileOf(px, py)
     return S.tileAt[keyOf(cx * 2 + math.floor(px / 8),
                           cy * 2 + math.floor(py / 8))]
   end
   local function texel(px, py)
+    local material = rockTexels and rockTexels[py * NX + px]
+    if material then px, py = material[1], material[2] end
     local tile = tileOf(px, py)
     return (tile % perRow) * 8 + px % 8,
            math.floor(tile / perRow) * 8 + py % 8
@@ -1207,9 +1278,57 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
     end
   end
 
+  local iceRock = tostring(map.tileset.id) == "TilesetIcePath"
+     and NX == 16 and NY == 16
+     and tileOf(0,0)==0x82 and tileOf(8,0)==0x83
+     and tileOf(0,8)==0x92 and tileOf(8,8)==0x93
+  if iceRock then
+    -- The ice drawing has open cracks joining its exterior. A closed-ring
+    -- flood mistakes those for background and keeps only isolated shards.
+    -- Author one stepped convex mass, like the tree archetype above, while
+    -- all facets still wear pixels from this original 16x16 drawing.
+    local widths={3,5,6,7,8,8,8,8,8,8,8,7,7,6,5,4}
+    for y=0,15 do for x=0,15 do
+      local i=y*16+x;local hw=widths[y+1]
+      mask[i]=(x>=8-hw and x<8+hw and cls[i]~="off") or nil
+    end end
+  end
+
   local any = nil
   for i = 0, NX * NY - 1 do any = any or mask[i] end
   if not any then return {} end
+
+  -- Ice rocks have a heavy, two-pixel dark perimeter. Revolving that
+  -- screen-space outline paints whole shell facets black, especially the
+  -- top-facing steps. Keep interior cracks, but source perimeter-black
+  -- facets from the nearest original non-black rock pixel. This is only
+  -- the complete native ice-rock signature, never cave walls, trees,
+  -- bins or the Hall of Fame artwork sharing the atlas. No new texture.
+  if iceRock then
+    rockTexels = {}
+    for y=0,15 do for x=0,15 do
+      local i=y*16+x
+      if mask[i] and cls[i]=="black" then
+        local edge=false
+        for dy=-2,2 do for dx=-2,2 do
+          local xx,yy=x+dx,y+dy
+          if math.abs(dx)+math.abs(dy)<=2 and
+             (xx<0 or xx>15 or yy<0 or yy>15 or not mask[yy*16+xx]) then edge=true end
+        end end
+        if edge then
+          local best,dist
+          for yy=math.max(0,y-4),math.min(15,y+4) do
+            for xx=math.max(0,x-4),math.min(15,x+4) do
+              local j=yy*16+xx;local d=(xx-x)^2+(yy-y)^2
+              if mask[j] and cls[j]~="black" and cls[j]~="off"
+                 and (not dist or d<dist) then best,dist={xx,yy},d end
+            end
+          end
+          rockTexels[i]=best
+        end
+      end
+    end end
+  end
 
   -- a CAPPED hull (the stump): the top capRows rows of the mask are the
   -- drawn cut face -- a surface seen at an angle, not body. Strip them
@@ -1619,7 +1738,9 @@ local function roundTemplate(S, map, data, cx, cy, groundTiles, N, capRows,
         local i = iy * NX + ix
         if z0[i] then
           local ix2 = ix
-          while ix2 + 1 <= hiRow[iy] do
+          -- Remapped rock pixels need individual UVs: adjacent original
+          -- columns may now sample different atlas rows/tiles.
+          while not rockTexels and ix2 + 1 <= hiRow[iy] do
             local j = iy * NX + ix2 + 1
             -- src too: a can's foot row draws part of its span from the
             -- stripped base rim and the rest from the body band above it,
@@ -1799,6 +1920,7 @@ local roundCache = {}
 function Structures.buildCylinders(S, map, x0, x1, y0, y1, groundTiles)
   local data = pixels(map.tileset)
   local tw, th = map.def.width * 4, map.def.height * 4
+  local caveShapes = TileShape.cavePropBase and TileShape.forMap(map)
 
   -- ground-set fingerprint: the template's art-matched floor depends on
   -- which ground tiles this map places, so maps sharing a tileset but
@@ -1959,6 +2081,8 @@ function Structures.buildCylinders(S, map, x0, x1, y0, y1, groundTiles)
           grouped[ckey + 8192] = true
         end
       elseif s and s.art == "cylinder" and near then
+        local baseY = s.class == "cylinder" and caveShapes
+          and TileShape.cavePropBase(map, caveShapes, cx, cy) or 0
         -- a `stump`-class cell is the same hull with a cut face: its
         -- top capRows of drawing project onto the round top. A `can`-class
         -- cell is that hull cut at BOTH ends -- lid on top, base circle on
@@ -1990,7 +2114,7 @@ function Structures.buildCylinders(S, map, x0, x1, y0, y1, groundTiles)
           end
           ground = tpl.bg or false
           S.roundStamps[#S.roundStamps + 1] =
-            { quads = tpl.quads, mx = cx * 16 + 8, mz = cy * 16 + 8 }
+            { quads = tpl.quads, mx = cx * 16 + 8, my = baseY, mz = cy * 16 + 8 }
         end
         -- headless (no pixels): no hull, but still claim the tiles so
         -- the volume path never boxes a pinned cell. Ground is the
@@ -2001,6 +2125,10 @@ function Structures.buildCylinders(S, map, x0, x1, y0, y1, groundTiles)
             local tk = keyOf(cx * 2 + dx, cy * 2 + dy)
             S.skip[tk] = true
             S.ground[tk] = ground
+            if baseY > 0 then
+              S.groundHeights = S.groundHeights or {}
+              S.groundHeights[tk] = baseY
+            end
           end
         end
       end
@@ -2501,13 +2629,42 @@ local STAIR_SHADE = { south = 1.0, north = 0.68, tread = 1.0,
                       wellN = 0.9, wellS = 0.55, wellEnd = 0.15,
                       wellTread = 0.8 }
 
+-- Blackthorn's native stair illustration is a silhouette, not a wall atlas.
+-- Tile its room brick at the native 8-world-px scale instead of stretching
+-- that silhouette around the flight. Split geometry so UVs never interpolate
+-- across an atlas seam; no new image or per-frame geometry is needed.
+local function blackthornTiledFace(out, corners, tileset, tile, shade)
+  local a,b,d=corners[1],corners[2],corners[4]
+  local function length(p,q)
+    return math.sqrt((q[1]-p[1])^2+(q[2]-p[2])^2+(q[3]-p[3])^2)
+  end
+  local width,height=length(a,b),length(a,d)
+  if width==0 or height==0 then return end
+  local aw,ah=tileset.imageWidth or 128,tileset.imageHeight or 128
+  local row=tileset.tilesPerRow or 16
+  local px,py=tile%row*8,math.floor(tile/row)*8
+  local function point(u,v)
+    return {a[1]+(b[1]-a[1])*u/width+(d[1]-a[1])*v/height,
+      a[2]+(b[2]-a[2])*u/width+(d[2]-a[2])*v/height,
+      a[3]+(b[3]-a[3])*u/width+(d[3]-a[3])*v/height}
+  end
+  for y=0,height-.001,8 do for x=0,width-.001,8 do
+    local x1,y1=math.min(x+8,width),math.min(y+8,height)
+    out[#out+1]={point(x,y),point(x1,y),point(x1,y1),point(x,y1),shade=shade,
+      uv={{(px+.03)/aw,(py+.03)/ah},{(px+x1-x-.03)/aw,(py+.03)/ah},
+        {(px+x1-x-.03)/aw,(py+y1-y-.03)/ah},{(px+.03)/aw,(py+y1-y-.03)/ah}}}
+  end end
+end
+
 local function stairCell(S, map, data, cx, cy, s)
   local perRow = map.tileset.tilesPerRow or 16
   local atlasW = map.tileset.imageWidth or 128
   local atlasH = map.tileset.imageHeight or 48
   local quads = S.objectQuads
-  local down = s.class == "stair_down_e" or s.class == "stair_down_w"
-  local east = s.class == "stair_e" or s.class == "stair_down_e"
+  local firstQuad = #quads + 1
+  local north = s.class == 'stair_n' or s.class == 'stair_down_n'
+  local down = s.class == "stair_down_e" or s.class == "stair_down_w" or s.class == 'stair_down_n'
+  local east = north or s.class == "stair_e" or s.class == "stair_down_e"
   local mx, mz = cx * 16, cy * 16
   local h = s.h or 16
   local rise = h / STAIR_STEPS
@@ -2527,6 +2684,10 @@ local function stairCell(S, map, data, cx, cy, s)
   -- corners run bottom-left, bottom-right, top-right, top-left as seen
   -- from outside (the mesher's side convention); art rect in cell space
   local function face(c1, c2, c3, c4, ax0, ay0, ax1, ay1, shade)
+    if s.surface=='blackthorn_brick' or s.surface=='tower_timber' then
+      blackthornTiledFace(quads,{c1,c2,c3,c4},map.tileset,s.surface=='tower_timber' and 0x02 or 0x01,shade)
+      return
+    end
     local u0, v0 = uv(ax0, ay0)
     local u1, v1 = uv(ax1, ay1)
     quads[#quads + 1] = { c1, c2, c3, c4,
@@ -2642,6 +2803,48 @@ local function stairCell(S, map, data, cx, cy, s)
       end
     end
   end
+  if north then
+    -- Rotate the east-facing flight rigidly about its own cell. Preserve UVs
+    -- and winding; only this flight's newly emitted vertices are touched.
+    for i=firstQuad,#quads do for j=1,4 do
+      local p=quads[i][j];local x,z=p[1]-mx,p[3]-mz
+      p[1],p[3]=mx+z,mz+16-x
+    end end
+  end
+end
+
+-- A cave flight is viewed head-on, rises NORTH, and connects two real floor
+-- elevations. Split at source tile boundaries so UVs never span atlas cells.
+local function caveStairCell(S,map,cx,cy,s)
+  local aw,ah=map.tileset.imageWidth or 128,map.tileset.imageHeight or 128
+  local perRow=map.tileset.tilesPerRow or 16
+  local mx,mz=cx*16,cy*16
+  local function face(corners,tx,ty,px0,py0,px1,py1,shade)
+    local tile=S.tileAt[keyOf(tx,ty)]
+    local ax,ay=tile%perRow*8,math.floor(tile/perRow)*8
+    local u0,u1=(ax+px0+.03)/aw,(ax+px1-.03)/aw
+    local v0,v1=(ay+py0+.03)/ah,(ay+py1-.03)/ah
+    corners.uv={{u0,v0},{u1,v0},{u1,v1},{u0,v1}};corners.shade=shade
+    S.objectQuads[#S.objectQuads+1]=corners
+  end
+  for step=0,3 do
+    local z0,z1=mz+step*4,mz+(step+1)*4
+    local top=s.high-step*(s.high-s.low)/4
+    local bottom=top-(s.high-s.low)/4
+    local row=math.floor(step/2);local py=(step%2)*4
+    for half=0,1 do
+      local x0,x1=mx+half*8,mx+(half+1)*8
+      face({{x0,top,z0},{x1,top,z0},{x1,top,z1},{x0,top,z1}},
+        cx*2+half,cy*2+row,0,py,8,py+4,1)
+      face({{x0,top,z1},{x1,top,z1},{x1,bottom,z1},{x0,bottom,z1}},
+        cx*2+half,cy*2+row,0,py,8,py+4,.82)
+    end
+    -- Close both sides all the way to the lower floor, even beside a pit.
+    face({{mx,top,z0},{mx,top,z1},{mx,s.low,z1},{mx,s.low,z0}},
+      cx*2,cy*2+row,0,py,1,py+4,.72)
+    face({{mx+16,top,z1},{mx+16,top,z0},{mx+16,s.low,z0},{mx+16,s.low,z1}},
+      cx*2+1,cy*2+row,7,py,8,py+4,.9)
+  end
 end
 
 function Structures.buildStairs(S, map, x0, x1, y0, y1)
@@ -2649,11 +2852,49 @@ function Structures.buildStairs(S, map, x0, x1, y0, y1)
   for cy = math.floor(y0 / 2), math.floor(y1 / 2) do
     for cx = math.floor(x0 / 2), math.floor(x1 / 2) do
       local s = S.shapeAt[keyOf(cx * 2, cy * 2)]
-      if s and s.art == "stair" then
+      if s and s.art == 'floor_shaft' then
+        -- Exact authored fall cell: four lined sides and a dark
+        -- bottom below the floor. No cap or generated floor over its opening.
+        local mx,mz=cx*16,cy*16;local bottom=-(s.depth or 16)
+        local aw,ah=map.tileset.imageWidth or 128,map.tileset.imageHeight or 128
+        local perRow=map.tileset.tilesPerRow or 16
+        local function face(corners,tile,shade)
+          if s.surface=='burned_timber' then
+            local bottomFace=true
+            for _,v in ipairs(corners)do bottomFace=bottomFace and v[2]==bottom end
+            tile=bottomFace and s.bottomTile or s.sideTile
+          end
+          if s.surface=='blackthorn_brick' or s.surface=='burned_timber' then
+            blackthornTiledFace(S.objectQuads,corners,map.tileset,tile,shade)
+            return
+          end
+          local px,py=(tile%perRow)*8,math.floor(tile/perRow)*8
+          corners.uv={{(px+.03)/aw,(py+.03)/ah},{(px+7.97)/aw,(py+.03)/ah},
+            {(px+7.97)/aw,(py+7.97)/ah},{(px+.03)/aw,(py+7.97)/ah}}
+          corners.shade=shade;S.objectQuads[#S.objectQuads+1]=corners
+        end
+        face({{mx,0,mz},{mx+16,0,mz},{mx+16,bottom,mz},{mx,bottom,mz}},0x01,.45)
+        face({{mx+16,0,mz+16},{mx,0,mz+16},{mx,bottom,mz+16},{mx+16,bottom,mz+16}},0x01,.25)
+        face({{mx,0,mz+16},{mx,0,mz},{mx,bottom,mz},{mx,bottom,mz+16}},0x01,.35)
+        face({{mx+16,0,mz},{mx+16,0,mz+16},{mx+16,bottom,mz+16},{mx+16,bottom,mz}},0x01,.30)
+        face({{mx,bottom,mz},{mx+16,bottom,mz},{mx+16,bottom,mz+16},{mx,bottom,mz+16}},0x12,.08)
+        for dy=0,1 do for dx=0,1 do
+          local tk=keyOf(cx*2+dx,cy*2+dy)
+          S.skip[tk]=true;S.ground[tk]=nil
+        end end
+      elseif s and s.art == 'cave_stair' then
+        caveStairCell(S,map,cx,cy,s)
+        for dy=0,1 do for dx=0,1 do
+          local tk=keyOf(cx*2+dx,cy*2+dy)
+          S.skip[tk]=true;S.ground[tk]=nil
+          -- Keep a compact landing-height receipt for sprite placement.
+          S.runs[tk]={h=dy==0 and s.high or s.low+(s.high-s.low)/2}
+        end end
+      elseif s and s.art == "stair" then
         -- claim the cell whichever way the quads go: the mesher must not
         -- box or floor it.  A rising flight stands on the map's common
         -- floor; a stairwell IS the hole, so nothing is painted under it
-        local down = s.class == "stair_down_e" or s.class == "stair_down_w"
+        local down = s.class == "stair_down_e" or s.class == "stair_down_w" or s.class == 'stair_down_n'
         for dy = 0, 1 do
           for dx = 0, 1 do
             local tk = keyOf(cx * 2 + dx, cy * 2 + dy)
@@ -2696,6 +2937,30 @@ local function fallRun(h, north, front)
 end
 
 function Structures.buildFalls(S, map, x0, x1, y0, y1)
+  local elevation
+  if TileShape.elevation and TileShape.forMap and map.def then
+    elevation=TileShape.elevation(map,TileShape.forMap(map))
+    if not (elevation and elevation.hydrology)then elevation=nil end
+  end
+  local function levelAt(tx,ty)
+    if not elevation or tx<0 or ty<0 or tx>=map.widthCells*2 or ty>=map.heightCells*2 then return nil end
+    local r=elevation.regions[math.floor(ty/2)*elevation.width+math.floor(tx/2)]
+    return r and elevation.heights[r]
+  end
+  -- Also carry downstream pools whose altitude comes from land stairs or an
+  -- upstream fall. They need not be a crest of another local waterfall.
+  if elevation then
+    for cell,h in pairs(elevation.waterLevels)do if h>0 then
+      local cx,cy=cell%elevation.width,math.floor(cell/elevation.width)
+      for dy=0,1 do for dx=0,1 do
+        local tx,ty=cx*2+dx,cy*2+dy
+        local s=S.shapeAt[keyOf(tx,ty)]
+        if tx>=x0 and tx<=x1 and ty>=y0 and ty<=y1 and s and s.class=='water' then
+          S.runs[keyOf(tx,ty)]=fallRun(h,ty,ty)
+        end
+      end end
+    end end
+  end
   local cols, any = {}, false
   for ty = y0, y1 do
     for tx = x0, x1 do
@@ -2710,7 +2975,7 @@ function Structures.buildFalls(S, map, x0, x1, y0, y1)
   if not any then return end
 
   -- measure each column's contiguous run: that is the drop
-  local crest, height = {}, 0
+  local crest, crestHeights = {}, {}
   for tx, ys in pairs(cols) do
     local sorted = {}
     for ty in pairs(ys) do sorted[#sorted + 1] = ty end
@@ -2731,50 +2996,62 @@ function Structures.buildFalls(S, map, x0, x1, y0, y1)
       -- course a row, crest at the top, river level at the foot.
       local extent = front - north + 1
       local step = math.min(8, math.floor(FALL_MAX / extent))
+      local base=levelAt(tx,front+1) or 0
       for ty = north, front do
-        local h = (front - ty + 1) * step
+        local h = base+(front - ty + 1) * step
         S.runs[keyOf(tx, ty)] = fallRun(h, ty, ty)
       end
-      local crestH = extent * step
-      if crestH > height then height = crestH end
+      local crestH = base+extent * step
+      local k = keyOf(tx, north - 1)
+      crestHeights[k] = math.max(crestHeights[k] or 0, crestH)
       crest[#crest + 1] = { tx, north - 1 }
     end
   end
-  if height <= 0 then return end
-
-  -- the river above stands on the crest
+  -- Each disconnected river stands on ITS crest, not the tallest waterfall
+  -- anywhere on the map. Resolve a whole connected pool before assigning runs
+  -- so neighbouring waterfall columns cannot create seams within one surface.
   local function isWater(tx, ty)
     local s = S.shapeAt[keyOf(tx, ty)]
     return s ~= nil and s.class == "water"
   end
-  local seen, queue = {}, {}
-  for _, c in ipairs(crest) do
-    local k = keyOf(c[1], c[2])
-    if not seen[k] and isWater(c[1], c[2]) then
-      seen[k] = true
-      queue[#queue + 1] = c
-    end
-  end
-  local raised = {}
-  while #queue > 0 and #raised < FALL_POOL_MAX do
-    Budget.tick()
-    local c = table.remove(queue)
-    raised[#raised + 1] = c
-    S.runs[keyOf(c[1], c[2])] = fallRun(height, c[2], c[2])
-    for _, d in ipairs(DIRS4) do
-      local nx, ny = c[1] + d[1], c[2] + d[2]
-      local nk = keyOf(nx, ny)
-      if nx >= x0 and nx <= x1 and ny >= y0 and ny <= y1
-         and not seen[nk] and isWater(nx, ny) then
-        seen[nk] = true
-        queue[#queue + 1] = { nx, ny }
+  table.sort(crest, function(a, b)
+    return a[2] == b[2] and a[1] < b[1] or a[2] < b[2]
+  end)
+  local seen, raised = {}, {}
+  for _, seed in ipairs(crest) do
+    local sk = keyOf(seed[1], seed[2])
+    if not seen[sk] and isWater(seed[1], seed[2]) then
+      local queue, at, height = {seed}, 1, 0
+      seen[sk] = true
+      while at <= #queue do
+        Budget.tick()
+        local c = queue[at]; at = at + 1
+        height = math.max(height, crestHeights[keyOf(c[1], c[2])] or 0)
+        for _, d in ipairs(DIRS4) do
+          local nx, ny = c[1] + d[1], c[2] + d[2]
+          local nk = keyOf(nx, ny)
+          if nx >= x0 and nx <= x1 and ny >= y0 and ny <= y1
+             and not seen[nk] and isWater(nx, ny) then
+            seen[nk] = true
+            queue[#queue + 1] = { nx, ny }
+          end
+        end
+      end
+      -- Finish marking even an unexpectedly huge component (bounded by map
+      -- dimensions), otherwise a later crest could raise its unvisited tail.
+      -- Do not raise an over-budget pool only halfway.
+      if #queue <= FALL_POOL_MAX and height > 0 then
+        for _, c in ipairs(queue) do
+          raised[#raised + 1] = {c[1], c[2], height}
+          S.runs[keyOf(c[1], c[2])] = fallRun(height, c[2], c[2])
+        end
       end
     end
   end
 
   -- and the bank comes up with it.  A raised lake ringed by 32px rock
   -- pours out through its own banks from every angle but straight on.
-  local edge = raised
+  local edge, rimHeights = raised, {}
   for _ = 1, FALL_RIM do
     local next_ = {}
     for _, c in ipairs(edge) do
@@ -2783,14 +3060,15 @@ function Structures.buildFalls(S, map, x0, x1, y0, y1)
           local tx, ty = c[1] + dx, c[2] + dy
           local k = keyOf(tx, ty)
           local s = S.shapeAt[k]
+          local height = c[3]
           if s and s.art == "upright" and s.class ~= "waterfall"
-             and not seen[k] then
-            seen[k] = true
+             and height > (rimHeights[k] or 0) then
+            rimHeights[k] = height
             local run = S.runs[k]
             if not run or run.h < height then
-              S.runs[k] = fallRun(height, ty, ty)
+              S.runs[k] = fallRun(math.max(height,s.h or 0), ty, ty)
             end
-            next_[#next_ + 1] = { tx, ty }
+            next_[#next_ + 1] = { tx, ty, height }
           end
         end
       end
@@ -2926,7 +3204,9 @@ function Structures.buildRails(S, map, x0, x1, y0, y1)
           end
           local k = keyOf(t, ty)
           S.skip[k] = true
-          if S.ground[k] == nil then S.ground[k] = groundUnder(t, ty) end
+          -- No nearby flat cell is unresolved ground, not an intentional
+          -- opening. Keep the sentinel so the map-wide vote can fill it.
+          if S.ground[k] == nil then S.ground[k] = groundUnder(t, ty) or false end
         end
         tx = txb + 1
       end
@@ -3100,6 +3380,29 @@ end
 -- outline shade: a fence's mid browns are its body, and the outline
 -- rule would strip the posts to black skeletons.
 function Structures.extractObjects(S, map, region, data, perRow, force)
+  -- A sign is one native 16px cell, even when its outline contains
+  -- disconnected strokes. Adjacent signs must not share one anchor.
+  local first = region.tiles[1]
+  local pinned = first and S.shapeAt[keyOf(first[1],first[2])]
+  if force and pinned and pinned.class == "signpost" then
+    local cells, count = {}, 0
+    for _,c in ipairs(region.tiles) do
+      local k=keyOf(math.floor(c[1]/2),math.floor(c[2]/2))
+      if not cells[k] then cells[k]={tiles={},minX=c[1],maxX=c[1],minY=c[2],maxY=c[2]};count=count+1 end
+      local cell=cells[k];cell.tiles[#cell.tiles+1]=c
+      cell.minX=math.min(cell.minX,c[1]);cell.maxX=math.max(cell.maxX,c[1])
+      cell.minY=math.min(cell.minY,c[2]);cell.maxY=math.max(cell.maxY,c[2])
+    end
+    if count>1 then
+      local leftover={}
+      for _,cell in pairs(cells) do
+        for _,c in ipairs(Structures.extractObjects(S,map,cell,data,perRow,force)) do
+          leftover[#leftover+1]=c
+        end
+      end
+      return leftover
+    end
+  end
   local bw = (region.maxX - region.minX + 1) * 8
   local bh = (region.maxY - region.minY + 1) * 8
 
@@ -3123,6 +3426,8 @@ function Structures.extractObjects(S, map, region, data, perRow, force)
   --           roofs inside to protect.
   --   barrier everything else
   local W, H = bw + 2, bh + 2
+  local keep = force and pinned and pinned.class=="signpost"
+    and TileShape.propSolidPixels and TileShape.propSolidPixels(map.tileset.id)
   local state = {}
   local srcU, srcV = {}, {}
   for iy = 0, H - 1 do
@@ -3147,7 +3452,9 @@ function Structures.extractObjects(S, map, region, data, perRow, force)
         local ay = math.floor(tile / perRow) * 8 + py % 8
         srcU[i], srcV[i] = ax, ay
         local r, g, b, a = data:getPixel(ax, ay)
-        if a == 0 then
+        if keep and keep[tile] and keep[tile][(py%8)*8+px%8] and a>0 then
+          state[i] = "solid"
+        elseif a == 0 then
           state[i] = "cand"
         elseif force and force ~= "opaque" then
           state[i] = Structures.shadeClass(math.min(r, g, b))
@@ -3461,7 +3768,10 @@ function Structures.buildObject(S, map, region, cluster,
   -- posts along the cliff edge an authored 16px box to their south, and
   -- they were hoisted to stand on the clifftop instead of the path.
   local baseY, support = 0, nil
-  if force and force ~= "opaque" then
+  local firstTile = S.tileAt[keyOf(cluster.tiles[1][1], cluster.tiles[1][2])]
+  local grounded = TileShape.propGrounded
+    and TileShape.propGrounded(map.tileset.id, firstTile)
+  if force and force ~= "opaque" and not grounded then
     local bs = S.shapeAt[keyOf(cluster.minX, cluster.maxY + 1)]
     local blocked = not map:isWalkableCell(math.floor(cluster.minX / 2),
                                            math.floor(cluster.maxY / 2))
@@ -3527,6 +3837,17 @@ function Structures.buildObject(S, map, region, cluster,
           end
         end
       end
+    end
+  end
+  -- A sign's detached top outline is still part of that same sign,
+  -- not a second prop to place at ground level in the preceding row.
+  -- Preserve every retained source pixel and its relative position.
+  if force then
+    local cs=S.shapeAt[keyOf(cluster.tiles[1][1],cluster.tiles[1][2])]
+    if cs and cs.class=="signpost" then
+      local low=0
+      for _,c in ipairs(comps) do low=math.max(low,c.lowY) end
+      for _,c in ipairs(comps) do c.lowY=low end
     end
   end
   for _, c in ipairs(comps) do
@@ -3681,7 +4002,9 @@ function Structures.buildObject(S, map, region, cluster,
       S.tileAt[k] = S.tileAt[src]
     else
       S.skip[k] = true
-      S.ground[k] = best
+      -- Isolated props can be ringed by other props (e.g. dojo rail corners).
+      -- nil disappears from pairs(), bypassing the common-ground fallback.
+      S.ground[k] = best or false
     end
   end
   return true
@@ -4603,12 +4926,14 @@ function Structures.releaseAux(map, bodyOnly)
       S.grassQuads = nil
       S.flowerQuads = nil
       S.figures = nil
+      S.towerPillar = nil
       -- These tables are construction-only. `runs` is intentionally retained
       -- for Structures.runHeight(), together with the small scalar metadata.
       S.shapeAt = nil
       S.tileAt = nil
       S.skip = nil
       S.ground = nil
+      S.groundHeights = nil
       S.doorFold = nil
     end
   end
@@ -4618,6 +4943,7 @@ end
 -- Hull templates key on art content (tileset + tiles), which a block edit
 -- cannot change, so only the full drop clears them (atlas reload).
 function Structures.invalidate(mapId)
+  if TileShape.invalidateElevation then TileShape.invalidateElevation(mapId) end
   if mapId then
     cache[mapId] = nil
   else

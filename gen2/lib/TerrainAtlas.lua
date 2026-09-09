@@ -41,6 +41,8 @@ local cacheData = {}    -- the pixels behind the atlases we baked ourselves
 local animated = {}     -- key -> one map's private, mutable animated atlas
                         -- false = given up on; nil = not built (or retrying)
 local attempts = {}     -- key -> consecutive failures, for the retry budget
+local releaseSea
+local staticSea -- at most one tiny fallback for the current exterior ocean
 
 -- A failure that might not repeat -- a driver refusing one readback, an
 -- asset briefly unreadable, a patch that threw once mid-reload -- must not
@@ -567,6 +569,7 @@ function TerrainAtlas.animate(map, colors, base, baked)
     if not ok then
       -- drop the entry rather than condemning the key: the next frame
       -- rebuilds and tries again, and attemptFailed gives up eventually
+      if releaseSea then releaseSea(entry) end
       animated[key] = attemptFailed(key)
       return nil
     end
@@ -576,13 +579,89 @@ function TerrainAtlas.animate(map, colors, base, baked)
   -- entry that builds fine and fails on upload would rebuild every frame,
   -- forever, which is worse than either animating or giving up.
   if attempts[key] then attempts[key] = nil end
-  return entry.image
+  return entry.image, entry
 end
 
 function TerrainAtlas.forMap(map, colors)
   local base, baked = staticAtlas(map, colors)
   if not base then return nil end
   return TerrainAtlas.animate(map, colors, base, baked) or base
+end
+
+-- Exterior Johto sea uses the same animated/palette-baked water as the map,
+-- not an unrelated teal procedural swatch. Horizon quads repeat every 32px,
+-- so repeat the native 8px tile four times without changing its texel scale.
+-- Borrow the CPU animation pixels; never read back or rebind a render target.
+function TerrainAtlas.seaForMap(map, colors)
+  if not (map and map.def and map.def.tileset == "TILESET_JOHTO"
+      and map.renderer and map.renderer._stadiumAtlasData
+      and type(map.isWaterCell) == "function" and type(map.tileAt) == "function") then
+    return nil
+  end
+  local base, baked = staticAtlas(map, colors)
+  if not base then return nil end
+  local _, entry = TerrainAtlas.animate(map, colors, base, baked)
+  if not entry then
+    -- Native Crystal's atlas need not declare Gen1-style animation specs.
+    -- In that case match its actual static CPU bake, rather than falling
+    -- back to unrelated procedural colors. Keep exactly one current sample.
+    local data = baked or map.renderer._stadiumAtlasData
+    if staticSea and (staticSea.data ~= data or staticSea.mapId ~= map.id) then
+      releaseSea(staticSea)
+      staticSea = nil
+    end
+    staticSea = staticSea or {data=data, mapId=map.id, step=0,
+      perRow=map.tileset.tilesPerRow or 16}
+    entry = staticSea
+  end
+  if entry.seaFailed then return nil end
+  if entry.seaTile == nil then
+    entry.seaTile = false
+    -- Only an actual, uniform water cell may supply the outside ocean: never
+    -- copy a shore, rock or decorative tile merely because it is animated.
+    for y = 0, (map.heightCells or 0) - 1 do
+      for x = 0, (map.widthCells or 0) - 1 do
+        if map:isWaterCell(x, y) then
+          local tx, ty = x * 2, y * 2
+          local tile = map:tileAt(tx, ty)
+          if tile and tile == map:tileAt(tx + 1, ty)
+              and tile == map:tileAt(tx, ty + 1)
+              and tile == map:tileAt(tx + 1, ty + 1) then
+            entry.seaTile = tile
+            break
+          end
+        end
+      end
+      if entry.seaTile then break end
+    end
+  end
+  if not entry.seaTile then return nil end
+  if entry.seaImage and entry.seaStep == entry.step then return entry.seaImage end
+  local ok = pcall(function()
+    entry.seaData = entry.seaData or love.image.newImageData(32, 32)
+    local sx = (entry.seaTile % entry.perRow) * 8
+    local sy = math.floor(entry.seaTile / entry.perRow) * 8
+    for y = 0, 24, 8 do for x = 0, 24, 8 do
+      entry.seaData:paste(entry.data, x, y, sx, sy, 8, 8)
+    end end
+    if entry.seaImage then entry.seaImage:replacePixels(entry.seaData)
+    else
+      entry.seaImage = love.graphics.newImage(entry.seaData)
+      entry.seaImage:setFilter("nearest", "nearest")
+      entry.seaImage:setWrap("repeat", "repeat")
+    end
+    entry.seaStep = entry.step
+  end)
+  if not ok then entry.seaFailed = true; return nil end
+  return entry.seaImage
+end
+
+releaseSea = function(entry)
+  for _, key in ipairs({"seaImage", "seaData"}) do
+    local resource = entry[key]
+    if resource and resource.release then pcall(resource.release, resource) end
+    entry[key] = nil
+  end
 end
 
 -- The image a character model should texture from under an SGB palette.
@@ -630,8 +709,13 @@ end
 -- per map ever entered, and each pins the engine's own baked ImageData
 -- alive behind it.
 function TerrainAtlas.setLive(live)
+  if staticSea and not live[staticSea.mapId] then
+    releaseSea(staticSea)
+    staticSea = nil
+  end
   for key, entry in pairs(animated) do
     if entry and entry.mapId and not live[entry.mapId] then
+      releaseSea(entry)
       if entry.image and entry.image.release then
         pcall(entry.image.release, entry.image)
       end
@@ -641,10 +725,12 @@ function TerrainAtlas.setLive(live)
 end
 
 function TerrainAtlas.invalidate()
+  if staticSea then releaseSea(staticSea); staticSea = nil end
   cache = {}
   cacheData = {}
   attempts = {}
   for _, entry in pairs(animated) do
+    if entry then releaseSea(entry) end
     if entry and entry.image and entry.image.release then
       pcall(entry.image.release, entry.image)
     end

@@ -661,11 +661,12 @@ end
 -- needs both ends as DATA. Kept textually tiny so the two cannot drift:
 -- focus on the centre, eye FOCAL*vh away at the pitch, up perpendicular
 -- in the YZ plane.
-local function orbitRig(cx, cy, vh)
+local function orbitRig(cx, cy, vh, groundY)
   local a = Voxel.angle
   local dist = Voxel.FOCAL * vh
-  return { cx, dist * math.cos(a), cy + dist * math.sin(a) },
-         { cx, 0, cy },
+  groundY = groundY or 0
+  return { cx, groundY + dist * math.cos(a), cy + dist * math.sin(a) },
+         { cx, groundY, cy },
          2 * math.atan(1 / (2 * Voxel.FOCAL)),
          { 0, math.sin(a), -math.cos(a) }
 end
@@ -706,9 +707,10 @@ function FirstPerson.frame(me, cx, cy, vw, vh)
   -- as far as the world allows. Fully in (1ST, and every frame of the
   -- diorama) this hands back the head and the focus untouched, so the two
   -- rungs are one rig with one number between them.
-  local camEye, camFocus = ThirdPerson.place(head, lx, ly, lz, fpFocus)
+  local footY=me and ((me.gh or 0)+(me.lift or 0)+2) or nil
+  local camEye, camFocus = ThirdPerson.place(head, lx, ly, lz, fpFocus, footY)
 
-  local oEye, oFocus, oFov, oUp = orbitRig(cx, cy, vh)
+  local oEye, oFocus, oFov, oUp = orbitRig(cx, cy, vh, me and me.gh)
   local function mix(p, q)
     return { p[1] + (q[1] - p[1]) * e,
              p[2] + (q[2] - p[2]) * e,

@@ -1679,6 +1679,11 @@ local MT_MOON_MAPS = {
   MT_MOON_B1F = true,
   MT_MOON_B2F = true,
 }
+local ARCHITECTURAL_MATERIALS = {
+  timber_room=true, stone_room=true, water_arena=true, garden_arena=true,
+  electric_arena=true, dojo_arena=true, fire_arena=true,
+  quarry_arena=true, poison_arena=true, psychic_arena=true, earth_arena=true,
+}
 local ROOM_SHELL_PROFILES = {
   -- Both names describe the outdoor location of one ordinary Pokecenter
   -- layout.  They need a sealed room, but must never inherit the cave material
@@ -1691,6 +1696,15 @@ local ROOM_SHELL_PROFILES = {
   ROCK_TUNNEL_POKECENTER = {
     tileset = "POKECENTER", material = "pokecenter_room",
   },
+}
+
+-- Native Gen1 room dimensions and materials are owned separately from Gen2.
+local Gen1GymInteriors = V.require("Gen1GymInteriors")
+for id, profile in pairs(Gen1GymInteriors.profiles) do
+  ROOM_SHELL_PROFILES[id] = profile
+end
+ROOM_SHELL_PROFILES.FIGHTING_DOJO = {
+  tileset="DOJO", material="dojo_arena", width=5, height=6,
 }
 
 local function isTower(id)
@@ -1822,6 +1836,8 @@ local function roomShellProfile(map)
   if not profile or def.tileset ~= profile.tileset or isOutdoor(def) then
     return nil
   end
+  if (profile.width and def.width~=profile.width)
+     or (profile.height and def.height~=profile.height) then return nil end
   -- A room shell is a closed warp destination, never a streamed map union.
   -- An authored physical connection therefore fails safely back to the legacy
   -- interior path rather than letting a ceiling/wall cut through its opening.
@@ -1889,6 +1905,7 @@ end
 
 function HorizonWall.groundPeriodFor(map)
   local material = HorizonWall.materialFor(map)
+  if ARCHITECTURAL_MATERIALS[material] then return 128 end
   if material == "pallet" or material == "trees"
      or material == "canopy" then
     return HorizonWall.VEGETATION_GROUND_PERIOD
@@ -1899,6 +1916,28 @@ function HorizonWall.groundPeriodFor(map)
     return HorizonWall.POKECENTER_ROOM_SURFACE_PERIOD
   end
   return HorizonWall.CELL
+end
+
+-- Only the newly authored building shells opt into orbit cutaway. Legacy
+-- Pokemon Tower / Pokecenter visibility contracts are unchanged.
+function HorizonWall.architecturalRoom(map)
+  local material = HorizonWall.materialFor(map)
+  return ARCHITECTURAL_MATERIALS[material] == true
+end
+
+function HorizonWall.arenaViewFor(map)
+  local profile=roomShellProfile(map)
+  if profile and profile.material=="dojo_arena" then
+    return {city="SAFFRON_CITY",material="dojo_arena",sill=32,head=120,margin=32}
+  end
+  if profile and profile.material=="electric_arena" then
+    return {city="VERMILION_CITY",material="electric_arena",sill=56,head=120,margin=32}
+  end
+  if profile and profile.material=="garden_arena" then
+    return {city="CELADON_CITY",material="garden_arena",sill=24,head=120,northOnly=true}
+  end
+  if not profile or profile.material~="water_arena" then return nil end
+  return {city="CERULEAN_CITY",material="water_arena",sill=104,head=152,margin=32}
 end
 
 function HorizonWall.profileFor(map)
@@ -2078,6 +2117,236 @@ local function pushQuad(verts, indices, corners, uv, shade)
     verts[#verts + 1] = { p[1], p[2], p[3], t[1], t[2], shade }
   end
   for _, i in ipairs({ 1, 2, 3, 1, 3, 4 }) do indices[#indices + 1] = base + i end
+end
+
+-- Render-only Cerulean pool architecture in the closed north apron. It never
+-- occupies native map cells, creates entities, or changes walkability/warps.
+-- Pigments sample solid texels from the existing water-arena atlas; the
+-- towers share its batch and allocate neither another texture nor a draw.
+function HorizonWall.waterArenaScenery(map, width)
+  if HorizonWall.materialFor(map) ~= "water_arena" or width < 128 then
+    return nil
+  end
+  local result = {vertices={}, indices={}, platforms=0, towers=2}
+  local function box(x0,y0,z0,x1,y1,z1,blue)
+    local u,v = blue and 20.5/128 or 2.5/128,
+                blue and 145.5/160 or 40.5/160
+    local uv={{u,v},{u,v},{u,v},{u,v}}
+    local faces={
+      {{x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0}},
+      {{x1,y0,z1},{x0,y0,z1},{x0,y1,z1},{x1,y1,z1}},
+      {{x0,y0,z1},{x0,y0,z0},{x0,y1,z0},{x0,y1,z1}},
+      {{x1,y0,z0},{x1,y0,z1},{x1,y1,z1},{x1,y1,z0}},
+      {{x0,y1,z0},{x1,y1,z0},{x1,y1,z1},{x0,y1,z1}},
+      {{x0,y0,z1},{x1,y0,z1},{x1,y0,z0},{x0,y0,z0}},
+    }
+    for i,face in ipairs(faces) do
+      pushQuad(result.vertices,result.indices,face,uv,
+        ({.78,.90,.72,.84,1,.55})[i])
+    end
+  end
+  for n,tower in ipairs({
+    {x=width*.28, heights={28,56,84}},
+    {x=width*.72, heights={30,60}},
+  }) do
+    local x=tower.x
+    local top=tower.heights[#tower.heights]
+    -- Four slender supports, not a solid stacked building.
+    for _,dx in ipairs({-12,12}) do
+      for _,z in ipairs({-28,-15}) do
+        box(x+dx-2,0,z,x+dx+2,top,z+3,false)
+      end
+    end
+    for _,h in ipairs(tower.heights) do
+      result.platforms=result.platforms+1
+      box(x-17,h-4,-29,x+17,h,-10,false)
+      -- Turquoise diving board projects toward the pool but stops short of
+      -- the native map. Leave its front open, guard both platform sides.
+      box(x-5,h,-13,x+5,h+2,-1,true)
+      for _,dx in ipairs({-16,16}) do
+        for _,z in ipairs({-28,-12}) do
+          box(x+dx-.8,h,z,x+dx+.8,h+16,z+1.6,false)
+        end
+        box(x+dx-.8,h+15,-28,x+dx+.8,h+17,-10,false)
+      end
+      box(x-16,h+15,-29,x+16,h+17,-27,false)
+      -- A coloured fascia makes the deck legible from the playable floor.
+      box(x-15,h-3,-10.1,x+15,h-1,-9.7,true)
+    end
+    -- Access ladder beside each tower, with real gaps between rungs.
+    local lx=x+(n==1 and -22 or 22)
+    for _,dx in ipairs({-4,4}) do
+      box(lx+dx-.8,0,-19,lx+dx+.8,top+14,-17.4,false)
+    end
+    for y=5,top+8,7 do
+      box(lx-4,y,-19.2,lx+4,y+1.5,-17.2,false)
+    end
+  end
+  return result
+end
+
+-- Folded botanical glazing and its inexpensive additive floor projection.
+-- This is authored stage lighting, not ray-traced/refraction geometry.
+function HorizonWall.waterAquariumScenery(map,width,depth)
+  if HorizonWall.materialFor(map)~="water_arena" or width<128 or depth<160 then return nil end
+  local result={vertices={},indices={},tanks=2}
+  local z0=math.max(16,depth*.45-64)
+  local z1=z0+128
+  local function quad(c,uv,shade)pushQuad(result.vertices,result.indices,c,uv,shade)end
+  for _,side in ipairs({-1,1}) do
+    local edge=side<0 and 0 or width
+    local front,back=edge+side*4,edge+side*28
+    -- Recessed show tank: front, two deep end panes, lid and plinth.
+    -- All physical surfaces stay outside native cells; no hidden entities.
+    quad({{back,24,z0},{back,24,z1},{back,88,z1},{back,88,z0}},
+      {{0,1},{1,1},{1,0},{0,0}},1)
+    for _,z in ipairs({z0,z1})do
+      quad({{back,24,z},{front,24,z},{front,88,z},{back,88,z}},
+        {{0,1},{.07,1},{.07,0},{0,0}},.82)
+    end
+    quad({{back,88,z0},{front,88,z0},{front,88,z1},{back,88,z1}},
+      {{0,0},{1,0},{1,.025},{0,.025}},1)
+    quad({{front,0,z0},{front,0,z1},{front,24,z1},{front,24,z0}},
+      {{0,.975},{1,.975},{1,1},{0,1}},.85)
+    for _,z in ipairs({z0,z1})do
+      quad({{back,0,z},{front,0,z},{front,24,z},{back,24,z}},
+        {{0,.975},{.07,.975},{.07,1},{0,1}},.75)
+    end
+  end
+  return result
+end
+
+function HorizonWall.aquariumContents(map,width,depth)
+  if not HorizonWall.waterAquariumScenery(map,width,depth) then return nil end
+  local fish={vertices={},indices={}}
+  local glass={vertices={},indices={}}
+  local z0=math.max(16,depth*.45-64)
+  for _,side in ipairs({-1,1})do
+    local edge=side<0 and 0 or width
+    for species=0,2 do
+      local x=edge+side*(12+species*4)
+      local y=38+species*10
+      local z=z0+30+species*32
+      local u=species*96/384
+      pushQuad(fish.vertices,fish.indices,{
+        {x,y-12,z-12},{x,y-12,z+12},{x,y+12,z+12},{x,y+12,z-12},
+      },{{u,.5},{u+32/384,.5},{u+32/384,0},{u,0}},1)
+    end
+    local x=edge+side*3.9
+    pushQuad(glass.vertices,glass.indices,{
+      {x,24,z0},{x,24,z0+128},{x,88,z0+128},{x,88,z0},
+    },{{0,1},{1,1},{1,0},{0,0}},1)
+  end
+  return fish,glass
+end
+
+function HorizonWall.gardenPrismScenery(map, width, depth)
+  if HorizonWall.materialFor(map) ~= "garden_arena" or width < 128
+      or depth < 128 then return nil end
+  local glass={vertices={},indices={}}
+  local light={vertices={},indices={}}
+  for _,fraction in ipairs({.28,.72}) do
+    local x=width*fraction
+    local halfGlass=math.min(30,width*.2)
+    -- Two angled facets form a triangular bay, entirely beyond native cells.
+    pushQuad(glass.vertices,glass.indices,{
+      {x-halfGlass,24,-28},{x,24,-8},{x,120,-8},{x-halfGlass,120,-28},
+    },{{0,1},{.5,1},{.5,0},{0,0}},1)
+    pushQuad(glass.vertices,glass.indices,{
+      {x,24,-8},{x+halfGlass,24,-28},{x+halfGlass,120,-28},{x,120,-8},
+    },{{.5,1},{1,1},{1,0},{.5,0}},.9)
+    -- Raised terrain naturally depth-occludes the low receiver plane.
+    -- Black lead adds no light; the floor's own material remains visible.
+    local near,far=math.min(36,depth*.15),math.min(140,depth*.7)
+    local half=math.min(45,width*.2)
+    pushQuad(light.vertices,light.indices,{
+      {x-27,.12,near},{x+27,.12,near},{x+half,.12,far},{x-half,.12,far},
+    },{{0,0},{1,0},{1,1},{0,1}},.32)
+  end
+  return glass,light
+end
+
+-- A complete clerestory bay is fitted between the room's corner piers.
+-- The 32px mesh batching can clip a pane, but never adds a false half-window
+-- jamb. Returns real solid strips/reveals, with no triangles in the opening.
+function HorizonWall.arenaWindowPanel(map,corners,uv,edgeIndex,a,b,length,shade)
+  local view=HorizonWall.arenaViewFor(map)
+  if not (view and a and b and length and b>a and length>=128) then return nil end
+  if view.northOnly and edgeIndex~=0 then return nil end
+  local height=corners[3][2]-corners[1][2]
+  if height<view.head then return nil end
+  local ranges={}
+  if view.northOnly then
+    local half=math.min(30,length*.2)
+    for _,fraction in ipairs({.28,.72})do
+      ranges[#ranges+1]={length*fraction-half,length*fraction+half}
+    end
+  else
+    local span=length-view.margin*2
+    local bays=math.max(1,math.floor(span/64+.5))
+    local bay=span/bays
+    for index=0,bays-1 do
+      ranges[#ranges+1]={view.margin+index*bay+2,view.margin+(index+1)*bay-2}
+    end
+  end
+  local panes={}
+  for _,range in ipairs(ranges)do
+    local first,last=range[1],range[2]
+    local from,upto=math.max(a,first),math.min(b,last)
+    if upto>from then
+      panes[#panes+1]={from=(from-a)/(b-a),upto=(upto-a)/(b-a),
+        left=from==first,right=upto==last}
+    end
+  end
+  if #panes==0 then return nil end
+  local result={vertices={},indices={},panes=panes}
+  local alongAxis=edgeIndex<2 and 1 or 3
+  local reversed=corners[2][alongAxis]<corners[1][alongAxis]
+  local function point(s,t)
+    -- Side walls arrive south-to-north, but aperture intervals are always
+    -- measured north-to-south. Reverse geometry AND UV interpolation once.
+    if reversed then s=1-s end
+    local p,q={},{}
+    for k=1,3 do
+      local bottom=corners[1][k]+s*(corners[2][k]-corners[1][k])
+      local top=corners[4][k]+s*(corners[3][k]-corners[4][k])
+      p[k]=bottom+t*(top-bottom)
+    end
+    for k=1,2 do
+      local bottom=uv[1][k]+s*(uv[2][k]-uv[1][k])
+      local top=uv[4][k]+s*(uv[3][k]-uv[4][k])
+      q[k]=bottom+t*(top-bottom)
+    end
+    return p,q
+  end
+  local low,high=view.sill/height,view.head/height
+  local function strip(x0,x1,y0,y1)
+    if x1<=x0 or y1<=y0 then return end
+    local pts,tex={},{}
+    for _,st in ipairs({{x0,y0},{x1,y0},{x1,y1},{x0,y1}})do
+      local p,q=point(st[1],st[2]);pts[#pts+1]=p;tex[#tex+1]=q
+    end
+    pushQuad(result.vertices,result.indices,pts,tex,shade)
+  end
+  strip(0,1,0,low);strip(0,1,high,1)
+  local cursor=0
+  local dx=edgeIndex==2 and -4 or edgeIndex==3 and 4 or 0
+  local dz=edgeIndex==0 and -4 or edgeIndex==1 and 4 or 0
+  local function reveal(p,q)
+    pushQuad(result.vertices,result.indices,
+      {p,q,{q[1]+dx,q[2],q[3]+dz},{p[1]+dx,p[2],p[3]+dz}},
+      {{.01,.24},{.02,.24},{.02,.26},{.01,.26}},shade*.9)
+  end
+  for _,pane in ipairs(panes)do
+    strip(cursor,pane.from,low,high);cursor=pane.upto
+    local p=point(pane.from,low);local q=point(pane.upto,low)
+    local r=point(pane.upto,high);local s=point(pane.from,high)
+    reveal(p,q);reveal(s,r)
+    if pane.left then reveal(p,s)end
+    if pane.right then reveal(q,r)end
+  end
+  strip(cursor,1,low,high)
+  return result
 end
 
 local function faceUV(u0, v0, u1, v1)
@@ -3238,9 +3507,18 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       and { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }
       or  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }
     local group = wallGroup(family)
-    pushQuad(group.vertices, group.indices, corners, uv, shade)
-    -- Keep the legacy aggregate for diagnostics/headless audit consumers.
-    pushQuad(wallVerts, wallIndices, corners, uv, shade)
+    local window=(family=="water_arena" or family=="garden_arena" or family=="electric_arena" or family=="dojo_arena") and HorizonWall.arenaWindowPanel(
+      entry.map,corners,uv,edgeIndex,local0,local1,edgeLength,shade)
+    if window then
+      for _,target in ipairs({{group.vertices,group.indices},{wallVerts,wallIndices}})do
+        local offset=#target[1]
+        for _,v in ipairs(window.vertices)do target[1][#target[1]+1]=v end
+        for _,i in ipairs(window.indices)do target[2][#target[2]+1]=offset+i end
+      end
+    else
+      pushQuad(group.vertices, group.indices, corners, uv, shade)
+      pushQuad(wallVerts, wallIndices, corners, uv, shade)
+    end
 
     -- Viridian Forest receives the upper 64 native texel rows of the same
     -- forest panel behind its existing wall, never a map-sized horizontal
@@ -3844,10 +4122,15 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       pushQuad(groundVerts, groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
-      pushQuad(groundVerts, groundIndices, cap,
-        { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
-          groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
-      groundAdded = 2
+      groundAdded = 1
+      -- The room keeps its actual ceiling; a distant exterior roof extension
+      -- would mask the sky through its high windows.
+      if not HorizonWall.arenaViewFor(entry.map) then
+        pushQuad(groundVerts, groundIndices, cap,
+          { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
+            groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        groundAdded = 2
+      end
     end
     quads = quads + 1 + groundAdded
     rememberTree(kind, "z", x + span / 2, wallZ, outward, x / C,
@@ -3935,10 +4218,15 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       pushQuad(groundVerts, groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
-      pushQuad(groundVerts, groundIndices, cap,
-        { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
-          groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
-      groundAdded = 2
+      groundAdded = 1
+      -- The room keeps its actual ceiling; a distant exterior roof extension
+      -- would mask the sky through its high windows.
+      if not HorizonWall.arenaViewFor(entry.map) then
+        pushQuad(groundVerts, groundIndices, cap,
+          { groundUV(cap[1]), groundUV(cap[2]), groundUV(cap[3]),
+            groundUV(cap[4]) }, Voxel3D.FACE_SHADE[3] or 1)
+        groundAdded = 2
+      end
     end
     quads = quads + 1 + groundAdded
     rememberTree(kind, "x", z + span / 2, wallX, outward, z / C,
@@ -5167,6 +5455,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- outer quadrants when both adjoining edge arms exist; without these four
   -- quads an orbit camera looked straight through D-by-D holes at the corners.
   local function corner(x0, x1, z0, z1)
+    if HorizonWall.arenaViewFor(entry.map) then return end
     if outdoorGround then
       quads = quads + outdoorGroundRect(x0, x1, z0, z1)
     else
@@ -5278,6 +5567,38 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local foregroundQuads = treeCount * HorizonWall.FOREGROUND_TREE_QUADS
                           + canopyFillerQuads + ruralTerminalQuads
 
+  local waterScenery = HorizonWall.waterArenaScenery(entry.map, entry.w)
+  if waterScenery then
+    local group = wallGroup("water_arena")
+    local offset = #group.vertices
+    for _,v in ipairs(waterScenery.vertices) do
+      group.vertices[#group.vertices+1] = v
+    end
+    for _,index in ipairs(waterScenery.indices) do
+      group.indices[#group.indices+1] = offset+index
+    end
+    checkpoint(1)
+  end
+  local aquariums=HorizonWall.waterAquariumScenery(entry.map,entry.w,entry.h)
+  if aquariums then
+    local tanks=wallGroup("water_aquarium")
+    tanks.vertices,tanks.indices=aquariums.vertices,aquariums.indices
+    local fish,glass=HorizonWall.aquariumContents(entry.map,entry.w,entry.h)
+    local contents=wallGroup("water_fish")
+    contents.vertices,contents.indices=fish.vertices,fish.indices
+    local panes=wallGroup("water_glass")
+    panes.vertices,panes.indices=glass.vertices,glass.indices
+    checkpoint(1)
+  end
+  local prism,projection=HorizonWall.gardenPrismScenery(entry.map,entry.w,entry.h)
+  if prism then
+    local glass=wallGroup("garden_prism")
+    glass.vertices,glass.indices=prism.vertices,prism.indices
+    local light=wallGroup("garden_light")
+    light.vertices,light.indices=projection.vertices,projection.indices
+    checkpoint(1)
+  end
+
   local wallGroups = {}
   local includedFamilies = {}
   for _, family in ipairs({ "route8", "regional", "mountain", "mt_moon",
@@ -5286,6 +5607,21 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     if group and #group.vertices > 0 then
       wallGroups[#wallGroups + 1] = group
       includedFamilies[family] = true
+    end
+  end
+  if material=="electric_arena" or material=="dojo_arena" then
+    -- Distant backdrop panels sit behind true window openings, never on the
+    -- native floor. Four batched quads reuse one retained backdrop per theme.
+    local d=128
+    local x0,z0,x1,z1=-d,-d,entry.w+d,entry.h+d
+    local harbor=wallGroup(material=="dojo_arena" and "dojo_courtyard" or "electric_harbor")
+    for _,line in ipairs({{x0,z0,x1,z0},{x1,z0,x1,z1},
+      {x1,z1,x0,z1},{x0,z1,x0,z0}})do
+      local span=math.sqrt((line[3]-line[1])^2+(line[4]-line[2])^2)
+      pushQuad(harbor.vertices,harbor.indices,{
+        {line[1],16,line[2]},{line[3],16,line[4]},
+        {line[3],144,line[4]},{line[1],144,line[2]},
+      },{{0,1},{span/256,1},{span/256,0},{0,0}},1)
     end
   end
   local editorFamilies = {}
@@ -5887,7 +6223,137 @@ local function vegetationGroundPattern(g, class, W, H)
   end
 end
 
+-- Compact, shared architectural materials: native floors/warps stay untouched.
+-- 128x160 wall + 128x128 cap = 144 KiB RGBA per material, not per floor.
+local function architecturalSurface(g, class, W, H, wall)
+  local function rect(c,x,y,w,h)
+    g.setColor(c[1],c[2],c[3],1); g.rectangle("fill",x,y,w,h)
+  end
+  if Gen1GymInteriors.supports(class) then
+    Gen1GymInteriors.paint(g,class,W,H,wall)
+  elseif class == "timber_room" or class == "dojo_arena" then
+    rect({.32,.20,.10},0,0,W,H)
+    for y=0,H-1,16 do
+      rect({.53,.36,.18},0,y+2,W,13)
+      for x=0,W-1,32 do
+        local at=(x+y*3)%W
+        rect({.63,.44,.23},at,y+4,20,1)
+        rect({.41,.26,.13},at+4,y+10,16,1)
+      end
+    end
+    if wall then
+      -- Heavy posts and continuous head/sill beams, no painted fake doors.
+      for x=0,W-1,64 do
+        rect({.19,.12,.065},x,0,8,H)
+        rect({.40,.26,.13},x+2,0,3,H)
+      end
+      for _,y in ipairs({0,24,H-36,H-8}) do
+        rect({.19,.12,.065},0,y,W,8)
+        rect({.45,.30,.15},0,y+2,W,2)
+      end
+    end
+  elseif class == "electric_arena" then
+    rect({.22,.28,.31},0,0,W,H)
+    for y=0,H-1,16 do
+      rect({.35,.42,.43},1,y+1,W-2,14)
+      rect({.47,.52,.50},2,y+2,W-4,1)
+    end
+    if wall then
+      for x=0,W-1,64 do
+        rect({.12,.18,.22},x,0,8,H)
+        rect({.51,.52,.43},x+2,0,2,H)
+        for y=12,H-1,24 do rect({.69,.68,.47},x+3,y,2,2)end
+      end
+      -- Identical conduit courses on every bay: no puzzle-state hints.
+      for _,y in ipairs({20,H-28})do
+        rect({.12,.18,.22},0,y,W,6)
+        rect({.73,.62,.25},0,y+2,W,2)
+      end
+      rect({.14,.19,.22},0,H-12,W,12)
+      for x=0,W-1,16 do
+        rect({.68,.56,.20},x,H-8,8,4)
+      end
+    end
+  elseif class == "water_arena" then
+    rect({.75,.84,.82},0,0,W,H)
+    for y=0,H-1,8 do for x=0,W-1,8 do
+      rect({.53,.68,.69},x,y,8,1)
+      rect({.53,.68,.69},x,y,1,8)
+      rect({.86,.91,.87},x+1,y+1,6,1)
+    end end
+    if wall then
+      rect({.13,.38,.52},0,H-56,W,48)
+      for x=0,W-1,4 do
+        local y=H-44+math.floor(math.sin(x*math.pi/32)*5)
+        rect({.37,.72,.77},x,y,4,4)
+        rect({.73,.89,.85},x,y-2,4,2)
+        rect({.20,.53,.66},x,y+14,4,4)
+      end
+      for x=0,W-1,64 do
+        rect({.62,.74,.73},x,0,6,H)
+        rect({.89,.93,.85},x+1,0,3,H)
+      end
+      for _,y in ipairs({0,H-60,H-8}) do
+        rect({.20,.46,.55},0,y,W,4)
+        rect({.64,.83,.81},0,y+1,W,1)
+      end
+    end
+  elseif class == "garden_arena" then
+    rect({.44,.51,.30},0,0,W,H)
+    for y=0,H-1,16 do
+      rect({.58,.63,.40},0,y+1,W,14)
+      rect({.68,.71,.47},0,y+2,W,1)
+    end
+    if wall then
+      for x=0,W-1,64 do
+        rect({.18,.29,.16},x+8,28,48,H-56)
+        -- Climbing lattice is wall decoration, never new collision foliage.
+        for y=30,H-30,16 do for step=0,11 do
+          local dx=step*4
+          local dy=(step%4)*3
+          rect({.40,.34,.19},x+8+dx,y+dy,3,3)
+          rect({.47,.40,.23},x+8+dx,y+9-dy,3,3)
+        end end
+        for y=32,H-32,10 do
+          local lx=x+14+((y*7)%32)
+          rect({.20,.40,.18},lx,y,10,6)
+          rect({.40,.57,.24},lx+2,y,6,2)
+          if y%30==2 then
+            rect({.81,.58,.65},lx+4,y+3,3,3)
+            rect({.93,.81,.43},lx+5,y+4,1,1)
+          end
+        end
+        rect({.27,.19,.10},x,0,8,H)
+        rect({.52,.37,.19},x+2,0,3,H)
+      end
+      for _,y in ipairs({0,22,H-28,H-8}) do
+        rect({.29,.21,.12},0,y,W,6)
+        rect({.57,.42,.23},0,y+1,W,2)
+      end
+    end
+  elseif class == "stone_room" then
+    -- Broken-joint dressed stone for Brock's building, not brick cave walls.
+    rect({.22,.24,.23},0,0,W,H)
+    for y=0,H-1,20 do
+      for x=-((y/20)%2)*32,W-1,64 do
+        rect({.45,.46,.40},x+2,y+2,60,17)
+        rect({.57,.57,.50},x+3,y+2,58,2)
+        rect({.33,.35,.32},x+3,y+16,58,2)
+      end
+    end
+    if wall then
+      for _,y in ipairs({0,H-12}) do
+        rect({.30,.32,.29},0,y,W,12)
+        rect({.58,.58,.49},0,y+2,W,3)
+      end
+    end
+  end
+end
 local function groundPattern(g, class, W, H)
+  if ARCHITECTURAL_MATERIALS[class] then
+    architecturalSurface(g,class,W,H,false)
+    return
+  end
   if class == "smalltown" or class == "metropolis" then
     -- Seen from the steepest orbit this is an outskirts patchwork, not a
     -- single raised green rectangle: tiled roofs, little yards and two pale
@@ -6081,7 +6547,164 @@ function HorizonWall._resetAssetStats()
   assetStats.loads, assetStats.releases, assetStats.rejected = 0, 0, 0
 end
 
+local function aquariumFishTexture(g)
+  -- Pack only reviewed side-facing MMO frames; source rows 1/3 are left/right.
+  for species,dex in ipairs({116,118,129})do
+    local path=type(V.path)=='string' and V.path..string.format(
+      '/integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/follower_%03d_none_normal_base.png',dex)
+    local ok,img=false,nil
+    if path then ok,img=pcall(g.newImage,path)end
+    if ok and img then
+      assetStats.loads=assetStats.loads+1
+      local quads={}
+      pcall(function()
+        local iw,ih=img:getDimensions()
+        assert(iw==96 and ih==128,'unreviewed aquarium animation layout')
+        img:setFilter('nearest','nearest')
+        for direction,row in ipairs({1,3})do for frame=0,2 do
+          local q=g.newQuad(frame*32,row*32,32,32,iw,ih)
+          quads[#quads+1]=q
+          g.setColor(.8,.95,.98,1)
+          g.draw(img,q,(species-1)*96+frame*32,(direction-1)*32)
+        end end
+      end)
+      for _,q in ipairs(quads)do if q.release then pcall(q.release,q)end end
+      releaseImage(img)
+    end
+  end
+end
+
+local function waterAquariumTexture(g,W,H)
+  local function rect(c,x,y,w,h)pixelRect(g,c,x,y,w,h)end
+  for y=0,H-1,4 do
+    local t=y/H
+    rect({.06+.025*t,.40-.23*t,.51-.24*t},0,y,W,4)
+  end
+  -- Static caustic shafts and planted substrate in a bounded baked backdrop.
+  for x=14,W-1,44 do
+    for y=10,H-22,4 do
+      rect({.11,.39,.43},x+math.floor(y*.13),y,8,4)
+    end
+  end
+  rect({.42,.44,.30},4,H-21,W-8,13)
+  for x=9,W-10,12 do rect({.61,.58,.38},x,H-18+(x%3),7,3)end
+  for _,x in ipairs({18,90,205,231})do
+    for y=H-26,H-64,-4 do
+      local dx=math.floor(math.sin(y*.13+x)*5)
+      rect({.15,.42,.25},x+dx,y,5,6)
+      rect({.36,.58,.32},x+dx+1,y,2,3)
+    end
+  end
+  for _,x in ipairs({70,151,218})do
+    for y=22,65,14 do
+      rect({.44,.75,.75},x+(y%3),y,3,3)
+      rect({.12,.42,.49},x+1+(y%3),y+1,1,1)
+    end
+  end
+  -- Deep blue frame, narrow pale gasket and surface waterline. The surrounding
+  -- source map/wall remains untouched; this is not a replacement pool tile.
+  for _,x in ipairs({0,W-5})do rect({.035,.14,.18},x,0,5,H)end
+  for _,y in ipairs({0,H-8})do rect({.035,.14,.18},0,y,W,8)end
+  rect({.75,.84,.79},1,1,W-2,2)
+  rect({.75,.84,.79},0,H-3,W,3)
+  rect({.41,.76,.78},5,8,W-10,2)
+  rect({.33,.59,.61},7,13,2,H-28)
+  rect({.25,.48,.51},W-10,13,2,H-28)
+end
+
+local function gardenPrismTexture(g,W,H)
+  local function rect(c,x,y,w,h) pixelRect(g,c,x,y,w,h) end
+  rect({.018,.035,.025},0,0,W,H)
+  local colors={{.35,.79,.49},{.85,.66,.30},{.61,.83,.56},
+    {.77,.39,.58},{.31,.66,.64},{.86,.82,.50}}
+  -- Hand-cut diamond panes, not a tiled photograph of an opaque wall.
+  for row=-1,10 do for col=-1,8 do
+    local cx=col*20+(row%2)*10
+    local cy=row*16
+    g.setColor(unpack(colors[(row*3+col+60)%#colors+1]))
+    g.polygon('fill',cx,cy-14,cx+9,cy,cx,cy+14,cx-9,cy)
+  end end
+  -- Existing bundled MMO art becomes stained-glass motifs. Optional HD
+  -- downloads/settings are never touched; transient source images released.
+  for _,spec in ipairs({{43,18,36},{45,72,82}}) do
+    local rel=string.format('integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/follower_%03d_none_normal_base.png',spec[1])
+    local assets=V.mod and V.mod.assets
+    local path=type(V.path)=='string' and V.path..'/'..rel or nil
+    if assets and type(assets.path)=='function' then
+      local ok,value=pcall(assets.path,assets,rel)
+      if ok and type(value)=='string' then path=value end
+    end
+    local ok,img=false,nil
+    if path then ok,img=pcall(g.newImage,path) end
+    if ok and img then
+      assetStats.loads=assetStats.loads+1
+      local quad
+      pcall(function()
+        local iw,ih=img:getDimensions()
+        assert(iw==96 and ih==128,'unreviewed MMO sheet layout')
+        img:setFilter('nearest','nearest')
+        quad=g.newQuad(32,0,32,32,iw,ih)
+        rect({.78,.89,.57},spec[2]-2,spec[3]-2,44,44)
+        g.setColor(.88,.96,.76,1)
+        g.draw(img,quad,spec[2],spec[3],0,1.25,1.25)
+      end)
+      if quad and quad.release then pcall(quad.release,quad) end
+      releaseImage(img)
+    end
+  end
+  -- Fine lead subdivisions also cross the motifs, giving them a mosaic cut.
+  for x=8,W-1,8 do rect({.08,.13,.08},x,4,1,H-8) end
+  for y=8,H-1,8 do rect({.08,.13,.08},4,y,W-8,1) end
+  for _,x in ipairs({0,62,124}) do
+    rect({.025,.04,.025},x,0,4,H)
+    rect({.57,.42,.16},x+1,0,1,H)
+  end
+  rect({.07,.09,.045},0,0,W,5)
+  rect({.07,.09,.045},0,H-5,W,5)
+end
+
+local function isRetainedInterior(class)
+  return ARCHITECTURAL_MATERIALS[class] or class == "water_fish"
+    or class == "water_glass" or class == "water_aquarium"
+    or class == "garden_prism" or class == "electric_harbor"
+    or class == "dojo_courtyard"
+end
+local function isolateInteriorBake(g, class)
+  if not isRetainedInterior(class) then return end
+  -- Preparation runs from update and can inherit a world/HUD shader, scissor
+  -- or depth test. A valid allocation alone does not prove that art was drawn.
+  g.setShader()
+  g.setScissor()
+  g.setStencilTest()
+  g.setDepthMode()
+  g.setColorMask(true, true, true, true)
+  g.setBlendMode("alpha", "alphamultiply")
+end
+
+local function retainInteriorTexture(g, canvas, class)
+  if not isRetainedInterior(class) then return canvas end
+  -- These small, static textures must survive display/context recreation.
+  -- LOVE restores Images from their pixel data, but clears Canvas contents.
+  -- Read back once per material, never on draw or on an orientation change.
+  local data, image
+  local ok = pcall(function()
+    data = canvas:newImageData()
+    image = g.newImage(data, {mipmaps=false, linear=false})
+    image:setFilter("nearest", "nearest")
+    if canvas.getWrap then image:setWrap(canvas:getWrap()) end
+  end)
+  if data and data.release then pcall(data.release, data) end
+  if canvas.release then pcall(canvas.release, canvas) end
+  if not ok then
+    if image and image.release then pcall(image.release, image) end
+    return nil
+  end
+  return image
+end
+
 local function skylineTexture(class)
+  -- Floor light and glazing share a single retained 128x160 RGBA canvas.
+  if class == "garden_light" then return skylineTexture("garden_prism") end
   if type(class) == "string" and class:sub(1, 7) == "editor:" then
     return editorPanoramaTexture(class)
   end
@@ -6095,6 +6718,10 @@ local function skylineTexture(class)
   local directional = hasDirectionalPanorama(class)
   local g = love.graphics
   local W = class == "regional" and HorizonWall.REGIONAL_STRIP_W
+            or (class == "electric_harbor" or class == "dojo_courtyard") and 256
+            or class == "water_fish" and 384
+            or class == "water_glass" and 128
+            or class == "water_aquarium" and 256
             or class == "route8" and HorizonWall.ROUTE8_STRIP_W
             or class == "mountain" and HorizonWall.MOUNTAIN_STRIP_W
             or class == "mt_moon" and HorizonWall.MT_MOON_WALL_W
@@ -6106,6 +6733,10 @@ local function skylineTexture(class)
             or directional and HorizonWall.STRIP_W
             or HorizonWall.DIRECTION_W
   local H = class == "regional" and HorizonWall.REGIONAL_TEXTURE_H
+            or (class == "electric_harbor" or class == "dojo_courtyard") and 128
+            or (class == "water_fish" or class == "water_glass") and 64
+            or class == "water_aquarium" and 128
+            or (ARCHITECTURAL_MATERIALS[class] or class == "garden_prism") and 160
             or class == "route8" and HorizonWall.ROUTE8_TEXTURE_H
             or class == "mountain" and HorizonWall.MOUNTAIN_TEXTURE_H
             or class == "mt_moon" and HorizonWall.ENCLOSURE_TEXTURE_H
@@ -6128,6 +6759,7 @@ local function skylineTexture(class)
     pushed = true
     g.origin()
     g.setCanvas(canvas)
+    isolateInteriorBake(g, class)
     g.clear(0, 0, 0, 0)
     if class == "regional" then
       if not bakeRegionalLayout(g) then
@@ -6160,6 +6792,26 @@ local function skylineTexture(class)
       end) then
         towerSkyline(g, W, H)
       end
+    elseif class == "water_fish" then
+      aquariumFishTexture(g)
+    elseif class == "water_glass" then
+      -- Cutout glints only: never fill the front with another opaque picture.
+      pixelRect(g,{.8,.95,1},2,5,1,H-10)
+      pixelRect(g,{.8,.95,1},W-4,5,1,H-10)
+      for y=10,30 do
+        pixelRect(g,{.6,.85,.9},math.floor(y*.5)+9,y,2,1)
+        pixelRect(g,{.6,.85,.9},math.floor(y*.5)+70,y+18,1,1)
+      end
+    elseif class == "water_aquarium" then
+      waterAquariumTexture(g,W,H)
+    elseif class == "garden_prism" then
+      gardenPrismTexture(g,W,H)
+    elseif class == "electric_harbor" then
+      V.require("VermilionArenaBackdrop").paint(g,W,H)
+    elseif class == "dojo_courtyard" then
+      V.require("DojoArenaBackdrop").paint(g,W,H)
+    elseif ARCHITECTURAL_MATERIALS[class] then
+      architecturalSurface(g,class,W,H,true)
     elseif class == "pokecenter_room" then
       if not bakeCompact(g, "pokecenterRoomWall", function(image)
         g.setColor(1, 1, 1, 1)
@@ -6192,6 +6844,8 @@ local function skylineTexture(class)
     textureFailures[key] = true
     return nil
   end
+  canvas = retainInteriorTexture(g, canvas, class)
+  if not canvas then textureFailures[key] = true return nil end
   textures[key] = canvas
   return canvas
 end
@@ -6230,6 +6884,7 @@ local function groundTexture(class)
   if textures[key] then return textures[key] end
   local g = love.graphics
   local W = class == "mt_moon" and HorizonWall.MT_MOON_GROUND_PERIOD
+            or ARCHITECTURAL_MATERIALS[class] and 128
             or class == "tower" and HorizonWall.TOWER_SURFACE_PERIOD
             or class == "pokecenter_room"
                and HorizonWall.POKECENTER_ROOM_SURFACE_PERIOD
@@ -6247,6 +6902,7 @@ local function groundTexture(class)
     pushed = true
     g.origin()
     g.setCanvas(canvas)
+    isolateInteriorBake(g, class)
     g.clear(0, 0, 0, 1)
     local baked = false
     if class == "mt_moon" then
@@ -6278,6 +6934,8 @@ local function groundTexture(class)
     if canvas.release then pcall(canvas.release, canvas) end
     return nil
   end
+  canvas = retainInteriorTexture(g, canvas, class)
+  if not canvas then textureFailures[key] = true return nil end
   textures[key] = canvas
   return canvas
 end
@@ -6757,6 +7415,8 @@ local function newBuildJob(key, maps, worldMaps)
       if not mesh then failBuild() end
       job.meshes[#job.meshes + 1] = {
         mesh = mesh, texture = texture, ox = ox or 0, oy = oy or 0,
+        aquariumBase = className=="water_fish" and vertices or nil,
+        prismBase = className=="garden_light" and vertices or nil,
         class = className, kind = kind, shape = shape,
         castsShadow = castsShadow == true,
       }

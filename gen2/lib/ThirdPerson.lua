@@ -229,14 +229,14 @@ end
 local function cellAt(ow, wx, wz)
   local map = ow.map
   local cx, cy = math.floor(wx / 16), math.floor(wz / 16)
-  if map:inBounds(cx, cy) then return map, cx, cy end
+  if map:inBounds(cx, cy) then return map, cx, cy, wx, wz end
   local seen = {}
   for _, nb in ipairs(ow.neighbors or {}) do
     if nb.map then
       seen[nb.map] = true
       local nx = math.floor((wx - (nb.ox or 0)) / 16)
       local ny = math.floor((wz - (nb.oy or 0)) / 16)
-      if nb.map:inBounds(nx, ny) then return nb.map, nx, ny end
+      if nb.map:inBounds(nx, ny) then return nb.map, nx, ny, wx-(nb.ox or 0), wz-(nb.oy or 0) end
     end
   end
   -- Gold's native neighbour rows historically had only {id, ox, oy, image}.
@@ -247,7 +247,7 @@ local function cellAt(ow, wx, wz)
     if nb.map and not seen[nb.map] then
       local nx = math.floor((wx - (nb.ox or 0)) / 16)
       local ny = math.floor((wz - (nb.oy or 0)) / 16)
-      if nb.map:inBounds(nx, ny) then return nb.map, nx, ny end
+      if nb.map:inBounds(nx, ny) then return nb.map, nx, ny, wx-(nb.ox or 0), wz-(nb.oy or 0) end
     end
   end
   return nil
@@ -278,6 +278,62 @@ local function occupied(ow, wx, y, wz)
 end
 
 ThirdPerson._occupied = occupied       -- named for the suite
+
+-- An eye can be above a terrace while that terrace hides the body below
+-- it. Test the ankle-to-eye sightline as well as the existing head boom.
+-- This additional rule is confined to reconstructed cave floors. Sample
+-- the same continuous tread height used by posed actors, not a staircase's
+-- cell-centre height. One reusable probe avoids a table per march sample.
+local floorProbe = {}
+function ThirdPerson.visibleReach(ow, orbit, bx, by, bz, want, sx, sz, footY)
+  if not ow or not ow.map or not ow.map.def or ow.map.def.environment~='CAVE'
+     or type(footY)~='number' or want<=0 then return want end
+  local Scene=V.require('VoxelScene')
+  if type(Scene.groundForPose)~='function' then return want end
+  local limit=want
+  -- At distance d, sightline Y is footY + (orbitY-footY)*d/length
+  -- + by*d. Solve its intersection with each floor for the maximum boom
+  -- length instead of dragging the eye all the way in front of that floor.
+  -- Traverse every crossed four-pixel grid interval. Fixed-distance samples
+  -- can miss a very short diagonal corner entirely, even at one pixel.
+  -- Four is the smallest height interval of the native cave stair mesh.
+  local vx,vz=bx+sx/want,bz+sz/want
+  local function gridAxis(origin,velocity)
+    if math.abs(velocity)<1e-9 then return math.huge,math.huge end
+    local border=velocity>0 and (math.floor(origin/4)+1)*4
+      or (math.ceil(origin/4)-1)*4
+    return (border-origin)/velocity,4/math.abs(velocity)
+  end
+  local nx,dx=gridAxis(orbit[1],vx)
+  local nz,dz=gridAxis(orbit[3],vz)
+  local start=0
+  while start<limit do
+    local finish=math.min(nx,nz,want)
+    local d=(start+finish)/2
+    local wx=orbit[1]+vx*d
+    local wz=orbit[3]+vz*d
+    local map,cx,cy,mx,mz=cellAt(ow,wx,wz)
+    if not map then return math.max(0,math.min(limit,start-ThirdPerson.PAD)) end
+    floorProbe.cellX,floorProbe.cellY=cx,cy
+    floorProbe.px,floorProbe.py=mx-8,mz-8
+    local ok,h=pcall(Scene.groundForPose,map,floorProbe)
+    if ok and type(h)=='number' then
+      -- The constraint is monotone within a constant-height interval.
+      -- Use its tighter endpoint, including while looking upwards.
+      local edge=h>=footY and start or finish
+      local denominator=h-footY-by*edge
+      if denominator>0 then
+        local bound=(orbit[2]-footY)*edge/denominator
+        if bound<edge then bound=edge-ThirdPerson.PAD end
+        if bound<limit then limit=math.max(0,bound-.25) end
+      end
+    end
+    start=finish
+    if nx<=finish then nx=nx+dx end
+    if nz<=finish then nz=nz+dz end
+  end
+  return limit
+end
 
 -- How far back along (bx, by, bz) from `pivot` the eye can stand, up to
 -- `want`. March at STEP, and when a sample refuses, bisect back into the
@@ -374,7 +430,7 @@ end
 -- With the boom fully in this is exactly the first-person answer, to the
 -- pixel -- which is what makes 1ST and 3RD one rig with a number between
 -- them rather than two cameras to keep in sync.
-function ThirdPerson.place(pivot, lx, ly, lz, focus)
+function ThirdPerson.place(pivot, lx, ly, lz, focus, footY)
   local e = ThirdPerson.extension()
   if e <= 0 then
     ThirdPerson.want, ThirdPerson.len = 0, 0
@@ -386,7 +442,14 @@ function ThirdPerson.place(pivot, lx, ly, lz, focus)
 
   local want = ThirdPerson.reachFor() * e
   ThirdPerson.want = want
-  local room = ThirdPerson.reach(overworld(), orbit, -lx, -ly, -lz, want)
+  local ow=overworld()
+  local room = ThirdPerson.reach(ow, orbit, -lx, -ly, -lz, want)
+  local flat = math.sqrt(lx * lx + lz * lz)
+  local fullS = ThirdPerson.SHOULDER * ThirdPerson.zoom * e
+  local fullX,fullZ=0,0
+  if flat>1e-6 then fullX,fullZ=-lz/flat*fullS,lx/flat*fullS end
+  room=math.min(room,ThirdPerson.visibleReach(ow,orbit,-lx,-ly,-lz,
+    want,fullX,fullZ,footY))
   -- in instantly, out only as fast as update() allows
   ThirdPerson.len = math.min(ThirdPerson.len, room)
   local len = ThirdPerson.len
@@ -399,7 +462,6 @@ function ThirdPerson.place(pivot, lx, ly, lz, focus)
   -- The rail rides the ZOOM as well, so it stays the same fraction of the
   -- frame at every distance: a fixed four pixels would swamp the close shot
   -- and vanish from the wide one.
-  local flat = math.sqrt(lx * lx + lz * lz)
   local sx, sz = 0, 0
   if flat > 1e-6 then
     local s = ThirdPerson.SHOULDER * ThirdPerson.zoom * e

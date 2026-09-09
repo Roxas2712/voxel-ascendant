@@ -27,7 +27,12 @@ function InteriorCutaway.classFor(map)
 end
 
 function InteriorCutaway.active(map, level)
-  if not Voxel.isFull(level) then return false end
+  if not Voxel.isFull(level) then
+    local rung=tonumber(level) or tonumber(Voxel.level)
+    return rung~=nil and rung>1 and rung<(Voxel.FP_LEVEL or 6)
+      and type(HorizonWall.architecturalRoom)=='function'
+      and HorizonWall.architecturalRoom(map) or false
+  end
   -- Never apply a room cutaway solely because an external profile happened to
   -- name an outdoor map like an interior. HorizonWall owns the authoritative
   -- `def.outdoor`/tileset check and deliberately has no class="room" shortcut.

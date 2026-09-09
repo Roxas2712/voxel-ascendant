@@ -51,6 +51,10 @@ local function flashUsedFor(world)
   return false
 end
 
+local function followsClock(def)
+  return def and (def.palette == nil or def.palette == "PALETTE_AUTO")
+end
+
 local function paletteSetFor(world, map)
   local game = world and world.game
   local data = game and game.data and game.data.gen2Palettes
@@ -58,6 +62,19 @@ local function paletteSetFor(world, map)
     return nil, nil, "Gold palette data is unavailable"
   end
   local daytime = Palettes.daytimeFor(map and map.def, hourFor(world), flashUsedFor(world))
+  -- World:applyPalettes has already resolved the native map.palette hook.
+  -- Recomputing solely from the RTC ignores explicit DAY/NIGHT settings and
+  -- makes the voxel atlas disagree with World:imageFor's native 2D bake.
+  -- Adapted renderer maps can be different tables with the same native id.
+  local current = world and world.map
+  local effective = world and world.daytime
+  local sameMap = current and map and (current == map
+    or (current.id ~= nil and current.id == map.id))
+  local sameScene = current and map
+    and followsClock(current.def) and followsClock(map.def)
+  if (sameMap or sameScene) and Palettes.DAYTIME_ID[effective] then
+    daytime = effective
+  end
   local set = Palettes.bgSet(data, map and map.def, daytime)
   if not set then
     return nil, daytime, "Gold map palette set could not be resolved"

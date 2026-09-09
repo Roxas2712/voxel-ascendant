@@ -250,6 +250,26 @@ function Weather.skyMode(map)
   return Weather.skyState(map)
 end
 
+-- Read the exterior through an indoor window without pretending that the
+-- player entered that city (no director visit / rainbow / map observation).
+function Weather.peekSkyState(map)
+  if not Weather.isOutdoor(map) then return "clear",true end
+  if skyProvider then
+    local ok,supplied=pcall(skyProvider,map)
+    if ok then
+      local config=type(supplied)=="table" and supplied or nil
+      local mode=config and config.effect or supplied
+      if mode=="off" or mode=="none" or mode=="rainbow" then return "clear",false end
+      if mode=="heat" and not Weather.heatAllowed() then return "clear",false end
+      if mode=="rain" or mode=="snow" or mode=="fog" or mode=="storm"
+        or mode=="heat" or mode=="clear" then
+        return mode,not config or config.surfaces~=false
+      end
+    end
+  end
+  return Weather.modeAt(map,Weather.setting:get(),Weather.clock,director.visit),true
+end
+
 -- Strength and occurrence key for a map's current lightning impulse.  This
 -- is intentionally pure: visual QA can reproduce a frame exactly and the
 -- optional thunder hook can be debounced without random state.

@@ -2024,6 +2024,12 @@ local function newHub(mod, game)
       help=languageCode(mod) == "de" and "Keine VASC-Bereiche verfügbar."
         or "No VASC sections are available." }
   end
+  rows[#rows + 1] = {
+    label="Resets to Factory", factoryReset=true,
+    help=languageCode(mod) == "de"
+      and "VASC-Auslieferungswerte inklusive HD-Sprites wiederherstellen. Spielstände und Downloads bleiben erhalten. Deaktivierte Module benötigen einen Spielneustart."
+      or "Restore shipped VASC settings including HD sprites. Saves and downloads are kept. Disabled modules require a game reload.",
+  }
   local menu = guidedMenu(mod, game, {
     key="vasc_root",
     title="VOXEL ASCENDANT",
@@ -2036,11 +2042,32 @@ local function newHub(mod, game)
     options={ pageJump=true, wrap=true },
     onChoose=function(item)
       if not item then return end
+      if item.factoryReset then
+        local ok, result, reason = pcall(function()
+          local source = assert(mod:read("shared/FactoryReset.lua"))
+          local reset = assert((loadstring or load)(source, "@FactoryReset"))()
+          return reset.apply(mod, game, config)
+        end)
+        local done = ok and result == true
+        local message = done and (languageCode(mod) == "de"
+          and "Auslieferungswerte wiederhergestellt. HD-Sprites sind eingeschaltet. Lade das Spiel neu, damit auch zuvor deaktivierte Module wieder starten. Spielstände und Downloads bleiben erhalten."
+          or "Factory settings restored. HD sprites are enabled. Reload the game to restart previously disabled modules. Saves and downloads are kept.")
+          or ("Reset failed: " .. tostring(ok and reason or result))
+        return showHelp(mod, game, "Resets to Factory", message)
+      end
       if item.section then
         return mod.ui.push(game, "VascSettings", { section=item.section })
       end
     end,
   })
+  -- The guided list appends HELP; factory reset belongs below that row too.
+  for i, item in ipairs(menu.items or {}) do
+    if item.factoryReset then
+      table.remove(menu.items, i)
+      menu.items[#menu.items + 1] = item
+      break
+    end
+  end
   -- The root needs the full 137 px row budget so both 17-glyph category
   -- names fit verbatim. VascMenuStyle moves only this cursor two pixels left.
   menu.__voxelAscendantRoot = true

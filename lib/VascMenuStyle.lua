@@ -655,6 +655,15 @@ local function drawOrasFocusHelp(menu)
   local rows = math.max(1, math.min(menu.rows or 9,
     math.floor((contentH - 16) / 20)))
 
+  -- The compact landscape surface can fit fewer rows than ListMenu's
+  -- nominal budget. Keep the selected final action inside the drawn rows.
+  local count = #(menu.items or {})
+  local index = math.max(1, math.min(menu.index or 1, math.max(1, count)))
+  local scroll = math.max(0, math.min(menu.scroll or 0, math.max(0, count - rows)))
+  if index <= scroll then scroll = index - 1 end
+  if index > scroll + rows then scroll = index - rows end
+  menu.scroll = math.max(0, scroll)
+
   menu.__vascOrasGeometry = {
     width=width, height=height, rows=rows,
     list={ x=margin, y=contentY, w=listW, h=contentH },

@@ -1313,6 +1313,7 @@ end
 local function resetMapRoot(map, reason, force, deps)
   deps = type(deps) == "table" and deps or {}
   if not force and Bridge.currentMapRef == map then return false, false, nil end
+  local previousRoot = Bridge.currentMapRef
 
   local mesher = deps.mesher or ChunkMesher
   local warmup = deps.currentWarmup or CurrentMapWarmup
@@ -1341,6 +1342,11 @@ local function resetMapRoot(map, reason, force, deps)
   -- Every root owns its own progressive adapter queue and graph coordinates.
   -- Retain GPU meshes through ChunkMesher's bounded live/previous policy, but
   -- never retain Lua records positioned relative to the map just left.
+  -- The one previous Map itself may still supply an already-uploaded BODY;
+  -- its placement is re-derived from the new root, never copied from here.
+  if previousRoot ~= map then
+    Bridge.transitionPreviousMap = previousRoot
+  end
   neighborMapCache = {}
   openWorldGraphCache = {
     rootId = nil, maps = nil, maxDepth = nil, specs = nil,
@@ -1683,6 +1689,26 @@ local function neighborUrgent(world, dir)
   if dir == "east" then return x >= w - 1 - EDGE_URGENT_CELLS end
   return false
 end
+
+local function warmPreviousNeighbor(world, previous, mesher)
+  if not (world and world.map and previous and previous ~= world.map
+      and previous.def and previous.renderer and mesher
+      and type(mesher.peek)=="function") then return nil end
+  local def = world.maps and world.maps[previous.id]
+  if not def or previous.blocks ~= def.blocks
+      or previous.def.width ~= def.width or previous.def.height ~= def.height
+      or previous.def.tileset ~= def.tileset then return nil end
+  -- Never use an old FULL apron: its masks belong to the previous residency.
+  if not mesher.peek(previous, true) then return nil end
+  for _, spec in ipairs(directNeighborSpecs(world)) do
+    if spec.id == previous.id then
+      return {id=spec.id, map=previous, ox=spec.ox, oy=spec.oy,
+        dir=spec.dir, depth=1, parentId=world.map.id, urgent=true,
+        handoffBodyOnly=true}
+    end
+  end
+end
+Bridge._warmPreviousNeighbor = warmPreviousNeighbor
 
 local function placementRect(def, ox, oy)
   if not def then return nil end
@@ -2069,6 +2095,23 @@ local function makeState(world, includeNeighbors)
     or 1
   local neighbors, byId, directNeighbors, directComplete =
     adaptedNeighbors(world, neighborLimit)
+  local previous = Bridge.transitionPreviousMap
+  if previous and byId[previous.id] then
+    Bridge.transitionPreviousMap = nil
+  else
+    local handoff = warmPreviousNeighbor(world, previous, ChunkMesher)
+    if handoff then
+      -- Do not mutate the progressive queue's own output: it must still
+      -- account for every normal adapter and its one-attempt frame budget.
+      local copied, copiedDirect, copiedById = {}, {}, {}
+      for i,rec in ipairs(neighbors)do copied[i]=rec end
+      for i,rec in ipairs(directNeighbors)do copiedDirect[i]=rec end
+      for id,rec in pairs(byId)do copiedById[id]=rec end
+      copied[#copied+1]=handoff;copiedDirect[#copiedDirect+1]=handoff
+      copiedById[handoff.id]=handoff
+      neighbors,directNeighbors,byId=copied,copiedDirect,copiedById
+    end
+  end
   -- Third-person collision only needs maps touching the current one. OPEN
   -- WORLD may render dozens of farther areas; scanning them per boom sample
   -- adds CPU cost without changing the collision result near the player.
@@ -2077,6 +2120,12 @@ local function makeState(world, includeNeighbors)
 
   local state = {
     map = world.map,
+    -- Preserve the native eight-step tileset clock without retaining World in
+    -- renderer state. Tower geometry uses it for its bounded timber sway.
+    _vascNativeTileAnimTimer = tonumber(world.animTimer) or 0,
+    -- Gen2's connection registry lives on World, not Gen1 Game.data. Keep
+    -- panorama coordinates stable when the active map changes at a seam.
+    worldMaps = world.maps,
     camera = world.camera,
     player = world.player,
     entities = mergedEntities(world),
@@ -2494,6 +2543,7 @@ local function releaseInactiveResidency()
   Bridge.currentOnlyPresentedMapRef = nil
   Bridge.lastPresentedFrame = nil
   Bridge.residencyReleased = true
+  Bridge.transitionPreviousMap = nil
   return true
 end
 

@@ -64,16 +64,19 @@ local function buildComponent(maps, startId)
     local def, here = maps[id], localPos[id]
     for _, direction in ipairs(DIRECTIONS) do
       local connection = def.connections and def.connections[direction]
-      local dest = connection and maps[connection.map]
+      -- Crystal stores a numeric map-bank id in `map` and the registry key
+      -- in `mapId`. Gen1-style/custom string connections remain supported.
+      local destId = connection and (connection.mapId or connection.map)
+      local dest = destId and maps[destId]
       if dest then
         local dx, dy = delta(def, dest, direction, connection)
         local x, y = here.x + dx, here.y + dy
-        local prior = localPos[connection.map]
+        local prior = localPos[destId]
         if prior then
           if prior.x ~= x or prior.y ~= y then consistent = false end
         else
-          localPos[connection.map] = { x = x, y = y }
-          queue[#queue + 1] = connection.map
+          localPos[destId] = { x = x, y = y }
+          queue[#queue + 1] = destId
         end
       end
     end

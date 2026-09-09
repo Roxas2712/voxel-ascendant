@@ -5704,6 +5704,15 @@ function HudRuntime.messageRectFor(shot)
   local logicalW, logicalH = FloatingHud.panelLogicalSize("message")
   if not (logicalW and logicalH) then return nil end
 
+  -- A phone's landscape START/SELECT row leaves a shallow dialogue band.
+  -- Use the available horizontal room for text instead of raising the tall
+  -- portrait plate into a painted arena's fixed ground contacts. The same
+  -- logical dimensions feed the renderer and its complete text-layout gate.
+  if hudStyle() ~= "float" and shot.pw > shot.ph
+      and FloatingHud.touchStartSelectTop(shot) then
+    logicalW, logicalH = math.max(logicalW,400), 40
+  end
+
   if hudStyle() ~= "float" then
     local insetLeft, _, insetRight, insetBottom = FloatingHud.safeInsets(shot)
     local safe = math.max(7,

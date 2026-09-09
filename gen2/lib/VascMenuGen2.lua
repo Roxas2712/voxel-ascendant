@@ -574,6 +574,19 @@ function M.buildConfig(opts)
     sections=buildSections(opts, M.extraKeys),
     sectionOrder=SECTION_ORDER,
     settings=settings,
+    factoryResetPrepare=function(game)
+      local content = opts.LocalContent or C.LocalContent
+      if content and content.select then assert(content.select("VASC_DEFAULT", game)) end
+    end,
+    factoryResetFinish=function(game)
+      local pipeline = opts.pipelineBridge or C.PipelineBridge
+      if pipeline and pipeline.sync then pipeline.sync(game) end
+      local voxel = opts.voxelBridge or C.VoxelBridge
+      if voxel and voxel.handleUserVoxelOption then
+        voxel.handleUserVoxelOption(true)
+      end
+      syncAllSettings(M.settingsByKey)
+    end,
     menuSkinSetting=settingsByKey.vascMenuSkin,
     diagnostics=opts.Diagnostics or C.Diagnostics,
     performanceDiagnostics=opts.PerformanceDiagnostics

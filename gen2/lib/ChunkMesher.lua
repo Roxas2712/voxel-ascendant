@@ -126,6 +126,19 @@ end
 
 -- ------------------------------------------------------------ vertex sinks
 
+-- Same upper-face receipt as Gen1. Preserve shade/sign independently from
+-- geometry: a bright vertical facade must never be mistaken for a roof.
+local function weatherFacing(c)
+  local ax, az = c[2][1] - c[1][1], c[2][3] - c[1][3]
+  local bx, bz = c[3][1] - c[1][1], c[3][3] - c[1][3]
+  return math.abs(az * bx - ax * bz) > 0.0001
+end
+
+local function weatherShade(value, facing)
+  if not facing then return value end
+  return value < 0 and value - 2 or value + 2
+end
+
 -- A sink accepts quads (4 corners, 4 uv pairs, flat or per-corner shade)
 -- and finishes into a drawable mesh. The TABLE sink reproduces the
 -- historical pure-Lua output -- geometry() returns its arrays for the
@@ -139,12 +152,13 @@ local function newTableSink(_expectedQuads)
   return {
     push = function(c, uv, shade)
       local flat = type(shade) ~= "table"
+      local facing = weatherFacing(c)
       for i = 1, 4 do
         local cc = c[i]
         local t = uv and uv[i]
         verts[#verts + 1] = { cc[1], cc[2], cc[3],
                               t and t[1] or c.u, t and t[2] or c.v,
-                              flat and shade or shade[i] }
+                              weatherShade(flat and shade or shade[i], facing) }
       end
       Voxel3D.pushQuad(indices, quads)
       quads = quads + 1
@@ -218,11 +232,12 @@ local function newPackedSink(expectedQuads)
     kind = "packed",
     push = function(c, uv, shade)
       local flat = type(shade) ~= "table"
+      local facing = weatherFacing(c)
       for k = 1, 6 do
         local i = TRI_ORDER[k]
         local t = uv and uv[i]
         append(c[i], t and t[1] or c.u, t and t[2] or c.v,
-               flat and shade or shade[i])
+               weatherShade(flat and shade or shade[i], facing))
       end
       quads = quads + 1
       if quads % PACKED_PAGE_QUADS == 0 then sealPage() end
@@ -306,6 +321,7 @@ local function newFfiSink(expectedQuads)
   local sink
   sink = {
     push = function(c, uv, shade)
+      local facing = weatherFacing(c)
       if n + 6 > cap then
         local grown = ffi.new("float[?]", cap * 2 * 6)
         ffi.copy(grown, buf, n * 6 * 4)
@@ -322,7 +338,7 @@ local function newFfiSink(expectedQuads)
         buf[base + 2] = cc[3]
         buf[base + 3] = t and t[1] or c.u
         buf[base + 4] = t and t[2] or c.v
-        buf[base + 5] = flat and shade or shade[i]
+        buf[base + 5] = weatherShade(flat and shade or shade[i], facing)
         base = base + 6
       end
       n = n + 6
@@ -425,7 +441,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
 
   local function heightAt(tx, ty)
     local k = keyOf(tx, ty)
-    if S.skip[k] then return 0 end
+    if S.skip[k] then return S.groundHeights and S.groundHeights[k] or 0 end
     local run = S.runs[k]
     if run then return run.h end
     local s = S.shapeAt[k]
@@ -529,12 +545,17 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   -- light reaches it -- which is what plants a prop on the floor instead
   -- of leaving it looking pasted over the top.
   local aoProp = { 0, 0, 0, 0 }
-  local function groundShades(c, shade)
+  local function groundShades(c, shade, baseY)
     if type(shade) == "table" then return shade end
+    baseY = baseY or 0
     local y1, y2, y3, y4 = c[1][2], c[2][2], c[3][2], c[4][2]
-    if math.min(y1, y2, y3, y4) >= AO_RISE then return shade end
+    if math.min(y1, y2, y3, y4) - baseY >= AO_RISE then return shade end
     for i = 1, 4 do
-      local t = c[i][2] / AO_RISE
+      -- Contact darkening reaches its maximum at the support plane. Authored
+      -- shafts/stairs extend below it; extrapolation there turned lighting
+      -- negative (and inverted the packed caster sign). Their own face shades
+      -- already describe the well's darkness. Leave above-floor AO unchanged.
+      local t = math.max(0, (c[i][2] - baseY) / AO_RISE)
       aoProp[i] = shade * (t >= 1 and 1 or (1 - AO_GROUND * (1 - t)))
     end
     return aoProp
@@ -642,9 +663,10 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- prebuilt prism quads (appended below) carry the art
         local g = S.ground[k]
         if g then
-          topQuad(tx * 8, ty * 8, 0, g, 1)
-          -- the claimed tile is still ground at height 0, and water next
-          -- door still recesses below it: without the same below-ground
+          local baseY = S.groundHeights and S.groundHeights[k] or 0
+          topQuad(tx * 8, ty * 8, baseY, g, 1)
+          -- The claimed tile is ground at its support level; water next
+          -- door still recesses below it. Without the same exposed
           -- side bands ordinary ground emits, the two-pixel shoreline
           -- face is a slit into the sky behind the mesh -- which is
           -- exactly what a building plot or a sign standing at the
@@ -652,14 +674,14 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           -- ground's own art
           for _, side in ipairs(SIDES) do
             local nh = heightAt(tx + side[1], ty + side[2])
-            if nh < 0 then
+            if nh < baseY then
               local d = side[3]
               local lat = LATERAL[d]
               local hl = lat and heightAt(tx + lat[1], ty + lat[2]) or 0
               local hr = lat and heightAt(tx + lat[3], ty + lat[4]) or 0
-              for band = math.floor(nh / 8), -1 do
+              for band = math.floor(nh / 8), math.ceil(baseY / 8) - 1 do
                 local y0 = math.max(nh, band * 8)
-                local y1 = math.min(0, band * 8 + 8)
+                local y1 = math.min(baseY, band * 8 + 8)
                 if y1 > y0 then
                   sideQuad(d, tx * 8, ty * 8, y0, y1, g,
                            (band * 8 + 8) - y1, (band * 8 + 8) - y0,
@@ -721,7 +743,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           local topTile = tile
           if s.art == "upright" and s.authored then
             -- Top art for a pinned box.  A furniture drawing is top-view
-            -- rows over floor(h/8) face-on rows the fold stands upright;
+            -- rows over ceil(h/8) face-on rows the fold stands upright;
             -- a face row's top would repeat its front art lying flat, so
             -- it wears the nearest row above the face block instead --
             -- the drawn tabletop (and whatever sits on it) stays on top,
@@ -744,7 +766,10 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                 break
               end
             end
-            local row = math.min(ty, front - math.floor(h / 8))
+            -- A six-pixel desk still consumes one (cropped) face row.
+            -- floor(6/8) kept that face on the lid as a second keyboard,
+            -- drawer or bench front instead of extending the tabletop.
+            local row = math.min(ty, front - math.ceil(h / 8))
             if row < north then
               -- the whole run folded onto the face: top with the drawn
               -- row just above it when that row is furniture too (a
@@ -755,6 +780,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                     and (north - 1) or north
             end
             topTile = S.tileAt[keyOf(tx, row)]
+            if s.surfaceTiles then topTile = s.surfaceTiles[topTile] or topTile end
           end
           -- water's surface, and only water's: the recessed sheet itself,
           -- never the ground's shoreline bands around it. A cell an object
@@ -823,6 +849,10 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                   if fs and fs.authored and fs.class == s.class then
                     src = S.tileAt[fk]
                   end
+                  -- A profile may distinguish outline/fill rock art from
+                  -- exposed material. Only remap the selected upright source:
+                  -- objects, stairs, walkable floors and heights are unchanged.
+                  if s.surfaceTiles then src = s.surfaceTiles[src] or src end
                 end
                 sideQuad(d, x0, z0, y0, y1, src,
                          (band * 8 + 8) - y1, (band * 8 + 8) - y0,
@@ -937,7 +967,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   local roundStamps = S.roundStamps or {}
   for si = 1, #roundStamps do
     local st = roundStamps[si]
-    local mx, mz = st.mx, st.mz
+    local mx, my, mz = st.mx, st.my or 0, st.mz
     local sr = st.r or 8
     local sx0, sz0, sx1, sz1 = mx - sr, mz - sr, mx + sr, mz + sr
     local interior = sx0 > 0 and sx1 < bw and sz0 > 0 and sz1 < bh
@@ -961,7 +991,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           for i = 1, 4 do
             local c, s2 = q[i], sc[i]
             s2[1] = c[1] + mx
-            s2[2] = c[2]
+            s2[2] = c[2] + my
             s2[3] = c[3] + mz
           end
           local x0 = math.min(sc[1][1], sc[2][1], sc[3][1], sc[4][1])
@@ -994,7 +1024,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
             end
           end
         end
-        group.offsets[#group.offsets + 1] = { mx, 0, mz }
+        group.offsets[#group.offsets + 1] = { mx, my, mz }
       end
     elseif not skipAll then
       for _, q in ipairs(st.quads) do
@@ -1002,7 +1032,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         for i = 1, 4 do
           local c, s2 = q[i], sc[i]
           s2[1] = c[1] + mx
-          s2[2] = c[2]
+          s2[2] = c[2] + my
           s2[3] = c[3] + mz
         end
         local ok = keepAll
@@ -1014,7 +1044,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           ok = keepQuad(x0, z0, x1, z1)
         end
         if ok then
-          push(sc, quadUV(q), groundShades(sc, q.shade))
+          push(sc, quadUV(q), groundShades(sc, q.shade, my))
         end
       end
     end
@@ -1205,6 +1235,15 @@ local function buildFlowerMesh(map)
   return quadsMesh(quads)
 end
 
+-- One movable upper shaft; the fixed 32px collar is already in terrain.
+-- An absent/failed upper upload leaves that valid low fallback visible.
+local function buildTowerPillarMesh(map)
+  local pillar = Structures.forMap(map, true).towerPillar
+  if not pillar then return nil end
+  Budget.phase("aux-tower-pillar")
+  return quadsMesh(pillar.quads)
+end
+
 -- Authored FIGURES (a person drawn into furniture) as one mesh each, in
 -- the card's own local space -- because each one is placed by its own
 -- matrix at draw time, leaned back by the camera pitch exactly like a
@@ -1216,8 +1255,9 @@ end
 -- `w` is the card's own width in its local space (its quads start at
 -- x = 0), measured here because the first-person pass yaws a card about
 -- its middle -- a card yawed about its left edge swings off its seat.
-local function buildFigureMeshes(map)
+local function buildFigureMeshes(map, job)
   local out = {}
+  if job then job.partialMaskFigures = out end
   for _, f in ipairs(Structures.forMap(map, true).figures or {}) do
     local mesh = quadsMesh(f.quads)
     if mesh then
@@ -1270,7 +1310,7 @@ end
 
 local function releaseEntry(c)
   for _, slot in ipairs({ "full", "body", "fullWater", "bodyWater",
-                          "grass", "flowers" }) do
+                          "grass", "flowers", "towerPillar" }) do
     local mesh = c[slot]
     if mesh and mesh.release then pcall(mesh.release, mesh) end
     c[slot] = nil
@@ -1293,6 +1333,57 @@ local function jobKey(id, slot)
   return id .. ":" .. slot
 end
 
+-- OPEN WORLD admits neighbors incrementally. FULL is not a map-id-only
+-- resource: its synthetic border must follow the current neighbor masks.
+-- Own a canonical snapshot, including for jobs suspended across frames.
+local function maskSnapshot(masks)
+  local rows, seen = {}, {}
+  for _, r in ipairs(masks or {}) do
+    local key = table.concat({r[1], r[2], r[3], r[4]}, ",")
+    if not seen[key] then
+      rows[#rows + 1] = {key=key, rect={r[1], r[2], r[3], r[4]}}
+      seen[key] = true
+    end
+  end
+  table.sort(rows, function(a,b) return a.key < b.key end)
+  local keys, copy = {}, {}
+  for i, row in ipairs(rows) do keys[i], copy[i] = row.key, row.rect end
+  return table.concat(keys, ";"), copy
+end
+
+local function releasePartialMaskJob(job)
+  for _, mesh in pairs(job.partialMaskMeshes or {}) do
+    if mesh and mesh.release then pcall(mesh.release, mesh) end
+  end
+  job.partialMaskMeshes = nil
+  releaseFigures(job.partialMaskFigures)
+  job.partialMaskFigures = nil
+end
+
+local function prepareFullMasks(map, masks)
+  local signature, snapshot = maskSnapshot(masks)
+  local c = entry(map.id)
+  if c.fullMaskKey ~= signature then
+    local key = jobKey(map.id, "full")
+    local oldJob = jobIndex[key]
+    if oldJob then
+      releasePartialMaskJob(oldJob)
+      jobIndex[key] = nil
+      for i=#jobs,1,-1 do if jobs[i]==oldJob then table.remove(jobs,i) end end
+      -- Only the cancelled FULL construction data; a live BODY keeps its own.
+      Structures.releaseAux(map, false)
+    end
+    -- Wrong seam geometry must not remain visible as a stale refresh. Keep
+    -- the playable BODY and all native grass/flower/figure caches intact.
+    swapSlot(c, "full", nil)
+    swapSlot(c, "fullWater", nil)
+    if c.stale then c.stale.full = nil end
+    c.fullMaskKey = signature
+    lastErrors[map.id] = nil
+  end
+  return snapshot
+end
+
 local function finishJob(job, ok, err)
   jobIndex[jobKey(job.id, job.slot)] = nil
   for i, j in ipairs(jobs) do
@@ -1302,6 +1393,7 @@ local function finishJob(job, ok, err)
     end
   end
   if not ok then
+    releasePartialMaskJob(job)
     -- name the reason: in a real session a lost build is a black map
     lastErrors[job.id] = tostring(err)
     print("[warn] voxel mesh build failed for " .. tostring(job.id)
@@ -1408,36 +1500,52 @@ local function runJob(job)
     -- The native staging buffers can be many megabytes.  Do not keep them
     -- alive while the auxiliary grass/flower meshes are packed below.
     sink, waterSink = nil, nil
+    job.partialMaskMeshes = {mesh, water}
     Budget.check()
     if (gen[job.id] or 0) ~= job.gen then
       if mesh and mesh.release then pcall(mesh.release, mesh) end
       if water and water.release then pcall(water.release, water) end
+      job.partialMaskMeshes = nil
       return
     end
     swapSlot(c, job.slot, mesh or false)
     swapSlot(c, waterSlot(job.slot), water or false)
+    job.partialMaskMeshes = nil
     if c.stale then c.stale[job.slot] = nil end
   end
-  if c.grass == nil or c.flowers == nil or c.figures == nil
+  if c.grass == nil or c.flowers == nil or c.figures == nil or c.towerPillar == nil
      or (c.stale and c.stale.aux) then
     Budget.phase("aux-grass")
     local okG, grass = pcall(buildGrassMesh, map)
+    job.partialMaskMeshes = {okG and grass or nil}
     Budget.phase("aux-flowers")
     local okF, flowers = pcall(buildFlowerMesh, map)
+    job.partialMaskMeshes[2] = okF and flowers or nil
     Budget.phase("aux-figures")
-    local okX, figures = pcall(buildFigureMeshes, map)
+    local okX, figures = pcall(buildFigureMeshes, map, job)
+    if not okX then
+      releaseFigures(job.partialMaskFigures)
+      job.partialMaskFigures = nil
+    end
+    local okT, tower = pcall(buildTowerPillarMesh, map)
+    job.partialMaskMeshes[3] = okT and tower or nil
     if (gen[job.id] or 0) ~= job.gen then
       if okG and grass and grass.release then pcall(grass.release, grass) end
       if okF and flowers and flowers.release then
         pcall(flowers.release, flowers)
       end
       if okX then releaseFigures(figures) end
+      if okT and tower and tower.release then pcall(tower.release, tower) end
+      job.partialMaskMeshes, job.partialMaskFigures = nil, nil
       return
     end
     swapSlot(c, "grass", (okG and grass) or false)
     swapSlot(c, "flowers", (okF and flowers) or false)
+    swapSlot(c, "towerPillar", (okT and tower) or false)
+    job.partialMaskMeshes = nil
     releaseFigures(c.figures)
     c.figures = (okX and figures) or false
+    job.partialMaskFigures = nil
     if c.stale then c.stale.aux = nil end
   end
   -- BODY and FULL may be suspended independently.  Release only this job's
@@ -1463,6 +1571,7 @@ end
 -- replacement cooks.
 function ChunkMesher.request(map, bodyOnly, masks, urgent, priority)
   local slot = bodyOnly and "body" or "full"
+  if not bodyOnly then masks = prepareFullMasks(map, masks) end
   local rank = math.max(0, tonumber(priority) or 0)
   local c = cache[map.id]
   local stale = c and c.stale and (c.stale[slot] or c.stale.aux)
@@ -1576,14 +1685,17 @@ end
 -- like everything else.
 function ChunkMesher.get(map, bodyOnly, masks)
   local slot = bodyOnly and "body" or "full"
+  if not bodyOnly then masks = prepareFullMasks(map, masks) end
   local c = entry(map.id)
-  if c.grass == nil or c.flowers == nil or c.figures == nil
-      or (c.stale and c.stale.aux) then
+  if c.grass == nil or c.flowers == nil or c.figures == nil or c.towerPillar == nil
+     or (c.stale and c.stale.aux) then
     local okG, grass = pcall(buildGrassMesh, map)
     local okF, flowers = pcall(buildFlowerMesh, map)
     local okX, figures = pcall(buildFigureMeshes, map)
+    local okT, tower = pcall(buildTowerPillarMesh, map)
     swapSlot(c, "grass", (okG and grass) or false)
     swapSlot(c, "flowers", (okF and flowers) or false)
+    swapSlot(c, "towerPillar", (okT and tower) or false)
     releaseFigures(c.figures)
     c.figures = (okX and figures) or false
     if c.stale then c.stale.aux = nil end
@@ -1627,7 +1739,7 @@ end
 -- figure pass is still being analysed or uploaded and must not be exposed.
 local function auxReady(c)
   return c ~= nil and c.grass ~= nil and c.flowers ~= nil
-    and c.figures ~= nil
+    and c.figures ~= nil and c.towerPillar ~= nil
 end
 
 function ChunkMesher.auxReady(map)
@@ -1665,6 +1777,12 @@ function ChunkMesher.flowers(map)
   return c and c.flowers or nil
 end
 
+-- Read-only: never rebuild from draw, reflection, or shadow callbacks.
+function ChunkMesher.towerPillar(map)
+  local c = map and cache[map.id]
+  return c and c.towerPillar or nil
+end
+
 -- Authored figures as `{ mesh, wx, wz, y, w }` records -- each placed by
 -- its own leaning matrix at draw time, so they cannot share one mesh.
 function ChunkMesher.figures(map)
@@ -1690,6 +1808,7 @@ function ChunkMesher.refresh(mapId)
   for i = #jobs, 1, -1 do
     local job = jobs[i]
     if job.id == mapId then
+      releasePartialMaskJob(job)
       jobIndex[jobKey(job.id, job.slot)] = nil
       table.remove(jobs, i)
     end
@@ -1731,6 +1850,7 @@ function ChunkMesher.setLive(live, forgetPrevious)
   for i = #jobs, 1, -1 do
     local job = jobs[i]
     if not live[job.id] and not prevLive[job.id] then
+      releasePartialMaskJob(job)
       jobIndex[jobKey(job.id, job.slot)] = nil
       table.remove(jobs, i)
     end
@@ -1759,6 +1879,7 @@ function ChunkMesher.invalidate(mapId)
   for i = #jobs, 1, -1 do
     local job = jobs[i]
     if mapId == nil or job.id == mapId then
+      releasePartialMaskJob(job)
       jobIndex[jobKey(job.id, job.slot)] = nil
       table.remove(jobs, i)
     end
