@@ -2692,6 +2692,10 @@ mod.exports.WallDecals = WallDecals
 mod.exports.spritePacks = SpritePacks.public()
 mod.exports.battleMusic = BattleMusic.public()
 mod.exports.localContent = LocalContent.public()
+-- Overworld source selection is independent of the battle model/mode switch.
+V.Gen1OverworldStadium = V.require("Gen1OverworldStadium")
+mod.exports.overworldPokemonModelAvailable = V.Gen1OverworldStadium.available
+mod.exports.overworldPokemonModelStatus = V.Gen1OverworldStadium.status
 mod.exports.pokemonModelProvider = V.PokemonModelProvider.public()
 mod.exports.stadium2Importer = true
 mod.exports.stadium2Catalog = {

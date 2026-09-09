@@ -48,7 +48,7 @@ local function shinyFrom(value)
   return value == "shiny" or value == "rare"
 end
 
-local function monIdentity(entity, species, variant)
+local function monIdentity(entity, species, variant, mapSpecies)
   entity = type(entity) == "table" and entity or {}
   local nested = type(entity.pokemon) == "table" and entity.pokemon
     or type(entity.mon) == "table" and entity.mon
@@ -78,7 +78,7 @@ local function monIdentity(entity, species, variant)
     or entity.followerSpecies or entity.wildSpecies or entity.spawnSpecies
     or entity.encounterSpecies
     or (nested and (nested.species or nested.pokemonSpecies))
-    or sourceSpecies or entity.ambientSpecies or entity.species or spriteId
+    or sourceSpecies or entity.ambientSpecies or entity.species or mapSpecies or spriteId
   if type(resolvedSpecies) == "string" then
     resolvedSpecies = resolvedSpecies:upper()
   end
@@ -173,7 +173,8 @@ function PokemonWorldSprites:enabled(context)
 end
 
 function PokemonWorldSprites:_def(game, entity, species, variant, context, id)
-  local mon = monIdentity(entity, species, variant)
+  local mon = monIdentity(entity, species, variant,
+    self.catalog.mapSpeciesFor and self.catalog.mapSpeciesFor(game, entity))
   local def, reason, record = self.sheets:def(game, mon, id, context)
   if not def then return nil, reason end
   def.providerId = "ascendant_walksheets"
@@ -229,6 +230,7 @@ function PokemonWorldSprites:_captureOriginal(entity, context)
       scaleClass=entity.ascendantScaleClass,
       worldHeight=entity.ascendantWorldHeight,
       modelSource=entity.ascendantPokemonModelSource,
+      modelDex=entity.ascendantPokemonModelDex,
       actorGrid=entity.ascendantActorVoxelGrid,
     }
     self.originals[entity] = original
@@ -262,7 +264,8 @@ end
 
 function PokemonWorldSprites:_presentation(game, entity, context, species,
     variant)
-  local mon = monIdentity(entity, species, variant)
+  local mon = monIdentity(entity, species, variant,
+    self.catalog.mapSpeciesFor and self.catalog.mapSpeciesFor(game, entity))
   -- Gen-2 follower bridges commonly publish only a symbolic species on the
   -- live party object. Resolve that through the active game's catalogue before
   -- asking providers; passing nil made GO_ONLY incorrectly choose HD_2D even
@@ -381,6 +384,7 @@ function PokemonWorldSprites:_rememberModel(entity, context, boundDef)
   end
   if selected.id ~= "stadium2" and not cardBound then
     entity.ascendantPokemonModelSource = original.modelSource
+  entity.ascendantPokemonModelDex = original.modelDex
   end
   entity.ascendantPokemonSpriteMode = suppressModels and "walksheet_3x4"
     or selected.id == "stadium2" and (selected.id .. "_preferred")
@@ -530,6 +534,7 @@ function PokemonWorldSprites:_restoreEntity(entity, original)
   entity.ascendantScaleClass = original.scaleClass
   entity.ascendantWorldHeight = original.worldHeight
   entity.ascendantPokemonModelSource = original.modelSource
+  entity.ascendantPokemonModelDex = original.modelDex
   entity.ascendantActorVoxelGrid = original.actorGrid
   if original.scaleCaptured then
     entity.visualScale = original.visualScale

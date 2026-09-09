@@ -161,6 +161,7 @@ function PresentationPolicy:decorate(entity, dex, context)
   local selected = self:select(dex, context)
   if type(entity) == "table" then
     entity.ascendantPokemonModelSource = selected.id
+    entity.ascendantPokemonModelDex = selected.id == "stadium2" and tonumber(dex) or nil
     entity.ascendantActorVoxelGrid = self:gridEnabled("pokemon")
     if selected.provider and type(selected.provider.apply) == "function" then
       pcall(selected.provider.apply, entity, dex, context)

@@ -997,6 +997,7 @@ return {
       figures = {
         {
           w = 3,
+          hdActor = "pokecenter_seated_man",
           tiles = { 36, 37, 57,
                     52, 53, 60 },
           under = { 52, 39,  1,

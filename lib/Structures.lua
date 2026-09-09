@@ -4433,6 +4433,7 @@ local function buildFigure(S, map, fig, tx, ty, perRow)
     -- standing there would.
     S.figures[#S.figures + 1] = {
       quads = quads,
+      hdActor = fig.hdActor,
       wx = tx * 8 + minX,
       wz = ty * 8 + math.floor(lowY / 8) * 8 + 4,
       y = baseY,

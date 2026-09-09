@@ -601,7 +601,8 @@ local function authoredMasks(list)
         out[#out + 1] = { w = w, h = h, n = n, mask = mask,
                           tiles = f.tiles, under = f.under,
                           depth = depth and math.floor(depth) or nil,
-                          thin = thin, flat = flat }
+                          thin = thin, flat = flat,
+                          hdActor = f.hdActor }
       end
     end
   end

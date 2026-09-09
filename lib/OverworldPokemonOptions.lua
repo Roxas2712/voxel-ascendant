@@ -6,7 +6,7 @@ local rows = {
     "Enable the integrated APO RC32 snapshot. Changing this master switch requires a game reload.",
     "Integrierten APO-RC32-Stand aktivieren. Dieser Hauptschalter benötigt einen Spielneustart."},
   {"hd_walking_sprites", "HD PEOPLE", "HD-MENSCHEN", "pokemon", true,
-    "Use approved HD player/NPC artwork. Character selection stays with the game, KASC or JASC."},
+    "Use bundled HD player/NPC artwork. Requires OVERWORLD CARD enabled at game start; after enabling that master switch, reload the game. Pokemon downloads and model sources do not control HD people. Character selection stays with the game, KASC or JASC."},
   {"pokemon_model_source", "OVERWORLD MODELS", "OVERWORLD-MODELLE", "pokemon", "auto",
     "Overworld only: Stadium 2 models, Full HD render sprites, then original sprites. Explicit MMO context choices take precedence. Battle models are unchanged.", nil,
     {{"AUTO: MODELS > FULL HD", "auto"}, {"STADIUM 2 > SPRITES", "stadium_only"}, {"FULL HD > MODELS", "go_first"}, {"FULL HD SPRITES", "go_only"}, {"SPRITES ONLY", "sprite_only"}}},
@@ -37,7 +37,7 @@ local sourceChoices = {{"FOLLOW MODEL PRIORITY", "hd"}, {"STADIUM 2 > FULL HD", 
 -- Translate only presentation text; option ids, defaults and provider priority
 -- remain identical in both languages and both generations.
 local descriptionsDe = {
-  hd_walking_sprites="HD-Grafiken für Spieler und Menschen nutzen. Die Charakterauswahl bleibt beim Spiel, KASC oder JASC.",
+  hd_walking_sprites="Mitgelieferte HD-Grafiken für Spieler und Menschen nutzen. OVERWORLD-CARD muss beim Spielstart AN sein; nach Aktivierung dieses Hauptschalters das Spiel neu laden. Pokémon-Downloads und Modellquellen steuern HD-Menschen nicht. Die Charakterauswahl bleibt beim Spiel, KASC oder JASC.",
   pokemon_model_source="Nur Oberwelt: Stadium-2-Modelle, Full-HD-Sprites, dann Originalgrafiken. Ausdrückliche MMO-Auswahl hat Vorrang. Kampfmodelle bleiben unverändert.",
   hd_pokemon_followers="Nur Begleitergrafiken ersetzen. Auswahl und Bewegung bleiben beim bisherigen Anbieter.",
   follower_sprite_source="Modellreihenfolge nutzen, Stadium 2 bevorzugen oder Full-HD-/MMO-Sprites wählen. Fehlende Grafiken nutzen Ersatz. Stadium benötigt aktivierte Oberweltmodelle und einen nutzbaren Modellimport.",

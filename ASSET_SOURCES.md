@@ -768,3 +768,12 @@ published until its redistribution status and visual acceptance are cleared.
   `docs/species_cinematics/`.
 - Licensing: these fan-art sprite assets are not relicensed under VASC's MIT
   software license. The preserved input notices remain authoritative.
+
+
+## Pokémon Center seated person (3.0.15)
+
+assets/characters/pokecenter-seated-man-hd-v1.png: generated with the built-in image_gen tool for this project on 2026-09-10. Original transparent RGBA output preserved; body framed with renderer UV coordinates.
+
+## Verwendeter Prompt
+
+Create ONE transparent-background game sprite asset, not a scene or sprite sheet. A friendly middle-aged male NPC sitting on an invisible low bench, seen from exact RIGHT-FACING SIDE PROFILE with a slightly elevated camera (top of hair visible), matching polished chibi Pokemon remake NPC game cards. Large head, compact body, short neat black hair, no hat, clean shaven, white short-sleeve shirt, dark navy blue trousers, dark brown shoes. Sitting relaxed, torso upright, thighs extending horizontally to the RIGHT, knees bent at ninety degrees, lower legs hanging down, feet pointing right. Hands resting on thighs. Entire person fully visible, no crop. Neutral friendly face. Soft faceted 3D-render illustration appearance, clean defined silhouette and subtle outlines, even neutral lighting, no glow, no cast shadow. NO bench, NO furniture, NO floor, NO background, NO lettering, NO other people. Transparent alpha background. Center the body with modest 8% transparent margin. Square image. This will replace the man drawn into the couch in classic Pokemon Centers; preserve unmistakably SEATED posture and RIGHT-facing direction.

@@ -2496,6 +2496,7 @@ local function buildFigureMeshes(map, job, elevation)
       local base = elevationAtWorld(elevation, f.wx + w / 2, f.wz)
       out[#out + 1] = {
         mesh = mesh, wx = f.wx, wz = f.wz, y = f.y + base, w = w,
+        hdActor = f.hdActor,
       }
     end
   end

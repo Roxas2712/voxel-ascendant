@@ -19,6 +19,8 @@ local Shadows = V.require("Shadows")
 local ShadowPolicy = V.require("ShadowPolicy")
 local ChunkMesher = V.require("ChunkMesher")
 local SpriteBillboards = V.require("SpriteBillboards")
+local OverworldStadium = V.require("Gen1OverworldStadium")
+local HdAuthoredFigures = V.require("HdAuthoredFigures")
 local TileShape = V.require("TileShape")
 local TerrainAtlas = V.require("TerrainAtlas")
 local Voxel = V.require("VoxelState")
@@ -501,7 +503,9 @@ end
 -- Every figure on `map`, drawn with `draw(mesh, model, caster)`.
 local function eachFigure(map, offX, offZ, draw)
   for _, f in ipairs(ChunkMesher.figures(map) or {}) do
-    draw(f.mesh, figureMatrix(f, offX, offZ), figureCaster(f, offX, offZ))
+    local chosen, texture = HdAuthoredFigures.resolve(f)
+    draw(chosen.mesh, figureMatrix(chosen, offX, offZ),
+      figureCaster(chosen, offX, offZ), texture)
   end
 end
 
@@ -1662,6 +1666,8 @@ function VoxelScene.mobileSceneryLifecyclePending(state)
 end
 
 function VoxelScene.invalidateMobileScenery(reason)
+  OverworldStadium.releaseAll()
+  HdAuthoredFigures.invalidate()
   mobileSceneryPlanMap, mobileSceneryPlan = nil, nil
   mobileRingPlanMap, mobileRing = nil, nil
   mobileSceneryHorizonMap, mobileSceneryHorizon = nil, nil
@@ -1708,6 +1714,7 @@ local function posesOf(state, spriteColors, drawableMaps, externalPlayerWalker)
         facing = facing, phase = phase, flip = flip,
         gh = groundForEntity(ghostMap, g.npc, hopping),
         lift = g.npc.py - vy, colors = spriteColors(ghostMap),
+        entity = g.npc, mapId = ghostMap.id,
       }
     end
   end
@@ -1724,6 +1731,7 @@ local function posesOf(state, spriteColors, drawableMaps, externalPlayerWalker)
         facing = facing, phase = phase, flip = flip,
         gh = groundForEntity(state.map, e, hopping),
         lift = e.py - vy, colors = colors,
+        entity = e, mapId = state.map.id,
       }
       if e == state.player then
         me = posed[#posed]
@@ -1897,7 +1905,7 @@ local function drawCast(state, posed, atlasFor)
     if not hidden and hideNearActor and not p.isPlayer then
       hidden = actorEngulfsEye(p)
     end
-    if not hidden then
+    if not hidden and not OverworldStadium.draw(p) then
       drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
                  p.colors, p.lift)
     end
@@ -1908,14 +1916,18 @@ local function drawCast(state, posed, atlasFor)
   -- Figures after the walkers, so a player standing in front of the couch
   -- wins the overlap -- the order the flat game draws them in.
   local figPull = billboardPull()
-  eachFigure(state.map, 0, 0, function(mesh, model, caster)
-    Voxel3D.draw(mesh, atlasFor(state.map), model, figPull,
+  eachFigure(state.map, 0, 0, function(mesh, model, caster, texture)
+    if texture then Voxel3D.glass(false) end
+    Voxel3D.draw(mesh, texture or atlasFor(state.map), model, figPull,
                  ShadowMap.snug(caster))
+    if texture then Voxel3D.glass(true) end
   end)
   for _, nb in ipairs(state.neighbors or {}) do
-    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, model, caster)
-      Voxel3D.draw(mesh, atlasFor(nb.map), model, figPull,
+    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, model, caster, texture)
+      if texture then Voxel3D.glass(false) end
+      Voxel3D.draw(mesh, texture or atlasFor(nb.map), model, figPull,
                    ShadowMap.snug(caster))
+      if texture then Voxel3D.glass(true) end
     end)
   end
   -- and the seams are back on for the terrain art that follows: grass and
@@ -2069,6 +2081,7 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh,
   -- lit from somewhere new must be redrawn from there too. Quantised by the
   -- rig's own step (DayNight.rigTime), so a running cycle redraws the map a
   -- few times a minute rather than every frame.
+  put(HdAuthoredFigures.enabled() and "hd-figures" or "native-figures")
   put(math.floor(ShadowMap.KX * 128))
   put(math.floor(ShadowMap.KZ * 128))
   put(policy and policy.key or "legacy-world")
@@ -2089,6 +2102,7 @@ local function shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh,
     put(p.sprite.def.image)
     put(p.px); put(p.py); put(p.gh); put(p.lift or 0)
     put(p.facing); put(p.phase); put(p.flip and 1 or 0)
+    put(p.stadiumDex or 0); put(p.stadiumShadowTick or 0)
   end
   for i = n + 1, #sigBuf do sigBuf[i] = nil end
   return table.concat(sigBuf, ",")
@@ -2176,28 +2190,30 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   ShadowMap.sprites(true)
   -- authored figures cast too, for the same reason the flowers do: a
   -- handful of cards per map, and a person with no shadow reads as pasted on
-  eachFigure(state.map, 0, 0, function(mesh, _, caster)
-    ShadowMap.draw(mesh, atlasFor(state.map), ShadowMap.snug(caster))
+  eachFigure(state.map, 0, 0, function(mesh, _, caster, texture)
+    ShadowMap.draw(mesh, texture or atlasFor(state.map), ShadowMap.snug(caster))
   end)
   for _, nb in ipairs(state.neighbors or {}) do
-    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, _, caster)
-      ShadowMap.draw(mesh, atlasFor(nb.map), ShadowMap.snug(caster))
+    eachFigure(nb.map, nb.ox, nb.oy, function(mesh, _, caster, texture)
+      ShadowMap.draw(mesh, texture or atlasFor(nb.map), ShadowMap.snug(caster))
     end)
   end
   for _, p in ipairs(posed) do
-    local def = p.sprite.def
-    -- viewFacing, exactly as the camera draw picks it (see viewFacing for
-    -- why the two passes must agree): in first person the sun's card
-    -- swaps frame as the eye circles, which costs a redraw the signature
-    -- already charges for (FirstPerson.signature) and keeps a card from
-    -- fringing against a mirror-flipped record of itself
-    local frame, mirror = frameFor(def, viewFacing(p), p.phase, p.flip)
-    local mesh = SpriteBillboards.shadowQuad(def, frame)
-    if mesh then
-      ShadowMap.draw(mesh, p.sprite:resolveImage(),
-                     ShadowMap.snug(
-                       Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
-                                            mirror)))
+    if not OverworldStadium.cast(p, ShadowMap) then
+      local def = p.sprite.def
+      -- viewFacing, exactly as the camera draw picks it (see viewFacing for
+      -- why the two passes must agree): in first person the sun's card
+      -- swaps frame as the eye circles, which costs a redraw the signature
+      -- already charges for (FirstPerson.signature) and keeps a card from
+      -- fringing against a mirror-flipped record of itself
+      local frame, mirror = frameFor(def, viewFacing(p), p.phase, p.flip)
+      local mesh = SpriteBillboards.shadowQuad(def, frame)
+      if mesh then
+        ShadowMap.draw(mesh, p.sprite:resolveImage(),
+                       ShadowMap.snug(
+                         Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
+                                              mirror)))
+      end
     end
   end
   ShadowMap.sprites(false)
@@ -2517,6 +2533,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
 
   local posed, me = posesOf(
     state, spriteColors, plan.maps, externalPlayerWalker)
+  OverworldStadium.prepare(posed)
   -- Complete owner-filtered frame demand, before shadows resolve any textures.
   -- An optional visual provider must never enumerate other building residents.
   if type(Voxel3D.preparePokemonFrame) == "function" then

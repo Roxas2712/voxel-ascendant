@@ -65,6 +65,35 @@ function Catalog.presentationDexFor(game, value)
   return dexFor(game, value, Catalog.validPresentationDex)
 end
 
+-- Gen-1 map objects publish exact names/text IDs even when their artwork is
+-- a shared MONSTER/FAIRY/SEEL/POKE_BALL sheet. Resolve that authored identity
+-- before the sprite name (the zoo's Lapras otherwise becomes Seel). Never
+-- infer a species for humans, items or the fossil exhibit.
+local MAP_POKEMON_SPRITES = {
+  SPRITE_MONSTER=true, SPRITE_FAIRY=true, SPRITE_SEEL=true,
+  SPRITE_BIRD=true, SPRITE_BUG=true, SPRITE_SLOWBRO=true,
+  SPRITE_SNORLAX=true, SPRITE_POKE_BALL=true,
+}
+function Catalog.mapSpeciesFor(game, entity)
+  local def = type(entity) == "table" and entity.def
+  if type(def) ~= "table" or not MAP_POKEMON_SPRITES[def.sprite]
+      or def.item or def.trainer or def.trainerClass then return nil end
+  local pokemon = game and game.data and game.data.pokemon
+  if type(pokemon) ~= "table" then return nil end
+  for _, key in ipairs({"name", "text"}) do
+    local name = def[key]
+    if type(name) == "string" then
+      -- Each suffix is matched against an exact species key, including
+      -- NIDORAN_M/F. No approximate matching of names or sprite silhouettes.
+      for at in name:gmatch("_()") do
+        local species = name:sub(at):upper()
+        if pokemon[species] then return species end
+      end
+    end
+  end
+  return nil
+end
+
 function Catalog.isShiny(mon)
   if type(mon) ~= "table" then return false end
   if mon.shiny ~= nil then return mon.shiny == true end
