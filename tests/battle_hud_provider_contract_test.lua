@@ -375,7 +375,8 @@ local function uiScale() return 2 end
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function distanceScale() return 1 end
 local HudRuntime = {}
-]=] .. orasSource:sub(touchStart, touchEnd) .. "\n"
+local function optionChoice(_, fallback) return fallback end
+]=] .. orasSource:sub(assert(orasSource:find("function FloatingHud.positionTextbox(",1,true)), messageRectStart-1) .. "\n" .. orasSource:sub(touchStart, touchEnd) .. "\n"
   .. orasSource:sub(messageRectStart, messageRectEnd) .. [=[
 return FloatingHud, HudRuntime, function() TouchControls.visible=function() return false end end
 ]=], "@actual-mobile-message-control-clearance")
@@ -1198,7 +1199,7 @@ eq(foreignHullProposal.displayedFromCommittedSlots, nil,
 
 local reservedProposal = AttachHud.proposeStatusLatch(
   battle, frameB, true, true, {
-    { playerA[1], playerA[2], playerA[3], playerA[4] },
+    { 0, 0, frameB.pw, frameB.ph },
   })
 eq(reservedProposal.ready, true,
   "reserved-band regression did not keep the owner pair ready")
@@ -1561,6 +1562,32 @@ local offscreen = assert(AttachHud.projectOwnerStatusRect({
 check(offscreen[1] >= 8 and offscreen[1]+offscreen[3] <= 1280-8,
   "outside card was not bounded to the physical safe frame")
 
+-- The Samsung report rejects a ready owner frame repeatedly. A clamped
+-- default card can cover its own tall actor while a clear seat exists below.
+;(function()
+  for _, size in ipairs({{2340,1080},{1080,2340}}) do
+    local w,h=size[1],size[2]
+    local b={player={mon={species='GENGAR'},sprite={}},enemy={mon={species='BLISSEY'},sprite={}}}
+    local shot={pw=w,ph=h,scale=3,testUiScale=3,renderToken=91}
+    shot.actorVisuals={}
+    for _,side in ipairs({'player','enemy'}) do
+      local battler=b[side];local x=side=='player' and 30 or w-330
+      shot.actorVisuals[side]={schema='voxel-ascendant/actor-render/v1',side=side,
+        renderToken=91,battler=battler,mon=battler.mon,modelKey=side,
+        textureToken=battler.sprite,canvas={},view='front',viewportW=w,viewportH=h,
+        head={x=x+150,y=25},hull={x,25,300,450}}
+    end
+    AttachHud._testOptionValues.status_anchor='outside'
+    local reserved={{0,h-220,w,220}}
+    local proposal=AttachHud.proposeStatusLatch(b,shot,true,true,reserved)
+    check(proposal.complete,'Samsung '..w..'x'..h..' solvable status placement declined: '..tostring(proposal.unsafeReason))
+    check(AttachHud.statusLatchFrameSafe(shot,proposal.slots,reserved),'reflow bypassed geometry check')
+    local blocked=AttachHud.proposeStatusLatch(b,shot,true,true,{{0,0,w,h}})
+    check(not blocked.complete,'fully blocked viewport accepted')
+    AttachHud._testOptionValues.status_anchor=nil
+  end
+end)()
+
 -- The three public anchor choices are real geometry contracts, not dead menu
 -- values. Exercise them against an adversarial 1024x768 frame whose player
 -- hull leaves too little room for the former unbounded OUTSIDE placement.
@@ -1606,11 +1633,9 @@ check(offscreen[1] >= 8 and offscreen[1]+offscreen[3] <= 1280-8,
   AttachHud._testOptionValues.status_anchor = nil
 end)()
 
--- Camera preflight and renderer must consume one identical, complete geometry
--- contract.  This real 4:3 failure shape forces the deterministic actor-safe
--- fallback down onto each bottom-flow surface.  With production plate sizes
--- (178x58 / 162x45), the proposal is ready but unsafe; cameraBounds must never
--- publish those rectangles as a supposedly valid moving-camera frame.
+-- Camera and renderer must agree on relocated cards. This 4:3 fixture
+-- previously fell onto the bottom flow and was rejected. Reflow now finds
+-- free seats while retaining the full actor/HUD collision check.
 ;(function()
   local cameraBattle = {
     player={ mon={ species="SNORLAX" }, sprite={} },
@@ -1652,16 +1677,19 @@ end)()
       cameraBattle, cameraShot, true, true, { flow.rect })
     eq(proposal.ready, true,
       flow.phase .. " status proposal was not ready")
-    eq(proposal.safe, false,
-      flow.phase .. " fixture no longer intersects its reserved bottom HUD")
-    eq(proposal.complete, false,
-      flow.phase .. " unsafe status proposal unexpectedly became complete")
-
+    eq(proposal.complete, true, flow.phase .. " clear alternate seats were rejected")
+    check(AttachHud.statusLatchFrameSafe(cameraShot,proposal.slots,{flow.rect}),
+      flow.phase .. " relocated cards still collide")
     local bounds, reason = AttachHud.cameraBounds(cameraBattle, cameraShot)
-    eq(bounds, nil,
-      flow.phase .. " published unsafe status camera bounds")
-    eq(reason, "owner-render-unsafe",
-      flow.phase .. " unsafe camera-bounds reason drifted")
+    check(bounds ~= nil, flow.phase .. " safe camera bounds rejected: "..tostring(reason))
+    for _,rect in ipairs(bounds.reserved) do
+      local side=rect.id=="player-status" and "player" or rect.id=="enemy-status" and "enemy"
+      if side then
+        local expected=proposal.slots[side].rect
+        eq(rect.x,expected[1],"camera/render reflow x differs")
+        eq(rect.y,expected[2],"camera/render reflow y differs")
+      end
+    end
   end
   AttachHud._testOptionValues.status_anchor = nil
 end)()
@@ -1861,7 +1889,9 @@ local SAFE = { 12, 44, 366, 766 }
 love.graphics.getDimensions = function() return CURRENT_W, CURRENT_H end
 love.window.getSafeArea = function() return unpack(SAFE) end
 local function uiScale() return CURRENT_SCALE end
+local function optionChoice(_,fallback) return fallback end
 ]] .. orasSource:sub(safeStart, safeEnd)
+   .. "\n" .. orasSource:sub(assert(orasSource:find("function FloatingHud.configureControls(",1,true)),dockStart-1)
    .. "\n" .. orasSource:sub(dockStart, dockEnd)
    .. "\n" .. [[return FloatingHud, function(w, h, scale, safe)
   CURRENT_W, CURRENT_H, CURRENT_SCALE = w, h, scale

@@ -2609,6 +2609,61 @@ function FloatingHud.statusLatchFrameSafe(shot, slots, reserved)
   return true
 end
 
+-- A default outside card clamped at a display edge can cover its own actor.
+-- Search a bounded set of alternate seats before asking the camera to move.
+-- Keep dimensions, exact owner receipts and every collision gate unchanged.
+function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
+  local left,top,right,bottom=FloatingHud.safeInsets(shot)
+  local pad=math.max(8,math.floor(math.min(shot.pw,shot.ph)*.012))+1
+  local choices={}
+  for _,side in ipairs({"player","enemy"}) do
+    local slot=slots[side]
+    if slot then
+      -- Never relocate a retained card during an intentionally hidden actor frame.
+      if not (shot.actorVisuals and shot.actorVisuals[side]) then return nil end
+      local r=slot.rect
+      local minX,minY=(left or 0)+pad,(top or 0)+pad
+      local maxX,maxY=shot.pw-(right or 0)-pad-r[3],shot.ph-(bottom or 0)-pad-r[4]
+      if maxX<minX or maxY<minY then return nil end
+      local xs,ys={r[1],minX,maxX},{r[2],minY,maxY}
+      for _,actor in pairs(shot.actorVisuals or {}) do
+        local h=actor.hull
+        if type(h)=="table" then
+          xs[#xs+1]=h[1]-r[3]-pad;xs[#xs+1]=h[1]+h[3]+pad
+          ys[#ys+1]=h[2]-r[4]-pad;ys[#ys+1]=h[2]+h[4]+pad
+        end
+      end
+      local list,seen={},{}
+      for _,x in ipairs(xs) do for _,y in ipairs(ys) do
+        x,y=clamp(x,minX,maxX),clamp(y,minY,maxY)
+        local key=tostring(x)..":"..tostring(y)
+        if not seen[key] then
+          seen[key]=true
+          local candidate={}
+          for k,v in pairs(slot) do candidate[k]=v end
+          candidate.rect={x,y,r[3],r[4]}
+          if FloatingHud.statusLatchFrameSafe(shot,{[side]=candidate},reserved) then
+            list[#list+1]={slot=candidate,distance=(x-r[1])^2+(y-r[2])^2}
+          end
+        end
+      end end
+      table.sort(list,function(a,b)
+        if a.distance~=b.distance then return a.distance<b.distance end
+        if a.slot.rect[2]~=b.slot.rect[2] then return a.slot.rect[2]<b.slot.rect[2] end
+        return a.slot.rect[1]<b.slot.rect[1]
+      end)
+      if #list==0 then return nil end
+      choices[side]=list
+    else choices[side]={{}} end
+  end
+  for pi=1,math.min(12,#choices.player) do
+    for ei=1,math.min(12,#choices.enemy) do
+      local pair={player=choices.player[pi].slot,enemy=choices.enemy[ei].slot}
+      if FloatingHud.statusLatchFrameSafe(shot,pair,reserved) then return pair end
+    end
+  end
+end
+
 function FloatingHud.proposeStatusLatch(
     battle, shot, playerLive, enemyLive, reserved)
   local state = battle and FloatingHud.statusAttachmentStates[battle] or nil
@@ -2670,6 +2725,18 @@ function FloatingHud.proposeStatusLatch(
   if ready then
     safe, unsafeReason = FloatingHud.statusLatchFrameSafe(
       shot, slots, reserved)
+    if not safe and optionChoice("status_anchor","outside"):lower()=="outside"
+        and (unsafeReason=="player-status-over-player-actor"
+          or unsafeReason=="enemy-status-over-enemy-actor"
+          or unsafeReason=="player-status-over-reserved-hud"
+          or unsafeReason=="enemy-status-over-reserved-hud") then
+      local recovered=FloatingHud.reflowOwnerStatus(shot,slots,reserved)
+      if recovered then
+        slots=recovered
+        for side in pairs(slots) do receiptRefresh[side]=true end
+        safe,unsafeReason=FloatingHud.statusLatchFrameSafe(shot,slots,reserved)
+      end
+    end
   end
   return {
     battle=battle, shot=shot, viewportKey=key, state=state,
