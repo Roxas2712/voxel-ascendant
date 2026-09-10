@@ -8496,7 +8496,29 @@ function FloatingHud.cameraBounds(battle, shot)
     -- Camera and renderer share the same current head-projected rectangles.
     -- An unsafe proposal is a seat rejection; no stale card may be retained
     -- over a moving Pokemon merely to keep the provider nominally complete.
-    if not proposal.complete then return nil, "owner-render-unsafe" end
+    if not proposal.complete then
+      -- Pass bounded geometry to the existing timeout report, not every probe.
+      local function rect(r)
+        if type(r)~="table" then return "none" end
+        return string.format("%.1f,%.1f,%.1f,%.1f",tonumber(r[1]) or 0,
+          tonumber(r[2]) or 0,tonumber(r[3]) or 0,tonumber(r[4]) or 0)
+      end
+      local function side(which)
+        local visual=shot.actorVisuals and shot.actorVisuals[which]
+        local slot=proposal.slots[which]
+        return which.." card="..rect(slot and slot.rect).." hull="..rect(visual and visual.hull)
+      end
+      local bands={}
+      for i=1,math.min(4,#statusReserved) do bands[#bands+1]=rect(statusReserved[i]) end
+      return nil,"owner-render-unsafe",{
+        reason=proposal.unsafeReason or "unknown-status-rejection",
+        camera=side("player").."; "..side("enemy"),
+        source="reserved="..table.concat(bands,";").." safe="..rect({FloatingHud.safeInsets(shot)}),
+        mode=tostring(optionChoice("status_anchor","outside")),
+        status=string.format("viewport=%.0fx%.0f scale=%.2f phase=%s",shot.pw,shot.ph,
+          uiScale(shot),tostring(battle.phase)),
+      }
+    end
     local slots = proposal.slots
     for _, side in ipairs({ "player", "enemy" }) do
       local slot = slots[side]

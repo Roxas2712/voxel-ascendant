@@ -1739,11 +1739,16 @@ end)()
     "CORNERS card overlapping Safari balls was marked safe")
   eq(reserved.complete, false,
     "CORNERS card overlapping Safari balls was marked complete")
-  local rejected, rejectReason =
+  local rejected, rejectReason, rejectDetail =
     AttachHud.cameraBounds(safariBattle, safariShot)
   eq(rejected, nil, "unsafe Safari CORNERS bounds were published")
   eq(rejectReason, "owner-render-unsafe",
     "unsafe Safari CORNERS reason drifted")
+  eq(rejectDetail.reason,"enemy-status-over-reserved-hud","specific rejection lost")
+  eq(rejectDetail.mode,"corners","anchor mode lost")
+  check(rejectDetail.camera:find("enemy card=",1,true),"card geometry missing")
+  check(rejectDetail.source:find("reserved=",1,true),"HUD reservations missing")
+  check(rejectDetail.status:find("viewport=412x915",1,true),"viewport missing")
 
   AttachHud._testOptionValues.status_anchor = "outside"
   local clear = AttachHud.proposeStatusLatch(
