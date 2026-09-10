@@ -261,6 +261,11 @@ local appliedDistance = nil
 local activeArena = nil
 local activeBattle = nil
 local lastScreenSafe = nil
+-- DISCS actors change their visible bounds as they animate. Keep the optical
+-- room a verified recovery needed for this encounter, rather than alternating
+-- between its wide lens and the ordinary lens on each narrow/wide idle pose.
+-- This is a transient floor, not the saved zoom or a frozen camera position.
+local portableFovFloor = nil
 -- An owner may need to see one exact rendered candidate before it can publish
 -- the replacement actor/status receipt used by the final safety evaluator.
 -- That circular hand-off gets one provisional frame per exact arena/battle
@@ -306,6 +311,7 @@ function BattleCam.setScreenSafetyEvaluator(evaluator)
   -- changes that decision, so the next update must inspect it again.
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   lastScreenSafe = nil
+  portableFovFloor = nil
   pendingScreenProbe = nil
   return true
 end
@@ -322,6 +328,7 @@ function BattleCam.noteViewport(w, h)
   BattleCam.viewportW, BattleCam.viewportH = w, h
   if not changed then return false end
   lastScreenSafe, pendingScreenProbe = nil, nil
+  portableFovFloor = nil
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   BattleCam.directorPathArena = nil
   BattleCam.directorPathProven = false
@@ -357,6 +364,7 @@ function BattleCam.applyDistanceSetting(force)
   if not force and appliedDistance == wanted then return false end
   BattleCam.zoom, BattleCam.zoomGoal = wanted, wanted
   appliedDistance = wanted
+  portableFovFloor = nil
   return true
 end
 
@@ -514,6 +522,7 @@ function BattleCam.reset()
   activeArena = nil
   activeBattle = nil
   lastScreenSafe = nil
+  portableFovFloor = nil
   pendingScreenProbe = nil
   pendingManualRollback = nil
   BattleCam.presentationFit = 1
@@ -1260,7 +1269,8 @@ end
 -- DISCS has no terrain corridors to solve, but a new large battler still
 -- needs a readable camera. Keep both platforms/actors fixed and test a small
 -- set of bearings against the same final HUD/actor evaluator.
-local function renderedPortableFrameRescue(arena, groundY, camera, pitch, context)
+local function renderedPortableFrameRescue(arena, groundY, camera, pitch, context,
+                                           minimumFov)
   if not (arena and (arena.discs or arena.arenaStyle) and camera)
       or (context and context.manual) then return nil end
   if sameScreenOwner(lastScreenSafe, arena, activeBattle) then
@@ -1289,7 +1299,8 @@ local function renderedPortableFrameRescue(arena, groundY, camera, pitch, contex
       candidate.eye[1] = camera.focus[1] + (x*c - z*s)*dolly
       candidate.eye[2] = camera.focus[2] + (camera.eye[2]-camera.focus[2])*dolly
       candidate.eye[3] = camera.focus[3] + (x*s + z*c)*dolly
-      candidate.fov = 2 * math.atan(math.tan(base*.5)*factor)
+      candidate.fov = math.max(minimumFov or 0,
+        2 * math.atan(math.tan(base*.5)*factor))
       local safe = screenSafeCamera(activeBattle, arena, groundY, candidate, {
         phase="portable-rendered-recovery",actual=true,
       })
@@ -1328,6 +1339,15 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
     subject=BattleCam.directorSubject, actual=true,
     manual=BattleCam.directorClock < BattleCam.directorManualUntil,
   }
+  local uncorrectedCamera = camera
+  if context.manual then portableFovFloor = nil end
+  local holdPortableLens = arena.discs and not authoredArena(arena)
+    and not context.manual
+  if holdPortableLens and portableFovFloor
+      and camera.fov < portableFovFloor then
+    camera = copyCamera(camera)
+    camera.fov = portableFovFloor
+  end
   local safe, reason = screenSafeCamera(
     activeBattle, arena, groundY, camera, context)
   if safe == true then
@@ -1346,8 +1366,12 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
 
   if safe == false then
     local portable, portablePitch = renderedPortableFrameRescue(
-      arena, groundY, camera, pitch, context)
+      arena, groundY, uncorrectedCamera, pitch, context,
+      holdPortableLens and portableFovFloor or nil)
     if portable then
+      if holdPortableLens then
+        portableFovFloor = math.max(portableFovFloor or 0, portable.fov)
+      end
       BattleCam.screenSafetyOK = true
       BattleCam.screenSafetyReason = "portable-rendered-recovery"
       BattleCam.screenSafetyFallbackUsed = true
@@ -1922,6 +1946,7 @@ function BattleCam.update(dt, arena, battle, groundY)
     -- arena/BattleState pair. In particular, A -> B -> A must not resurrect an
     -- old A receipt, and a BattleState __eq alias is still a different owner.
     lastScreenSafe = nil
+    portableFovFloor = nil
     pendingScreenProbe = nil
     pendingManualRollback = nil
     BattleCam.screenSafetyFallbackUsed = false
