@@ -143,6 +143,8 @@ local COSMETIC_REAR_DOOR_MAPS = {
   SAFARI_ZONE_WEST = true,
 }
 
+local GateDoors = V.require("GateDoors")
+
 local function rearFacadeDoor(map, tx, ty, bw, bh, t)
   local def = map and (map.def or map)
   local tileset = map and map.tileset
@@ -170,6 +172,7 @@ local function rearFacadeDoor(map, tx, ty, bw, bh, t)
   end
   if doorCol == nil or doorCol % 2 ~= 0 then return nil end
 
+  local gateNorth = GateDoors.forBuilding(map, tx, ty, bw, bh).north
   local wx, wy = (tx + doorCol) / 2, ty / 2 - 1
   local hit, hits = nil, 0
   for _, warp in ipairs(def.warps or {}) do
@@ -179,8 +182,9 @@ local function rearFacadeDoor(map, tx, ty, bw, bh, t)
     end
   end
   local functional = hits == 1 and hit ~= nil
+  if gateNorth then hit, functional = gateNorth.warp, true end
   local mapId = tostring(def.id or map.id or "")
-  if not functional and not COSMETIC_REAR_DOOR_MAPS[mapId] then
+  if not functional and not gateNorth and not COSMETIC_REAR_DOOR_MAPS[mapId] then
     return nil
   end
   local displayWidth = t.rearDoorWidth
@@ -189,8 +193,9 @@ local function rearFacadeDoor(map, tx, ty, bw, bh, t)
     displayWidth = 16
   end
   return {
-    x = doorCol * 8, z = -0.02,
-    displayWidth = displayWidth,
+    x = gateNorth and gateNorth.x or doorCol * 8, z = -0.02,
+    displayWidth = gateNorth and gateNorth.width or displayWidth,
+    gateEntrance = gateNorth ~= nil,
     tiles = { top[doorCol + 1], top[doorCol + 2],
               bottom[doorCol + 1], bottom[doorCol + 2] },
     tileset = tilesetId,
@@ -2128,6 +2133,7 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
     heightScale = quads.heightScale or 1,
     doorGroundSamples = doorGroundSamples,
     northDoor = rearFacadeDoor(map, tx, ty, bw, bh, t),
+    gateDoors = GateDoors.forBuilding(map, tx, ty, bw, bh),
   }
 end
 

@@ -1677,6 +1677,31 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
       -- of the rear so they replace the plain pixels without a coplanar
       -- fight. This stays in the existing terrain/building sink: four quads,
       -- zero new draw, texture, VRAM, collision or warp state.
+      -- Stand native gate doors at every mapped entrance. South stamps
+      -- also keep recessed door art visible on the synthesized facade.
+      for _,sideDoor in ipairs(st.gateDoors or {}) do
+        local scale = st.heightScale or 1
+        for row=0,1 do for col=0,1 do
+          Budget.tick()
+          local x=st.mx+sideDoor.x
+          local z=st.mz+sideDoor.z+col*sideDoor.width/2
+          local y=base+(1-row)*8*scale
+          local c={{x,y,z},{x,y,z+sideDoor.width/2},
+            {x,y+8*scale,z+sideDoor.width/2},{x,y+8*scale,z}}
+          if sideDoor.side=="east" then c={c[2],c[1],c[4],c[3]} end
+          if sideDoor.side=="south" then
+            local sx=x+col*sideDoor.width/2
+            local sz=st.mz+sideDoor.z
+            c={{sx,y,sz},{sx+sideDoor.width/2,y,sz},
+              {sx+sideDoor.width/2,y+8*scale,sz},{sx,y+8*scale,sz}}
+          end
+          local tileCol=sideDoor.side=="east" and 1-col or col
+          local u0,u1,v0,v1=uvRect(sideDoor.tiles[row*2+tileCol+1],0,8)
+          push(c,{{u0,v1},{u1,v1},{u1,v0},{u0,v0}},
+            objectShade(groundShades(c,Voxel3D.FACE_SHADE[sideDoor.side=="south" and 5 or (sideDoor.side=="west" and 2 or 1)],base)))
+        end end
+      end
+
       local door = st.northDoor
       if door and type(door.tiles) == "table" and #door.tiles == 4 then
         local z = st.mz + door.z
@@ -1687,11 +1712,11 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         local displayWidth = door.displayWidth
         if type(displayWidth) ~= "number"
            or displayWidth ~= math.floor(displayWidth)
-           or displayWidth < 8 or displayWidth > 16 then
+           or displayWidth < 8 or displayWidth > (door.gateEntrance and 32 or 16) then
           displayWidth = 16
         end
         local columnWidth = displayWidth / 2
-        local doorInset = (16 - displayWidth) / 2
+        local doorInset = door.gateEntrance and 0 or (16 - displayWidth) / 2
         local heightScale = st.heightScale
         if type(heightScale) ~= "number" or heightScale ~= heightScale
            or heightScale < 1 or heightScale > 2
@@ -1706,7 +1731,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
             local c = { { x0 + columnWidth, y0, z }, { x0, y0, z },
                         { x0, y0 + 8 * heightScale, z },
                         { x0 + columnWidth, y0 + 8 * heightScale, z } }
-            local u0, u1, v0, v1 = uvRect(door.tiles[row * 2 + col + 1],
+            local tileCol = door.gateEntrance and 1 - col or col
+            local u0, u1, v0, v1 = uvRect(door.tiles[row * 2 + tileCol + 1],
                                            0, 8)
             local uv = { { u0, v1 }, { u1, v1 },
                          { u1, v0 }, { u0, v0 } }
