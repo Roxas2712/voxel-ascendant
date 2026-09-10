@@ -50,6 +50,7 @@ local SECTION_KEYS = {
   skins = {
     "pokemonUiPartyMenu", "pokemonUiBattleParty", "pokemonUiLegacyBank",
     "battleHudStyle",
+    "battle_textbox_x", "battle_textbox_y",
     "battle_controls_scale", "battle_controls_x",
     "battle_controls_y", "battle_controls_shape", "battle_controls_transparency",
     "vascMenuSkin", "qol_ui_skin",

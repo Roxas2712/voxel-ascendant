@@ -129,6 +129,8 @@ local SETTING_HELP_DE = {
     .. "Komfortdaten liefern; nur ein ausdrücklicher HUD-Claim übernimmt.",
   hud_language = "Sprache der VASC-ORAS-HUD. AUTO folgt Universal German "
     .. "beziehungsweise der aktiven Spielsprache.",
+  battle_textbox_x = "Kampf-Textbox seitlich verschieben. Standard: 0%.",
+  battle_textbox_y = "Kampf-Textbox vertikal verschieben. Negative Werte: nach oben. Standard: 0%.",
   battle_controls_scale = "Größe nur der Kampfbuttons und Attackenauswahl. Standard: 100%.",
   battle_controls_x = "Buttons seitlich verschieben. Standard: 0%.",
   battle_controls_y = "Buttons über die Touchsteuerung anheben. Standard: 0%.",
@@ -237,6 +239,7 @@ local SECTION_DEFS = {
       battles=true, arenaArt=true, diskArt=true, battleGrid=true,
       battleHudStyle=true,
       hud_language=true, hud_scale=true,
+      battle_textbox_x=true, battle_textbox_y=true,
       battle_controls_scale=true, battle_controls_x=true,
       battle_controls_y=true, battle_controls_transparency=true, battle_controls_shape=true,
       oras_status_glass=true, oras_text_glass=true, status_anchor=true,
@@ -575,6 +578,7 @@ local SETTING_LABEL_DE = {
   pokedexStyle="POKéDEX-DESIGN",
   modernDexSpriteSource="DEX-BILDQUELLE", ascBoxDensity="BOX-DICHTE",
   battleHudStyle="KAMPF-HUD", hud_language="HUD-SPRACHE",
+  battle_textbox_x="TEXTBOX X", battle_textbox_y="TEXTBOX Y",
   battle_controls_scale="BUTTON-GRÖSSE", battle_controls_x="BUTTONS X",
   battle_controls_transparency="BUTTON-TRANSPARENZ",
   battle_controls_y="BUTTONS ANHEBEN", battle_controls_shape="BUTTON-FORM",
@@ -1342,6 +1346,17 @@ function VascMenu.resetBattleControls(game)
   return true
 end
 
+function VascMenu.resetBattleTextbox(game)
+  local keys = {battle_textbox_x=true, battle_textbox_y=true}
+  for _, entry in ipairs(config.settings or {}) do
+    local setting = type(entry) == "table" and entry[1] or nil
+    if setting and keys[setting.key] and type(setting.setValue) == "function" then
+      setting:setValue(setting.values[setting.defaultIndex or 1], game)
+    end
+  end
+  return true
+end
+
 local function sectionRows(mod, game, section)
   local rows = {}
   appendPipelineRows(rows, game, section, mod)
@@ -1349,6 +1364,16 @@ local function sectionRows(mod, game, section)
   appendActionRows(rows, section, mod, game)
   if #rows == 0 then
     rows[1] = { label=uiLabel(mod, "NO SETTINGS"), right="N/A" }
+  end
+  for _, row in ipairs(rows) do
+    if row.settingKey == "battle_textbox_y" then
+      rows[#rows+1] = {
+        label=languageCode(mod)=="de" and "TEXTBOX ZURÜCKSETZEN" or "RESET TEXTBOX TO DEFAULT",
+        action="resetBattleTextbox", right="A",
+        help="Reset only the battle textbox position to its default.",
+      }
+      break
+    end
   end
   for _, row in ipairs(rows) do
     if row.settingKey == "battle_controls_shape" then
@@ -1425,6 +1450,11 @@ local function newSettings(mod, game, opts)
       end
       item.right = valueOk and tostring(value or "CHOOSE") or "UNAVAILABLE"
       return ok and chosen ~= false
+    end
+    if item.action == "resetBattleTextbox" then
+      VascMenu.resetBattleTextbox(game)
+      refreshConditionalRows(mod, active, game, section, "battle_textbox_y")
+      return
     end
     if item.action == "resetBattleControls" then
       VascMenu.resetBattleControls(game)

@@ -1842,7 +1842,18 @@ end
 
 M.touchStartSelectTop = touchStartSelectTop
 
-local function messageDockRect(ww, wh)
+function M.positionTextbox(ww, wh, rect, screen)
+  local dx = tonumber(optionValue(screen, "battle_textbox_x", 0)) or 0
+  local dy = tonumber(optionValue(screen, "battle_textbox_y", 0)) or 0
+  if dx ~= dx then dx = 0 end
+  if dy ~= dy then dy = 0 end
+  if dx == 0 and dy == 0 then return rect end
+  rect[1] = math.max(0, math.min(math.max(0, ww-rect[3]), rect[1]+ww*math.max(-60,math.min(60,dx))/100))
+  rect[2] = math.max(0, math.min(math.max(0, wh-rect[4]), rect[2]+wh*math.max(-60,math.min(60,dy))/100))
+  return rect
+end
+
+local function messageDockRect(ww, wh, screen)
   local logicalW, logicalH = 288, 64
   local insetLeft, _, insetRight, insetBottom = viewportSafeInsets(ww, wh)
   local safe = math.max(7, math.floor(math.min(ww, wh) * .024))
@@ -1861,8 +1872,8 @@ local function messageDockRect(ww, wh)
     local gutter = math.max(6, math.floor(math.min(ww, wh) * .015))
     y = math.max(safe, math.min(y, controlTop - gutter - h))
   end
-  return { left + (availableW - w) * .5, y, w, h,
-    bottomInset=0 }, drawScale, logicalW, logicalH
+  return M.positionTextbox(ww, wh, { left + (availableW - w) * .5, y, w, h,
+    bottomInset=0 }, screen), drawScale, logicalW, logicalH
 end
 
 M.messageDockRect = messageDockRect
@@ -3328,7 +3339,7 @@ local function drawMessage(screen, ww, wh)
   local text = cleanText(screen and screen.message)
   if text == "" then return end
   local G = love.graphics
-  local rect, drawScale = messageDockRect(ww, wh)
+  local rect, drawScale = messageDockRect(ww, wh, screen)
   local x, y, w, h = rect[1], rect[2], rect[3], rect[4]
   local r = math.max(10, wh * 0.016)
   -- No second full-size dark plate underneath: overlapping .48 and .82
@@ -3370,8 +3381,8 @@ local function drawMessage(screen, ww, wh)
   G.printf(text, x + leftPad, lineY, wrapW, "center")
 end
 
-local function yesNoPromptRect(ww, wh)
-  local message = messageDockRect(ww, wh)
+local function yesNoPromptRect(ww, wh, screen)
+  local message = messageDockRect(ww, wh, screen)
   local messageX, messageY, messageW = message[1], message[2], message[3]
   local insetLeft, _, insetRight = viewportSafeInsets(ww, wh)
   local gap = math.max(10, math.min(ww, wh) * 0.014)
@@ -3400,7 +3411,7 @@ local function drawYesNoPrompt(screen, ww, wh)
   local selected = promptSelection(screen)
   if not selected then return false end
   local G = love.graphics
-  local rect = yesNoPromptRect(ww, wh)
+  local rect = yesNoPromptRect(ww, wh, screen)
   local x, y, w, h = rect[1], rect[2], rect[3], rect[4]
   local r = math.max(9, h * 0.12)
   G.setColor(0, 0, 0, 0.48)
@@ -3586,10 +3597,10 @@ function M.cameraBounds(screen, shot)
   elseif commandReady(screen) then
     add("commands", commandCameraRect(ww, wh, layout, screen))
   elseif screen.message then
-    add("message", messageDockRect(ww, wh))
+    add("message", messageDockRect(ww, wh, screen))
     if promptSelection(screen)
         and (tonumber(screen.messageTimer) or 0) <= 0 then
-      add("yes-no", yesNoPromptRect(ww, wh))
+      add("yes-no", yesNoPromptRect(ww, wh, screen))
     end
   else
     -- drawPhaseHint's compact live-control strip.

@@ -1,3 +1,13 @@
+# Voxel Ascendant 3.0.20 — Battle textbox positioning
+
+Added independent TEXTBOX X and TEXTBOX Y settings in Gen 1 battle settings and Gen 2 Skins & Overlays. Move the battle dialogue and its frame horizontally or vertically; negative Y moves up. The Yes/No prompt follows the textbox. Positions stay within the viewport.
+
+Default positions are unchanged. RESET TEXTBOX TO DEFAULT resets only the textbox position; the separate button reset preserves it. Includes all 3.0.19 battle controls, transparency and earlier fixes.
+
+Validated in native LÖVE with configuration, viewport bounds, independent reset, button input, Safari ownership and Gen 2 UI regressions. Physical phone/tablet playtesting remains outstanding.
+
+---
+
 # Voxel Ascendant 3.0.19 — Personal battle controls
 
 Configure battle button size, horizontal position, lift and transparency (0–90%) in Gen 1 battle settings or Gen 2 Skins & Overlays. Existing Card positions and default artwork remain unchanged; Reset Buttons restores only the personal button settings.

@@ -368,6 +368,12 @@ end
 -- ---------------------------------------------------------------------------
 
 if not INTEGRATED_KASC and not INTEGRATED_VASC then mod.options:define({
+  { key="battle_textbox_x", type="choice", label="TEXTBOX X", default=0,
+    choices={{"-60%", -60}, {"-55%", -55}, {"-50%", -50}, {"-45%", -45}, {"-40%", -40}, {"-35%", -35}, {"-30%", -30}, {"-25%", -25}, {"-20%", -20}, {"-15%", -15}, {"-10%", -10}, {"-5%", -5}, {"0%", 0}, {"+5%", 5}, {"+10%", 10}, {"+15%", 15}, {"+20%", 20}, {"+25%", 25}, {"+30%", 30}, {"+35%", 35}, {"+40%", 40}, {"+45%", 45}, {"+50%", 50}, {"+55%", 55}, {"+60%", 60}},
+    description="Move the battle textbox horizontally. Default: 0%." },
+  { key="battle_textbox_y", type="choice", label="TEXTBOX Y", default=0,
+    choices={{"-60%", -60}, {"-55%", -55}, {"-50%", -50}, {"-45%", -45}, {"-40%", -40}, {"-35%", -35}, {"-30%", -30}, {"-25%", -25}, {"-20%", -20}, {"-15%", -15}, {"-10%", -10}, {"-5%", -5}, {"0%", 0}, {"+5%", 5}, {"+10%", 10}, {"+15%", 15}, {"+20%", 20}, {"+25%", 25}, {"+30%", 30}, {"+35%", 35}, {"+40%", 40}, {"+45%", 45}, {"+50%", 50}, {"+55%", 55}, {"+60%", 60}},
+    description="Move the battle textbox vertically (negative = up). Default: 0%." },
   { key="battle_controls_scale", type="choice", label="BUTTON SIZE", default=1,
     choices={{"50%", 0.5}, {"75%", 0.75}, {"90%", 0.9}, {"100%", 1}, {"110%", 1.1}, {"125%", 1.25}, {"150%", 1.5}},
     description="Scale battle buttons and move selection independently. Default: 100%." },
@@ -5789,6 +5795,17 @@ local function drawPartyPanel(menu, battle, shot)
   return true
 end
 
+function FloatingHud.positionTextbox(ww, wh, rect)
+  local dx = tonumber(optionChoice("battle_textbox_x", 0)) or 0
+  local dy = tonumber(optionChoice("battle_textbox_y", 0)) or 0
+  if dx ~= dx then dx = 0 end
+  if dy ~= dy then dy = 0 end
+  if dx == 0 and dy == 0 then return rect end
+  rect[1] = math.max(0, math.min(math.max(0, ww-rect[3]), rect[1]+ww*math.max(-60,math.min(60,dx))/100))
+  rect[2] = math.max(0, math.min(math.max(0, wh-rect[4]), rect[2]+wh*math.max(-60,math.min(60,dy))/100))
+  return rect
+end
+
 function HudRuntime.messageRectFor(shot)
   if not shot then return nil end
   local logicalW, logicalH = FloatingHud.panelLogicalSize("message")
@@ -5859,7 +5876,7 @@ function HudRuntime.messageRectFor(shot)
         x, y = left + (availableW - w) * .5, bottom - h
       end
     end
-    return { x, y, w, h }, drawScale, logicalW, logicalH
+    return FloatingHud.positionTextbox(shot.pw, shot.ph, { x, y, w, h }), drawScale, logicalW, logicalH
   end
 
   local s = tonumber(shot.scale) or 1
@@ -5886,7 +5903,7 @@ function HudRuntime.messageRectFor(shot)
 
   x = clamp(x, margin, math.max(margin, shot.pw - w - margin))
   y = clamp(y, margin, math.max(margin, shot.ph - h - margin))
-  return { x, y, w, h }, drawScale, logicalW, logicalH
+  return FloatingHud.positionTextbox(shot.pw, shot.ph, { x, y, w, h }), drawScale, logicalW, logicalH
 end
 
 function HudRuntime.mapPanelHits(rect, scale, logicalHits)

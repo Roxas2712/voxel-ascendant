@@ -118,3 +118,37 @@ for _,side in ipairs({'command','fight','learn','player','enemy','message'})do
  assert(math.abs(drawnAlpha-expected)<1e-8,'transparency scope: '..side)
 end
 print('PASS real Gen1 compositor fades only controls; status cards and messages remain unchanged')
+
+extract('battle_hud_oras.lua','function FloatingHud.positionTextbox','function HudRuntime.messageRectFor',
+ {FloatingHud=F,optionChoice=read})
+extract('gen2/lib/BattleControllerUI.lua','function M.positionTextbox','local function messageDockRect',
+ {M=M,optionValue=function(_,...)return read(...)end})
+for _,viewport in ipairs({{390,844},{844,390},{1024,768},{2048,1536}})do
+ local w,h=unpack(viewport)
+ for _,api in ipairs({F,M})do
+  local rect={w*.1,h*.8,w*.8,h*.2,bottomInset=0}
+  values={};assert(api.positionTextbox(w,h,rect)==rect and rect[1]==w*.1 and rect[2]==h*.8)
+  values={battle_textbox_x=5,battle_textbox_y=-25}
+  local moved=api.positionTextbox(w,h,rect)
+  assert(math.abs(moved[1]-w*.15)<1e-8 and math.abs(moved[2]-h*.55)<1e-8)
+  assert(moved[3]==w*.8 and moved[4]==h*.2 and moved.bottomInset==0)
+  for _,x in ipairs({-60,60,999,0/0})do
+   values={battle_textbox_x=x,battle_textbox_y=x}
+   local pos=api.positionTextbox(w,h,{w*.1,h*.8,w*.8,h*.2})
+   assert(pos[1]>=0 and pos[2]>=0 and pos[1]+pos[3]<=w+1e-8 and pos[2]+pos[4]<=h+1e-8)
+  end
+ end
+end
+assert(defaults.battle_textbox_x==0 and defaults.battle_textbox_y==0)
+for _,path in ipairs({'lib/VascMenu.lua','lib/gen2_a21_shared/VascMenu.lua'})do
+ local rows={}
+ for _,key in ipairs({'battle_textbox_x','battle_textbox_y','battle_controls_x','player_hud_x'})do
+  rows[#rows+1]={{key=key,current=35,values={0},defaultIndex=1,setValue=function(self,v)self.current=v end}}
+ end
+ local menu={}
+ extract(path,'function VascMenu.resetBattleControls','local function sectionRows',{VascMenu=menu,config={settings=rows}})
+ menu.resetBattleControls({});assert(rows[1][1].current==35 and rows[2][1].current==35)
+ rows[3][1].current=25;menu.resetBattleTextbox({})
+ assert(rows[1][1].current==0 and rows[2][1].current==0 and rows[3][1].current==25 and rows[4][1].current==35)
+end
+print('PASS textbox translation, viewport bounds, exact defaults and independent resets in both generations')

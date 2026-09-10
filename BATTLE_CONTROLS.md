@@ -16,3 +16,5 @@ The group includes the conditional Mega button. Gen 1 retains its existing direc
 The completed artwork is a reconstruction from the existing EN/DE sprite references, generated with Imagegen; it is not a newly recovered official sprite rip. Existing asset files are byte-for-byte unchanged. New source art is stored under `assets/hud/oras/completed`. The renderer removes the generated magenta background and crops its empty margins once when loading each completed sprite. The optional GLASS style is separate from the completed original-style artwork.
 
 Validation: LuaJIT compilation in native LÖVE; configuration/viewport/reset/input regression checks; existing command camera bounds, Safari ownership and Gen 2 draw-only UI checks; native LÖVE rendering of original/completed/glass variants including Mega. Physical smartphone/tablet playtesting has not been performed.
+
+Since 3.0.20: **TEXTBOX X / Y** move the battle dialogue independently in 5% viewport steps (−60% to +60%, clamped to screen bounds). Negative Y moves up. Default is 0%. **RESET TEXTBOX TO DEFAULT** resets only these two settings; button and Card settings remain unchanged.

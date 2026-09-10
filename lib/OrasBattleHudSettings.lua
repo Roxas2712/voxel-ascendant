@@ -109,6 +109,11 @@ Settings.enemyYSetting = ModSetting.new(
 Settings.wildDvsSetting = ModSetting.new(
   "wild_dvs", "WILD DVs", { false, true }, { "OFF", "ON" }, false)
 
+Settings.battle_textbox_x = ModSetting.new("battle_textbox_x", "TEXTBOX X",
+  {-60, -55, -50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60}, {"-60%", "-55%", "-50%", "-45%", "-40%", "-35%", "-30%", "-25%", "-20%", "-15%", "-10%", "-5%", "0%", "+5%", "+10%", "+15%", "+20%", "+25%", "+30%", "+35%", "+40%", "+45%", "+50%", "+55%", "+60%"}, 0)
+Settings.battle_textbox_y = ModSetting.new("battle_textbox_y", "TEXTBOX Y",
+  {-60, -55, -50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60}, {"-60%", "-55%", "-50%", "-45%", "-40%", "-35%", "-30%", "-25%", "-20%", "-15%", "-10%", "-5%", "0%", "+5%", "+10%", "+15%", "+20%", "+25%", "+30%", "+35%", "+40%", "+45%", "+50%", "+55%", "+60%"}, 0)
+
 Settings.battle_controls_scale = ModSetting.new("battle_controls_scale", "BUTTON SIZE",
   {0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5}, {"50%", "75%", "90%", "100%", "110%", "125%", "150%"}, 1)
 Settings.battle_controls_x = ModSetting.new("battle_controls_x", "BUTTON X",
@@ -121,6 +126,7 @@ Settings.battle_controls_shape = ModSetting.new("battle_controls_shape", "BUTTON
   {"auto", "original", "round", "glass"}, {"AUTO", "ORIGINAL", "COMPLETE ORAS", "GLASS"}, "auto")
 
 Settings.all = {
+  Settings.battle_textbox_x, Settings.battle_textbox_y,
   Settings.battle_controls_scale,
   Settings.battle_controls_x,
   Settings.battle_controls_y,
