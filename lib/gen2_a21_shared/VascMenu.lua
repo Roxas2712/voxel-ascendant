@@ -1437,6 +1437,33 @@ local function newPerformanceDiagnostics(mod, game)
   return menu
 end
 
+local function supportSendRows(mod)
+  return {
+    {label=languageCode(mod)=="de" and "VASC-LOG SENDEN" or "SEND VASC LOG", action="sendVascSupport",
+      help=languageCode(mod)=="de" and "VASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
+        or "Send VASC evidence including available download errors. Confirm before sending."},
+    {label=languageCode(mod)=="de" and "KASC-LOG SENDEN" or "SEND KASC LOG", action="sendKascSupport",
+      help=languageCode(mod)=="de" and "KASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
+        or "Send KASC evidence including available download errors. Confirm before sending."},
+  }
+end
+local function openSupportSend(mod, game, item)
+  local diagnostics=config.diagnostics
+  local enabled=diagnostics and diagnostics.enabled and diagnostics.enabled(game)
+  if not enabled then item.right="LOCKED";return false end
+  local target=diagnostics
+  if item.action=="sendKascSupport" then
+    local ok,handle=pcall(function()return mod:find("kanto_ascendant")end)
+    target=ok and handle and handle.exports and handle.exports.supportSessionLog or nil
+  end
+  if target and type(target.openSupportSend)=="function" then
+    return target.openSupportSend(game,languageCode(mod)=="de")
+  end
+  return showHelp(mod,game,item.label,languageCode(mod)=="de"
+    and "Der passende Mod mit Support-Versand ist nicht verfügbar."
+    or "The matching mod with support sending is unavailable.")
+end
+
 local function newDiagnostics(mod, game)
   local diagnostics = config.diagnostics
   local digits = { 0, 0, 0, 0 }
@@ -1476,6 +1503,7 @@ local function newDiagnostics(mod, game)
         or "Inspect FPS, frame times, memory, renderer and VASC-Logs.",
     }
   end
+  for _, row in ipairs(supportSendRows(mod)) do rows[#rows+1]=row end
   local function change(item, direction)
     if not (item and item.digit) then return false end
     local index = item.digit
@@ -1521,6 +1549,9 @@ local function newDiagnostics(mod, game)
       end
       item.right = "DENIED"
       return false
+    end
+    if item.action == "sendVascSupport" or item.action == "sendKascSupport" then
+      return openSupportSend(mod, game, item)
     end
     if item.action == "performanceDiagnostics" then
       if not (diagnostics and type(diagnostics.enabled) == "function"

@@ -148,7 +148,13 @@ local function ensureSession()
   return sessionFile
 end
 
+local supportTail, supportTailBytes = {}, 0
 local function append(payload)
+  supportTail[#supportTail + 1] = payload
+  supportTailBytes = supportTailBytes + #payload
+  while supportTailBytes > 1024 * 1024 and #supportTail > 1 do
+    supportTailBytes = supportTailBytes - #table.remove(supportTail, 1)
+  end
   local filesystem = fs()
   local path = ensureSession()
   if not (filesystem and path and type(filesystem.append) == "function")
@@ -176,6 +182,25 @@ function Diagnostics.write(event, fields)
   -- Always-on bounded lifecycle evidence. Diagnostics.enabled() continues to
   -- control the maintainer UI and dangerous QA bypasses, never file creation.
   return append(line(event, fields))
+end
+
+function Diagnostics.supportPayload()
+  local filesystem, path = fs(), ensureSession()
+  local ok, bytes = false, nil
+  if filesystem and path and type(filesystem.read) == "function" then
+    ok, bytes = pcall(filesystem.read, path)
+  end
+  if not ok or type(bytes) ~= "string" or #bytes == 0 then bytes = "VASC Gen2 current-session tail\n" .. table.concat(supportTail) end
+  if type(bytes) ~= "string" or #bytes == 0 then return nil, "no-log" end
+  return bytes
+end
+local supportSender
+function Diagnostics.openSupportSend(explicit, de)
+  if not supportSender then
+    local source = assert(V.mod:read("lib/SupportSend.lua"))
+    supportSender = assert((loadstring or load)(source, "@SupportSend"))().new(V.mod, Diagnostics.supportPayload)
+  end
+  return supportSender.open(explicit, de)
 end
 
 function Diagnostics.setEnabled(explicit, value)

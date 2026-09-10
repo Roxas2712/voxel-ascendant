@@ -1048,6 +1048,26 @@ function Diagnostics.sessionFile()
   return ensureSession()
 end
 
+function Diagnostics.supportPayload()
+  if not Diagnostics.flush("user-send") then return nil, "no-log" end
+  local filesystem, path = fs(), ensureSession()
+  local ok, bytes = false, nil
+  if filesystem and path and type(filesystem.read) == "function" then
+    ok, bytes = pcall(filesystem.read, path)
+  end
+  if not ok then return nil, "no-log" end
+  if type(bytes) ~= "string" or #bytes == 0 then return nil, "no-log" end
+  return bytes
+end
+local supportSender
+function Diagnostics.openSupportSend(explicit, de)
+  if not supportSender then
+    local source = assert(V.mod:read("lib/SupportSend.lua"))
+    supportSender = assert((loadstring or load)(source, "@SupportSend"))().new(V.mod, Diagnostics.supportPayload)
+  end
+  return supportSender.open(explicit, de)
+end
+
 function Diagnostics.sessionId()
   return sharedSessionId()
 end

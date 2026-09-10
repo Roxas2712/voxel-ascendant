@@ -38,7 +38,7 @@ function M.catalog(raw,decode)
 end
 function M.new(d)
   local self={store=d.store,catalog=assert(d.catalog),status="idle",message="",
-    queue={},doneBytes=0,totalBytes=0,changed=false,warnings={}}
+    queue={},doneBytes=0,totalBytes=0,changed=false,warnings={},supportFailures={}}
   local fetch,decode=d.fetch,d.decode
   local receipts,replayed,replayRow=d.receipts,{},nil
   local function boundedAvailable()
@@ -82,6 +82,8 @@ function M.new(d)
   end
   local function fail(reason)
     release();self.status="error";self.message=tostring(reason or "Download failed")
+    self.supportFailures[#self.supportFailures+1]=self.message
+    while #self.supportFailures>8 do table.remove(self.supportFailures,1) end
     self.queue={};self.pending=nil
   end
   local request
