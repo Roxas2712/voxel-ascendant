@@ -1189,13 +1189,12 @@ local foreignHullProposal = AttachHud.proposeStatusLatch(
   battle, foreignHullShot, true, true, {})
 eq(foreignHullProposal.ready, true,
   "foreign-hull regression did not keep the owner pair ready")
-eq(foreignHullProposal.safe, false,
-  "foreign actor hull covering a current card was not unsafe")
-eq(AttachHud.statusSlotsForPresentation(
-  battle, foreignHullProposal, true, true), nil,
-  "current player slot ignored the current enemy actor hull")
-eq(foreignHullProposal.displayedFromCommittedSlots, nil,
-  "foreign actor overlap published a retention receipt")
+eq(foreignHullProposal.safe, true,
+  "free alternate seat for foreign actor collision was not found")
+check(AttachHud.statusLatchFrameSafe(foreignHullShot,foreignHullProposal.slots,{}),
+  "relocated card still covers the foreign actor")
+check(AttachHud.statusSlotsForPresentation(battle,foreignHullProposal,true,true),
+  "safe relocated card was not presented")
 
 local reservedProposal = AttachHud.proposeStatusLatch(
   battle, frameB, true, true, {
@@ -1588,6 +1587,53 @@ check(offscreen[1] >= 8 and offscreen[1]+offscreen[3] <= 1280-8,
   end
 end)()
 
+-- Replay RC2's rejected candidate geometry from the physical S25 Ultra.
+;(function()
+  local b={player={mon={species='CHARIZARD'},sprite={}},enemy={mon={species='ONIX'},sprite={}}}
+  local originalProject,originalInsets=AttachHud.projectOwnerStatusRect,AttachHud.safeInsets
+  for _,size in ipairs({{2340,1080},{1080,2340}}) do
+    local sx,sy=size[1]/2340,size[2]/1080
+    local shot={pw=size[1],ph=size[2],scale=3,testUiScale=3,renderToken=101,actorVisuals={}}
+    local cards={player={106.5*sx,12*sy,702*sx,228.7*sy},enemy={969.6*sx,67.5*sy,702*sx,195*sy}}
+    local hulls={player={822.9*sx,377.4*sy,264*sx,224.5*sy},enemy={1204.8*sx,309*sy,213.6*sx,193.4*sy}}
+    AttachHud.safeInsets=function()return 94.5*sx,0,2.6*sx,0 end
+    for _,side in ipairs({'player','enemy'}) do
+      local battler=b[side];local hull=hulls[side]
+      shot.actorVisuals[side]={schema='voxel-ascendant/actor-render/v1',side=side,
+        renderToken=101,battler=battler,mon=battler.mon,modelKey=side,
+        textureToken=battler.sprite,canvas={},view='front',viewportW=shot.pw,viewportH=shot.ph,
+        head={x=hull[1]+hull[3]/2,y=hull[2]},hull=hull}
+    end
+    -- The report contains exact projected cards, including user offsets.
+    AttachHud.projectOwnerStatusRect=function(_,side)
+      return cards[side],1,cards[side][3],cards[side][4],shot.actorVisuals[side].head
+    end
+    for _,mode in ipairs({'outside','above','corners'}) do
+      AttachHud._testOptionValues.status_anchor=mode
+      for _,flow in ipairs({
+        {phase='messages',rect={616*sx,25*sy,1200*sx,120*sy}},
+        {phase='menu',rect={0,shot.ph-200*sy,shot.pw,200*sy}},
+        {phase='moveSelect',rect={500*sx,750*sy,1200*sx,300*sy}},
+      }) do
+        b.phase=flow.phase
+        local reserved={flow.rect}
+        local p=AttachHud.proposeStatusLatch(b,shot,true,true,reserved)
+        check(p.complete,'RC2 '..mode..' '..flow.phase..' replay rejected at '..shot.pw..'x'..shot.ph..': '..tostring(p.unsafeReason))
+        check(AttachHud.statusLatchFrameSafe(shot,p.slots,reserved),'RC2 replay disabled collision guard')
+        for _,side in ipairs({'player','enemy'}) do
+          eq(p.slots[side].battler,b[side],'RC2 reflow changed battler owner')
+          eq(p.slots[side].rect[3],cards[side][3],'RC2 reflow resized card')
+        end
+        check(AttachHud.commitStatusLatch(p),'RC2 complete reflow could not commit')
+        check(not AttachHud.proposeStatusLatch(b,shot,true,true,{{0,0,shot.pw,shot.ph}}).complete,
+          'RC2 impossible viewport must remain rejected')
+      end
+    end
+  end
+  AttachHud.projectOwnerStatusRect,AttachHud.safeInsets=originalProject,originalInsets
+  AttachHud._testOptionValues.status_anchor=nil
+end)()
+
 -- The three public anchor choices are real geometry contracts, not dead menu
 -- values. Exercise them against an adversarial 1024x768 frame whose player
 -- hull leaves too little room for the former unbounded OUTSIDE placement.
@@ -1735,10 +1781,11 @@ end)()
   local reserved = AttachHud.proposeStatusLatch(
     safariBattle, safariShot, false, true, { safariRect })
   eq(reserved.ready, true, "one-sided Safari owner was not render-ready")
-  eq(reserved.safe, false,
-    "CORNERS card overlapping Safari balls was marked safe")
-  eq(reserved.complete, false,
-    "CORNERS card overlapping Safari balls was marked complete")
+  eq(reserved.complete,true,"Safari corner card did not clear the balls band")
+  check(AttachHud.statusLatchFrameSafe(safariShot,reserved.slots,{safariRect}),
+    "Safari reflow ignored reserved balls")
+  local realSafariBounds=AttachHud.safariBallCountBounds
+  AttachHud.safariBallCountBounds=function()return {0,0,safariShot.pw,safariShot.ph} end
   local rejected, rejectReason, rejectDetail =
     AttachHud.cameraBounds(safariBattle, safariShot)
   eq(rejected, nil, "unsafe Safari CORNERS bounds were published")
@@ -1749,6 +1796,7 @@ end)()
   check(rejectDetail.camera:find("enemy card=",1,true),"card geometry missing")
   check(rejectDetail.source:find("reserved=",1,true),"HUD reservations missing")
   check(rejectDetail.status:find("viewport=412x915",1,true),"viewport missing")
+  AttachHud.safariBallCountBounds=realSafariBounds
 
   AttachHud._testOptionValues.status_anchor = "outside"
   local clear = AttachHud.proposeStatusLatch(

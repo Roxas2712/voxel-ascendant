@@ -2609,7 +2609,7 @@ function FloatingHud.statusLatchFrameSafe(shot, slots, reserved)
   return true
 end
 
--- A default outside card clamped at a display edge can cover its own actor.
+-- Any requested card anchor can collide after camera/phase/viewport changes.
 -- Search a bounded set of alternate seats before asking the camera to move.
 -- Keep dimensions, exact owner receipts and every collision gate unchanged.
 function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
@@ -2619,8 +2619,7 @@ function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
   for _,side in ipairs({"player","enemy"}) do
     local slot=slots[side]
     if slot then
-      -- Never relocate a retained card during an intentionally hidden actor frame.
-      if not (shot.actorVisuals and shot.actorVisuals[side]) then return nil end
+      local retained=not (shot.actorVisuals and shot.actorVisuals[side])
       local r=slot.rect
       local minX,minY=(left or 0)+pad,(top or 0)+pad
       local maxX,maxY=shot.pw-(right or 0)-pad-r[3],shot.ph-(bottom or 0)-pad-r[4]
@@ -2633,9 +2632,21 @@ function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
           ys[#ys+1]=h[2]-r[4]-pad;ys[#ys+1]=h[2]+h[4]+pad
         end
       end
+      -- Include UI edges: a shifted textbox can leave a clear strip that
+      -- neither the actor edges nor the viewport corners describe.
+      for i=1,math.min(4,#(reserved or {})) do
+        local h=reserved[i]
+        if type(h)=="table" then
+          xs[#xs+1]=h[1]-r[3]-pad;xs[#xs+1]=h[1]+h[3]+pad
+          ys[#ys+1]=h[2]-r[4]-pad;ys[#ys+1]=h[2]+h[4]+pad
+        end
+      end
+      -- A blink may retain its exact committed owner card, but may not move
+      -- that card using a missing visual. Its visible peer can still reflow.
+      if retained then xs,ys={r[1]},{r[2]} end
       local list,seen={},{}
       for _,x in ipairs(xs) do for _,y in ipairs(ys) do
-        x,y=clamp(x,minX,maxX),clamp(y,minY,maxY)
+        if not retained then x,y=clamp(x,minX,maxX),clamp(y,minY,maxY) end
         local key=tostring(x)..":"..tostring(y)
         if not seen[key] then
           seen[key]=true
@@ -2656,12 +2667,20 @@ function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
       choices[side]=list
     else choices[side]={{}} end
   end
-  for pi=1,math.min(12,#choices.player) do
-    for ei=1,math.min(12,#choices.enemy) do
-      local pair={player=choices.player[pi].slot,enemy=choices.enemy[ei].slot}
-      if FloatingHud.statusLatchFrameSafe(shot,pair,reserved) then return pair end
+  local best,bestDistance
+  for pi=1,math.min(24,#choices.player) do
+    for ei=1,math.min(24,#choices.enemy) do
+      local player,enemy=choices.player[pi],choices.enemy[ei]
+      local distance=(player.distance or 0)+(enemy.distance or 0)
+      if not bestDistance or distance<bestDistance then
+        local pair={player=player.slot,enemy=enemy.slot}
+        if FloatingHud.statusLatchFrameSafe(shot,pair,reserved) then
+          best,bestDistance=pair,distance
+        end
+      end
     end
   end
+  return best
 end
 
 function FloatingHud.proposeStatusLatch(
@@ -2725,11 +2744,7 @@ function FloatingHud.proposeStatusLatch(
   if ready then
     safe, unsafeReason = FloatingHud.statusLatchFrameSafe(
       shot, slots, reserved)
-    if not safe and optionChoice("status_anchor","outside"):lower()=="outside"
-        and (unsafeReason=="player-status-over-player-actor"
-          or unsafeReason=="enemy-status-over-enemy-actor"
-          or unsafeReason=="player-status-over-reserved-hud"
-          or unsafeReason=="enemy-status-over-reserved-hud") then
+    if not safe then
       local recovered=FloatingHud.reflowOwnerStatus(shot,slots,reserved)
       if recovered then
         slots=recovered
