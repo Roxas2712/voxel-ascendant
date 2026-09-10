@@ -368,6 +368,22 @@ end
 -- ---------------------------------------------------------------------------
 
 if not INTEGRATED_KASC and not INTEGRATED_VASC then mod.options:define({
+  { key="battle_controls_scale", type="choice", label="BUTTON SIZE", default=1,
+    choices={{"50%", 0.5}, {"75%", 0.75}, {"90%", 0.9}, {"100%", 1}, {"110%", 1.1}, {"125%", 1.25}, {"150%", 1.5}},
+    description="Scale battle buttons and move selection independently. Default: 100%." },
+  { key="battle_controls_x", type="choice", label="BUTTON X", default=0,
+    choices={{"-40%", -40}, {"-35%", -35}, {"-30%", -30}, {"-25%", -25}, {"-20%", -20}, {"-15%", -15}, {"-10%", -10}, {"-5%", -5}, {"0%", 0}, {"+5%", 5}, {"+10%", 10}, {"+15%", 15}, {"+20%", 20}, {"+25%", 25}, {"+30%", 30}, {"+35%", 35}, {"+40%", 40}},
+    description="Move battle controls horizontally as a percentage of the viewport. Default: 0%." },
+  { key="battle_controls_y", type="choice", label="BUTTON LIFT", default=0,
+    choices={{"0%", 0}, {"5%", 5}, {"10%", 10}, {"15%", 15}, {"20%", 20}, {"25%", 25}, {"30%", 30}, {"35%", 35}, {"40%", 40}, {"45%", 45}, {"50%", 50}, {"55%", 55}, {"60%", 60}},
+    description="Raise battle controls above the touch pad as a percentage of viewport height. Default: 0%." },
+  { key="battle_controls_transparency", type="choice", label="BUTTON TRANSPARENCY", default=0,
+    choices={{"0%", 0}, {"10%", 10}, {"20%", 20}, {"30%", 30}, {"40%", 40}, {"50%", 50}, {"60%", 60}, {"70%", 70}, {"80%", 80}, {"90%", 90}},
+    description="Transparency of battle controls including Mega, attacks and Back. 0% keeps the original appearance; higher values reveal more of the scene." },
+  { key="battle_controls_shape", type="choice", label="BUTTON SHAPE", default="auto",
+    choices={{"AUTO", "auto"}, {"ORIGINAL", "original"}, {"COMPLETE ORAS", "round"}, {"GLASS", "glass"}},
+    description="AUTO keeps original art at defaults and completes it when adjusted. COMPLETE ORAS always shows full artwork; GLASS selects transparent alternative buttons." },
+
   {
     key = "hud_language",
     type = "choice",
@@ -834,7 +850,15 @@ function FloatingHud.styleAsset(key)
     pokemon=true, hp=true, run=true,
   }
   local prefix = localized[key] and (hudLanguage() .. "_") or ""
-  return assetImage("assets/hud/oras/" .. prefix .. key .. ".png")
+  local original = assetImage("assets/hud/oras/" .. prefix .. key .. ".png")
+  if FloatingHud.roundControls and FloatingHud.roundControls()
+      and (key == "bag" or key == "pokemon" or key == "run" or key == "mega") then
+    local ok, art = pcall(V.require, "CompletedBattleButtons")
+    if ok and type(art) == "table" then
+      return art.image("assets/hud/oras/completed/" .. prefix .. key .. ".png", original, assetImage)
+    end
+  end
+  return original
 end
 
 function FloatingHud.panelLogicalSize(kind)
@@ -3971,6 +3995,7 @@ function FloatingHud.orasCommandLayout(battle, logicalW, logicalH)
       local rowGap = clamp(logicalW * 0.025, 5, 9)
       local rowWidth, rowTop, visibleCount = 0, logicalH, 0
       for _, entry in ipairs(rowEntries) do
+        if FloatingHud.roundControls and FloatingHud.roundControls() then entry.maxH = .60 end
         entry.image = FloatingHud.styleAsset(entry.key)
         if entry.image then
           entry.baseScale = math.min(
@@ -4076,6 +4101,34 @@ function FloatingHud.orasCommandBounds(battle, rect, scale, logicalW, logicalH)
     end
   end
   return bounds
+end
+
+function FloatingHud.roundControls()
+  local shape = optionChoice("battle_controls_shape", "auto")
+  return shape == "round" or (shape == "auto" and (
+    (tonumber(optionChoice("battle_controls_y", 0)) or 0) ~= 0
+    or (tonumber(optionChoice("battle_controls_x", 0)) or 0) ~= 0
+    or (tonumber(optionChoice("battle_controls_scale", 1)) or 1) ~= 1))
+end
+
+function FloatingHud.drawGlassControl(key, label, x, y, w, h, focused, k)
+  local G = g
+  local colors = {fight={.90,.16,.20}, bag={.98,.57,.10},
+    pokemon={.20,.68,.32}, run={.18,.55,.90}, mega={.72,.27,.77}}
+  local color = colors[key] or colors.fight
+  local radius = math.min(9, h*.28)
+  G.setColor(.025,.035,.05,.58)
+  G.rectangle("fill", x,y,w,h,radius,radius)
+  G.setColor(color[1]*.68,color[2]*.68,color[3]*.68,.45)
+  G.rectangle("fill", x+2,y+2,w-4,h-4,radius-1,radius-1)
+  G.setColor(color[1],color[2],color[3],focused and .65 or .35)
+  G.rectangle("fill", x+3,y+3,w-6,math.max(2,h*.40),radius-2,radius-2)
+  G.setLineWidth(focused and 2 or 1)
+  G.setColor(1,1,1,focused and 1 or .75)
+  G.rectangle("line", x+1,y+1,w-2,h-2,radius,radius)
+  G.setLineWidth(1)
+  local textScale = math.min(1.05, (w-10)/math.max(1,textWidth(label)), (h-6)/10)
+  drawShadowTextCentered(label, x+w*.5, y+h*.5-4*textScale, k, textScale)
 end
 
 local function renderCommandCanvas(battle, k, logicalW, logicalH)
@@ -4220,8 +4273,14 @@ local function renderCommandCanvas(battle, k, logicalW, logicalH)
                       entry.width * 0.54, entry.height * 0.58)
             cursorX, cursorY = entry.x + entry.width * 0.5, entry.y
           end
-          FloatingHud.drawColoredAsset(entry.image, entry.x, entry.y, entry.scale,
-                                       entry.mega and (megaArmed and 1 or 0.74) or 1)
+          if optionChoice("battle_controls_shape", "auto") == "glass" then
+            FloatingHud.drawGlassControl(entry.key,
+              entry.mega and "MEGA" or labels[entry.index],
+              entry.x, entry.y, entry.width, entry.height, focused, k)
+          else
+            FloatingHud.drawColoredAsset(entry.image, entry.x, entry.y, entry.scale,
+              entry.mega and (megaArmed and 1 or 0.74) or 1)
+          end
           if entry.mega then
             local badge = megaArmed
               and (hudLanguage() == "de" and "AN" or "ON")
@@ -5348,6 +5407,12 @@ local function rotatedPoint(x, y, angle)
   return x * c - y * s, x * s + y * c
 end
 
+function FloatingHud.controlsOpacity()
+  local value = tonumber(optionChoice("battle_controls_transparency", 0)) or 0
+  if value ~= value then value = 0 end
+  return 1 - math.max(0, math.min(90, value)) / 100
+end
+
 local function drawPerspectiveCanvas(canvas, cx, cy, w, h, signal, roll, side,
                                      depthOverride, squeezeOverride,
                                      pitchSignal, pitchDepthOverride,
@@ -5441,7 +5506,9 @@ local function drawPerspectiveCanvas(canvas, cx, cy, w, h, signal, roll, side,
   end
 
   mesh:setTexture(canvas)
-  g.setColor(1, 1, 1, 1)
+  local opacity = (side == "command" or side == "fight" or side == "learn")
+    and FloatingHud.controlsOpacity() or 1
+  g.setColor(1, 1, 1, opacity)
   if FloatingHud.activeWorldPreflipHeight then
     g.push("transform")
     g.origin()
@@ -5482,6 +5549,28 @@ local function drawCard(battle, shot, side, battler, prepared)
   return true
 end
 
+function FloatingHud.configureControls(ww, wh, rect, scale, logicalW, logicalH)
+  local factor = tonumber(optionChoice("battle_controls_scale", 1)) or 1
+  local dx = tonumber(optionChoice("battle_controls_x", 0)) or 0
+  local lift = tonumber(optionChoice("battle_controls_y", 0)) or 0
+  if factor ~= factor then factor = 1 end
+  if dx ~= dx then dx = 0 end
+  if lift ~= lift then lift = 0 end
+  factor = math.max(.5, math.min(1.5, factor))
+  dx = math.max(-40, math.min(40, dx))
+  lift = math.max(0, math.min(60, lift))
+  if factor == 1 and dx == 0 and lift == 0 then
+    return rect, scale, logicalW, logicalH
+  end
+  factor = math.min(factor, ww / rect[3], wh / rect[4])
+  local w, h = rect[3] * factor, rect[4] * factor
+  local x = rect[1] + (rect[3] - w) * .5 + ww * dx / 100
+  local y = rect[2] + rect[4] - h - wh * lift / 100
+  return {math.max(0, math.min(ww-w, x)),
+    math.max(0, math.min(wh-h, y)), w, h},
+    scale * factor, logicalW, logicalH
+end
+
 function FloatingHud.screenDockRect(shot, kind)
   if not shot then return nil end
   local logicalW, logicalH = FloatingHud.panelLogicalSize(kind)
@@ -5512,8 +5601,9 @@ function FloatingHud.screenDockRect(shot, kind)
   local bottom = 0
   logicalW = available / scale
   local height = logicalH * scale
-  return { left, shot.ph - bottom - height, available, height },
-         scale, logicalW, logicalH
+  return FloatingHud.configureControls(shot.pw, shot.ph,
+    { left, shot.ph - bottom - height, available, height },
+    scale, logicalW, logicalH)
 end
 
 function FloatingHud.drawMenuPlane(canvas, cx, cy, width, height, side)

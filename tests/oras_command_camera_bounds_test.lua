@@ -5,14 +5,19 @@ local function extract(path,first,last,env)
 end
 local sizes={en={fight={69,32},bag={126,62},pokemon={126,62},run={102,39},mega={140,85}},de={fight={67,20},bag={127,63},pokemon={127,63},run={103,40},mega={139,84}}}
 local language='en'
+local completed=false
 local FloatingHud={CONTROL_SCALE=1.5,ORAS_FIGHT_DESIGN_W=69,ORAS_FIGHT_DESIGN_H=32,megaArmed=function(b)return b.mega end}
 FloatingHud.styleAsset=function(key)
  local d=sizes[language][key]
+ if completed and key~="fight" then
+  d={d[1],({bag=84,pokemon=126,run=53,mega=128})[key]}
+ end
  return {getWidth=function()return d[1]end,getHeight=function()return d[2]end}
 end
-local env={FloatingHud=FloatingHud,megaProfileFor=function(b)return b.mega end,clamp=function(v,a,b)return math.max(a,math.min(b,v))end}
+local env={optionChoice=function(key,fallback)if key=="battle_controls_shape" and completed then return "round" end;return fallback end,FloatingHud=FloatingHud,megaProfileFor=function(b)return b.mega end,clamp=function(v,a,b)return math.max(a,math.min(b,v))end}
 extract('battle_hud_oras.lua','function FloatingHud.commandAssetMetrics','local function renderCommandCanvas',env)
 local function contains(a,b)return a[1]<=b[1] and a[2]<=b[2] and a[1]+a[3]>=b[1]+b[3] and a[2]+a[4]>=b[2]+b[4] end
+for _,complete in ipairs({false,true})do completed=complete
 for _,lang in ipairs({'en','de'})do language=lang
  for _,width in ipairs({280,720})do
   for _,mega in ipairs({false,true})do
@@ -33,4 +38,5 @@ for _,lang in ipairs({'en','de'})do language=lang
   end
  end
 end
-print('ORAS command visible bounds, locales, widths, MEGA: ok')
+end
+print('ORAS original/completed command bounds, locales, widths, MEGA: ok')

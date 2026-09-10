@@ -772,7 +772,8 @@ local shortcutTapSerial = 0
 -- the same input it would have seen if the player moved the native cursor and
 -- pressed A, so PACK/PKMN go through Screens.push with Gold's current stack,
 -- callbacks and menu classes.
-local function queueNativeConfirm(screen)
+local function queueNativeConfirm(screen, key)
+  key = key or "a"
   local input = installedInput or (screen and screen.game and screen.game.input)
   if type(input) ~= "table" then return false, "no live input object" end
 
@@ -781,8 +782,8 @@ local function queueNativeConfirm(screen)
 
   if type(input.sourcePress) == "function"
       and type(input.sourceRelease) == "function" then
-    input:sourcePress("a", source)
-    input:sourceRelease("a", source)
+    input:sourcePress(key, source)
+    input:sourceRelease(key, source)
     return true
   end
 
@@ -790,7 +791,7 @@ local function queueNativeConfirm(screen)
   -- exposes sourcePress/sourceRelease, but a direct queued A edge has the same
   -- fixed-step semantics if those helpers are absent.
   if type(input.pressQueue) == "table" then
-    input.pressQueue[#input.pressQueue + 1] = "a"
+    input.pressQueue[#input.pressQueue + 1] = key
     return true
   end
 
@@ -915,6 +916,45 @@ local RAW_CHOICE = {
   [1] = INDEX.pkmn,
   [4] = INDEX.fight,
 }
+
+-- Publish only successful current-frame controls, in window coordinates.
+M.controlPaint = setmetatable({}, {__mode="k"})
+function M.recordControl(screen, dock, scale, x, y, w, h, action, index)
+  local hits = screen._vascControlHits
+  if hits then hits[#hits+1] = {x=dock[1]+x*scale, y=dock[2]+y*scale,
+    w=w*scale, h=h*scale, action=action, index=index} end
+end
+
+function M.pressControls(screen, x, y)
+  local receipt = screen and M.controlPaint[screen]
+  if not receipt or not M.owns(screen) or screen.message or overlayFor(screen)
+      or screen.anim or screen.hpAnim or screen.waitSfx or screen.statsBoxMon
+      or screen.phase ~= receipt.phase then return false end
+  local ww, wh = love.graphics.getDimensions()
+  if ww ~= receipt.ww or wh ~= receipt.wh then return false end
+  if screen.phase == "menu" and not commandInputReady(screen) then return false end
+  if screen.phase ~= "menu" and screen.phase ~= "moves" then return false end
+  for _, hit in ipairs(receipt.hits) do
+    if x >= hit.x and x <= hit.x+hit.w and y >= hit.y and y <= hit.y+hit.h then
+      if hit.action == "command" then
+        local old = screen.menuIndex
+        screen.menuIndex = hit.index
+        screen._vascGen2MegaFocus = nil
+        if not queueNativeConfirm(screen) then screen.menuIndex=old; return false end
+      elseif hit.action == "move" then
+        if hit.index > math.min(4,#playerMoves(screen)) then return false end
+        local old = screen.moveIndex
+        screen.moveIndex = hit.index
+        if not queueNativeConfirm(screen) then screen.moveIndex=old; return false end
+      elseif hit.action == "back" then
+        if not queueNativeConfirm(screen, "b") then return false end
+      else return false end
+      M.controlPaint[screen] = nil
+      return true
+    end
+  end
+  return false
+end
 
 function M.install(game)
   if M.installed then return game == installedGame end
@@ -1722,8 +1762,31 @@ local function gen1ScreenDockRect(ww, wh, logicalH)
   }, scale, logicalW, logicalH
 end
 
-local function commandDockRect(ww, wh, layout)
-  return gen1ScreenDockRect(ww, wh, 156)
+function M.configureControls(ww, wh, rect, scale, logicalW, logicalH, screen)
+  local factor = tonumber(optionValue(screen, "battle_controls_scale", 1)) or 1
+  local dx = tonumber(optionValue(screen, "battle_controls_x", 0)) or 0
+  local lift = tonumber(optionValue(screen, "battle_controls_y", 0)) or 0
+  if factor ~= factor then factor = 1 end
+  if dx ~= dx then dx = 0 end
+  if lift ~= lift then lift = 0 end
+  factor = math.max(.5, math.min(1.5, factor))
+  dx = math.max(-40, math.min(40, dx))
+  lift = math.max(0, math.min(60, lift))
+  if factor == 1 and dx == 0 and lift == 0 then
+    return rect, scale, logicalW, logicalH
+  end
+  factor = math.min(factor, ww / rect[3], wh / rect[4])
+  local w, h = rect[3] * factor, rect[4] * factor
+  local x = rect[1] + (rect[3] - w) * .5 + ww * dx / 100
+  local y = rect[2] + rect[4] - h - wh * lift / 100
+  return {math.max(0, math.min(ww-w, x)),
+    math.max(0, math.min(wh-h, y)), w, h},
+    scale * factor, logicalW, logicalH
+end
+
+local function commandDockRect(ww, wh, layout, screen)
+  local rect, scale, w, h = gen1ScreenDockRect(ww, wh, 156)
+  return M.configureControls(ww, wh, rect, scale, w, h, screen)
 end
 
 M.commandDockRect = commandDockRect
@@ -1738,8 +1801,9 @@ end
 -- canvas.  Keep this geometry pure and shared: drawMoves paints exactly this
 -- rectangle and SMART reserves exactly this rectangle, so a future responsive
 -- size change cannot leave the camera protecting a stale right-docked area.
-local function moveDockRect(ww, wh, layout)
-  return gen1ScreenDockRect(ww, wh, 222)
+local function moveDockRect(ww, wh, layout, screen)
+  local rect, scale, w, h = gen1ScreenDockRect(ww, wh, 222)
+  return M.configureControls(ww, wh, rect, scale, w, h, screen)
 end
 
 M.moveDockRect = moveDockRect
@@ -1808,13 +1872,13 @@ M.messageDockRect = messageDockRect
 -- distinction from its padded off-screen command canvas. The source art is
 -- bounded by two 32%-high rows plus their gap; include the hand cursor's lead
 -- above FIGHT and keep the full dock width as a conservative horizontal bound.
-local function commandCameraRect(ww, wh, layout)
+local function commandCameraRect(ww, wh, layout, screen)
   layout = layout or layoutMetrics(ww, wh)
-  local dock, scale, logicalW, logicalH = commandDockRect(ww, wh, layout)
+  local dock, scale, logicalW, logicalH = commandDockRect(ww, wh, layout, screen)
   local actionGap = math.max(2, math.min(5, logicalW * .012)) * scale
   local cursorLead = 20 * .82 * scale
   local artHeight = math.min(dock[4],
-    logicalH * .64 * scale + actionGap + cursorLead)
+    logicalH * (M.roundControls(screen) and .92 or .64) * scale + actionGap + cursorLead)
   return { dock[1], dock[2] + dock[4] - artHeight,
            dock[3], artHeight, bottomInset=dock.bottomInset }
 end
@@ -2521,7 +2585,7 @@ end
 local function drawFallbackCommandGrid(screen, ww, wh)
   local G = love.graphics
   local layout = layoutMetrics(ww, wh)
-  local dock = commandDockRect(ww, wh, layout)
+  local dock = commandDockRect(ww, wh, layout, screen)
   local x, y, w, h = dock[1], dock[2], dock[3], dock[4]
   local r = math.max(14, wh * 0.022)
   panel(x, y, w, h, r, 0.82)
@@ -2580,6 +2644,34 @@ local function drawHandCursor(x, y, scale)
   G.pop()
 end
 
+function M.roundControls(screen)
+  local shape = optionValue(screen, "battle_controls_shape", "auto")
+  return shape == "round" or (shape == "auto" and (
+    (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) ~= 0
+    or (tonumber(optionValue(screen, "battle_controls_x", 0)) or 0) ~= 0
+    or (tonumber(optionValue(screen, "battle_controls_scale", 1)) or 1) ~= 1))
+end
+
+function M.drawGlassControl(key, label, x, y, w, h, focused)
+  local G = love.graphics
+  local colors = {fight={.90,.16,.20}, bag={.98,.57,.10},
+    pokemon={.20,.68,.32}, run={.18,.55,.90}, mega={.72,.27,.77}}
+  local color = colors[key] or colors.fight
+  local radius = math.min(9, h*.28)
+  G.setColor(.025,.035,.05,.58)
+  G.rectangle("fill", x,y,w,h,radius,radius)
+  G.setColor(color[1]*.68,color[2]*.68,color[3]*.68,.45)
+  G.rectangle("fill", x+2,y+2,w-4,h-4,radius-1,radius-1)
+  G.setColor(color[1],color[2],color[3],focused and .65 or .35)
+  G.rectangle("fill", x+3,y+3,w-6,math.max(2,h*.40),radius-2,radius-2)
+  G.setLineWidth(focused and 2 or 1)
+  G.setColor(1,1,1,focused and 1 or .75)
+  G.rectangle("line", x+1,y+1,w-2,h-2,radius,radius)
+  G.setLineWidth(1)
+  local scale = math.min(1.05, (w-10)/math.max(1,hudTextWidth(label)), (h-6)/10)
+  drawCenteredHudText(label, x+w*.5, y+h*.5-4*scale, scale, 1)
+end
+
 local ORAS_ACTION_ASSETS = {
   fight="assets/hud/oras/en_fight.png",
   bag="assets/hud/oras/en_bag.png",
@@ -2606,12 +2698,19 @@ local function drawNativeCommandGrid(screen, ww, wh)
   local megaFocused = visible and screen._vascGen2MegaFocus == true
   for _, entry in ipairs(entries) do
     entry.image = assetImage(ORAS_ACTION_ASSETS[entry.key])
+    if M.roundControls(screen) and entry.key ~= "fight" then
+      local ok, art = pcall(V.require, "CompletedBattleButtons")
+      if ok and type(art) == "table" then
+        entry.image = art.image("assets/hud/oras/completed/en_" .. entry.key .. ".png",
+          entry.image, assetImage)
+      end
+    end
     if not entry.image then return drawFallbackCommandGrid(screen, ww, wh) end
   end
 
   local G = love.graphics
   local layout = layoutMetrics(ww, wh)
-  local dock, dockScale, logicalW, logicalH = commandDockRect(ww, wh, layout)
+  local dock, dockScale, logicalW, logicalH = commandDockRect(ww, wh, layout, screen)
   local x, y, w, h = 0, 0, logicalW, logicalH
   -- Paint in the same logical plane as Kanto, then scale the completed surface
   -- once. This preserves the authored proportions and exact bottom seat.
@@ -2631,6 +2730,7 @@ local function drawNativeCommandGrid(screen, ww, wh)
     local maxW = (entry.key == "run" or entry.key == "mega") and 0.16 or 0.18
     local maxH = entry.key == "mega" and 0.36
       or (entry.key == "run" and 0.30 or 0.32)
+    if M.roundControls(screen) then maxH = .60 end
     entry.baseScale = math.min(w * maxW * controlScale / iw, h * maxH / ih)
     entry.layoutW, entry.layoutH = iw * entry.baseScale, ih * entry.baseScale
     lowerW = lowerW + entry.layoutW
@@ -2684,6 +2784,13 @@ local function drawNativeCommandGrid(screen, ww, wh)
   -- Same Gen-1 row: BAG / MEGA / POKEMON / RUN. The optional icon joins the
   -- common fit/bottom seat, never an extra panel beside FIGHT. With no Mega
   -- capability the original three-icon geometry remains byte-for-byte equal.
+  for _, entry in ipairs(entries) do
+    if entry.key ~= "mega" then
+      M.recordControl(screen, dock, dockScale, entry.layoutX,
+        entry.key == "fight" and entry.layoutY or (logicalH-entry.layoutH),
+        entry.layoutW, entry.layoutH, "command", entry.index)
+    end
+  end
   local megaRect
   for _, entry in ipairs(lower) do
     if entry.key == "mega" then
@@ -2704,7 +2811,13 @@ local function drawNativeCommandGrid(screen, ww, wh)
     end
     G.setColor(1, 1, 1, entry.key == "mega" and not allowed and .35
       or (focused and 1 or 0.90))
-    G.draw(entry.image, entry.x, entry.y, 0, entry.scale, entry.scale)
+    if optionValue(screen, "battle_controls_shape", "auto") == "glass" then
+      local labels = {fight="FIGHT", bag="BAG", pokemon="PKMN", run="RUN", mega="MEGA"}
+      M.drawGlassControl(entry.key, labels[entry.key], entry.x, entry.y,
+        entry.w, entry.h, focused)
+    else
+      G.draw(entry.image, entry.x, entry.y, 0, entry.scale, entry.scale)
+    end
   end
   drawHandCursor(cursorX, cursorY, .82)
   G.pop()
@@ -2772,7 +2885,7 @@ local function drawMoves(screen, ww, wh)
   local G = love.graphics
   local moves = playerMoves(screen)
   local layout = layoutMetrics(ww, wh)
-  local dock, dockScale, logicalW, logicalH = moveDockRect(ww, wh, layout)
+  local dock, dockScale, logicalW, logicalH = moveDockRect(ww, wh, layout, screen)
   local x, y, w, h = 0, 0, logicalW, logicalH
   G.push()
   G.translate(dock[1], dock[2])
@@ -2798,6 +2911,8 @@ local function drawMoves(screen, ww, wh)
   for i = 1, count do
     local move = moves[i]
     local pos = positions[i]
+    M.recordControl(screen, dock, dockScale, pos.x, pos.y,
+      cardW, cardH, "move", i)
     local card = moveCardPresentation(screen, move)
     local color = card.color or TYPE_COLORS.NORMAL
     local focused = i == selected
@@ -2847,6 +2962,8 @@ local function drawMoves(screen, ww, wh)
     local badgeH = 10*controlScale
     local badgeX = x+(w-badgeW)*.5
     local badgeY = backY-12*controlScale
+    M.recordControl(screen, dock, dockScale, backX, badgeY,
+      backW, backY+backH-badgeY, "back")
     G.setColor(1, 1, 1, 1)
     G.draw(moveTab, backX, backY, 0, scale, scale)
     G.setColor(.008, .030, .046, .94)
@@ -2858,6 +2975,8 @@ local function drawMoves(screen, ww, wh)
     drawCenteredHudText(label, x+w*.5, badgeY+controlScale,
       labelScale, 1)
   else
+    M.recordControl(screen, dock, dockScale, x+w*.5-40, y+h-26,
+      80, 26, "back")
     drawCenteredHudText("BACK", x+w*.5, y+h-22, .93, .88)
   end
   if count > 0 and chosen then
@@ -3463,9 +3582,9 @@ function M.cameraBounds(screen, shot)
       end
     end
   elseif tostring(screen.phase or "") == "moves" and not screen.message then
-    add("moves", moveDockRect(ww, wh, layout))
+    add("moves", moveDockRect(ww, wh, layout, screen))
   elseif commandReady(screen) then
-    add("commands", commandCameraRect(ww, wh, layout))
+    add("commands", commandCameraRect(ww, wh, layout, screen))
   elseif screen.message then
     add("message", messageDockRect(ww, wh))
     if promptSelection(screen)
@@ -3582,7 +3701,46 @@ end
 -- native command box or native battle pic/HUD canvas is composited underneath.
 -- Crystal's sharp side pictures are captured independently by OverworldBattle
 -- and placed as correctly sized world billboards by VoxelScene.
+function M.controlsOpacity(screen)
+  local value = tonumber(optionValue(screen, "battle_controls_transparency", 0)) or 0
+  if value ~= value then value = 0 end
+  return 1 - math.max(0, math.min(90, value)) / 100
+end
+
+-- Fade the completed surface once so overlapping artwork, text and glow
+-- retain their internal appearance. At the default opacity no extra pass runs.
+function M.drawControlsWithOpacity(screen, ww, wh, draw)
+  local opacity = M.controlsOpacity(screen)
+  if opacity == 1 then return draw() end
+  local G = love.graphics
+  local canvas = M.opacityCanvas
+  if not canvas or canvas:getWidth() ~= ww or canvas:getHeight() ~= wh then
+    if canvas then canvas:release() end
+    canvas = G.newCanvas(ww, wh, {dpiscale=1})
+    M.opacityCanvas = canvas
+  end
+  local previous = G.getCanvas()
+  G.push("all")
+  local ok, result = pcall(function()
+    G.setCanvas(canvas);G.origin();G.setScissor();G.setShader()
+    G.clear(0,0,0,0);G.setBlendMode("alpha")
+    return draw()
+  end)
+  G.setCanvas(previous);G.pop()
+  if not ok then error(result, 0) end
+  G.push("all")
+  G.setShader();G.setBlendMode("alpha", "premultiplied")
+  G.setColor(opacity,opacity,opacity,opacity)
+  G.draw(canvas,0,0)
+  G.pop()
+  return result
+end
+
 function M.drawFull(screen, ctx)
+  if screen then
+    M.controlPaint[screen] = nil
+    screen._vascControlHits = {}
+  end
   local mega = V.Gen2MegaBridge
   if mega then mega.clearPaint(screen) end
   if not (M.owns(screen) and love and love.graphics) then return false end
@@ -3659,9 +3817,13 @@ function M.drawFull(screen, ctx)
     if drawCustomOverlay(screen, ww, wh) then
       -- Complete VASC-owned selector; native rules and callbacks remain live.
     elseif screen.phase == "moves" and not screen.message then
-      drawMoves(screen, ww, wh)
+      M.drawControlsWithOpacity(screen, ww, wh, function()
+        return drawMoves(screen, ww, wh)
+      end)
     elseif commandReady(screen) then
-      megaRect = drawNativeCommandGrid(screen, ww, wh)
+      megaRect = M.drawControlsWithOpacity(screen, ww, wh, function()
+        return drawNativeCommandGrid(screen, ww, wh)
+      end)
     end
 
     -- A message is animation/dialogue furniture, never a second layer behind
@@ -3674,6 +3836,16 @@ function M.drawFull(screen, ctx)
   end))
   if not results[1] then error(results[2], 0) end
 
+  if presentationOk then
+    local windowW, windowH = G.getDimensions()
+    local hits = screen._vascControlHits or {}
+    for _, hit in ipairs(hits) do
+      hit.x, hit.w = hit.x*windowW/ww, hit.w*windowW/ww
+      hit.y, hit.h = hit.y*windowH/wh, hit.h*windowH/wh
+    end
+    M.controlPaint[screen] = {hits=hits, phase=screen.phase, ww=windowW, wh=windowH}
+  end
+  screen._vascControlHits = nil
   if commandVisualReady(screen) then commandPresented[screen] = true end
   if mega and commandPresented[screen] then
     mega.publish(screen, megaRect, ww, wh)

@@ -50,6 +50,8 @@ local SECTION_KEYS = {
   skins = {
     "pokemonUiPartyMenu", "pokemonUiBattleParty", "pokemonUiLegacyBank",
     "battleHudStyle",
+    "battle_controls_scale", "battle_controls_x",
+    "battle_controls_y", "battle_controls_shape", "battle_controls_transparency",
     "vascMenuSkin", "qol_ui_skin",
     "qol_bag_skin", "qol_bag_color", "qol_bag_body", "qol_bag_form",
     "pokedexStyle", "modernDexSpriteSource",

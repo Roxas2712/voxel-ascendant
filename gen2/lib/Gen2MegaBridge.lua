@@ -75,6 +75,9 @@ function M.neighbour(index, direction)
 end
 
 function M.press(screen, x, y)
+  local controls = V and V.BattleControllerUI
+  if controls and type(controls.pressControls) == "function"
+      and controls.pressControls(screen, x, y) then return true end
   local rect = presented(screen)
   if not rect or x < rect[1] or y < rect[2]
       or x > rect[1]+rect[3] or y > rect[2]+rect[4] then return false end
