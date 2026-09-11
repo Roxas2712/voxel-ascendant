@@ -62,12 +62,22 @@ function M.new(mod, getLog)
     local ok,log,reason=pcall(getLog)
     if not ok or type(log)~="string" or #log==0 then return nil,reason or "no-log" end
     log=clean(log)
-    if #log>40000 then log=head(log,3000).."\n[older middle records omitted]\n"..tail(log,36000) end
+    -- Keep the last failure summaries even when verbose retries fill the tail.
+    local failures={}
+    for line in log:gmatch("[^\n]+") do
+      if line:find("event=vasc.battle.battle-hud-camera-failure",1,true)
+          or line:find("event=vasc.battle.battle-native-latch",1,true) then
+        failures[#failures+1]=line
+        if #failures>4 then table.remove(failures,1) end
+      end
+    end
+    local failureSummary=head(table.concat(failures,"\n"),4000)
+    if #log>40000 then log=head(log,3000).."\n[older middle records omitted]\n"..tail(log,32000) end
     local sys=love and love.system
     local osOK,platform=pcall(function()return sys and sys.getOS and sys.getOS()end)
     local prefix="ASCENDANT-SUPPORT/1\nmod="..mod.id.."\nversion="..head(clean(mod.version or "unknown"),120)
       .."\ntime="..tostring(os.time()).."\nplatform="..clean(osOK and platform or "unknown").."\n"
-    local report=prefix.."support-code="..S.code.."\n"..downloadLines().."\n--- SESSION LOG ---\n"..log..downloadLog()
+    local report=prefix.."support-code="..S.code.."\n"..downloadLines().."\n--- FAILURE SUMMARY ---\n"..failureSummary.."\n--- SESSION LOG ---\n"..log..downloadLog()
     if #report>48*1024 then return nil,"too-large" end
     return report
   end

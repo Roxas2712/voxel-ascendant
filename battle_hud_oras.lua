@@ -2609,6 +2609,80 @@ function FloatingHud.statusLatchFrameSafe(shot, slots, reserved)
   return true
 end
 
+-- Any requested card anchor can collide after camera/phase/viewport changes.
+-- Search a bounded set of alternate seats before asking the camera to move.
+-- Keep dimensions, exact owner receipts and every collision gate unchanged.
+function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
+  local left,top,right,bottom=FloatingHud.safeInsets(shot)
+  local pad=math.max(8,math.floor(math.min(shot.pw,shot.ph)*.012))+1
+  local choices={}
+  for _,side in ipairs({"player","enemy"}) do
+    local slot=slots[side]
+    if slot then
+      local retained=not (shot.actorVisuals and shot.actorVisuals[side])
+      local r=slot.rect
+      local minX,minY=(left or 0)+pad,(top or 0)+pad
+      local maxX,maxY=shot.pw-(right or 0)-pad-r[3],shot.ph-(bottom or 0)-pad-r[4]
+      if maxX<minX or maxY<minY then return nil end
+      local xs,ys={r[1],minX,maxX},{r[2],minY,maxY}
+      for _,actor in pairs(shot.actorVisuals or {}) do
+        local h=actor.hull
+        if type(h)=="table" then
+          xs[#xs+1]=h[1]-r[3]-pad;xs[#xs+1]=h[1]+h[3]+pad
+          ys[#ys+1]=h[2]-r[4]-pad;ys[#ys+1]=h[2]+h[4]+pad
+        end
+      end
+      -- Include UI edges: a shifted textbox can leave a clear strip that
+      -- neither the actor edges nor the viewport corners describe.
+      for i=1,math.min(4,#(reserved or {})) do
+        local h=reserved[i]
+        if type(h)=="table" then
+          xs[#xs+1]=h[1]-r[3]-pad;xs[#xs+1]=h[1]+h[3]+pad
+          ys[#ys+1]=h[2]-r[4]-pad;ys[#ys+1]=h[2]+h[4]+pad
+        end
+      end
+      -- A blink may retain its exact committed owner card, but may not move
+      -- that card using a missing visual. Its visible peer can still reflow.
+      if retained then xs,ys={r[1]},{r[2]} end
+      local list,seen={},{}
+      for _,x in ipairs(xs) do for _,y in ipairs(ys) do
+        if not retained then x,y=clamp(x,minX,maxX),clamp(y,minY,maxY) end
+        local key=tostring(x)..":"..tostring(y)
+        if not seen[key] then
+          seen[key]=true
+          local candidate={}
+          for k,v in pairs(slot) do candidate[k]=v end
+          candidate.rect={x,y,r[3],r[4]}
+          if FloatingHud.statusLatchFrameSafe(shot,{[side]=candidate},reserved) then
+            list[#list+1]={slot=candidate,distance=(x-r[1])^2+(y-r[2])^2}
+          end
+        end
+      end end
+      table.sort(list,function(a,b)
+        if a.distance~=b.distance then return a.distance<b.distance end
+        if a.slot.rect[2]~=b.slot.rect[2] then return a.slot.rect[2]<b.slot.rect[2] end
+        return a.slot.rect[1]<b.slot.rect[1]
+      end)
+      if #list==0 then return nil end
+      choices[side]=list
+    else choices[side]={{}} end
+  end
+  local best,bestDistance
+  for pi=1,math.min(24,#choices.player) do
+    for ei=1,math.min(24,#choices.enemy) do
+      local player,enemy=choices.player[pi],choices.enemy[ei]
+      local distance=(player.distance or 0)+(enemy.distance or 0)
+      if not bestDistance or distance<bestDistance then
+        local pair={player=player.slot,enemy=enemy.slot}
+        if FloatingHud.statusLatchFrameSafe(shot,pair,reserved) then
+          best,bestDistance=pair,distance
+        end
+      end
+    end
+  end
+  return best
+end
+
 function FloatingHud.proposeStatusLatch(
     battle, shot, playerLive, enemyLive, reserved)
   local state = battle and FloatingHud.statusAttachmentStates[battle] or nil
@@ -2670,6 +2744,14 @@ function FloatingHud.proposeStatusLatch(
   if ready then
     safe, unsafeReason = FloatingHud.statusLatchFrameSafe(
       shot, slots, reserved)
+    if not safe then
+      local recovered=FloatingHud.reflowOwnerStatus(shot,slots,reserved)
+      if recovered then
+        slots=recovered
+        for side in pairs(slots) do receiptRefresh[side]=true end
+        safe,unsafeReason=FloatingHud.statusLatchFrameSafe(shot,slots,reserved)
+      end
+    end
   end
   return {
     battle=battle, shot=shot, viewportKey=key, state=state,
@@ -8429,7 +8511,29 @@ function FloatingHud.cameraBounds(battle, shot)
     -- Camera and renderer share the same current head-projected rectangles.
     -- An unsafe proposal is a seat rejection; no stale card may be retained
     -- over a moving Pokemon merely to keep the provider nominally complete.
-    if not proposal.complete then return nil, "owner-render-unsafe" end
+    if not proposal.complete then
+      -- Pass bounded geometry to the existing timeout report, not every probe.
+      local function rect(r)
+        if type(r)~="table" then return "none" end
+        return string.format("%.1f,%.1f,%.1f,%.1f",tonumber(r[1]) or 0,
+          tonumber(r[2]) or 0,tonumber(r[3]) or 0,tonumber(r[4]) or 0)
+      end
+      local function side(which)
+        local visual=shot.actorVisuals and shot.actorVisuals[which]
+        local slot=proposal.slots[which]
+        return which.." card="..rect(slot and slot.rect).." hull="..rect(visual and visual.hull)
+      end
+      local bands={}
+      for i=1,math.min(4,#statusReserved) do bands[#bands+1]=rect(statusReserved[i]) end
+      return nil,"owner-render-unsafe",{
+        reason=proposal.unsafeReason or "unknown-status-rejection",
+        camera=side("player").."; "..side("enemy"),
+        source="reserved="..table.concat(bands,";").." safe="..rect({FloatingHud.safeInsets(shot)}),
+        mode=tostring(optionChoice("status_anchor","outside")),
+        status=string.format("viewport=%.0fx%.0f scale=%.2f phase=%s",shot.pw,shot.ph,
+          uiScale(shot),tostring(battle.phase)),
+      }
+    end
     local slots = proposal.slots
     for _, side in ipairs({ "player", "enemy" }) do
       local slot = slots[side]

@@ -1554,14 +1554,17 @@ local function providerClaimsHud(provider, battle, shot)
   return claimed == true
 end
 
+OverworldBattle._hudBoundsFailures=setmetatable({}, {__mode="k"})
+
 local function providerCameraBounds(provider, battle, shot)
   if type(provider.cameraBounds) ~= "function"
       or provider.cameraBoundsSchema ~= HUD_CAMERA_BOUNDS_SCHEMA then
     return nil, "provider-bounds-unavailable"
   end
-  local ok, bounds, boundsReason = pcall(provider.cameraBounds, battle, shot)
+  local ok, bounds, boundsReason, detail = pcall(provider.cameraBounds, battle, shot)
   if not ok then return nil, "provider-bounds-error" end
   if bounds == nil and type(boundsReason) == "string" then
+    if battle and type(detail)=="table" then OverworldBattle._hudBoundsFailures[battle]=detail end
     return nil, boundsReason
   end
   if type(bounds) ~= "table" or bounds.schema ~= HUD_CAMERA_BOUNDS_SCHEMA
@@ -3428,6 +3431,8 @@ local function retryAfterNilFrame(active, textures, declineReason, dt)
     local waiting = active.cameraSeatRecoverySeconds < 2
       and active.cameraSeatRecoveryUpdates < 240
     if not waiting then
+      local detail=active.battle and OverworldBattle._hudBoundsFailures[active.battle]
+      if detail then Diagnostics.write("battle-hud-camera-failure",detail) end
       Diagnostics.write("battle-camera-seat-timeout", {
         mode=active.arena and active.arena.presentationMode,
         elapsedMs=math.floor(active.cameraSeatRecoverySeconds * 1000 + 0.5),
