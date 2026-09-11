@@ -391,10 +391,10 @@ local SECTION_DEFS = {
           de="Öffnet die vollständige Engine-Liste einschließlich Zeilen anderer aktiver Mods.",
         } },
       { label="START GUIDE", action="rootHelp" },
-      { label="RC DIAGNOSTICS", screen="VascDiagnostics",
+      { label="DIAGNOSTICS", screen="VascDiagnostics",
         help={
-          en="Enter the private maintainer code for deep QA controls. Support logging is always active.",
-          de="Privaten Maintainer-Code für tiefe QA-Funktionen eingeben. Das Support-Log ist immer aktiv.",
+          en="Inspect diagnostics and send a support report.",
+          de="Diagnose ansehen und Support-Bericht senden.",
         } },
       { label="VERSION", action="version" },
     },
@@ -547,7 +547,7 @@ local UI_LABEL_DE = {
   ["ALL GAME OPTIONS"]="ALLE OPTIONEN",
   ["START GUIDE"]="START-ANLEITUNG",
   ["SUPPORT LOG"]="FEHLERPROTOKOLL",
-  ["RC DIAGNOSTICS"]="RC-DIAGNOSE",
+  ["DIAGNOSTICS"]="DIAGNOSE",
   ["NO SETTINGS"]="KEINE EINSTELLUNG",
   ["HELP"]="HILFE",
   ["OPEN"]="ÖFFNEN",
@@ -1774,20 +1774,7 @@ local function newPerformanceDiagnostics(mod, game)
     pcall(diagnostics.boot, game)
   end
 
-  local function allowed()
-    if not (diagnostics and type(diagnostics.enabled) == "function") then
-      return false
-    end
-    local ok, enabled = pcall(diagnostics.enabled, game)
-    return ok and enabled == true
-  end
-
   local function measuredRows()
-    if not allowed() then
-      return {{ label="RC DIAGNOSTICS", right="LOCKED", statusTone="bad",
-        help=language == "de" and "Zuerst den Maintainer-Code freischalten."
-          or "Unlock the maintainer code first." }}
-    end
     if not (monitor and type(monitor.rows) == "function") then
       return {{ label="PERFORMANCE", right="AUSGEFALLEN", statusTone="bad",
         help=language == "de" and "Der plattformübergreifende Monitor wurde nicht geladen."
@@ -1810,7 +1797,7 @@ local function newPerformanceDiagnostics(mod, game)
 
   local function choose(item)
     if not item or item.action ~= "performanceSnapshot" then return false end
-    if not allowed() or not (monitor
+    if not (monitor
         and type(monitor.logSnapshot) == "function") then
       item.right, item.statusTone = "FAILED", "bad"
       return false
@@ -1860,12 +1847,9 @@ local function newPerformanceDiagnostics(mod, game)
   return menu
 end
 
--- Mobile trace/rearm live exclusively behind ADVANCED -> RC DIAGNOSTICS and
--- behind its four-wheel lock. The ordinary Voxel hub has no promotion flag,
--- and a forged/stale row still fails closed in choose(). The separate minimal
--- recovery marker remains always-on in Diagnostics; it is not exposed here.
+-- Support access is public; upload still requires the separate support code.
 local function supportSendRows(mod)
-  return {
+  local rows = {
     {label=languageCode(mod)=="de" and "VASC-LOG SENDEN" or "SEND VASC LOG", action="sendVascSupport",
       help=languageCode(mod)=="de" and "VASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
         or "Send VASC evidence including available download errors. Confirm before sending."},
@@ -1873,11 +1857,12 @@ local function supportSendRows(mod)
       help=languageCode(mod)=="de" and "KASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
         or "Send KASC evidence including available download errors. Confirm before sending."},
   }
+  local ok, handle=pcall(function() return mod:find("kanto_ascendant") end)
+  if not (ok and handle and handle.exports and handle.exports.supportSessionLog) then table.remove(rows,2) end
+  return rows
 end
 local function openSupportSend(mod, game, item)
   local diagnostics=config.diagnostics
-  local enabled=diagnostics and diagnostics.enabled and diagnostics.enabled(game)
-  if not enabled then item.right="LOCKED";return false end
   local target=diagnostics
   if item.action=="sendKascSupport" then
     local ok,handle=pcall(function()return mod:find("kanto_ascendant")end)
@@ -1892,173 +1877,49 @@ local function openSupportSend(mod, game, item)
 end
 
 local function newDiagnostics(mod, game)
-  local diagnostics = config.diagnostics
-  local mobileDiagnostic = config.mobileDiagnostic
-  if type(mobileDiagnostic) ~= "table" and type(mod) == "table" then
-    mobileDiagnostic = mod._vascMobileDiagnostic
-  end
-  local digits = { 0, 0, 0, 0 }
-  local function unlocked()
-    if not (diagnostics and type(diagnostics.enabled) == "function") then
-      return false
-    end
-    local ok, enabled = pcall(diagnostics.enabled, game)
-    return ok and enabled == true
-  end
-  local function performanceRow()
-    return {
-      label=languageCode(mod) == "de" and "GERÄTE-MONITOR"
-        or "DEVICE MONITOR",
-      action="performanceDiagnostics", right="LIVE",
-      help=languageCode(mod) == "de"
-        and "FPS, Framezeiten, Speicher, Renderer und VASC-Logs für PC, iOS und Android prüfen."
-        or "Inspect FPS, frame times, memory, renderer and VASC-Logs on desktop, iOS and Android.",
-    }
-  end
-  local function maintenanceRows()
-    local trace = mobileTraceStatus(mod)
-    local result = {
-      {
-        label="MOBILE TRACE", action="mobileTrace",
-        right=tostring(trace.code or "D00"),
-        help=languageCode(mod) == "de"
-          and "Zeigt den aktuellen mobilen Voxel-Checkpoint. D90 ist kein physischer Sichtbarkeitsnachweis."
-          or "Show the current mobile voxel checkpoint. D90 is not proof of physical visibility.",
-      }
-    }
-    if trace.recoveryMode == true then
-      result[#result + 1] = {
-        label="REARM LIVE TEST", action="mobileTraceRearm", right="RESTART",
-        help=languageCode(mod) == "de"
-          and "Löscht nach A nur den unvollendeten Recovery-Marker. RECOVERY 2D bleibt bis zum Neustart aktiv."
-          or "A clears only the unfinished recovery marker. RECOVERY 2D remains active until restart.",
-      }
-    end
-    for _, row in ipairs(supportSendRows(mod)) do result[#result+1]=row end
-    return result
-  end
-  local rows = {}
-  if unlocked() then
-    for _, row in ipairs(maintenanceRows()) do rows[#rows + 1] = row end
-  end
-  for index = 1, 4 do
-    rows[#rows + 1] = {
-      label="CODE " .. tostring(index), right="0",
-      digit=index,
-      help=languageCode(mod) == "de"
-        and "Mit LINKS/RECHTS oder A diese Stelle ändern."
-        or "Change this digit with LEFT/RIGHT or A.",
-    }
-  end
-  local applyRow = {
-    label="APPLY", action="diagnosticsApply", right="LOCKED",
-    help=languageCode(mod) == "de"
-      and "Code prüfen und das Diagnoseprotokoll aktivieren."
-      or "Check the code and enable the diagnostic log.",
-  }
-  rows[#rows + 1] = applyRow
-  if unlocked() then
-    applyRow.right = "ACTIVE"
-    rows[#rows + 1] = performanceRow()
-  end
-  local function revealMaintenance(activeMenu)
-    if type(activeMenu) ~= "table" or type(activeMenu.items) ~= "table" then
-      return false
-    end
-    for _, row in ipairs(activeMenu.items) do
-      if row.action == "performanceDiagnostics"
-          or row.action == "mobileTrace"
-          or row.action == "mobileTraceRearm" then
-        return false
+  local de = languageCode(mod) == "de"
+  local rows = supportSendRows(mod)
+  rows[#rows+1] = {label=de and "GERÄTE-MONITOR" or "DEVICE MONITOR",
+    action="performanceDiagnostics", right="LIVE",
+    help=de and "FPS, Framezeiten, Speicher und Renderdaten prüfen."
+      or "Inspect FPS, frame times, memory and renderer information."}
+  local mobile=config.mobileDiagnostic or mod._vascMobileDiagnostic
+  if mobile and type(mobile.status)=="function" then
+    local ok, status=pcall(mobile.status)
+    if ok and type(status)=="table" then
+      rows[#rows+1]={label="MOBILE TRACE", action="mobileTrace", right=tostring(status.code or "D00"),
+        help=de and "Mobilen Renderer-Checkpoint anzeigen." or "Inspect the mobile renderer checkpoint."}
+      if status.recoveryMode==true and type(mobile.rearm)=="function" then
+        rows[#rows+1]={label="REARM LIVE TEST",action="mobileTraceRearm",right="RESTART",
+          help=de and "Recovery-Marker zurücksetzen. Danach die App vollständig neu starten."
+            or "Reset the recovery marker, then fully restart the app."}
       end
-    end
-    local additions = maintenanceRows()
-    for index = #additions, 1, -1 do
-      table.insert(activeMenu.items, 1, additions[index])
-    end
-    activeMenu.index = (tonumber(activeMenu.index) or 1) + #additions
-    local hasPerformance = false
-    local applyIndex
-    for index, row in ipairs(activeMenu.items) do
-      if row.action == "performanceDiagnostics" then hasPerformance = true end
-      if row.action == "diagnosticsApply" then applyIndex = index end
-    end
-    if not hasPerformance and applyIndex then
-      table.insert(activeMenu.items, applyIndex + 1, performanceRow())
-    end
-    clampNavigation(activeMenu)
-    return #additions > 0
-  end
-  local function change(item, direction)
-    if not (item and item.digit) then return false end
-    local index = item.digit
-    digits[index] = (digits[index] + (direction or 1)) % 10
-    item.right = tostring(digits[index])
-    return true
-  end
-  local function choose(item, activeMenu)
-    if not item then return end
-    if item.digit then return change(item, 1) end
-    if item.action == "sendVascSupport" or item.action == "sendKascSupport" then
-      return openSupportSend(mod, game, item)
-    end
-    if item.action == "performanceDiagnostics" then
-      if not unlocked() then item.right = "LOCKED" return false end
-      return mod.ui.push(game, "VascPerformanceDiagnostics")
-    end
-    if item.action == "mobileTrace" then
-      if not unlocked() then item.right = "LOCKED" return false end
-      local status = mobileTraceStatus(mod)
-      item.right = tostring(status.code or "D00")
-      return showHelp(mod, game, "MOBILE TRACE", mobileTraceHelp(mod))
-    end
-    if item.action == "mobileTraceRearm" then
-      if not unlocked() then item.right = "LOCKED" return false end
-      local ok, done, reason = false, false, "rearm-api-unavailable"
-      if type(mobileDiagnostic) == "table"
-          and type(mobileDiagnostic.rearm) == "function" then
-        ok, done, reason = pcall(mobileDiagnostic.rearm)
-      end
-      item.right = ok and done == true and "ARMED" or "FAILED"
-      local body = ok and done == true
-        and (languageCode(mod) == "de"
-          and "Live-Test ist neu scharf. App vollständig beenden und neu starten; bis dahin bleibt RECOVERY 2D aktiv."
-          or "Live test rearmed. Fully quit and restart the app; RECOVERY 2D remains active until then.")
-        or ((languageCode(mod) == "de" and "Neu schärfen fehlgeschlagen: "
-          or "Rearm failed: ") .. tostring(reason or done))
-      return showHelp(mod, game, "REARM LIVE TEST", body)
-    end
-    if item.action == "diagnosticsApply" then
-      local entered = table.concat(digits)
-      if diagnostics and entered == tostring(diagnostics.CODE)
-          and type(diagnostics.setEnabled) == "function" then
-        local ok, enabled = pcall(diagnostics.setEnabled, game, true)
-        if ok and enabled == true and unlocked() then
-          item.right = "ACTIVE"
-          revealMaintenance(activeMenu)
-          return showHelp(mod, game, "RC DIAGNOSTICS",
-            languageCode(mod) == "de"
-              and ("Aktiv. Datei: " .. tostring(diagnostics.FILE)
-                .. " (VASC-Speicherordner).")
-              or ("Active. File: " .. tostring(diagnostics.FILE)
-                .. " (VASC storage directory)."))
-        end
-      end
-      item.right = "DENIED"
-      return false
     end
   end
   return guidedMenu(mod, game, {
-    key="vasc_diagnostics", title="RC DIAGNOSTICS",
-    helpTitle="RC DIAGNOSTICS HELP",
-    help=languageCode(mod) == "de"
-      and "Vierstelligen Maintainer-Code eingeben. Das Protokoll enthält nur VASC-Entscheidungen, keine Spielstände."
-      or "Enter the four-digit maintainer code. The log contains VASC decisions, not save data.",
-    rows=rows,
-    footer=languageCode(mod) == "de"
-      and "A:+1 L/R:ÄNDERN" or "A:+1 L/R:CHANGE",
-    options={ pageJump=false, wrap=true },
-    step=change, onChoose=choose,
+    key="vasc_diagnostics", title=de and "DIAGNOSE" or "DIAGNOSTICS",
+    helpTitle=de and "DIAGNOSE HILFE" or "DIAGNOSTICS HELP",
+    help=de and "Die Diagnose läuft automatisch. Langsame Szenen bleiben im Bericht erhalten. Zum Senden wird nur der achtstellige Support-Code benötigt."
+      or "Diagnostics run automatically. Slow scenes are retained in the report. Sending only requires the eight-digit support code.",
+    rows=rows, footer=de and "A:ÖFFNEN B:ZURÜCK" or "A:OPEN B:BACK",
+    options={pageJump=false, wrap=true},
+    onChoose=function(item)
+      if not item then return end
+      if item.action=="performanceDiagnostics" then
+        return mod.ui.push(game, "VascPerformanceDiagnostics")
+      end
+      if item.action=="mobileTrace" then
+        local ok,status=pcall(mobile.status)
+        return showHelp(mod,game,"MOBILE TRACE",ok and type(status)=="table"
+          and (tostring(status.code or "D00").." "..tostring(status.checkpoint or "")) or "Unavailable")
+      end
+      if item.action=="mobileTraceRearm" then
+        local ok,done=pcall(mobile.rearm)
+        item.right=ok and done==true and "RESTART" or "FAILED"
+        return ok and done==true
+      end
+      return openSupportSend(mod, game, item)
+    end,
   })
 end
 
@@ -2107,7 +1968,9 @@ animationReceipt = function()
 end
 
 local function newHub(mod, game)
-  local rows = {}
+  local rows = {{label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
+    screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
+      or "Inspect diagnostics and send a support log."}}
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -2142,6 +2005,7 @@ local function newHub(mod, game)
     options={ pageJump=true, wrap=true },
     onChoose=function(item)
       if not item then return end
+      if item.screen then return mod.ui.push(game, item.screen) end
       if item.factoryReset then
         local ok, result, reason = pcall(function()
           local source = assert(mod:read("shared/FactoryReset.lua"))
@@ -2171,7 +2035,7 @@ local function newHub(mod, game)
   -- The root needs the full 137 px row budget so both 17-glyph category
   -- names fit verbatim. VascMenuStyle moves only this cursor two pixels left.
   menu.__voxelAscendantRoot = true
-  -- On a fresh opening, return directly to the last section the player
+  -- When explicitly configured, return directly to the last section the player
   -- actually entered.  The guard only fires while this new root is the top
   -- state; returning from a child page therefore never bounces straight back
   -- into it.  Disabling resumeLastSection keeps the remembered root focus but
@@ -2182,7 +2046,7 @@ local function newHub(mod, game)
       if not self.__vascResumeChecked then
         self.__vascResumeChecked = true
         local state = self.__vascNavigation
-        local wanted = config.resumeLastSection ~= false and state
+        local wanted = config.resumeLastSection == true and state
           and state.nav and state.nav.lastSection or nil
         local stack = self.game and self.game.stack
         local isTop = stack and type(stack.top) == "function"

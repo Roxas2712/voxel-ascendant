@@ -6,6 +6,15 @@
 
 local mod = ...
 
+-- Both generations share the same bounded in-memory support evidence.
+do
+  local ok, recorder = pcall(function()
+    local source = assert(mod:read("lib/RuntimePerformanceDiagnostics.lua"))
+    return assert((loadstring or load)(source, "@RuntimePerformanceDiagnostics"))(mod)
+  end)
+  if ok then mod._vascRuntimeDiagnostics = recorder end
+end
+
 -- RC12 mobile trace bootstrap for the converged M10/M11 segment. It stores
 -- renderer checkpoints in RAM until Diagnostics has booted and does not itself
 -- install a render hook, query graphics state or write files directly.

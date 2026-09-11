@@ -387,10 +387,10 @@ local SECTION_DEFS = {
           de="Öffnet die vollständige Engine-Liste einschließlich Zeilen anderer aktiver Mods.",
         } },
       { label="START GUIDE", action="rootHelp" },
-      { label="RC DIAGNOSTICS", screen="VascDiagnostics",
+      { label="DIAGNOSTICS", screen="VascDiagnostics",
         help={
-          en="Enter the private maintainer code to enable a battle decision log.",
-          de="Privaten Maintainer-Code eingeben, um das Kampf-Diagnoseprotokoll zu aktivieren.",
+          en="Inspect diagnostics and send a support report.",
+          de="Diagnose ansehen und Support-Bericht senden.",
         } },
       { label="VERSION", action="version" },
     },
@@ -1426,10 +1426,7 @@ local function newBattleLayout(mod, game)
   })
 end
 
--- Deliberately simple four-wheel code entry.  It does not expose the code in
--- labels or help, and writes no log until APPLY accepts it.  Once enabled the
--- setting survives a restart so the boot decision and the first battle frame
--- are present in the same attachment.
+-- Public read-only performance view.
 local function newPerformanceDiagnostics(mod, game)
   local diagnostics = config.diagnostics
   local monitor = config.performanceDiagnostics
@@ -1437,14 +1434,8 @@ local function newPerformanceDiagnostics(mod, game)
   if diagnostics and type(diagnostics.boot) == "function" then
     pcall(diagnostics.boot, game)
   end
-  local unlocked = diagnostics and type(diagnostics.enabled) == "function"
-    and diagnostics.enabled(game) == true
   local rows
-  if not unlocked then
-    rows = {{ label="RC DIAGNOSTICS", right="LOCKED", statusTone="bad",
-      help=language == "de" and "Zuerst den Maintainer-Code freischalten."
-        or "Unlock the maintainer code first." }}
-  elseif monitor and type(monitor.rows) == "function" then
+  if monitor and type(monitor.rows) == "function" then
     local ok, value = pcall(monitor.rows, language, diagnostics)
     rows = ok and type(value) == "table" and value or nil
   end
@@ -1460,7 +1451,7 @@ local function newPerformanceDiagnostics(mod, game)
   local function choose(item)
     if not item or item.action ~= "performanceSnapshot" then return false end
     local ok, value = false, nil
-    if unlocked and monitor and type(monitor.logSnapshot) == "function" then
+    if monitor and type(monitor.logSnapshot) == "function" then
       ok, value = pcall(monitor.logSnapshot, diagnostics)
     end
     item.right = ok and type(value) == "table" and "DONE" or "FAILED"
@@ -1503,7 +1494,7 @@ local function newPerformanceDiagnostics(mod, game)
 end
 
 local function supportSendRows(mod)
-  return {
+  local rows = {
     {label=languageCode(mod)=="de" and "VASC-LOG SENDEN" or "SEND VASC LOG", action="sendVascSupport",
       help=languageCode(mod)=="de" and "VASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
         or "Send VASC evidence including available download errors. Confirm before sending."},
@@ -1511,11 +1502,12 @@ local function supportSendRows(mod)
       help=languageCode(mod)=="de" and "KASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
         or "Send KASC evidence including available download errors. Confirm before sending."},
   }
+  local ok, handle=pcall(function() return mod:find("kanto_ascendant") end)
+  if not (ok and handle and handle.exports and handle.exports.supportSessionLog) then table.remove(rows,2) end
+  return rows
 end
 local function openSupportSend(mod, game, item)
   local diagnostics=config.diagnostics
-  local enabled=diagnostics and diagnostics.enabled and diagnostics.enabled(game)
-  if not enabled then item.right="LOCKED";return false end
   local target=diagnostics
   if item.action=="sendKascSupport" then
     local ok,handle=pcall(function()return mod:find("kanto_ascendant")end)
@@ -1530,127 +1522,49 @@ local function openSupportSend(mod, game, item)
 end
 
 local function newDiagnostics(mod, game)
-  local diagnostics = config.diagnostics
-  local digits = { 0, 0, 0, 0 }
-  local rows = {}
-  for index = 1, 4 do
-    rows[index] = {
-      label="CODE " .. tostring(index), right="0",
-      digit=index,
-      help=languageCode(mod) == "de"
-        and "Mit LINKS/RECHTS oder A diese Stelle ändern."
-        or "Change this digit with LEFT/RIGHT or A.",
-    }
-  end
-  rows[5] = {
-    label="APPLY", action="diagnosticsApply", right="LOCKED",
-    help=languageCode(mod) == "de"
-      and "Code prüfen und das Diagnoseprotokoll aktivieren."
-      or "Check the code and enable the diagnostic log.",
-  }
-  rows[6] = {
-    label="MEGA QA LIMIT", action="megaLimitBypass", right="LOCKED",
-    help=languageCode(mod) == "de"
-      and "Nur für diese Sitzung: hebt nach Freischaltung ausschließlich das Limit von einer Mega-Entwicklung pro Kampf auf. Ring, Form und übrige Sperren bleiben Pflicht."
-      or "This session only: after unlocking, lifts only the one-Mega-per-battle limit. Ring, form and all other restrictions still apply.",
-  }
-  if diagnostics and type(diagnostics.enabled) == "function"
-      and diagnostics.enabled(game) then
-    rows[5].right = "ACTIVE"
-    rows[6].right = diagnostics.megaLimitBypass
-        and diagnostics.megaLimitBypass(game) and "UNLIMITED" or "NORMAL"
-    rows[#rows + 1] = {
-      label=languageCode(mod) == "de" and "GERÄTE-MONITOR"
-        or "DEVICE MONITOR",
-      action="performanceDiagnostics", right="LIVE",
-      help=languageCode(mod) == "de"
-        and "FPS, Framezeiten, Speicher, Renderer und VASC-Logs prüfen."
-        or "Inspect FPS, frame times, memory, renderer and VASC-Logs.",
-    }
-  end
-  for _, row in ipairs(supportSendRows(mod)) do rows[#rows+1]=row end
-  local function change(item, direction)
-    if not (item and item.digit) then return false end
-    local index = item.digit
-    digits[index] = (digits[index] + (direction or 1)) % 10
-    item.right = tostring(digits[index])
-    return true
-  end
-  local function choose(item, activeMenu)
-    if not item then return end
-    if item.digit then return change(item, 1) end
-    if item.action == "diagnosticsApply" then
-      local entered = table.concat(digits)
-      if diagnostics and entered == tostring(diagnostics.CODE)
-          and type(diagnostics.setEnabled) == "function" then
-        diagnostics.setEnabled(game, true)
-        item.right = "ACTIVE"
-        rows[6].right = diagnostics.megaLimitBypass
-            and diagnostics.megaLimitBypass(game) and "UNLIMITED" or "NORMAL"
-        local found = false
-        for _, row in ipairs(rows) do
-          if row.action == "performanceDiagnostics" then found = true end
-        end
-        if not found then
-          rows[#rows + 1] = {
-            label=languageCode(mod) == "de" and "GERÄTE-MONITOR"
-              or "DEVICE MONITOR",
-            action="performanceDiagnostics", right="LIVE",
-            help=languageCode(mod) == "de"
-              and "FPS, Framezeiten, Speicher, Renderer und VASC-Logs prüfen."
-              or "Inspect FPS, frame times, memory, renderer and VASC-Logs.",
-          }
-          if activeMenu and type(activeMenu.items) == "table"
-              and activeMenu.items ~= rows then
-            table.insert(activeMenu.items, rows[#rows])
-          end
-        end
-        return showHelp(mod, game, "RC DIAGNOSTICS",
-          languageCode(mod) == "de"
-            and ("Aktiv. Datei: " .. tostring(diagnostics.FILE)
-              .. " (VASC-Speicherordner; über die Spiel-Dateien abrufbar).")
-            or ("Active. File: " .. tostring(diagnostics.FILE)
-              .. " (VASC storage; available through the game files)."))
+  local de = languageCode(mod) == "de"
+  local rows = supportSendRows(mod)
+  rows[#rows+1] = {label=de and "GERÄTE-MONITOR" or "DEVICE MONITOR",
+    action="performanceDiagnostics", right="LIVE",
+    help=de and "FPS, Framezeiten, Speicher und Renderdaten prüfen."
+      or "Inspect FPS, frame times, memory and renderer information."}
+  local mobile=config.mobileDiagnostic or mod._vascMobileDiagnostic
+  if mobile and type(mobile.status)=="function" then
+    local ok, status=pcall(mobile.status)
+    if ok and type(status)=="table" then
+      rows[#rows+1]={label="MOBILE TRACE", action="mobileTrace", right=tostring(status.code or "D00"),
+        help=de and "Mobilen Renderer-Checkpoint anzeigen." or "Inspect the mobile renderer checkpoint."}
+      if status.recoveryMode==true and type(mobile.rearm)=="function" then
+        rows[#rows+1]={label="REARM LIVE TEST",action="mobileTraceRearm",right="RESTART",
+          help=de and "Recovery-Marker zurücksetzen. Danach die App vollständig neu starten."
+            or "Reset the recovery marker, then fully restart the app."}
       end
-      item.right = "DENIED"
-      return false
-    end
-    if item.action == "sendVascSupport" or item.action == "sendKascSupport" then
-      return openSupportSend(mod, game, item)
-    end
-    if item.action == "performanceDiagnostics" then
-      if not (diagnostics and type(diagnostics.enabled) == "function"
-          and diagnostics.enabled(game)) then
-        item.right = "LOCKED"
-        return false
-      end
-      return mod.ui.push(game, "VascPerformanceDiagnostics")
-    end
-    if item.action == "megaLimitBypass" then
-      if not (diagnostics and type(diagnostics.enabled) == "function"
-          and diagnostics.enabled(game)
-          and type(diagnostics.setMegaLimitBypass) == "function") then
-        item.right = "LOCKED"
-        return false
-      end
-      local enabled = diagnostics.megaLimitBypass
-        and diagnostics.megaLimitBypass(game) or false
-      enabled = diagnostics.setMegaLimitBypass(game, not enabled)
-      item.right = enabled and "UNLIMITED" or "NORMAL"
-      return true
     end
   end
   return guidedMenu(mod, game, {
-    key="vasc_diagnostics", title="RC DIAGNOSTICS",
-    helpTitle="RC DIAGNOSTICS HELP",
-    help=languageCode(mod) == "de"
-      and "Vierstelligen Maintainer-Code eingeben. Das Protokoll enthält nur VASC-Entscheidungen, keine Spielstände."
-      or "Enter the four-digit maintainer code. The log contains VASC decisions, not save data.",
-    rows=rows,
-    footer=languageCode(mod) == "de"
-      and "A:+1 L/R:ÄNDERN" or "A:+1 L/R:CHANGE",
-    options={ pageJump=false, wrap=true },
-    step=change, onChoose=choose,
+    key="vasc_diagnostics", title=de and "DIAGNOSE" or "DIAGNOSTICS",
+    helpTitle=de and "DIAGNOSE HILFE" or "DIAGNOSTICS HELP",
+    help=de and "Die Diagnose läuft automatisch. Langsame Szenen bleiben im Bericht erhalten. Zum Senden wird nur der achtstellige Support-Code benötigt."
+      or "Diagnostics run automatically. Slow scenes are retained in the report. Sending only requires the eight-digit support code.",
+    rows=rows, footer=de and "A:ÖFFNEN B:ZURÜCK" or "A:OPEN B:BACK",
+    options={pageJump=false, wrap=true},
+    onChoose=function(item)
+      if not item then return end
+      if item.action=="performanceDiagnostics" then
+        return mod.ui.push(game, "VascPerformanceDiagnostics")
+      end
+      if item.action=="mobileTrace" then
+        local ok,status=pcall(mobile.status)
+        return showHelp(mod,game,"MOBILE TRACE",ok and type(status)=="table"
+          and (tostring(status.code or "D00").." "..tostring(status.checkpoint or "")) or "Unavailable")
+      end
+      if item.action=="mobileTraceRearm" then
+        local ok,done=pcall(mobile.rearm)
+        item.right=ok and done==true and "RESTART" or "FAILED"
+        return ok and done==true
+      end
+      return openSupportSend(mod, game, item)
+    end,
   })
 end
 
@@ -1699,7 +1613,9 @@ animationReceipt = function()
 end
 
 local function newHub(mod, game)
-  local rows = {}
+  local rows = {{label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
+    screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
+      or "Inspect diagnostics and send a support log."}}
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -1731,6 +1647,7 @@ local function newHub(mod, game)
     options={ pageJump=true, wrap=true },
     onChoose=function(item)
       if not item then return end
+      if item.screen then return mod.ui.push(game, item.screen) end
       if item.factoryReset then
         local ok, result, reason = pcall(function()
           local source = assert(mod:read("shared/FactoryReset.lua"))
@@ -1771,7 +1688,7 @@ local function newHub(mod, game)
       if not self.__vascResumeChecked then
         self.__vascResumeChecked = true
         local state = self.__vascNavigation
-        local wanted = config.resumeLastSection ~= false and state
+        local wanted = config.resumeLastSection == true and state
           and state.nav and state.nav.lastSection or nil
         local stack = self.game and self.game.stack
         local isTop = stack and type(stack.top) == "function"

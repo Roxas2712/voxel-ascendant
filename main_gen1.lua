@@ -143,6 +143,7 @@ function V.require(name)
     and ("gen2/lib/" .. name .. ".lua")
     or ("lib/" .. name .. ".lua")
   local value = chunkFor(rel)(V)
+  if mod._vascRuntimeDiagnostics then value = mod._vascRuntimeDiagnostics.wrap(name, value) end
   modules[name] = value
   return value
 end

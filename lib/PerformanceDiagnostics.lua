@@ -198,7 +198,7 @@ function PerformanceDiagnostics.endLoad(kind, context)
   local result = tostring(context.result or context.status or "ready"):lower()
   local failed = result == "failed" or result == "failure"
     or result == "error" or result == "fallback" or result == "missing"
-  local tone = failed and "bad" or loadTone(kind, elapsedMs)
+  local tone = result == "unobserved" and "warn" or (failed and "bad" or loadTone(kind, elapsedMs))
   local resourceAfter = resourceSample()
   local delta = resourceDelta(pending.resourceBefore, resourceAfter)
   local receipt = {
@@ -212,7 +212,7 @@ function PerformanceDiagnostics.endLoad(kind, context)
     resourceDelta=delta,
   }
   PerformanceDiagnostics.latestLoads[kind] = receipt
-  if tone ~= "good" then
+  if tone ~= "good" and result ~= "unobserved" then
     addFinding((failed and "LOAD-FAILED-" or "SLOW-") .. kind:upper(),
       kind:upper() .. " " .. (failed and "FEHLGESCHLAGEN " or "")
         .. string.format("%.0f MS", elapsedMs), tone, {
@@ -561,8 +561,9 @@ function PerformanceDiagnostics.noteEvent(event, fields)
   event = tostring(event or ""):lower()
   fields = type(fields) == "table" and fields or {}
   local result = tostring(fields.result or fields.status or ""):lower()
-  local failed = result == "failed" or result == "failure" or result == "error"
-    or event:find("error", 1, true) or event:find("fallback", 1, true)
+  local expectedFallback = result == "expected_fallback" or result == "expected-fallback"
+  local failed = not expectedFallback and (result == "failed" or result == "failure" or result == "error"
+    or event:find("error", 1, true) or event:find("fallback", 1, true))
   local function starts(kind)
     if not PerformanceDiagnostics.pendingLoads[kind] then
       PerformanceDiagnostics.beginLoad(kind, fields)
@@ -1579,7 +1580,7 @@ function PerformanceDiagnostics.install(opts)
     pcall(events.on, events, "battle.ended", function(payload)
       if PerformanceDiagnostics.pendingLoads.battle then
         PerformanceDiagnostics.endLoad("battle", {
-          status="failed", source="battle.ended-before-first-hud",
+          status="unobserved", source="battle.ended-before-first-hud",
           sceneId=type(payload) == "table" and payload.sceneId or nil,
           mapId=type(payload) == "table" and payload.mapId or nil,
         })

@@ -10,6 +10,7 @@ function M.new(mod, getLog)
     return s:gsub("https?://%S+","[url]")
       :gsub("/Users/[^/%s]+","/Users/[redacted]")
       :gsub("/home/[^/%s]+","/home/[redacted]")
+      :gsub("([A-Za-z]:[\\/]Users[\\/])[^\\/%s]+","%1[redacted]")
       :gsub("[Tt]oken[=:]%s*%S+","token=[redacted]")
       :gsub("[Aa]uthorization[=:]%s*[^\r\n]+","authorization=[redacted]")
       :gsub("[%z\1-\8\11\12\14-\31]", "?")
@@ -72,12 +73,26 @@ function M.new(mod, getLog)
       end
     end
     local failureSummary=head(table.concat(failures,"\n"),4000)
-    if #log>40000 then log=head(log,3000).."\n[older middle records omitted]\n"..tail(log,32000) end
     local sys=love and love.system
     local osOK,platform=pcall(function()return sys and sys.getOS and sys.getOS()end)
     local prefix="ASCENDANT-SUPPORT/1\nmod="..mod.id.."\nversion="..head(clean(mod.version or "unknown"),120)
       .."\ntime="..tostring(os.time()).."\nplatform="..clean(osOK and platform or "unknown").."\n"
-    local report=prefix.."support-code="..S.code.."\n"..downloadLines().."\n--- FAILURE SUMMARY ---\n"..failureSummary.."\n--- SESSION LOG ---\n"..log..downloadLog()
+    local evidence="runtime-evidence=unavailable"
+    local recorder=mod._vascRuntimeDiagnostics
+    if recorder and type(recorder.evidence)=="function" then
+      local good,value=pcall(recorder.evidence)
+      if good and type(value)=="string" then evidence=value end
+    end
+    local report=prefix.."support-code="..S.code.."\n"..head(downloadLines(),4000)
+      .."\n--- RUNTIME EVIDENCE ---\n"..head(clean(evidence),16000)
+      .."\n--- FAILURE SUMMARY ---\n"..failureSummary..downloadLog()
+      .."\n--- SESSION LOG ---\n"
+    local budget=48*1024-#report
+    if #log>budget then
+      local marker="\n[older middle records omitted]\n"
+      log=head(log,math.min(3000,budget))..marker..tail(log,math.max(0,budget-3000-#marker))
+    end
+    report=report..log
     if #report>48*1024 then return nil,"too-large" end
     return report
   end
@@ -122,8 +137,8 @@ function M.new(mod, getLog)
       failed=tr("FAILED","FEHLER"),cancelled=tr("CANCEL","ABBRUCH"),timeout=tr("TIMEOUT","TIMEOUT"),
       cooldown=tr("WAIT","WARTEN"),["not-configured"]=tr("OFFLINE","OFFLINE"),["code-required"]=tr("ENTER CODE","CODE EINGEBEN")}
     local armed=false
-    local consent=tr("Send a bounded log excerpt, mod version, platform and available HD download errors to the developer for troubleshooting? No save file is attached. Press A again to send. Nothing is sent automatically. Ask the developer for a support code (valid 24 hours, once per mod).",
-      "Begrenzten Log-Ausschnitt, Mod-Version, Plattform und verfügbare HD-Download-Fehler zur Fehleranalyse an den Entwickler senden? Kein Spielstand wird angehängt. Zum Senden erneut A drücken. Kein automatischer Versand. Support-Code beim Entwickler anfordern (24 Stunden gültig, einmal je Mod).")
+    local consent=tr("Send a bounded log excerpt, installed mod versions, renderer, scene timings and available HD download errors to the developer for troubleshooting? No save file is attached. Press A again to send. Nothing is sent automatically. Ask the developer for a support code (valid 24 hours, once per mod).",
+      "Begrenzten Log-Ausschnitt, installierte Mod-Versionen, Renderer, Szenenmessungen und verfügbare HD-Download-Fehler zur Fehleranalyse an den Entwickler senden? Kein Spielstand wird angehängt. Zum Senden erneut A drücken. Kein automatischer Versand. Support-Code beim Entwickler anfordern (24 Stunden gültig, einmal je Mod).")
     local rows={{label=tr("SEND SUPPORT LOG","SUPPORT-LOG SENDEN"),action="send",help=consent},
       {label=tr("STATUS","STATUS"),action="status",right="",help=consent},
       {label=tr("CANCEL SEND","VERSAND ABBRECHEN"),action="cancel"}}

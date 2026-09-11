@@ -336,6 +336,12 @@ end
 local GoldVoxelBridge, BaseV, bridgeErr = bootGoldVoxelBridge()
 local ds, dramaticShapeId
 if GoldVoxelBridge and BaseV then
+  if mod._vascRuntimeDiagnostics then
+    local baseRequire = BaseV.require
+    BaseV.require = function(name)
+      return mod._vascRuntimeDiagnostics.wrap(name, baseRequire(name))
+    end
+  end
   ds = mod
   dramaticShapeId = "STADIUM2_GOLD_COMPOSE"
   mod.log:info("Gold/Silver/Crystal voxel renderer provider loaded; the current Gen-2 drawWorld pipeline owns world frames when available, with render.compose retained as fallback")

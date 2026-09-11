@@ -461,8 +461,8 @@ local function buildSections(opts, extraKeys)
       help="Repeat the complete Voxel Ascendant START-menu guide.",
     },
     {
-      label="LOGGER / RC DIAGNOSTICS", screen="VascDiagnostics",
-      help="Enter the private maintainer code for deep QA controls.",
+      label="DIAGNOSTICS / SUPPORT", screen="VascDiagnostics",
+      help="Inspect diagnostics and send a support report.",
     },
     {
       label="VERSION", action="version",
