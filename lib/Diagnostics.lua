@@ -1309,9 +1309,10 @@ local function readRecoveryFile(filesystem, path, strict)
 end
 
 function Diagnostics.readMobileRecoveryMarker()
-  -- Mobile crash-loop latches must not force Windows desktop boots into 2D.
-  if runtimeOS() == "Windows" then
-    return nil, "recovery-marker-disabled-on-windows"
+  -- Crash-loop recovery is a mobile contract, never a desktop renderer latch.
+  local platform = runtimeOS()
+  if platform ~= "iOS" and platform ~= "Android" then
+    return nil, "recovery-marker-disabled-on-desktop"
   end
   local filesystem = fs()
   if not (filesystem and type(filesystem.read) == "function") then
@@ -1336,9 +1337,10 @@ function Diagnostics.readMobileRecoveryMarker()
 end
 
 function Diagnostics.writeMobileRecoveryMarker(fields)
-  -- Avoid synchronous mobile-marker I/O from Windows renderer callbacks.
-  -- Normal bounded support/session logging remains enabled.
-  if runtimeOS() == "Windows" then return true, nil end
+  -- Desktop render callbacks must not perform synchronous mobile-marker I/O.
+  -- Normal bounded support/session logging remains enabled on every platform.
+  local platform = runtimeOS()
+  if platform ~= "iOS" and platform ~= "Android" then return true, nil end
   local filesystem = fs()
   if not (filesystem and type(filesystem.write) == "function") then
     return false, "filesystem-write-unavailable"

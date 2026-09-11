@@ -1,3 +1,17 @@
+# Voxel Ascendant 3.0.23 — Public diagnostics and retained performance evidence
+
+DIAGNOSTICS is now the first entry in the VASC settings hub. The four-digit maintainer unlock is no longer required to open diagnostics, inspect the device monitor or send a VASC support log. The separate eight-digit support code and manual send confirmation remain required. KASC is optional; its send action appears only when its support service is available. The hub stays visible on opening unless automatic section resume is explicitly configured.
+
+Support reports now include engine and loaded mod versions, graphics device and renderer, selected render settings, CPU-side frame/update/draw timings and selected VASC component timings. Bounded in-memory windows retain recent scenes and the worst measured scene windows even after performance recovers. Reports remain limited to 48 KiB; no save file is attached and nothing is uploaded automatically. Timing measures CPU wall time, not GPU execution or a definitive attribution to another mod.
+
+Mobile recovery markers no longer perform synchronous file I/O on desktop. iOS/Android recovery remains enabled. Expected optional-provider fallbacks no longer become runtime-error findings. A battle ending before the HUD readiness observation is classified as unobserved instead of failed. The shared support sender is also correctly routed for Gen 2.
+
+Includes all 3.0.22 item-party and widescreen Bag fixes. Import the ZIP and fully restart the game. Reproduce the slowdown, then open DIAGNOSTICS and send the report in the same session.
+
+Validation: deterministic diagnostic retention, payload bounds, callback results/errors, both menu variants without KASC/unlock, desktop/mobile marker tests and 3.0.22 regression checks. Native Gen 1 validation uses engine 0.2.57 with Wilds 2.1.9 and HGSS 2.1.0 on macOS. The reported Windows FPS problem is not claimed fixed by this release.
+
+---
+
 # Voxel Ascendant 3.0.22 — Item menus and widescreen Bag
 
 Using a field item now keeps the selected VASC party presentation instead of falling back to the classic 2D team screen. Item and script target callbacks are no longer mistaken for battle ownership; battle party providers retain their own presentation.

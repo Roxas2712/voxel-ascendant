@@ -74,10 +74,23 @@ local function closeWindow()
     local e=sorted[i];local r=e.row
     lines[#lines+1]=string.format('timing %s calls=%d totalMs=%.3f selfMs=%.3f maxMs=%.3f errors=%d',e.name,r.calls,r.total,r.self,r.max,r.errors)
   end
-  local record={mean=w.mean,text=table.concat(lines,'\n')}
+  lines[#lines+1]=string.format('window startSeconds=%.3f endSeconds=%.3f',w.start,clock())
+  local stats=R.graphicsStats or {}
+  lines[#lines+1]='render-sample drawcalls='..safe(stats.drawcalls)..' textureBytes='..safe(stats.texturememory)..' canvasSwitches='..safe(stats.canvasswitches)
+  local memOk,mem=pcall(collectgarbage,'count')
+  if memOk then lines[#lines+1]='lua-memory-KiB='..safe(mem) end
+  local record={mean=w.mean,key=w.map..':'..w.phase,text=table.concat(lines,'\n')}
   R.recent[#R.recent+1]=record;if #R.recent>3 then table.remove(R.recent,1) end
   if w.mean>33.34 or w.max>100 then
-    R.worst[#R.worst+1]=record
+    local found
+    for i,old in ipairs(R.worst) do
+      if old.key==record.key then
+        found=true
+        if record.mean>old.mean then R.worst[i]=record end
+        break
+      end
+    end
+    if not found then R.worst[#R.worst+1]=record end
     table.sort(R.worst,function(a,b)return a.mean>b.mean end)
     if #R.worst>3 then table.remove(R.worst) end
   end

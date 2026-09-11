@@ -1,7 +1,9 @@
 # Manual support reports
 
-Open the in-game diagnostics/admin menu and select SEND VASC LOG or SEND KASC LOG. Ask the maintainer for an eight-digit support code, enter its digits with A, then select Send and confirm. A code lasts 24 hours and permits one report for each mod. If sending fails, contact the maintainer for assistance or a new code.
+Open VASC settings → DIAGNOSTICS (the first entry) → SEND VASC LOG. No four-digit unlock is required. Ask the maintainer for an eight-digit support code, enter it and confirm sending. A code lasts 24 hours and permits one report per mod. KASC is optional; SEND KASC LOG is shown only if its support service is installed.
 
-Nothing is uploaded automatically. Reports contain a bounded session-log excerpt, mod version, platform and available HD-download diagnostics. No save file is attached. Common URLs and user paths are redacted; review your situation before sending diagnostic information. Reports are retained for up to 14 days. The feature uses the host's existing mod.postLog interface; unsupported hosts show OFFLINE.
+Reproduce the problem before sending and stay in the same game session. Recent and worst scene measurements are retained in memory so returning to a fast menu does not erase the slowdown evidence. Restarting starts a new measurement session.
 
-Deutsch: Im Diagnose-/Admin-Menü SEND VASC LOG oder SEND KASC LOG wählen. Achtstelligen Support-Code beim Entwickler anfordern, Ziffern mit A einstellen und Versand bestätigen. Der Code gilt 24 Stunden, einmal je Mod. Kein automatischer Versand, kein angehängter Spielstand. Enthalten sind begrenzte Protokollausschnitte und verfügbare HD-Download-Fehler.
+Nothing is uploaded automatically. The bounded report includes a session-log excerpt, engine and mod versions, renderer/device, selected settings, CPU-side timing windows and available download diagnostics. CPU wall timing includes waits and does not measure GPU execution directly. No save file is attached. Common URLs and user paths are redacted. Reports are retained for up to 14 days. Unsupported upload hosts show OFFLINE.
+
+Deutsch: VASC-Einstellungen → DIAGNOSE → VASC-LOG SENDEN. Keine 2712-Freischaltung nötig. Den Fehler zuerst nachstellen und anschließend in derselben Sitzung senden. Der achtstellige Support-Code und die Versandbestätigung bleiben erforderlich. KASC ist optional.

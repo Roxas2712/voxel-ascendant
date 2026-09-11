@@ -212,6 +212,7 @@ local GEN2_A21_SHARED_UI = {
   -- A21 copy writes through love.filesystem, which current Gen1Recomp removes
   -- from mod sandboxes and therefore lost real Crystal sessions.
   ["lib/Diagnostics.lua"] = "lib/Diagnostics.lua",
+  ["lib/SupportSend.lua"] = "lib/SupportSend.lua",
   ["lib/PerformanceDiagnostics.lua"] = "lib/PerformanceDiagnostics.lua",
   ["lib/TitleHubPresentation.lua"] = "lib/TitleHubPresentation.lua",
   ["lib/OrasUiSkin.lua"] = "lib/gen2_a21_shared/OrasUiSkin.lua",

@@ -659,11 +659,17 @@ function PerformanceDiagnostics.noteEvent(event, fields)
     -- battle.started means that the simulation exists.  The battle is only
     -- visually ready when the first VASC HUD receipt is painted below.
     starts("battle")
+  elseif result == "native_latched" and PerformanceDiagnostics.pendingLoads.battle then
+    -- The native provider does not emit a VASC HUD-ready receipt. Preserve
+    -- the provider's reason, but do not wait for an observation it cannot send.
+    PerformanceDiagnostics.endLoad("battle", {
+      status="unobserved", source=event, sceneId=fields.sceneId, mapId=fields.mapId,
+    })
   elseif event:find("battle", 1, true) and (event:find("finished", 1, true)
       or event:find("ended", 1, true))
       and PerformanceDiagnostics.pendingLoads.battle then
     PerformanceDiagnostics.endLoad("battle", {
-      status="failed", source=event,
+      status="unobserved", source=event,
       sceneId=fields.sceneId, mapId=fields.mapId,
     })
   end
