@@ -106,14 +106,29 @@ for _,path in ipairs({'lib/VascMenu.lua','lib/gen2_a21_shared/VascMenu.lua'}) do
   assert(menuModule.install(mod,{settings={},diagnostics=diagnostics,performanceDiagnostics={rows=function()return {{label='FPS',right='60'}}end}}))
   local game={stack={top=function()end,push=function()end},input={wasPressed=function()return false end}}
   local root=screens.VascMenu.new(game)
-  assert(root.items[1].screen=='VascDiagnostics',path..' diagnosis is not first')
-  root:choose(1);assert(pushes[#pushes].screen=='VascDiagnostics')
+  assert(root.items[1].section=='world',path..' world must stay first')
+  local diagnosticIndex,lastSection
+  for i,row in ipairs(root.items)do
+    if row.section then lastSection=i end
+    if row.screen=='VascDiagnostics' then diagnosticIndex=i end
+  end
+  assert(diagnosticIndex==lastSection+1,'diagnosis must follow the settings sections')
+  root:choose(diagnosticIndex);assert(pushes[#pushes].screen=='VascDiagnostics')
   local page=screens.VascDiagnostics.new(game)
   for _,row in ipairs(page.items)do assert(not row.digit and row.action~='diagnosticsApply')end
   page:choose(1);assert(sent,'send must open without KASC and without 2712')
   for i,row in ipairs(page.items)do if row.action=='performanceDiagnostics' then page:choose(i)end end
   assert(pushes[#pushes].screen=='VascPerformanceDiagnostics')
+  local kascSent=false
+  mod.find=function(_,id)
+    if id=='kanto_ascendant' then return {exports={supportSessionLog={openSupportSend=function()kascSent=true;return true end}}} end
+  end
+  local withKasc=screens.VascDiagnostics.new(game)
+  local kascIndex
+  for i,row in ipairs(withKasc.items)do if row.action=='sendKascSupport' then kascIndex=i end end
+  assert(kascIndex,'KASC log missing from relocated diagnostics')
+  withKasc:choose(kascIndex);assert(kascSent,'KASC sender was not called')
   local performance=screens.VascPerformanceDiagnostics.new(game)
   assert(performance.items[1].label=='FPS','monitor still locked')
 end
-print('Gen1 + Gen2: diagnosis first, no unlock, support without KASC, no QA mutation: OK')
+print('Gen1 + Gen2: diagnosis after settings, no unlock, support without KASC, no QA mutation: OK')

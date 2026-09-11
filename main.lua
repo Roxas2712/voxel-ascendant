@@ -213,6 +213,7 @@ local GEN2_A21_SHARED_UI = {
   -- from mod sandboxes and therefore lost real Crystal sessions.
   ["lib/Diagnostics.lua"] = "lib/Diagnostics.lua",
   ["lib/SupportSend.lua"] = "lib/SupportSend.lua",
+  ["lib/SupportMenu.lua"] = "lib/SupportMenu.lua",
   ["lib/PerformanceDiagnostics.lua"] = "lib/PerformanceDiagnostics.lua",
   ["lib/TitleHubPresentation.lua"] = "lib/TitleHubPresentation.lua",
   ["lib/OrasUiSkin.lua"] = "lib/gen2_a21_shared/OrasUiSkin.lua",

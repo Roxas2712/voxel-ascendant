@@ -1514,7 +1514,14 @@ local function openSupportSend(mod, game, item)
     target=ok and handle and handle.exports and handle.exports.supportSessionLog or nil
   end
   if target and type(target.openSupportSend)=="function" then
-    return target.openSupportSend(game,languageCode(mod)=="de")
+    local opened=target.openSupportSend(game,languageCode(mod)=="de")
+    if opened and game.stack and type(game.stack.top)=="function" then
+      local ok,presentation=pcall(V.require,"SupportMenu")
+      if ok and presentation and type(presentation.decorate)=="function" then
+        presentation.decorate(game.stack:top(),menuUi(mod),languageCode(mod)=="de")
+      end
+    end
+    return opened
   end
   return showHelp(mod,game,item.label,languageCode(mod)=="de"
     and "Der passende Mod mit Support-Versand ist nicht verfügbar."
@@ -1613,9 +1620,7 @@ animationReceipt = function()
 end
 
 local function newHub(mod, game)
-  local rows = {{label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
-    screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
-      or "Inspect diagnostics and send a support log."}}
+  local rows = {}
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -1630,6 +1635,9 @@ local function newHub(mod, game)
   if #rows == 0 then
     rows[1] = { label="NO SETTINGS", help="No VASC sections are available." }
   end
+  rows[#rows+1] = {label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
+    screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
+      or "Inspect diagnostics and send a support log."}
   rows[#rows + 1] = {
     label="Resets to Factory", factoryReset=true,
     help=languageCode(mod) == "de"

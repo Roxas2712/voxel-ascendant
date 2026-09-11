@@ -1,6 +1,6 @@
 # Manual support reports
 
-Open VASC settings → DIAGNOSTICS (the first entry) → SEND VASC LOG. No four-digit unlock is required. Ask the maintainer for an eight-digit support code, enter it and confirm sending. A code lasts 24 hours and permits one report per mod. KASC is optional; SEND KASC LOG is shown only if its support service is installed.
+Open VASC settings → DIAGNOSTICS (below the settings sections) → SEND VASC LOG. No four-digit unlock is required. Ask the maintainer for an eight-digit support code, enter it in the eight-digit code row and confirm sending. A changes the selected digit; Left/Right changes the position. A code lasts 24 hours and permits one report per mod. KASC is optional; SEND KASC LOG is shown only if its support service is installed.
 
 Reproduce the problem before sending and stay in the same game session. Recent and worst scene measurements are retained in memory so returning to a fast menu does not erase the slowdown evidence. Restarting starts a new measurement session.
 
