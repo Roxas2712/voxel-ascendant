@@ -1,3 +1,15 @@
+# Voxel Ascendant 3.0.22 — Item menus and widescreen Bag
+
+Using a field item now keeps the selected VASC party presentation instead of falling back to the classic 2D team screen. Item and script target callbacks are no longer mistaken for battle ownership; battle party providers retain their own presentation.
+
+Fresh Gen 1 profiles again default to D/P ORAS WIDE. Existing saved Bag choices are preserved. If your profile still uses GAME/KASC, select D/P ORAS WIDE under BAG MENU to use the wide layout.
+
+Includes the battle HUD placement recovery from 3.0.21. Import the ZIP and fully restart the game. No save migration is required.
+
+Validated with KASC 6.7.4 and engine 0.2.57 on Pokémon Yellow/macOS: normal and item party screens, default Bag, cancellation without consumption, Potion healing, six-Pokémon target navigation, and Antidote use; party/battle ownership, forced and voluntary switching, saved Bag choices, sorting and presentation regressions. The reporter's Windows installation has not been tested directly.
+
+---
+
 # Voxel Ascendant 3.0.20 — Battle textbox positioning
 
 Added independent TEXTBOX X and TEXTBOX Y settings in Gen 1 battle settings and Gen 2 Skins & Overlays. Move the battle dialogue and its frame horizontally or vertically; negative Y moves up. The Yes/No prompt follows the textbox. Positions stay within the viewport.
