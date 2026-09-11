@@ -25,14 +25,15 @@ Settings.uiSkinSetting = ModSetting.new(
   { "oras", "standard" }, { "ORAS GLASS", "GAME DEFAULT" }, "oras")
 
 -- Bag behaviour and the captured fallback renderer remain owned by the game,
--- Useful Bag or KASC. GAME/KASC is the safe default and never wraps that draw.
+-- Useful Bag or KASC. D/P ORAS WIDE is the default presentation; an explicit
+-- GAME/KASC selection keeps the provider draw.
 -- Only the two real 512x288 presentations are public choices. Historical
 -- compact values still resolve safely, but migrate to their corresponding
 -- WIDE presentation instead of remaining selectable menu rungs.
 Settings.bagSkinSetting = ModSetting.new(
   "qol_bag_skin", "BAG MENU",
   { "external", "oras_wide", "frlg_wide" },
-  { "GAME/KASC", "D/P ORAS WIDE", "FRLG ORAS WIDE" }, "external")
+  { "GAME/KASC", "D/P ORAS WIDE", "FRLG ORAS WIDE" }, "oras_wide")
 Settings.bagSkinSetting:aliasLegacy("oras", "oras_wide")
 Settings.bagSkinSetting:aliasLegacy("frlg", "frlg_wide")
 

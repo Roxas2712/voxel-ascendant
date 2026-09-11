@@ -216,8 +216,10 @@ local function decoratePushedPartyMenu(state, origin)
   -- Battle pickers have already resolved pokemonUiBattleParty, including
   -- GAME DEFAULT and Host-v1 providers. The Start/Bag skin must not replace
   -- that renderer or wrap the host's controller as a native PartyMenu.
+  -- onSwitch is also the native item/script target callback; only a concrete
+  -- battle owner or Host-v1 battle surface establishes battle ownership.
   local host = state.__pokemonUiHostV1
-  if type(state.onSwitch) == "function"
+  if state.battle ~= nil
       or (type(host) == "table" and host.surface == "battle_party") then
     return state, false, "battle-owner"
   end
