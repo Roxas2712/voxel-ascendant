@@ -15,7 +15,7 @@ local draw=function()end
 local update=function()end
 local callback=function()end
 for _,state in ipairs({
- {screenId='PartyMenu',onSwitch=callback,draw=draw,update=update},
+ {screenId='PartyMenu',battle={},onSwitch=callback,draw=draw,update=update},
  {screenId='PartyMenu',__pokemonUiHostV1={surface='battle_party'},draw=draw,update=update},
 })do
  listener({state=state});listener({state=state})
@@ -23,7 +23,11 @@ for _,state in ipairs({
  assert(not state.__vascPartyMenuStyle,'Start selection replaced battle selection')
 end
 assert(calls==0)
-local itemPicker={screenId='PartyMenu',pickOnly=true,draw=draw}
+local itemPicker={screenId='PartyMenu',pickOnly=true,itemUse=true,onSwitch=callback,draw=draw,update=update}
 listener({state=itemPicker});listener({state=itemPicker})
 assert(calls==1 and itemPicker.__vascPartyMenuStyle=='asc_box','ordinary item picker lost selected Start skin')
+assert(itemPicker.onSwitch==callback,'item callback replaced')
+local scriptPicker={screenId='PartyMenu',pickOnly=true,onSwitch=callback,draw=draw}
+listener({state=scriptPicker})
+assert(calls==2 and scriptPicker.__vascPartyMenuStyle=='asc_box','script target mistaken for battle')
 print('party menu battle ownership: ok')

@@ -213,11 +213,12 @@ local function createController(mod, opts)
     return G.style(game) == "oras"
   end
 
-  -- GAME/KASC is intentionally the default. Unknown legacy values are also
-  -- provider-owned so no new VASC build can silently take a Bag renderer.
+  -- Fresh profiles use the widescreen Bag. Explicit GAME/KASC choices and
+  -- unknown legacy values still retain the provider renderer.
   function G.bagStyle(game)
     local value = readSavedOption(game, G.bagOptionKey)
     if value == nil then value = configuredOption(game, G.bagOptionKey) end
+    if value == nil then return "oras_wide" end
     local mobile = false
     if type(MobileMenuPresentation) == "table"
         and type(MobileMenuPresentation.isMobileRuntime) == "function" then
