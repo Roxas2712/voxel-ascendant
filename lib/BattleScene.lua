@@ -537,6 +537,25 @@ function BattleScene.textureDensityScale(tex, combinedScale)
       and tex.ascendantHighResTrainer == true then
     return 1 / BattleScene.texturePixelScale(tex), "trainer-hires"
   end
+  if tex and not BattleScene.isTrainerTexture(tex)
+      and tex.kantoAscendantNonCrystalHd == true then
+    local receipt = tex.ascendantSpriteReceipt
+    local pixels = type(receipt) == "table" and receipt.apiVersion == 1
+      and receipt.body == "full" and tonumber(receipt.pixelScale) or nil
+    if pixels and pixels == pixels and pixels > 0 and pixels < math.huge then
+      -- Source pixels are not physical centimetres. Use a fixed card-density
+      -- receipt: alpha-bound normalization would pump as poses/frames change.
+      -- Preserve deliberately smaller authored cards; never upscale them.
+      return math.min(1, 1 / pixels), "companion-card-density"
+    end
+    -- Older KASC's reviewed Neo lane paints 64px cards at 1.5x (96 logical
+    -- pixels). Static fallbacks have independently authored scales and must
+    -- not inherit this legacy conversion. New KASC publishes exact density
+    -- for both lanes, including 96px form masters.
+    if tex.kantoAscendantNonCrystalHdProvider == "gen2-neo" then
+      return legacy, "companion-neo-legacy"
+    end
+  end
   if tex and tex.kantoAscendantMegaSupersampled == true then
     local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
     if not (type(x0) == "number" and type(y0) == "number"

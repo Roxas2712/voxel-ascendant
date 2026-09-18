@@ -4757,6 +4757,10 @@ function OverworldBattle.battlerHeightIn(battle, side)
     local def = data and data.pokemon and data.pokemon[battler.mon.species]
     entry = def and def.dexEntry
   end
+  local meters = tonumber(entry and entry.heightM)
+  if meters and meters == meters and meters > 0 and meters < math.huge then
+    return meters / 0.0254
+  end
   local feet = tonumber(entry and entry.heightFt)
   local inches = tonumber(entry and entry.heightIn) or 0
   if not (feet and feet == math.floor(feet) and feet >= 0
@@ -4816,8 +4820,17 @@ function OverworldBattle.finalizeSideTexture(battle, side, texture)
   texture.vascBackSelected = side == "player" and not trainerArt
     and presentation == "back" or nil
   if not trainerArt then
-    texture.heightIn = OverworldBattle.battlerHeightIn(battle, side)
-      or texture.heightIn
+    local receipt = texture.ascendantSpriteReceipt
+    local formHeight = texture.kantoAscendantNonCrystalHd == true
+      and type(receipt) == "table" and receipt.apiVersion == 1
+      and receipt.body == "full" and tonumber(receipt.heightIn) or nil
+    if formHeight and formHeight == formHeight
+        and formHeight > 0 and formHeight < math.huge then
+      texture.heightIn = formHeight
+    else
+      texture.heightIn = OverworldBattle.battlerHeightIn(battle, side)
+        or texture.heightIn
+    end
     texture.inkIdentity = texture.kantoAscendantMegaSource
       or texture.kantoAscendantGorochuSource
       or texture.inkIdentity
