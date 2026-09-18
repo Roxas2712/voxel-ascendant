@@ -1,7 +1,7 @@
 local path=arg and arg[1] or 'lib/SupportSend.lua'
 local originalOS,now,requests,posts,released,cancelled='iOS',100,0,0,0,0
 local result={status='pending'}
-love={timer={getTime=function()return now end},system={getOS=function()return originalOS end,httpRequest=function()end}}
+love={timer={getTime=function()return now end},system={getOS=function()return originalOS end}}
 package.loaded['src.net.Fetch']={
  request=function(url,opts)
   requests=requests+1
@@ -39,5 +39,5 @@ local S=sender();result={status='pending'};assert(S.send());now=now+41;assert(S.
 S=sender();assert(S.send());S.cancel();assert(S.state=='cancelled' and cancelled==2)
 local before=requests
 originalOS='OS X';S=sender();assert(S.send() and S.poll()=='saved');assert(posts==1 and requests==before)
-originalOS='iOS';love.system.httpPost=function()end;S=sender();assert(S.send());assert(posts==2 and requests==before)
-print('PASS iOS support: 2xx-only, rejection/timeout/cancel, no duplicate POST, bounded/redacted body, desktop/dedicated transport preserved')
+originalOS='Android';love.system.httpPost=function()end;S=sender();assert(S.send());assert(posts==2 and requests==before)
+print('PASS iOS support: 2xx-only, rejection/timeout/cancel, no duplicate POST, bounded/redacted body, desktop/Android transport preserved; restricted iOS facade')

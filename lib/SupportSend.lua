@@ -108,8 +108,9 @@ function M.new(mod, getLog)
   local function getTransport()
     if transport then return transport end
     local sys=love and love.system
-    if sys and type(sys.getOS)=="function" and sys.getOS()=="iOS"
-        and type(sys.httpRequest)=="function" and type(sys.httpPost)~="function" then
+    -- The mod-facing system facade hides native HTTP functions. Select by
+    -- platform and let the engine worker resolve the available bridge.
+    if sys and type(sys.getOS)=="function" and sys.getOS()=="iOS" then
       local ok,F=pcall(require,"src.net.Fetch")
       if ok and type(F)=="table" and type(F.request)=="function"
           and type(F.poll)=="function" and type(F.release)=="function" then
