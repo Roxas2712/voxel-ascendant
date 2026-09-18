@@ -1834,7 +1834,8 @@ local function touchStartSelectTop(ww, wh)
   local top = nil
   for _, name in ipairs({ "select", "start" }) do
     local zone = layout[name]
-    if type(zone) == "table" and tonumber(zone.cy) and tonumber(zone.w) then
+    if type(zone) == "table" and tonumber(zone.cy) and tonumber(zone.w)
+        and zone.cy > windowH * .55 then
       local candidate = (zone.cy - zone.w * .58) * sy
       top = top and math.min(top, candidate) or candidate
     end

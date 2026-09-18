@@ -1441,7 +1441,8 @@ function FloatingHud.touchStartSelectTop(shot)
   local top = nil
   for _, name in ipairs({ "select", "start" }) do
     local zone = layout[name]
-    if type(zone) == "table" and tonumber(zone.cy) and tonumber(zone.w) then
+    if type(zone) == "table" and tonumber(zone.cy) and tonumber(zone.w)
+        and zone.cy > windowH * .55 then
       -- draw() uses a 0.58w backing circle; the label extends below it and
       -- therefore cannot reduce this top edge.
       local candidate = (zone.cy - zone.w * 0.58) * sy

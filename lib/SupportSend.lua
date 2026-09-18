@@ -1,4 +1,4 @@
--- Manual-only support transport through the existing mod.postLog API.
+-- Manual-only support transport, including the iOS 0.2.61 request bridge.
 -- No URL is accepted from a menu/save: the reviewed manifest owns the target.
 local M = {}
 function M.new(mod, getLog)
@@ -101,10 +101,52 @@ function M.new(mod, getLog)
       and type(mod.manifest.log_url)=="string" and mod.manifest.log_url:match("^https://")~=nil
       and mod.fetch and type(mod.fetch.poll)=="function" and type(mod.fetch.release)=="function"
   end
+  -- iOS 0.2.61 exposes httpRequest but not the dedicated httpPost bridge.
+  -- Submit through the existing engine worker pool; never block the UI, retry
+  -- a possibly delivered report, or accept an endpoint from a save/menu.
+  local transport
+  local function getTransport()
+    if transport then return transport end
+    local sys=love and love.system
+    if sys and type(sys.getOS)=="function" and sys.getOS()=="iOS"
+        and type(sys.httpRequest)=="function" and type(sys.httpPost)~="function" then
+      local ok,F=pcall(require,"src.net.Fetch")
+      if ok and type(F)=="table" and type(F.request)=="function"
+          and type(F.poll)=="function" and type(F.release)=="function" then
+        transport={
+          send=function(body)
+            local url=mod.manifest.log_url
+            if not url:match("^https://[^/%s]+") or #body>48*1024 then return nil end
+            return F.request(url,{method="POST",body=body,
+              headers={["Content-Type"]="text/plain"},
+              userAgent="gen1recomp-mod/"..tostring(mod.id),maxSeconds=30})
+          end,
+          poll=function(id)
+            local st=F.poll(id)
+            if type(st)~="table" then return {status="error"} end
+            if st.status=="pending" then return {status="pending"} end
+            local code=tonumber(st.code)
+            -- The request API considers any HTTP reply completed, including
+            -- rejection. Only a 2xx means the receiver saved this report.
+            return {status=st.status=="ok" and code and code>=200 and code<300 and "ok" or "error"}
+          end,
+          release=function(id)return F.release(id)end,
+          cancel=function(id)if F.cancel then return F.cancel(id)end end,
+        }
+      end
+    end
+    transport=transport or {
+      send=function(body)return mod:postLog(body,{format="text"})end,
+      poll=function(id)return mod.fetch:poll(id)end,
+      release=function(id)return mod.fetch:release(id)end,
+      cancel=function(id)if mod.fetch.cancel then return mod.fetch:cancel(id)end end,
+    }
+    return transport
+  end
   local function release(cancel)
     if not job then return end
-    if cancel and mod.fetch.cancel then pcall(mod.fetch.cancel,mod.fetch,job) end
-    pcall(mod.fetch.release,mod.fetch,job);job=nil
+    if cancel then pcall(getTransport().cancel,job) end
+    pcall(getTransport().release,job);job=nil
   end
   function S.send()
     if not S.available() then S.state="not-configured";return false,S.state end
@@ -113,14 +155,14 @@ function M.new(mod, getLog)
     if lastSend and clock()-lastSend<30 then S.state="cooldown";return false,S.state end
     local body,why=S.payload()
     if not body then S.state=why or "no-log";return false,S.state end
-    local ok,handle=pcall(mod.postLog,mod,body,{format="text"})
+    local ok,handle=pcall(getTransport().send,body)
     if not ok or not handle then S.state="failed";return false,S.state end
     job,sentAt,lastSend=handle,clock(),clock();S.state="pending"
     return true,S.state
   end
   function S.poll()
     if not job then return S.state end
-    local ok,status=pcall(mod.fetch.poll,mod.fetch,job)
+    local ok,status=pcall(getTransport().poll,job)
     if not ok or type(status)~="table" then release(true);S.state="failed"
     elseif status.status~="pending" then
       -- postLog discards the response body; the engine confirms HTTP success.
@@ -136,9 +178,8 @@ function M.new(mod, getLog)
     local titles={idle=tr("READY","BEREIT"),pending=tr("SENDING","SENDET"),saved=tr("SENT","GESENDET"),
       failed=tr("FAILED","FEHLER"),cancelled=tr("CANCEL","ABBRUCH"),timeout=tr("TIMEOUT","TIMEOUT"),
       cooldown=tr("WAIT","WARTEN"),["not-configured"]=tr("OFFLINE","OFFLINE"),["code-required"]=tr("ENTER CODE","CODE EINGEBEN")}
-    local armed=false
-    local consent=tr("Send a bounded log excerpt, installed mod versions, renderer, scene timings and available HD download errors to the developer for troubleshooting? No save file is attached. Press A again to send. Nothing is sent automatically. Ask the developer for a support code (valid 24 hours, once per mod).",
-      "Begrenzten Log-Ausschnitt, installierte Mod-Versionen, Renderer, Szenenmessungen und verfügbare HD-Download-Fehler zur Fehleranalyse an den Entwickler senden? Kein Spielstand wird angehängt. Zum Senden erneut A drücken. Kein automatischer Versand. Support-Code beim Entwickler anfordern (24 Stunden gültig, einmal je Mod).")
+    local consent=tr("Send a bounded log excerpt, installed mod versions, renderer, scene timings and available HD download errors to the developer for troubleshooting? No save file is attached. Selecting SEND SUPPORT LOG sends this report. Nothing is sent automatically. Ask the developer for a support code (valid 24 hours, once per mod).",
+      "Begrenzten Log-Ausschnitt, installierte Mod-Versionen, Renderer, Szenenmessungen und verfügbare HD-Download-Fehler zur Fehleranalyse an den Entwickler senden? Kein Spielstand wird angehängt. SUPPORT-LOG SENDEN übermittelt diesen Bericht. Kein automatischer Versand. Support-Code beim Entwickler anfordern (24 Stunden gültig, einmal je Mod).")
     local rows={{label=tr("SEND SUPPORT LOG","SUPPORT-LOG SENDEN"),action="send",help=consent},
       {label=tr("STATUS","STATUS"),action="status",right="",help=consent},
       {label=tr("CANCEL SEND","VERSAND ABBRECHEN"),action="cancel"}}
@@ -152,21 +193,14 @@ function M.new(mod, getLog)
       rows=5,pageJump=true,footer=tr("A:SELECT B:BACK","A:WAHL B:ZURÜCK"),
       onChoose=function(item)
         if item.action=="digit" then
-          armed=false;rows[1].right=""
+          rows[1].right=""
           digits[item.digit]=((digits[item.digit] or -1)+1)%10;item.right=tostring(digits[item.digit])
           local code=""
           for i=1,8 do code=code..(digits[i] and tostring(digits[i]) or "?") end
           S.code=code
         elseif item.action=="send" then
-          if not S.available() then S.state="not-configured";return end
-          if not armed then armed=true;item.right=tr("A:CONFIRM","A:BESTÄTIGEN")
-            local ui=mod.exports and mod.exports.ascendantUi
-            if ui and ui.showHelp then ui.showHelp(game,item.label,consent)
-            elseif mod.ui.push then mod.ui.push(game,"VascHelp",{title=item.label,body=consent}) end
-            return
-          end
-          armed=false;item.right="";S.send()
-        elseif item.action=="cancel" then armed=false;S.cancel() end
+          S.send()
+        elseif item.action=="cancel" then S.cancel() end
       end,
       onCancel=function()S.cancel()end,
     })

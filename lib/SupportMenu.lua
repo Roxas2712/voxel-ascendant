@@ -1,5 +1,5 @@
 -- Present both support senders through VASC's existing menu skin. Keep their
--- code validation, confirmation, polling and transport callbacks unchanged.
+-- code validation, polling and transport callbacks unchanged.
 local M={}
 function M.decorate(menu, ui, de)
   if type(menu)~='table' or type(menu.items)~='table' or menu.__vascSupportMenu then return menu end
@@ -11,8 +11,8 @@ function M.decorate(menu, ui, de)
   local choose=menu.onChoose or (menu.opts and menu.opts.onChoose)
   if type(choose)~='function' then return menu end
   local position=1
-  local help=de and 'A erhöht die gewählte Ziffer. LINKS/RECHTS wählt eine der acht Stellen. Danach SUPPORT-LOG SENDEN wählen und bestätigen.'
-    or 'A increases the selected digit. LEFT/RIGHT selects one of the eight positions. Then select SEND SUPPORT LOG and confirm.'
+  local help=de and 'A erhöht die gewählte Ziffer. LINKS/RECHTS wählt eine der acht Stellen. Danach SUPPORT-LOG SENDEN wählen.'
+    or 'A increases the selected digit. LEFT/RIGHT selects one of the eight positions. Then select SEND SUPPORT LOG.'
   local codeRow={label=de and 'SUPPORT-CODE' or 'SUPPORT CODE',action='supportCode',right='????????',help=help}
   local positionRow={label=de and 'STELLE' or 'DIGIT POSITION',action='supportPosition',right='1 / 8',help=help}
   local function refresh()

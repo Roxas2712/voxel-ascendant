@@ -6,6 +6,15 @@
 
 local mod = ...
 
+-- One engine overlay serves both generations, including its real hit areas.
+do
+  local ok, controls = pcall(require, "src.core.TouchControls")
+  if ok then
+    local source = assert(mod:read("lib/MobileTouchLayout.lua"))
+    assert((loadstring or load)(source, "@MobileTouchLayout"))().install(controls)
+  end
+end
+
 -- Both generations share the same bounded in-memory support evidence.
 do
   local ok, recorder = pcall(function()
