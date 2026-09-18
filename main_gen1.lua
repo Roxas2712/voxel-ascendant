@@ -434,6 +434,11 @@ local voxelPipeline = {
   -- 3 is the engine's TILT key, which this mode supersedes -- see the
   -- hotkey block near the bottom of this file for how it is claimed
   hotkey = "3",
+  gate = function(top, overworld)
+    return V.require("VoxelDialogGate").allowed(top, overworld,
+      require("src.core.Game"), require("src.render.TextBox"),
+      require("src.render.Zoom").gateOK)
+  end,
   -- above tiltshift, so the two sort together in the options list with the
   -- mode first and its post-process under it
   priority = 20,
@@ -548,6 +553,15 @@ local voxelPipeline = {
     end
     if ow and ow.map and ow.camera
         and (Voxel.active() or warm or mobileSceneryDrive) then
+      -- Warm a single actual actor while a transition/menu covers the world
+      -- or its initial mesh is still pending. No pose(), camera probing or
+      -- imagined future trainers: draw consumes the same canonical cache.
+      if (covered or not Voxel.ready) and type(Voxel3D.prewarmWorldCards) == "function" then
+        local okCards, cardError = pcall(Voxel3D.prewarmWorldCards, ow)
+        if not okCards then
+          updateBoundary("card-preload", "failed", {error=tostring(cardError)})
+        end
+      end
       updateBoundary("prefetch", "start")
       local okPrefetch, prefetchError = pcall(VoxelScene.prefetch, ow)
       if okPrefetch then
@@ -649,16 +663,22 @@ local voxelPipeline = {
     })
     local canvas = VoxelScene.render(ctx.state, rw, rh,
                                      ctx.vw, ctx.vh, ctx.paletteFor)
+    local held = not canvas and V.require('WorldSceneHold').pending(ctx.state, sw, sh)
+    V.require('WorldCanvasTrace').observe(Diagnostics,
+      ctx.state and ctx.state.map and ctx.state.map.id, canvas or held,
+      VoxelScene.pendingReason, love.timer and love.timer.getTime)
     if not canvas then
-      return nil
-    end   -- fall back to the 2D path
+      return held
+    end   -- a rebuild keeps its captured world; unrelated failures may decline
     if Voxel3D.beginOverlay() then
       -- the FX closures are ordinary 2D draws sized in DISPLAY pixels, and
       -- they are drawing into the supersampled canvas alongside everything
       -- else -- so the scale goes up with it, or the "!" bubble lands the
       -- right place at half the size.  project() already answers in canvas
       -- pixels, so only the scale needs saying.
-      ctx.drawFx(function(wx, wy) return Voxel3D.project(wx, 0, wy) end,
+      ctx.drawFx(function(wx, wy)
+        return Voxel3D.project(wx, VoxelScene.fieldEffectGround(ctx.state,wx,wy), wy)
+      end,
                  ctx.scale * AntiAlias.factor())
       Voxel3D.endOverlay()
     end
@@ -679,10 +699,12 @@ local voxelPipeline = {
     mobileDiagnostic("produced", "gen1-voxelPipeline.drawWorld", "world", {
       width=sw, height=sh, renderWidth=rw, renderHeight=rh,
     })
+    V.require('WorldSceneHold').presented(resolved, ctx.state, sw, sh)
     return resolved
   end,
 
   invalidate = function()
+    V.require('WorldSceneHold').clear()
     -- Drop P1 receipts before their ping-pong canvases are released.
     if type(VoxelScene.invalidateMobileScenery) == "function" then
       VoxelScene.invalidateMobileScenery("voxel-pipeline-invalidate")
@@ -854,6 +876,7 @@ local function battleDiscs()
   return stagedBattles() and OverworldBattle.discs()
 end
 
+V.PerformanceOverlay = V.require("PerformanceOverlay")
 local SETTINGS = {
   { DeviceProfile.setting,
     "Choose a persistent hardware profile. AUTO selects PC/MAX on desktop, "
@@ -901,6 +924,10 @@ local SETTINGS = {
     .. "distant Kanto panorama outdoors, plus rock walls in caves. Water, "
     .. "coastal openings and connected maps stay real. OFF draws neither "
     .. "the scenery curtain nor the outdoor panorama." },
+  { V.require('OutdoorHorizon').setting,
+    "Regional woods, rocks and rooftops. Choose VOXEL, the original BITMAP, or OFF. Indoor panoramas remain separate.",full=true },
+  { V.require('VisibleNeighborhood').setting,
+    "On PC, prepare the current map and all directly connected maps. OFF also prepares the engine's more distant survey maps. Android keeps its existing mobile ring.",full=true },
   { ChunkMesher.preloadSetting,
     "Build the current map and connected neighbours into a safe in-memory "
     .. "mesh cache while voxel mode is off. ON makes the first switch and "
@@ -926,6 +953,36 @@ local SETTINGS = {
   -- A quality/performance switch rather than a FULL-preset knob. Keep it on
   -- the menu under FULL so mobile players can disable the shadow-map pass
   -- without leaving the curated camera preset.
+  { V.require("VoxelItems").setting,
+    "Replace supported overworld items with solid voxel replicas in 3D. Gen1 keeps its original sprites in 2D. Includes item capsules, Pokemon balls, Pokedex, fossils, evolution stones and indoor furniture. OFF restores the original sprites.",
+    full = true },
+  { V.require("WaterActors").setting,
+    "Swimmers and aquatic Pokemon sit in the water and gently bob in 3D. OFF restores their original standing presentation. Native movement, SURF and 2D are unchanged.", full=true },
+  { V.require("CaveTorches").setting,
+    "A few wall torches near real cave entrances and ladder landings. Keeps paths free and preserves FLASH darkness. OFF removes the torches and their light.", full=true },
+  { V.require("TowerAtmosphere").setting,
+    "Dim Pokemon Tower rooms, add light floor mist and flickering grave candles. OFF restores normal room lighting. 2D and other buildings are unchanged.", full=true },
+  { V.require("Gen1Stairs").setting,
+    "Distinct voxel stair treads with contrasting edges and matching wood, stone or metal. OFF restores the original stair artwork.", full=true },
+  { V.require("CurrentRoom").setting,
+    "Show the current indoor space; matching partitions hide rooms beyond walls. ON by default. OFF restores the full 3D map. Gameplay and 2D are unchanged.", full=true },
+  { V.require("Gen1InteriorFloors").setting,
+    "Matching floors in 3D rooms and MAP battles. Independent of SCENERY. OFF restores original floors. 2D stays original.",
+    full = true },
+  { V.require("Gen1VoxelSigns").setting,
+    "Large town nameplates and small notice signs. Read signs for their original text. OFF and 2D show the original signs.",full=true },
+  { V.require("Gen1OutdoorScenery").ground,
+    "Natural outdoor ground materials. Water, tall grass and gameplay markings stay recognisable. OFF and 2D restore original artwork.",full=true },
+  { V.require("Gen1OutdoorScenery").trees,
+    "Regional voxel trees and forest canopies outside Pallet Town. Original obstacles and paths are preserved.",full=true },
+  { V.require("Gen1OutdoorScenery").stone,
+    "Voxel rocks, low hedges and wooden posts outside Pallet Town. Independent of trees and ground.",full=true },
+  { V.require("Gen1PalletVillage").buildings,
+    "Regional voxel buildings throughout Kanto, modern Centers and the League. Original footprints and entrances. OFF and 2D show the original buildings.", full=true },
+  { V.require("Gen1PalletVillage").surrounds,
+    "Voxel trees, rocks and posts. Paths stay clear. OFF and 2D show the original scenery.", full=true },
+  { V.require("Gen1PalletVillage").lights,
+    "Warm window lights at dusk and night. Lights the new buildings and sign lamps. OFF keeps them unlit.", full=true },
   { Shadows.setting,
     "Turn object-anchored world and character shadows ON or OFF in voxel "
     .. "scenes and 3D battles. Turn "
@@ -944,7 +1001,9 @@ local SETTINGS = {
   { OverworldBattle.setting,
     "Fight in three dimensions using the game's native Gen 1 pictures as "
     .. "camera-facing cards. MAP uses nearby voxel terrain; ARENA builds a "
-    .. "location- and anchor-aware field; DISCS uses two neutral platforms.",
+    .. "location- and anchor-aware field; DISCS uses two neutral platforms. "
+    .. "Press 8 during a front-view MAP/ARENA battle to change its background. "
+    .. "The change waits for the main battle menu.",
     full = true },
   { V.PokemonModelProvider.setting,
     "Choose the Pokemon actor used only in staged MAP, ARENA or DISCS "
@@ -1091,7 +1150,7 @@ local SETTINGS = {
     "Move battle controls horizontally as a percentage of the viewport. Default: 0%.",
     when = vascOrasHudControls, full = true },
   { OrasBattleHudSettings.battle_controls_y,
-    "Raise battle controls above the touch pad as a percentage of viewport height. Default: 0%.",
+    "Raise battle controls and automatically complete original artwork. GLASS remains selected. Default: 0%.",
     when = vascOrasHudControls, full = true },
   { OrasBattleHudSettings.battle_controls_transparency,
     "Transparency of buttons, Mega, attack selection and Back. 0% restores their original appearance.",
@@ -1230,6 +1289,11 @@ local SETTINGS = {
   -- machine it happens to be running on, so it neither sets this nor takes
   -- the row away -- the player decides what their hardware can carry, from
   -- inside FULL like anywhere else.
+  { AntiAlias.resolution,
+    "Internal resolution of the 3D world and battles. 1080P limits the default "
+    .. "GPU workload on large/Retina screens; 720P saves more power. NATIVE "
+    .. "uses every display pixel. Menus and text retain display resolution.",
+    full = true },
   { AntiAlias.setting,
     "Smooth the stair-stepped edges of the 3D world -- roof ridges, ledge "
     .. "lips, a tree against the sky -- by rendering the diorama larger than "
@@ -1241,13 +1305,69 @@ local SETTINGS = {
     full = true },
 }
 
+-- Decorative room walls replace only the native perimeter artwork. Rebuild
+-- those claims when SCENERY changes so OFF restores the original low walls.
+do
+  local setting=HorizonWall.setting
+  local setIndex=setting.setIndex
+  setting.setIndex=function(self,index,game,silent)
+    local before=self:get();local value=setIndex(self,index,game,silent)
+    if before~=self:get() then V.require("Gen1CaveSurfaces").retry();ChunkMesher.invalidate();V.require("ShadowMap").invalidate() end
+    return value
+  end
+  local sync=setting.sync
+  setting.sync=function(self,value)
+    local before=self:get();sync(self,value)
+    if before~=self:get() then V.require("Gen1CaveSurfaces").retry();ChunkMesher.invalidate();V.require("ShadowMap").invalidate() end
+  end
+end
+
+-- Floor UVs are baked into terrain. Menu and manager changes rebuild the
+-- derived mesh without rewriting a tile or the panorama preference.
+V.require("Gen1InteriorFloors").bind(function()
+  V.require("Gen1CaveSurfaces").retry()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
+V.require("Gen1VoxelSigns").bind(function()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
+V.require("Gen1Stairs").bind(function()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
+V.require("CaveTorches").setting:onChange(function()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
+V.require("Gen1OutdoorScenery").bind(function()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
+V.require("Gen1PalletVillage").bind(function()
+  ChunkMesher.invalidate()
+  V.require("ShadowMap").invalidate()
+end)
+
 -- Height mode changes every terrain basis, entity footing and horizon seam.
--- Drop all derived geometry in one operation; the ordinary asynchronous mesh
--- path keeps the 2D world visible until the replacement is ready.
-LedgeElevation.setting:onChange(function()
+-- Phone plans borrow the admitted neighbours' meshes. Retire that plan BEFORE
+-- releasing geometry; retaining it across a same-map rebuild otherwise draws
+-- released meshes and the engine disables the voxel pipeline for the session.
+-- The next frame starts the normal current-body -> scenery -> neighbour path.
+function VoxelScene.invalidateTerrainHeights()
+  V.require('WorldSceneHold').begin()
+  VoxelScene.invalidateMobileScenery("terrain-heights-changed")
   ChunkMesher.invalidate()
   HorizonWall.invalidate()
-end)
+  V.require("ShadowMap").invalidate()
+end
+LedgeElevation.setting:onChange(VoxelScene.invalidateTerrainHeights)
 
 -- Profiles own only cost/automation choices, never camera composition,
 -- world curve or the player's sprite/back-picture preferences.
@@ -1267,11 +1387,13 @@ DeviceProfile.configure({
   { setting = Shadows.setting,
     max = true, handheld = true, eco = false },
   { setting = Water.setting,
-    max = "full", handheld = "sky", eco = "sky" },
+    max = "sky", handheld = "sky", eco = "sky", ultra = "full" },
   { setting = DayNight.setting,
     max = "cycle", handheld = "cycle", eco = "cycle" },
+  { setting = AntiAlias.resolution,
+    max = "balanced", handheld = "economy", eco = "economy", ultra = "native" },
   { setting = AntiAlias.setting,
-    max = 2, handheld = 0, eco = 0 },
+    max = 0, handheld = 0, eco = 0, ultra = 2 },
 })
 
 local vascHudSchemaKeys = {
@@ -1294,6 +1416,11 @@ if mod._vascOverworldCard then
   end
   apo.addKeys(VascMenu.sections)
 end
+V.battleHeroes = V.require("cards/battle_heroes/Gen1BattleHeroesCard")
+for _, entry in ipairs(V.battleHeroes.entries()) do SETTINGS[#SETTINGS+1] = entry end
+V.terarrium = V.require("IntegratedTerarrium")
+for _, entry in ipairs(V.terarrium.entries()) do SETTINGS[#SETTINGS+1] = entry end
+for _, entry in ipairs(V.PerformanceOverlay.entries()) do SETTINGS[#SETTINGS+1] = entry end
 local function defineOptionSchema()
   local schema = {}
   for _, entry in ipairs(SETTINGS) do
@@ -1492,6 +1619,8 @@ do
     function Game:keypressed(key, ...)
       local claim = HOTKEYS[key]
       local top = self.stack and self.stack:top()
+      if key == "8" and not (top and top.onKeyPressed)
+          and OverworldBattle.cycleLivePresentation(self) then return end
       -- Q/E control whichever camera is currently in front: the staged
       -- battle lens, the third-person boom, or the regular survey zoom.
       if (key == "q" or key == "e")
@@ -1503,7 +1632,7 @@ do
       end
       -- A screen with its own key handler gets the key first, exactly as the
       -- engine's first branch does: typing a nickname must not toggle a
-      -- render mode. Only free-roam presses are ours to take.
+      -- render mode. The pipeline gate also admits ordinary text dialogues.
       if claim and not (top and top.onKeyPressed) then
         if claim == "pipeline" then
           -- 3 walks the ANGLE rungs and steps over FULL (Voxel.HOTKEY_ORDER),
@@ -1691,9 +1820,13 @@ mod.events:on("mod.options_changed", function(payload)
     if payload.key == entry[1].key then entry[1]:sync(payload.value) end
   end
   BattleLayout.syncOption(payload.key, payload.value)
+  if payload.key == "battle_controls_y" and (tonumber(payload.value) or 0) > 0
+      and OrasBattleHudSettings.battle_controls_shape:get() == "original" then
+    OrasBattleHudSettings.battle_controls_shape:setValue(
+      "auto", payload.game or require("src.core.Game"))
+  end
   if payload.key == LedgeElevation.setting.key then
-    ChunkMesher.invalidate()
-    HorizonWall.invalidate()
+    VoxelScene.invalidateTerrainHeights()
   end
   DeviceProfile.externalChanged(require("src.core.Game"),
                                 payload.key, payload.value)
@@ -1767,6 +1900,7 @@ do
       local before = self:blockAt(bx, by)
       local results = packValues(setBlock(self, bx, by, block, ...))
       if self.id and self:blockAt(bx, by) ~= before then
+        V.require('VoxelFurniture').invalidate(self)
         ChunkMesher.refresh(self.id)
         if HorizonWall.blockAffectsGeometry(self, bx, by) then
           HorizonWall.invalidateMap(self.id)
@@ -1875,6 +2009,7 @@ local battleOverlayRegistered, battleOverlayRegisterReason = false, nil
 local NativeBattleCleanup, nativeBattleCleanupReason = nil, nil
 local battleRuntimeInstalled, battleRuntimeInstallReason =
   OverworldBattle.install()
+V.require('HealingPace').install()
 V.stadiumRomOptionsInstalled = V.StadiumRomMenu.installOptionsHook(mod)
 -- The regular OPTIONS hook above is only a compatibility surface. Current
 -- builds expose each mod's own option rows through ManagerState, so Gen 1 must
@@ -2189,8 +2324,7 @@ VascMenu.install(mod, {
     fullWas = true
     require("src.render.Pipelines").applyOptions(opts)
     Voxel.setLevel(Voxel.FULL_LEVEL)
-    ChunkMesher.invalidate()
-    HorizonWall.invalidate()
+    VoxelScene.invalidateTerrainHeights()
   end,
   menuSkinSetting=VascMenuSkinSetting,
   battleLayout=BattleLayout,
@@ -2205,13 +2339,15 @@ VascMenu.install(mod, {
   stadiumRomMenu=V.StadiumRomMenu,
   pipelineHelp={
     ["pipeline:voxel"] = "Choose the Voxel Ascendant camera ladder: OFF, "
-      .. "orbit views, first person, third person or the complete FULL preset.",
+      .. "orbit views, first person, third person or the complete FULL preset. "
+      .. "V/3 also changes the camera during ordinary overworld text dialogues.",
     ["pipeline:tiltshift"] = "Apply the saved miniature-depth post-process "
       .. "to the voxel world while keeping menus and battle text crisp.",
   },
   pipelineHelpDe={
     ["pipeline:voxel"] = "Wähle die Voxel-Kameraleiter: OFF, Orbitansichten, "
-      .. "Ego-, Verfolgeransicht oder das vollständige FULL-Preset.",
+      .. "Ego-, Verfolgeransicht oder das vollständige FULL-Preset. "
+      .. "V/3 wechselt die Ansicht auch während gewöhnlicher Overworld-Textdialoge.",
     ["pipeline:tiltshift"] = "Miniatur-Tiefenunschärfe nur auf der Voxelwelt; "
       .. "Menüs, Kampftext und HUD bleiben scharf.",
   },
@@ -2255,6 +2391,7 @@ VascMenu.install(mod, {
   end,
 })
 SpriteHooks.install(mod)
+V.require("VoxelItems").install2D()
 
 -- Contribute one VASC-owned descriptor through the public Start-menu hook.
 -- Standalone it remains a normal Start-menu row and opens VASC's complete
@@ -2335,6 +2472,7 @@ mod.events:once("mods.loaded", function()
       local factory = chunkFor("battle_hud_oras.lua")()
       return factory(mod, {
         MessageLayout=V.require("OrasBattleMessageLayout"),
+        CompletedBattleButtons=V.require("CompletedBattleButtons"),
         ReportHud=function(receipt)
           return PerformanceDiagnostics.reportHud(receipt)
         end,
@@ -2381,6 +2519,7 @@ CamControl.install()
 ShortcutToast.install(require("src.core.Game"), {
   enabled = function() return ShortcutToastSetting:get() ~= false end,
 })
+V.PerformanceOverlay.install(require("src.core.Game"))
 VoxelShortcut.install(cycleVoxel)
 
 -- The BattleLifecycle card above is now the sole state-changing router for
@@ -2717,6 +2856,11 @@ mod.exports.WallDecals = WallDecals
 mod.exports.spritePacks = SpritePacks.public()
 mod.exports.battleMusic = BattleMusic.public()
 mod.exports.localContent = LocalContent.public()
+do local LocationBanner=V.require("LocationBanner")
+LocationBanner.install()
+mod.exports.locationBanner={apiVersion=1,present=LocationBanner.present}
+end
+
 -- Overworld source selection is independent of the battle model/mode switch.
 V.Gen1OverworldStadium = V.require("Gen1OverworldStadium")
 mod.exports.overworldPokemonModelAvailable = V.Gen1OverworldStadium.available
@@ -2891,6 +3035,8 @@ local publicModules = {
   WallDecals = WallDecals,
 }
 mod.exports.lib = PublicFacade.new(publicModules)
+mod.exports.terarrium = V.require("TerarriumHost").public()
+mod.exports.battleHeroesBridge = true
 
 -- Activate the mandatory lifecycle owner only after every installer/export
 -- above completed. The loader cannot undo direct class wrappers, so a failure
@@ -2994,3 +3140,10 @@ else
       tostring(battleOverlayActivateReason))
   end
 end
+
+-- Install after native battle adapters; settings already own persisted values.
+V.battleHeroes.boot()
+
+-- Live, encounter-local Pokemon appearance button and keyboard shortcut.
+V.require("BattleSpriteControl").install()
+V.require("AppearanceShortcuts").install(SETTINGS)

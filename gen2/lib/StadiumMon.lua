@@ -260,6 +260,9 @@ function StadiumMon:setSpecies(dex, allowStatic)
   -- keep the real mesh and hold its bind pose instead. That makes per-species
   -- animation uncertainty a motion limitation, not a 3D/2D rendering split.
   if model.staticPose and not allowStatic then return false end
+  -- Reject stale Pidgeot caches with misdecoded Hermite animation. Corrected
+  -- imports pass the rig's continuity checks and render the animated model.
+  if dex == 18 and model.staticPose then return false end
 
   local rig = StadiumRig.new(model)
   if not rig then
@@ -279,7 +282,7 @@ function StadiumMon:setSpecies(dex, allowStatic)
   -- an old DSM model static only after the rig exists.  Re-apply this method's
   -- allowStatic contract here so callers that require animation still get the
   -- normal 2D fallback instead of silently accepting a newly rejected clip.
-  if model.staticPose and not allowStatic then
+  if model.staticPose and (not allowStatic or dex == 18) then
     rig:release()
     return false
   end
@@ -587,7 +590,7 @@ end
 -- SUN and the camera -- and, in a headset, both eyes -- want the same
 -- skinned mesh, and skinning it once is the whole reason this is worth
 -- doing on the CPU.
-function StadiumMon:build()
+function StadiumMon:pose()
   if not (self.rig and self.model) then return false end
   -- self.anim is nil while a species has nothing to play, and pose() reads
   -- that as "the bind pose", which is exactly what is wanted
@@ -608,12 +611,23 @@ function StadiumMon:build()
   if not pinned then
     self.rig:anchor(StadiumMon.TRAVEL, self.dt)
   end
+  return true
+end
+
+-- Gen 1 may defer the costly skin/upload until an eye or shadow pass really
+-- needs this pose. Battles retain the complete build() transaction below.
+function StadiumMon:upload()
+  if not (self.rig and self.model) then return false end
   self.rig:skin(self.yaw or 0)
   -- no clock of its own: the texture animation rides the frame pose() just
   -- resolved, which is what keeps a blink inside its standby loop and a
   -- fainted Pokemon's eyes shut once it has stopped moving
   self.rig:textures(self.aux)
   return true
+end
+
+function StadiumMon:build()
+  return self:pose() and self:upload()
 end
 
 return StadiumMon

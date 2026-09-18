@@ -19,6 +19,7 @@ local function skipWhitespace(text, at)
 end
 
 local function validUtf8(text)
+  if not text:find('[\128-\255]') then return true end
   local at, size = 1, #text
   while at <= size do
     local a = text:byte(at)
@@ -112,8 +113,9 @@ local function parseString(text, at)
       end
     else
       local start = at
-      repeat at = at + 1 until at > #text or text:byte(at) == 0x22
-        or text:byte(at) == 0x5C or text:byte(at) < 0x20
+      -- Scan ordinary path/hash text in C instead of one Lua iteration per
+      -- byte. The same delimiter/control validation runs at the next step.
+      at = text:find('[%z\1-\31"\\]', at) or (#text + 1)
       out[#out + 1] = text:sub(start, at - 1)
     end
   end

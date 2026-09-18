@@ -2657,6 +2657,9 @@ end
 
 function M.roundControls(screen)
   local shape = optionValue(screen, "battle_controls_shape", "auto")
+  if shape == "original" and (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) > 0 then
+    return true
+  end
   return shape == "round" or (shape == "auto" and (
     (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) ~= 0
     or (tonumber(optionValue(screen, "battle_controls_x", 0)) or 0) ~= 0

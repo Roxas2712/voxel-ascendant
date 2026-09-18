@@ -1,13 +1,14 @@
 -- Narrow bridge for verified external animation PNGs only. No physical cache
 -- paths, executable files, characters or engine-generated assets are exposed.
 local M={}
-function M.install(store,prefix,Assets,graphics,imageApi,filesystem)
+function M.install(store,prefix,Assets,graphics,imageApi,filesystem,legacyFlame155)
   local imageBefore,dataBefore=Assets.image,Assets.imageData
   local textures={}
   local function relative(path)
     if type(path)=="string" and path:sub(1,#prefix)==prefix then
       local rel=path:sub(#prefix+1)
-      if rel:sub(1,31)=="assets/pokemon-animation-cards/"then return rel end
+      if rel:sub(1,31)=="assets/pokemon-animation-cards/"
+        or legacyFlame155 and legacyFlame155.path(rel)then return rel end
     end
   end
   local function data(path)
@@ -25,7 +26,9 @@ function M.install(store,prefix,Assets,graphics,imageApi,filesystem)
     -- Engine sprite rendering needs only the tiny 16x96 fallback strip.
     -- Full atlases are owned and budgeted by the APO scene renderer.
     local info=assert(store:info(rel),"HD package not installed")
-    assert(info.width==16 and info.height==96,"HD atlases must use the bounded scene cache")
+    assert(info.width==16 and info.height==96
+      or legacyFlame155 and legacyFlame155.textureAllowed(rel,info.width,info.height),
+      "HD atlases must use the bounded scene cache")
     if not textures[path]then
       local pixels=data(path)
       local ok,result=pcall(graphics.newImage,pixels)

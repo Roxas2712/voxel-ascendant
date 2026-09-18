@@ -27,43 +27,15 @@ function M.new(mod)
   end
   self.options=V.require("OverworldPokemonOptions")
   local HdPolicy=V.require("HdContentPolicy")
+  local LegacyFlame155=V.require("HdLegacyFlame155")
   -- Downloads activate in a separate store; the renderer's boot mount stays
   -- immutable until restart, including while a scene retains GPU textures.
   self.hdStatus={schema="vasc.hd-content-cache/v1",packages=0,epoch=0,
     networkConfigured=false,rendererConnected=false,charactersBundled=true,
     state="cache_api_unavailable"}
-  if mod.cache and love and love.data and type(love.data.hash)=="function" then
-    local ok,store=pcall(function()
-      local Json=V.require("ContentJson")
-      local deps={cache=mod.cache,decode=Json.decode,
-        sha256=function(bytes)
-          return love.data.encode("string","hex",love.data.hash("sha256",bytes))
-        end}
-      local Store=V.require("HdContentStore")
-      local Download=V.require("HdContentDownload")
-      local bundled=assert(Download.catalog(mod:read("data/hd-content-catalog.json"),Json.decode))
-      local cached=mod.cache:read("hd-content/catalog.json")
-      local catalog=Download.catalog(cached,Json.decode) or bundled
-      local boot=Store.new(deps)
-      for _,p in ipairs(catalog.packages)do boot:restore(p.id)end
-      local download=boot:forkVerified()
-      self.hdBoot=boot
-      local receipts,receiptFailure
-      if type(Download.BASE)=="string" then
-        local receiptOk,value=pcall(function()
-          return V.require("HdReceiptJournal").new({cache=mod.cache,sha256=deps.sha256,
-            origin=Download.BASE,now=function()return os.time()end})
-        end)
-        if receiptOk then receipts=value else receiptFailure=true end
-      end
-      self.hdDownload=Download.new({store=download,catalog=catalog,cache=mod.cache,
-        fetch=mod.fetch,decode=Json.decode,receipts=receipts})
-      if receiptFailure then self.hdDownload.warnings.receipt_unconfirmed=true end
-      return download
-    end)
-    if ok then self.hdContent=store; self.hdStatus=store:health(); self.hdStatus.state="prepared"
-    else self.hdStatus.state="cache_initialization_failed";self.hdStatus.error=tostring(store) end
-  end
+  local session=assert(mod.exports.ascendantContent,"unified content session missing")
+  self.hdBoot=session.hdBoot;self.hdContent=session.hdWrite
+  self.hdStatus=self.hdContent:health();self.hdStatus.state="prepared"
   mod.exports.pokemonHdContent={
     ready=function()return self.hdBoot and self.hdBoot:health().packages>0 or false end,
     downloader=function()return self.hdDownload end,
@@ -118,7 +90,7 @@ function M.new(mod)
     end
     function child:read(path)
       assert(type(path)=="string" and not path:find("..",1,true) and path:sub(1,1)~="/","invalid APO path")
-      if path:sub(1,31)=="assets/pokemon-animation-cards/" then
+      if path:sub(1,31)=="assets/pokemon-animation-cards/" or LegacyFlame155.path(path) then
         return self._vascHdStore and self._vascHdStore:read(path) or nil
       end
       if HdPolicy.optional(path)then return nil end
@@ -126,7 +98,7 @@ function M.new(mod)
     end
     function child:info(path)
       assert(type(path)=="string" and not path:find("..",1,true) and path:sub(1,1)~="/","invalid APO path")
-      if path:sub(1,31)=="assets/pokemon-animation-cards/" then
+      if path:sub(1,31)=="assets/pokemon-animation-cards/" or LegacyFlame155.path(path) then
         return self._vascHdStore and self._vascHdStore:info(path) or nil
       end
       if HdPolicy.optional(path)then return nil end
@@ -221,7 +193,7 @@ function M.new(mod)
         if self.hdBoot then
           local Assets=require("src.render.Assets")
           retain(V.require("HdContentAssets").install(self.hdBoot,
-            self.child.path.."/",Assets,love.graphics,love.image,love.filesystem))
+            self.child.path.."/",Assets,love.graphics,love.image,love.filesystem,LegacyFlame155))
         end
         chunk(mod,ROOT.."main.lua")(self.child)
         mod.exports.overworldPokemon=self.child.exports

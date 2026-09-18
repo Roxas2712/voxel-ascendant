@@ -80,6 +80,35 @@ local function formKeys(mon)
   return { raw, raw:gsub("^0+", ""), "base" }
 end
 
+-- Inserted only in the HD resolver candidate. Pixel/standard resolution unchanged.
+local function hdFormKeys(game,mon,dex)
+  local original=formKeys(mon)
+  if (dex~=351 and dex~=386) or type(mon)~='table' then return original end
+  local value=mon.form or mon.formId or mon.variant or mon.unownForm
+  if value~=nil and value~='' and value~=0 and value~='0' and value~='base' and value~='normal' then
+    return original
+  end
+  local species=mon.species or mon.pokemonSpecies
+  local definition=game and game.data and game.data.pokemon and game.data.pokemon[species]
+  local kas=game and game.mods and game.mods.exports and game.mods.exports.kanto_ascendant
+  local owner=kas and kas.backendGiftSpecies67
+  if not definition or definition.backendForm or definition.formId
+    or tonumber(definition.sourceDex)~=dex or not owner
+    or owner.OWNER~='kasc.backend.gift-species/v1'
+    or not owner.byKey or not owner.bySpecies
+    or owner.byKey['dex:'..dex]~=species or owner.bySpecies[species]~='dex:'..dex then
+    return original
+  end
+  if dex==351 then
+    local weather=kas.castformWeather67
+    if weather and type(weather.artFor)=='function' then
+      local ok,active=pcall(weather.artFor,mon,species)
+      if not ok or active then return {} end
+    end
+  end
+  return {'11-normal','base'}
+end
+
 function PokemonWalksheets.new(options)
   local self = setmetatable({
     mod=assert(options.mod), catalog=assert(options.catalog),
@@ -463,6 +492,18 @@ function PokemonWalksheets:fromPath(path)
   return type(path) == "string" and self.byRuntime[path] or nil
 end
 
+-- Gender compatibility is independent of palette availability. In particular,
+-- a missing female shiny row never authorises a male HD (or MMO) model.
+-- Keep neutral defaults only where the requested form has no explicit
+-- requested-gender variant evidence in either source, across all palettes.
+local function compatibleGender(wanted, candidate, primary, secondary)
+  if wanted == "none" or candidate == wanted then return true end
+  if candidate ~= "none" then return false end
+  local a = primary and primary[wanted]
+  local b = secondary and secondary[wanted]
+  return not (a and next(a) ~= nil or b and next(b) ~= nil)
+end
+
 function PokemonWalksheets:resolve(game, mon)
   local dexForPresentation = self.catalog.presentationDexFor
     or self.catalog.dexFor
@@ -478,9 +519,11 @@ function PokemonWalksheets:resolve(game, mon)
   local palettes = wantedPalette == "shiny"
     and { "shiny", "normal" } or { "normal" }
   local checked = {}
-  for _, form in ipairs(formKeys(mon)) do
+  for _, form in ipairs(hdFormKeys(game,mon,dex)) do
     if not checked[form] then
       checked[form] = true
+      local primary = extendedForms and extendedForms[form]
+      local secondary = legacyForms and legacyForms[form]
       for _, palette in ipairs(palettes) do
         -- A reviewed animated export outranks the older three-pose delivery.
         -- Preserve explicit gender variants when a neutral-tagged base export
@@ -490,11 +533,8 @@ function PokemonWalksheets:resolve(game, mon)
           for _, candidateGender in ipairs(genders) do
             local candidate = variants and variants[candidateGender]
               and variants[candidateGender][palette]
-            local originalGender = legacyForms and legacyForms[form]
-              and legacyForms[form][wantedGender]
-            local ambiguousGender = wantedGender ~= "none" and candidateGender ~= wantedGender
-              and originalGender and originalGender[palette] ~= nil
-            if candidate and not ambiguousGender then
+            if candidate and compatibleGender(wantedGender, candidateGender,
+                primary, secondary) then
               local repaired = self:_withAnimationCards(candidate)
               if repaired.animationCards then
                 return repaired, nil, {requestedGender=wantedGender,
@@ -521,7 +561,8 @@ function PokemonWalksheets:resolve(game, mon)
               checked[key] = true
               local record = variants[candidateGender]
                 and variants[candidateGender][palette] or nil
-              if record then
+              if record and compatibleGender(wantedGender, candidateGender,
+                  primary, secondary) then
                 record = self:_withAnimationCards(self:_withFlameCards(record))
                 return record, nil, {
                   requestedGender=wantedGender,
@@ -560,7 +601,7 @@ function PokemonWalksheets:resolvePokeMMO(game, mon)
         for _, candidateGender in ipairs(genders) do
           local record = variants[candidateGender]
             and variants[candidateGender][palette] or nil
-          if record then
+          if record and compatibleGender(wantedGender, candidateGender, variants) then
             local hd = self:resolve(game, mon)
             record.species = hd and hd.species or tostring(mon.species or "")
             record.scaleClass = hd and hd.scaleClass or "pokemon_medium"

@@ -19,7 +19,7 @@ local unregisterPointer
 local function reviewedStoragePresentation()
   if not storagePresentationTried then
     storagePresentationTried = true
-    local ok, presentation = pcall(V.require, "OrasPartyPresentation")
+    local ok, presentation = pcall(V.require, V.ascBoxPresentationModule or "OrasPartyPresentation")
     if ok and type(presentation) == "table"
         and type(presentation.drawHostStorage) == "function" then
       storagePresentation = presentation
@@ -176,7 +176,7 @@ local function artImage(pokemon)
   if not (pokemon and pokemon.species) or pokemon.egg == true then return nil end
   -- The species catalog and public Sprites resolver are presentation data.
   -- The provider still never sees the host's Game/save/live-mon identity.
-  local data = Data
+  local data = V.ascBoxData or Data
   if not data then return nil end
   local mon = sanitizedMon(pokemon)
   local okPath, path, trueColor = pcall(Sprites.path, data,
@@ -1162,7 +1162,7 @@ function Controller:draw()
     if presentation then
       local ok, rendered = pcall(presentation.drawHostStorage,
         self.model, {
-          data=Data,
+          data=V.ascBoxData or Data,
           boxCursor=self.storageBoxCursor,
           partyCursor=self.storagePartyCursor,
           boxHeaderFocus=self.boxHeaderFocus == true,
@@ -1300,8 +1300,12 @@ function AscBox.install(PokemonUi)
       local pointerX, pointerY = pointer.gameX, pointer.gameY
       if type(MobileMenuPresentation) == "table"
           and type(MobileMenuPresentation.pointerToLogical) == "function" then
-        pointerX, pointerY = MobileMenuPresentation.pointerToLogical(
+        local mapped
+        pointerX, pointerY, mapped = MobileMenuPresentation.pointerToLogical(
           top, pointerX, pointerY)
+        if not mapped and type(top.pointerToLogical) == "function" then
+          pointerX,pointerY=top:pointerToLogical(pointerX,pointerY)
+        end
       end
       local ok, handled = pcall(top.pointerpressed, top, pointerX, pointerY)
       return ok and handled == true

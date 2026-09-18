@@ -375,6 +375,9 @@ function Model:walk(o, depth)
     elseif cmd == 0x08 then                           -- effect callback
       self.fx[#self.fx + 1] = { bone = self:curBone(), callback = f:u32(o + 4),
                                 arg = f:ptr(o + 8) }
+      if f:u32(o + 4) == 0x81000140 then
+        self.curReflection = self:staticReflection(f:ptr(o + 8))
+      end
     elseif cmd == 0x1C then                           -- uniform scale node
       self.rootScale = { f:s32(o + 4) / 65536.0, f:s32(o + 8) / 65536.0,
                          f:s32(o + 0xC) / 65536.0 }
@@ -398,6 +401,7 @@ function Model:walk(o, depth)
       -- func_800176DC swaps this material's texture per frame out of the
       -- auxiliary animation's stream.
       self.curTexAnim = f:s16(o + 2)
+      if self.curTex >= 0 then self.curReflection = nil end
     elseif cmd == 0x24 then                           -- effect attachment tag
       -- At draw time the original graph node records the current matrix's
       -- origin under this id (func_80014D24 -> func_80014CB8). Keeping the
@@ -418,13 +422,56 @@ function Model:walk(o, depth)
   end
 end
 
+-- Phase-5 image ABI: arg -> item -> image config, config+8 -> sampler.
+-- Static, single-texture reflection surfaces (not animated/two-cycle
+-- materials) can be represented by DSM7's existing texture and UV fields.
+-- Keep unsupported callback state out of this path instead of guessing.
+function Model:staticReflection(arg)
+  -- These species' single-image body callbacks have been checked against
+  -- their source geometry. Murkrow uses RGBA16; Skarmory also has an RGBA32
+  -- silver body image. The item/argument guards below still reject their
+  -- non-image callbacks. Other species may carry animated/two-cycle state.
+  if self.species ~= 198 and self.species ~= 227 and self.species ~= 233 then return nil end
+  local f = self.f
+  local function ptr(at, size)
+    if not at or at < 0 or at + 4 > #f.d then return nil end
+    local off = f:ptr(at)
+    if off and off >= 0 and off + (size or 4) <= #f.d then return off end
+  end
+  if not arg or arg < 0 or arg + 8 > #f.d then return nil end
+  local item = ptr(arg, 16)
+  if not item or f:u32(item+4) ~= 0 or f:u32(item+8) ~= 0
+      or f:u32(arg+4) ~= 0 then return nil end
+  local config, state = ptr(item,12), ptr(item+12,8)
+  local desc = config and ptr(config+8,12)
+  if not desc or not state or f:u32(state) ~= 0x40000 then return nil end
+  local w,h = f:u16(desc+8),f:u16(desc+10)
+  local siz = f:u8(desc+1)
+  if f:u8(desc) ~= 0 or (siz ~= 2 and siz ~= 3) or w < 1 or h < 1
+      or w > 256 or h > 256 then return nil end
+  local data = ptr(config,w*h*(siz == 3 and 4 or 2))
+  if not data then return nil end
+  self.reflections = self.reflections or {}
+  local hit = self.reflections[item]
+  if hit then return hit end
+  local tex = #self.textures
+  self.textures[tex+1] = {fmt=0,siz=siz,w=w,h=h,data=data,texels=w*h}
+  hit = {tex=tex, scaleS=f:u16(state+4)/65536,
+    scaleT=f:u16(state+6)/65536, shiftS=f:u8(desc+6), shiftT=f:u8(desc+7)}
+  self.reflections[item] = hit
+  return hit
+end
+
 function Model:primFor(tex, tlut, mat, texAnim, cull, lit)
+  local reflection = tex < 0 and self.curReflection or nil
+  if reflection then tex = reflection.tex end
   local key = tex .. "," .. tlut .. "," .. tostring(mat) .. ","
               .. texAnim .. "," .. cull .. "," .. tostring(lit)
   local p = self.primsByKey[key]
   if p == nil then
     p = { tex = tex, tlut = tlut, mat = mat, texAnim = texAnim, cull = cull,
-          lit = lit, verts = {}, nverts = 0, tris = {}, ntris = 0, remap = {} }
+          lit = lit, reflection = reflection,
+          verts = {}, nverts = 0, tris = {}, ntris = 0, remap = {} }
     self.primsByKey[key] = p
     self.prims[#self.prims + 1] = p
   end
@@ -794,13 +841,15 @@ local function newAnim(frag, off)
 end
 
 -- Stadium 2 keeps skeletal animations in a separate bank.  Its animation
--- header uses the same channel/sampling layout, but the flags field is the
--- byte at +0 and the pointer-like fields are offsets inside that animation
+-- header uses the same u16 flags and channel/sampling layout. Reading only
+-- byte +0 drops the low-byte Hermite/wide-translation bits (e.g. Pidgeot's
+-- 0x0009 standby), interpreting keyframes as packed streams. The pointer-like
+-- fields are offsets inside that animation
 -- payload rather than 0x8FF00000-linked FRAGMENT pointers.
 local function newGSAnim(frag, off)
   return setmetatable({
     f = frag, off = off,
-    flags      = frag:u8(off),
+    flags      = frag:u16(off),
     startFrame = frag:u16(off + 4),
     loopStart  = frag:u16(off + 6),
     nChannels  = frag:u16(off + 8),
@@ -1301,6 +1350,13 @@ function StadiumFragment.extract(data, name)
           (shiftedTexel(v[4] / 32.0, material.shifts) - su.origin) / su.span
         uv[i * 2] =
           (shiftedTexel(v[5] / 32.0, material.shiftt) - sv.origin) / sv.span
+        if p.reflection then
+          -- G_TEXTURE_GEN projects signed normals into the 0..1024 S/T
+          -- range before applying texture scale and the sampler's shift.
+          local r = p.reflection
+          uv[i*2-1] = shiftedTexel((v[6]/127+1)*512*r.scaleS,r.shiftS)/su.span
+          uv[i*2] = shiftedTexel((v[7]/127+1)*512*r.scaleT,r.shiftT)/sv.span
+        end
         nrm[i * 3 - 2] = v[6] / 127.0
         nrm[i * 3 - 1] = v[7] / 127.0
         nrm[i * 3] = v[8] / 127.0

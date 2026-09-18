@@ -17,7 +17,13 @@ local V = ...
 local Voxel3D = V.require("Voxel3D")
 local ModSetting = V.require("ModSetting")
 local WorldPlacement = V.require("WorldPlacement")
+local InteriorPanoramas = V.require("Gen1InteriorPanoramas")
+local CavePanoramas = V.require("Gen1CavePanoramas")
 local TileRenderer = require("src.render.TileRenderer")
+
+local function nativeInteriorProfile(map)
+  return InteriorPanoramas.profileFor(map)
+end
 
 local HorizonWall = {}
 
@@ -350,6 +356,9 @@ HorizonWall.RURAL_TERMINAL_QUADS = 2
 -- must be enough surface for the world curve to carry it below the visible
 -- horizon before its far edge can ever enter frame.
 HorizonWall.SEA_DEPTH = 384
+-- One shared offshore reach around the connected Kanto sea, including the
+-- Pallet shoulders: different reaches would recreate rectangular water gaps.
+HorizonWall.KANTO_COAST_DEPTH = 768
 HorizonWall.SEA_LEVEL = -2
 HorizonWall.COASTAL_LANDMARK_W = 96
 HorizonWall.COASTAL_LANDMARK_H = 60
@@ -445,6 +454,30 @@ HorizonWall.IMAGE_ASSETS = {
     path = "assets/scenery/cinnabar_story_landmarks.compact.png",
     sourceW = 512, sourceH = 128, targetW = 512, targetH = 128,
   },
+  cave_mt_moonWall = {
+    path = "assets/scenery/cave_mt_moon_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
+  cave_seafoamWall = {
+    path = "assets/scenery/cave_seafoam_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
+  cave_rock_tunnelWall = {
+    path = "assets/scenery/cave_rock_tunnel_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
+  cave_diglettWall = {
+    path = "assets/scenery/cave_diglett_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
+  cave_victory_roadWall = {
+    path = "assets/scenery/cave_victory_road_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
+  cave_ceruleanWall = {
+    path = "assets/scenery/cave_cerulean_wall.compact.png",
+    sourceW = 960, sourceH = 320, targetW = 960, targetH = 320,
+  },
   mtMoonWall = {
     path = "assets/scenery/mt_moon_wall.compact.png",
     sourceW = 512, sourceH = 160, targetW = 512, targetH = 160,
@@ -505,14 +538,16 @@ HorizonWall.IMAGE_EXTRA_VRAM = HorizonWall.REGIONAL_VRAM
 -- Observe the raw setting here, the one common entry point used by meshes(),
 -- cacheStatus() and stateKey(), and clear the old epoch exactly once when it
 -- changes.  The initial read merely establishes the baseline.
-local sceneryEpochValue
+local sceneryEpochValue, outdoorEpochValue
 function HorizonWall.enabled()
   local value = HorizonWall.setting:get()
-  if sceneryEpochValue ~= nil and value ~= sceneryEpochValue
+  local outdoorValue=V.require('OutdoorHorizon').setting:get()
+  if sceneryEpochValue ~= nil and (value ~= sceneryEpochValue or outdoorValue~=outdoorEpochValue)
      and type(HorizonWall.invalidate) == "function" then
     HorizonWall.invalidate()
   end
   sceneryEpochValue = value
+  outdoorEpochValue = outdoorValue
   return value ~= "off"
 end
 
@@ -727,13 +762,13 @@ HorizonWall.EDGE_PROFILES = {
   ROUTE_10 =          { north="mountain", south="mountain", west="mountain", east="mountain" },
   ROUTE_12 =          { north="rural", south="rural", west="rural", east="open_water" },
 
-  VERMILION_CITY =    { north="town", south="harbor",
-                        west=mix3("town", "rural", "harbor", 0.42, 0.58),
-                        east=mix3("town", "rural", "harbor", 0.48, 0.66) },
+  VERMILION_CITY =    { north="town", south="open_water",
+                        west=mix3("town", "rural", "open_water", 0.42, 0.58),
+                        east=mix3("town", "rural", "open_water", 0.48, 0.66) },
   ROUTE_11 =          { north=mix2("town", "rural", 0.44),
                         south=mix2("town", "rural", 0.58),
                         west="town", east="rural" },
-  VERMILION_DOCK =    { north="harbor", south="harbor",
+  VERMILION_DOCK =    { north="open_water", south="open_water",
                         west="open_water", east="open_water" },
   SS_ANNE_BOW =       { north="open_water", south="open_water",
                         west="open_water", east="open_water" },
@@ -786,6 +821,9 @@ HorizonWall.EDGE_PROFILES = {
 -- authored panorama.  Legacy built-in EDGE_PROFILES remain untouched and keep
 -- their historical cumulative-`upto` interpretation.
 HorizonWall.NONE_KIND = "none"
+for id, asset in pairs(InteriorPanoramas.assets) do
+  HorizonWall.IMAGE_ASSETS[id] = asset
+end
 HorizonWall.EDITOR_ASSETS = {}
 -- Versioned, editor-authored room shells live beside (not inside) PROFILES.
 -- Keeping this table separate is a safety boundary: an interior record can
@@ -1622,6 +1660,7 @@ function HorizonWall.editorAssetSpec(id)
     path = builtIn.path,
     width = builtIn.sourceW,
     height = builtIn.sourceH,
+    fitDevice = builtIn.fitDevice,
   }
 end
 
@@ -1852,6 +1891,9 @@ function HorizonWall.classFor(map)
   -- extension maps fail-safe without maintaining an ID allowlist, and prevents
   -- an outdoor/location/room profile collision from opening a real cavern.
   if CAVE_TILESETS[tileset] then return "cave" end
+  if not isOutdoor(def) and nativeInteriorProfile(map) then
+    return "interior"
+  end
   local profile = HorizonWall.PROFILES[id]
   -- A closed canopy deliberately owns a separate texture class. Ordinary
   -- outdoor tree edges may show Kanto's distant ridges through their upper
@@ -1899,12 +1941,14 @@ function HorizonWall.materialFor(map)
     local profile = roomShellProfile(map)
     return profile and profile.material or "room"
   end
-  if class == "cave" and MT_MOON_MAPS[id] then return "mt_moon" end
+  if class == "cave" and MT_MOON_MAPS[id] then return CavePanoramas.materialFor(map) or "mt_moon" end
+  if class == "cave" then return CavePanoramas.materialFor(map) or class end
   return class
 end
 
 function HorizonWall.groundPeriodFor(map)
   local material = HorizonWall.materialFor(map)
+  if CavePanoramas.families[material] then return CavePanoramas.ceilingSize end
   if ARCHITECTURAL_MATERIALS[material] then return 128 end
   if material == "pallet" or material == "trees"
      or material == "canopy" then
@@ -1926,7 +1970,10 @@ function HorizonWall.architecturalRoom(map)
 end
 
 function HorizonWall.arenaViewFor(map)
+  if map and map.def and map.def.generation==2 then return nil end
   local profile=roomShellProfile(map)
+  local added=profile and Gen1GymInteriors.windowViews[profile.material]
+  if added then return added end
   if profile and profile.material=="dojo_arena" then
     return {city="SAFFRON_CITY",material="dojo_arena",sill=32,head=120,margin=32}
   end
@@ -1947,14 +1994,16 @@ end
 
 -- Editor room shells are an additive renderer contract, not a semantic class
 -- override. Only an ordinary, genuinely non-outdoor interior may consume one;
--- caves, towers, reviewed room shells and every exterior retain their existing
--- owners and geometry.
+-- caves, towers and every exterior retain their existing owners and geometry.
+-- Strict native panorama contracts select ordinary interiors above; authored
+-- editor profiles still take precedence, including an explicit disable.
 function HorizonWall.interiorProfileFor(map)
   if HorizonWall.isOutdoorMap(map)
      or HorizonWall.classFor(map) ~= "interior" then return nil end
   local def = map.def or {}
   local id = tostring(map.id or def.id or "")
   local profile = HorizonWall.INTERIOR_PROFILES[id]
+  if profile == nil then profile = nativeInteriorProfile(map) end
   return profile and profile.enabled == true and profile or nil
 end
 
@@ -2037,6 +2086,7 @@ end
 -- behind the newly opened sea. Apply to the resident union to avoid swapping
 -- that distant layer merely when crossing the Route 13/14 ownership seam.
 function HorizonWall.allowsFarBackdrop(state)
+  if V.require('OutdoorHorizon').setting:get()~='bitmap'then return false end
   local function mapAllows(map)
     local def = map and map.def or {}
     local id = tostring(map and map.id or def.id or "")
@@ -2276,7 +2326,12 @@ function HorizonWall.arenaWindowPanel(map,corners,uv,edgeIndex,a,b,length,shade)
   local height=corners[3][2]-corners[1][2]
   if height<view.head then return nil end
   local ranges={}
-  if view.northOnly then
+  if view.windows then
+    for _,pane in ipairs(view.windows)do
+      local centre=length*pane.center
+      ranges[#ranges+1]={centre-pane.width/2,centre+pane.width/2}
+    end
+  elseif view.northOnly then
     local half=math.min(30,length*.2)
     for _,fraction in ipairs({.28,.72})do
       ranges[#ranges+1]={length*fraction-half,length*fraction+half}
@@ -2332,6 +2387,21 @@ function HorizonWall.arenaWindowPanel(map,corners,uv,edgeIndex,a,b,length,shade)
   local cursor=0
   local dx=edgeIndex==2 and -4 or edgeIndex==3 and 4 or 0
   local dz=edgeIndex==0 and -4 or edgeIndex==1 and 4 or 0
+  -- A narrow solid frame makes each aperture readable against the themed
+  -- wall artwork. It stays outside the opening and shares the wall batch.
+  -- Only actual jambs get uprights; mesh-slice boundaries get no false bar.
+  local function frame(x0,x1,y0,y1)
+    x0,x1=math.max(0,x0),math.min(1,x1)
+    y0,y1=math.max(0,y0),math.min(1,y1)
+    if x1<=x0 or y1<=y0 then return end
+    local pts={}
+    for _,st in ipairs({{x0,y0},{x1,y0},{x1,y1},{x0,y1}})do
+      local p=point(st[1],st[2]);p[1]=p[1]-dx*.04;p[3]=p[3]-dz*.04
+      pts[#pts+1]=p
+    end
+    pushQuad(result.vertices,result.indices,pts,
+      {{.01,.24},{.02,.24},{.02,.26},{.01,.26}},shade*.78)
+  end
   local function reveal(p,q)
     pushQuad(result.vertices,result.indices,
       {p,q,{q[1]+dx,q[2],q[3]+dz},{p[1]+dx,p[2],p[3]+dz}},
@@ -2344,6 +2414,13 @@ function HorizonWall.arenaWindowPanel(map,corners,uv,edgeIndex,a,b,length,shade)
     reveal(p,q);reveal(s,r)
     if pane.left then reveal(p,s)end
     if pane.right then reveal(q,r)end
+    if Gen1GymInteriors.windowViews[view.material]then
+      local side,vertical=2/(b-a),2/height
+      frame(pane.from-side,pane.upto+side,low-vertical,low)
+      frame(pane.from-side,pane.upto+side,high,high+vertical)
+      if pane.left then frame(pane.from-side,pane.from,low,high)end
+      if pane.right then frame(pane.upto,pane.upto+side,low,high)end
+    end
   end
   strip(cursor,1,low,high)
   return result
@@ -2354,6 +2431,11 @@ local function faceUV(u0, v0, u1, v1)
 end
 
 function HorizonWall.wallFamily(kind, map)
+  if CavePanoramas.families[kind] then return kind end
+  if kind == "cave" and map then
+    local material = CavePanoramas.materialFor(map)
+    if material then return material end
+  end
   if kind == "route8" then return "route8" end
   if HorizonWall.REGIONAL_SLICES[kind] then return "regional" end
   if kind == "mountain" then return "mountain" end
@@ -2868,6 +2950,7 @@ end
 -- a quad can never interpolate across the atlas wrap.
 function HorizonWall.panelUV(kind, edgeIndex, worldAlong, atPanelEnd)
   local family = HorizonWall.wallFamily(kind)
+  if CavePanoramas.families[family] then return worldAlong / CavePanoramas.wallPeriod, 0, 1 end
   if family == "mt_moon" then
     return worldAlong / HorizonWall.MT_MOON_WALL_W, 0, 1
   end
@@ -3064,6 +3147,138 @@ local function interiorShellGeometryFor(entry, profile, cooperativeStep)
     checkpoint()
   end
 
+  -- Native backings are whole, independently fitted wall panels. The
+  -- editor's four-edge shell contract below retains its existing semantics.
+  if profile.nativeRoomPanels then
+    local panels=V.require("Gen1InteriorLayout").panelsFor(entry.map, profile)
+    local finish=V.require("Gen1InteriorFinish")
+    local placements={}
+    local feature={} -- one continuous, unmirrored source section per bearing
+    for _,panel in ipairs(panels)do
+      local placement=finish.placement(panel,profile.theme,H)
+      placements[panel]=placement
+      if placement and (not feature[panel.edge]
+          or placement.width>placements[feature[panel.edge]].width) then
+        feature[panel.edge]=panel
+      end
+    end
+    for _, panel in ipairs(panels) do
+      local finishFamily="room_finish:"..(profile.theme or "home")
+      local backing={family=finishFamily,vertices={},indices={},interiorPanel=panel}
+      local art={family=wallFamily,vertices={},indices={},interiorPanel=panel}
+      groups[#groups+1]=backing;groups[#groups+1]=art
+      local low
+      if profile.cutawayPlan then
+        low={family=finishFamily,kind='cutaway_base',vertices={},indices={},interiorPanel=panel}
+        groups[#groups+1]=low
+      end
+      local horizontal=panel.edge=="north" or panel.edge=="south"
+      local shade=Voxel3D.FACE_SHADE[({north=5,south=6,west=1,east=2})[panel.edge]] or .8
+      local placement=placements[panel]
+      local showArt=placement and feature[panel.edge]==panel
+      local sourceFrom,sourceTo,width,left,right
+      if showArt then
+        sourceFrom,sourceTo=placement.sourceFrom,placement.sourceTo
+        width,left,right=placement.width,placement.left,placement.right
+      end
+      local function quad(group,a,b,bottom,top,u0,u1,v0,v1,offset)
+        local at=panel.at+(offset or 0)
+        local corners=horizontal and {{a,bottom,at},{b,bottom,at},{b,top,at},{a,top,at}}
+          or {{at,bottom,a},{at,bottom,b},{at,top,b},{at,top,a}}
+        local uv={{u0,v0},{u1,v0},{u1,v1},{u0,v1}}
+        pushQuad(group.vertices,group.indices,corners,uv,shade)
+        pushQuad(wallVerts,wallIndices,corners,uv,shade)
+        wallQuads=wallQuads+1;checkpoint()
+      end
+      local cuts={panel.from,panel.upto}
+      for x=panel.from+C,panel.upto-1,C do cuts[#cuts+1]=x end
+      if showArt then cuts[#cuts+1]=left;cuts[#cuts+1]=right end
+      for _,door in ipairs(panel.openings)do cuts[#cuts+1]=door.from;cuts[#cuts+1]=door.upto end
+      table.sort(cuts)
+      local inset=(panel.edge=="north" or panel.edge=="west") and .04 or -.04
+      for i=1,#cuts-1 do
+        local a,b=cuts[i],cuts[i+1]
+        if b>a+1e-9 then
+          local middle=(a+b)/2;local bottom=0
+          for _,door in ipairs(panel.openings)do
+            if middle>=door.from and middle<door.upto then bottom=math.max(bottom,door.height)end
+          end
+          if bottom<H then
+            -- Fixed-scale structural finish, with aligned rails on every wall.
+            -- Keep the finish inside its own room mask, behind the art.
+            -- A face exactly on an east/south boundary samples the next cell.
+            quad(backing,a,b,bottom,H,a/128,b/128,1-bottom/H,0,inset*.5)
+            if low and bottom==0 then
+              quad(low,a,b,0,6,a/128,b/128,1,1-6/H,inset*.5)
+              if panel.wallThickness then
+                local at=panel.at;local far=at+panel.wallThickness
+                local cap=horizontal and {{a,6,at},{b,6,at},{b,6,far},{a,6,far}}
+                  or {{at,6,a},{far,6,a},{far,6,b},{at,6,b}}
+                pushQuad(low.vertices,low.indices,cap,{{a/128,.88},{b/128,.88},{b/128,.9},{a/128,.9}},1)
+              end
+            end
+            if showArt and middle>=left and middle<right then
+              local u0=sourceFrom+(a-left)/width*(sourceTo-sourceFrom);local u1=sourceFrom+(b-left)/width*(sourceTo-sourceFrom)
+              -- West/east/north are viewed from different sides: source art
+              -- keeps its reading direction rather than becoming mirrored.
+              if panel.edge=="west" then u0,u1=sourceTo-(a-left)/width*(sourceTo-sourceFrom),sourceTo-(b-left)/width*(sourceTo-sourceFrom) end
+              quad(art,a,b,bottom,H,u0,u1,1-bottom/H,0,inset)
+            end
+          end
+        end
+      end
+      -- Raised corridor-side plaque; follows its parent wall's cutaway.
+      -- A small physical depth keeps it distinct from painted wall art.
+      for _,sign in ipairs(panel.signs or{})do
+        local plaque={family="room_sign",vertices={},indices={},interiorPanel=panel}
+        groups[#groups+1]=plaque
+        quad(plaque,sign.from,sign.upto,sign.bottom,sign.top,0,1,1,0,.65)
+        local a,b,lo,hi,z,f=sign.from,sign.upto,sign.bottom,sign.top,panel.at+.05,panel.at+.65
+        for _,corners in ipairs({
+          {{a,lo,z},{a,lo,f},{a,hi,f},{a,hi,z}},
+          {{b,lo,f},{b,lo,z},{b,hi,z},{b,hi,f}},
+          {{a,hi,f},{b,hi,f},{b,hi,z},{a,hi,z}},
+          {{a,lo,z},{b,lo,z},{b,lo,f},{a,lo,f}},
+        })do
+          local uv={{0,0},{0,0},{0,0},{0,0}}
+          pushQuad(plaque.vertices,plaque.indices,corners,uv,shade)
+          pushQuad(wallVerts,wallIndices,corners,uv,shade)
+          wallQuads=wallQuads+1;checkpoint()
+        end
+      end
+      -- Door openings get visible jambs and a lintel at human scale, instead
+      -- of reading as an unmarked black gap. The walking aperture stays open.
+      for _,door in ipairs(panel.openings)do
+        if door.breach then
+          local exterior=V.require('Gen1BreachExterior').geometry(entry.map,panel,door,H)
+          if exterior then groups[#groups+1]=exterior;groups[#groups+1]=exterior.frame;groups[#groups+1]=exterior.roof end
+        end
+        if door.height<H and not door.breach then
+          local frame={family=finishFamily,vertices={},indices={},interiorPanel=panel,doorFrame=true}
+          groups[#groups+1]=frame
+          quad(frame,math.max(panel.from,door.from-2),door.from,0,door.height+2,0,0,.01,.01,inset*2)
+          quad(frame,door.upto,math.min(panel.upto,door.upto+2),0,door.height+2,0,0,.01,.01,inset*2)
+          quad(frame,door.from,door.upto,door.height,door.height+2,0,0,.01,.01,inset*2)
+          -- Fully opaque doors conceal the unrendered destination. Two-cell
+          -- entrances use two leaves, retaining human-scale proportions.
+          if not door.open then
+          local leafGroup={family=door.material or "room_door",vertices={},indices={},interiorPanel=panel,doorFrame=true}
+          groups[#groups+1]=leafGroup
+          local leaves=not door.material and (door.upto-door.from)>24 and 2 or 1
+          local span=(door.upto-door.from)/leaves
+          for leaf=1,leaves do
+            local a=door.from+(leaf-1)*span
+            local u0,u1=0,1;if leaf==2 then u0,u1=1,0 end
+            quad(leafGroup,a,a+span,0,door.height,u0,u1,1,0,inset*3)
+          end
+          end
+
+
+        end
+      end
+    end
+  end
+
   local doorsByEdge = { north = {}, south = {}, west = {}, east = {} }
   for _, door in ipairs(profile.doors or {}) do
     doorsByEdge[door.edge][#doorsByEdge[door.edge] + 1] = door
@@ -3109,10 +3324,10 @@ local function interiorShellGeometryFor(entry, profile, cooperativeStep)
              outward = 1, shade = 2 },
   }
   for _, edge in ipairs({ "north", "south", "west", "east" }) do
-    if profile.wallEdges[edge] then
+    if not profile.nativeRoomPanels and profile.wallEdges[edge] then
       local info = edgeInfo[edge]
       local length = info.horizontal and entry.w or entry.h
-      local extent = math.max(1e-9, length + distance * 2)
+      local extent = math.max(1e-9, profile.wallRepeatWidth or (length + distance * 2))
       local cuts = cutsFor(edge, length)
       for i = 1, #cuts - 1 do
         local from, upto = cuts[i], cuts[i + 1]
@@ -3122,8 +3337,8 @@ local function interiorShellGeometryFor(entry, profile, cooperativeStep)
                        and openDoorAt(edge, midpoint / length) or nil
           local y0 = door and door.height or 0
           if y0 < H - 1e-9 then
-            local u0 = (from + distance) / extent
-            local u1 = (upto + distance) / extent
+            local u0 = ((from + distance) % extent) / extent
+            local u1 = u0 + (upto - from) / extent
             local vBottom = 1 - y0 / H
             local corners, uv
             if info.horizontal then
@@ -3237,8 +3452,9 @@ end
 
 local function geometryFor(entry, own, rects, cooperativeStep,
                            sharedGroundCells, sharedSeaCells,
-                           sharedRuralTerminals, worldMaps)
+                           sharedRuralTerminals, worldMaps, seaOnly)
   local class = HorizonWall.classFor(entry.map)
+  if seaOnly and isEnclosure(class) then return nil end
   if class == "interior" then
     return interiorShellGeometryFor(
       entry, HorizonWall.interiorProfileFor(entry.map), cooperativeStep)
@@ -3297,6 +3513,11 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local route8Owner = mapId == "ROUTE_8"
   local southSeaLandFoot = verifiedSouthSeaLandFoot(entry, rects)
   local coastalCadence = southSeaLandFoot or verifiedDockCadence(entry)
+  -- Pallet's last three side panels join Route21's exposed sea strips.
+  -- A 128px apron ends early against that 416px ocean, leaving sky wedges
+  -- at both coastal corners in voxel/OFF mode. Match the adjoining sea reach.
+  local coastalWaterDepth = southSeaLandFoot
+    and (B + HorizonWall.KANTO_COAST_DEPTH) or SOUTH_SEA_LAND_FOOT_DEPTH
   local coastalWaterFootQuads = 0
   local groundPeriod = HorizonWall.groundPeriodFor(entry.map)
   local function groundUV(p)
@@ -3324,7 +3545,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- and disappear independently when their real target or any covering body
   -- is resident, so the warm union can never z-fight a proxy.
   local function route8ColdSeamPath(edgeIndex)
-    if not route8Owner
+    if seaOnly or not route8Owner
        or not HorizonWall.route8SeamVerified(entry.map, edgeIndex) then
       return
     end
@@ -3396,7 +3617,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- of its own ground or none of this proxy, never a partial z-fighting lane.
   for _, name in ipairs({ "north", "south" }) do
     local spec = HorizonWall.VIRIDIAN_FOREST_GATES[name]
-    local active = HorizonWall.viridianForestGateVerified(entry.map, name)
+    local active = not seaOnly and HorizonWall.viridianForestGateVerified(entry.map, name)
     if active then
       local tileSize = HorizonWall.FOREST_GATE_PATH_TILE_SIZE
       for x = spec.path.x0, spec.path.x1 - tileSize, tileSize do
@@ -3498,7 +3719,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       v0, v1 = slice.y / HorizonWall.REGIONAL_TEXTURE_H,
                (slice.y + slice.h) / HorizonWall.REGIONAL_TEXTURE_H
     else
-      local textureKind = family == "mt_moon" and family or kind
+      local textureKind = (family == "mt_moon" or CavePanoramas.families[family]) and family or kind
       u0, v0, v1 = HorizonWall.panelUV(textureKind, edgeIndex,
                                        texture0, false)
       u1 = HorizonWall.panelUV(textureKind, edgeIndex, texture1, true)
@@ -3506,8 +3727,17 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     local uv = reverse
       and { { u1, v1 }, { u0, v1 }, { u0, v0 }, { u1, v0 } }
       or  { { u0, v1 }, { u1, v1 }, { u1, v0 }, { u0, v0 } }
+    if CavePanoramas.families[family] then
+      -- The same world-space point must sample the same texel on BOTH faces
+      -- of a corner. x+z preserves scale on axis-aligned cave panels and also
+      -- stays continuous when the streamed map origin changes.
+      for i,p in ipairs(corners) do
+        uv[i] = { (entry.ox + p[1] + entry.oy + p[3]) / CavePanoramas.wallPeriod,
+                  i <= 2 and v1 or v0 }
+      end
+    end
     local group = wallGroup(family)
-    local window=(family=="water_arena" or family=="garden_arena" or family=="electric_arena" or family=="dojo_arena") and HorizonWall.arenaWindowPanel(
+    local window=(Gen1GymInteriors.supports(family) or family=="dojo_arena") and HorizonWall.arenaWindowPanel(
       entry.map,corners,uv,edgeIndex,local0,local1,edgeLength,shade)
     if window then
       for _,target in ipairs({{group.vertices,group.indices},{wallVerts,wallIndices}})do
@@ -4045,6 +4275,15 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     span = span or C
     local wallDistance, H, y0, ground = panelPlacement(kind, class, placement)
     local wallZ = z + outward * (wallDistance - B)
+    if seaOnly then
+      if outdoorGround and ground ~= "none" and coastalWaterFoot(edgeName, x)
+          and (forceBoundary or exteriorWallPanel("z", x, wallZ, outward, wallDistance, span)) then
+        local inner = wallZ - outward * wallDistance
+        local waterEnd = inner + outward * coastalWaterDepth
+        seaRect(x, x + span, math.min(inner, waterEnd), math.max(inner, waterEnd))
+      end
+      return
+    end
     -- A painted apron may deliberately exist without a panorama wall.  The
     -- editor represents that as kind="none" plus a non-none ground material;
     -- keep the normal wall-distance contract so the brush preview and runtime
@@ -4109,8 +4348,9 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     local wantsGround = ground ~= "none"
     if outdoorGround and wantsGround then
       if coastalWaterFoot(edgeName, x) then
-        local waterEnd = inner + outward * SOUTH_SEA_LAND_FOOT_DEPTH
-        groundAdded = outdoorGroundRect(x, x + span, waterEnd, far)
+        local waterEnd = inner + outward * coastalWaterDepth
+        groundAdded = outward * (far - waterEnd) > 0
+          and outdoorGroundRect(x, x + span, waterEnd, far) or 0
         coastalWaterFootQuads = coastalWaterFootQuads
           + seaRect(x, x + span, math.min(inner, waterEnd),
                     math.max(inner, waterEnd))
@@ -4150,6 +4390,15 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     span = span or C
     local wallDistance, H, y0, ground = panelPlacement(kind, class, placement)
     local wallX = x + outward * (wallDistance - B)
+    if seaOnly then
+      if outdoorGround and ground ~= "none" and coastalWaterFoot(edgeName, z)
+          and (forceBoundary or exteriorWallPanel("x", z, wallX, outward, wallDistance, span)) then
+        local inner = wallX - outward * wallDistance
+        local waterEnd = inner + outward * coastalWaterDepth
+        seaRect(math.min(inner, waterEnd), math.max(inner, waterEnd), z, z + span)
+      end
+      return
+    end
     if kind == HorizonWall.NONE_KIND then
       if ground == nil or ground == "none" then return end
       local inner = wallX - outward * wallDistance
@@ -4205,8 +4454,9 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     local wantsGround = ground ~= "none"
     if outdoorGround and wantsGround then
       if coastalWaterFoot(edgeName, z) then
-        local waterEnd = inner + outward * SOUTH_SEA_LAND_FOOT_DEPTH
-        groundAdded = outdoorGroundRect(waterEnd, far, z, z + span)
+        local waterEnd = inner + outward * coastalWaterDepth
+        groundAdded = outward * (far - waterEnd) > 0
+          and outdoorGroundRect(waterEnd, far, z, z + span) or 0
         coastalWaterFootQuads = coastalWaterFootQuads
           + seaRect(math.min(inner, waterEnd), math.max(inner, waterEnd),
                     z, z + span)
@@ -4241,6 +4491,11 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     checkpoint(1)
   end
 
+  local outdoorWater = V.require('Gen1OutdoorScenery').profile(entry.map)
+  local carrier = SOUTH_SEA_LAND_FOOTS[entry.map.id]
+  local seaLevel = HorizonWall.SEA_LEVEL
+    + V.require('LedgeElevation').waterBase(entry.map, carrier and carrier.sea)
+
   seaTile = function(x, z, spanX, spanZ)
     spanX, spanZ = spanX or C, spanZ or C
     local key = worldCellKey(x, z)
@@ -4250,11 +4505,13 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     end
     if sharedSeaCells[key] then return 0 end
     sharedSeaCells[key] = true
-    local y = HorizonWall.SEA_LEVEL
+    local y = seaLevel
     local p = { { x, y, z }, { x + spanX, y, z },
                 { x + spanX, y, z + spanZ }, { x, y, z + spanZ } }
     local uv = {}
-    for i = 1, 4 do uv[i] = { p[i][1] / C, p[i][3] / C } end
+    for i = 1, 4 do
+      uv[i] = outdoorWater and {-174, 0} or {p[i][1] / C, p[i][3] / C}
+    end
     pushQuad(seaVerts, seaIndices, p, uv, Voxel3D.FACE_SHADE[3] or 1)
     seaQuads = seaQuads + 1
     checkpoint(1)
@@ -4279,13 +4536,29 @@ local function geometryFor(entry, own, rects, cooperativeStep,
 
   local open, seaOpen, endpoint = {}, {}, {}
   local waterPanels = { north = {}, south = {}, west = {}, east = {} }
-  -- The east-coast union is visible obliquely from Route 14. The former
-  -- 384px strips ended at different depths in one view, exposing rectangular
-  -- sea edges before the curved terrain reached the horizon. Extend only
-  -- this audited coast; existing harbour/landmark budgets remain unchanged.
-  local coastalDepth = (mapId == "ROUTE_12" or mapId == "ROUTE_13"
-    or mapId == "ROUTE_14") and 768 or HorizonWall.SEA_DEPTH
+  -- Keep adjacent ocean routes at the same reach, including the water
+  -- underneath Cinnabar's distant volcano. Harbours retain their own limits.
+  local coastalDepth = (mapId == "PALLET_TOWN" or mapId == "FUCHSIA_CITY" or mapId == "ROUTE_12" or mapId == "ROUTE_13"
+    or mapId == "ROUTE_14" or mapId == "ROUTE_19" or mapId == "ROUTE_20"
+    or mapId == "ROUTE_21" or mapId == "CINNABAR_ISLAND")
+    and HorizonWall.KANTO_COAST_DEPTH or HorizonWall.SEA_DEPTH
   local E = B + coastalDepth
+  -- The voxel land skirt yields to Route21's open northern edge 208px
+  -- before the seam. The older bitmap coastal foot begins only 96px before
+  -- it, leaving a visible 112px void on both sides of Pallet. Extend just
+  -- that outside-water interval to the same boundary as the voxel skirt.
+  -- No resident ground, walls, collision or route geometry is replaced.
+  local outdoorHorizon=V.require('OutdoorHorizon')
+  if southSeaLandFoot and southSeaLandFoot.mode=='south_corners'
+      and outdoorHorizon.setting:get()~='bitmap' then
+    local skirtDepth=outdoorHorizon.SHOULDER_DEPTH or HorizonWall.OUTDOOR_WALL_DISTANCE
+    local join=entry.h-skirtDepth
+    local oldJoin=entry.h-HorizonWall.OUTDOOR_WALL_DISTANCE
+    if join<oldJoin then
+      seaRect(-E,0,join,oldJoin)
+      seaRect(entry.w,entry.w+E,join,oldJoin)
+    end
+  end
   -- Far outdoor walls follow the actual union boundary. The old one-block
   -- per-map overhang was harmless while wall distance equalled one block, but
   -- at 96px it became an isolated perpendicular fin whenever the next map was
@@ -4475,6 +4748,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- its bottom and top follow both panels, so height/Y changes cannot reopen
   -- the join. Identical-distance legacy rules take this zero-work path.
   local function distanceStepJoins(edge)
+    if seaOnly then return end
     local horizontal = edge == "north" or edge == "south"
     local length = horizontal and entry.w or entry.h
     local outward = (edge == "north" or edge == "west") and -1 or 1
@@ -4564,6 +4838,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local function cornerPanelZ(x, z, outward, edgeIndex, edgeName,
                               forcedKind, forcedRows, forceBoundary,
                               cornerInfo, forcedPlacement, span)
+    if seaOnly then return end
     local kind, rows, placement = forcedKind, forcedRows, forcedPlacement
     if not kind then kind, rows, placement = edgePanel(edgeName, x) end
     if kind == HorizonWall.NONE_KIND then return end
@@ -4602,6 +4877,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local function cornerPanelX(x, z, outward, edgeIndex, edgeName,
                               forcedKind, forcedRows, forceBoundary,
                               cornerInfo, forcedPlacement, span)
+    if seaOnly then return end
     local kind, rows, placement = forcedKind, forcedRows, forcedPlacement
     if not kind then kind, rows, placement = edgePanel(edgeName, z) end
     if kind == HorizonWall.NONE_KIND then return end
@@ -4855,6 +5131,13 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   end
   if seaOpen.seS and seaOpen.seE then
     seaRect(entry.w, entry.w + E, entry.h, entry.h + E)
+  end
+
+  -- Water is part of the world surface, independent of the skyline mode.
+  -- Stop before any bitmap decorations, roofs or foreground props are built.
+  if seaOnly then
+    return {map=entry.map, ox=entry.ox, oy=entry.oy,
+      seaVertices=seaVerts, seaIndices=seaIndices, seaQuads=seaQuads}
   end
 
   -- Close the view through the native blocked forest reserve, while keeping
@@ -5326,7 +5609,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
       local landmarkH = module.h
       local half = landmarkW / 2
       local lo, hi = centre - half, centre + half
-      local y0 = HorizonWall.SEA_LEVEL
+      local y0 = seaLevel
       local y1 = y0 + landmarkH
       local distance = B + math.floor(HorizonWall.SEA_DEPTH * 0.55)
       local alongStart = horizontal and lo or hi
@@ -5427,8 +5710,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
           local x0, x1 = centre - landmarkW / 2,
                          centre + landmarkW / 2
           local z = entry.h + distance
-          local y0, y1 = HorizonWall.SEA_LEVEL,
-                         HorizonWall.SEA_LEVEL + landmarkH
+          local y0, y1 = seaLevel, seaLevel + landmarkH
           local shade = Voxel3D.FACE_SHADE[5] or 0.90
           local offset = 0
           while offset < landmarkW do
@@ -5567,6 +5849,14 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local foregroundQuads = treeCount * HorizonWall.FOREGROUND_TREE_QUADS
                           + canopyFillerQuads + ruralTerminalQuads
 
+  local exitDoor = Gen1GymInteriors.exitDoor(entry.map)
+  if exitDoor then
+    local group=wallGroup(exitDoor.family)
+    local offset=#group.vertices
+    for _,v in ipairs(exitDoor.vertices)do group.vertices[#group.vertices+1]=v end
+    for _,i in ipairs(exitDoor.indices)do group.indices[#group.indices+1]=offset+i end
+    checkpoint(1)
+  end
   local waterScenery = HorizonWall.waterArenaScenery(entry.map, entry.w)
   if waterScenery then
     local group = wallGroup("water_arena")
@@ -5704,7 +5994,7 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                    + overlayQuads + propQuads }
 end
 
-function HorizonWall.geometry(state)
+function HorizonWall.geometry(state, seaOnly)
   if not HorizonWall.enabled()
      or not (state and state.map and state.map.def and state.map.tileset) then
     return {}
@@ -5713,7 +6003,7 @@ function HorizonWall.geometry(state)
   local groundCells, seaCells, ruralTerminals = {}, {}, {}
   for i, e in ipairs(maps) do
     local g = geometryFor(e, i, maps, nil, groundCells, seaCells,
-                          ruralTerminals, state.worldMaps)
+                          ruralTerminals, state.worldMaps, seaOnly)
     if g then out[#out + 1] = g end
   end
   return out
@@ -6464,9 +6754,14 @@ local function editorPanoramaTexture(family)
   if textures[family] then return textures[family] end
   if textureFailures[family] then return nil end
   local path = V.path .. "/" .. spec.path
-  local ok, image = pcall(g.newImage, path,
-                          { mipmaps = false, linear = false })
-  if not (ok and image) then ok, image = pcall(g.newImage, path) end
+  local ok, image
+  if spec.fitDevice then
+    image = V.require('InteriorTexture').load(g, love.image, path, spec)
+    ok = image ~= nil
+  else
+    ok, image = pcall(g.newImage, path, { mipmaps = false, linear = false })
+    if not (ok and image) then ok, image = pcall(g.newImage, path) end
+  end
   if not (ok and image) then textureFailures[family] = true return nil end
   assetStats.loads = assetStats.loads + 1
   if image.setFilter then
@@ -6475,7 +6770,7 @@ local function editorPanoramaTexture(family)
   if image.setMipmapFilter then pcall(image.setMipmapFilter, image, nil) end
   if image.setWrap then pcall(image.setWrap, image, "clamp", "clamp") end
   local dimOK, width, height = pcall(image.getDimensions, image)
-  if not dimOK or width ~= spec.width or height ~= spec.height then
+  if not dimOK or (not spec.fitDevice and (width ~= spec.width or height ~= spec.height)) then
     assetStats.rejected = assetStats.rejected + 1
     releaseImage(image)
     textureFailures[family] = true
@@ -6664,7 +6959,8 @@ local function gardenPrismTexture(g,W,H)
 end
 
 local function isRetainedInterior(class)
-  return ARCHITECTURAL_MATERIALS[class] or class == "water_fish"
+  return CavePanoramas.families[class] or (class=="room_door" or class=="room_security_door" or class=="room_breach_exterior" or class=="room_sign") or (type(class)=="string" and class:sub(1,12)=="room_finish:")
+    or ARCHITECTURAL_MATERIALS[class] or class == "water_fish"
     or class == "water_glass" or class == "water_aquarium"
     or class == "garden_prism" or class == "electric_harbor"
     or class == "dojo_courtyard"
@@ -6704,6 +7000,7 @@ end
 
 local function skylineTexture(class)
   -- Floor light and glazing share a single retained 128x160 RGBA canvas.
+  if class == 'room_breach_frame' or class=='room_breach_roof' then return skylineTexture('room_breach_exterior') end
   if class == "garden_light" then return skylineTexture("garden_prism") end
   if type(class) == "string" and class:sub(1, 7) == "editor:" then
     return editorPanoramaTexture(class)
@@ -6713,11 +7010,12 @@ local function skylineTexture(class)
   -- shader and never samples the terrain atlas. Sharing one Canvas per
   -- semantic class avoids duplicate textures for every connected map.
   local key = class
+  local roomFinish=type(class)=="string" and class:match("^room_finish:(.+)$")
   if textures[key] then return textures[key] end
   if textureFailures[key] then return nil end
   local directional = hasDirectionalPanorama(class)
   local g = love.graphics
-  local W = class == "regional" and HorizonWall.REGIONAL_STRIP_W
+  local W = CavePanoramas.families[class] and CavePanoramas.textureW or (roomFinish or (class=="room_door" or class=="room_security_door" or class=="room_breach_exterior" or class=="room_sign")) and 128 or class == "regional" and HorizonWall.REGIONAL_STRIP_W
             or (class == "electric_harbor" or class == "dojo_courtyard") and 256
             or class == "water_fish" and 384
             or class == "water_glass" and 128
@@ -6732,7 +7030,7 @@ local function skylineTexture(class)
             or hasWorldForestStrip(class) and HorizonWall.FOREST_STRIP_W
             or directional and HorizonWall.STRIP_W
             or HorizonWall.DIRECTION_W
-  local H = class == "regional" and HorizonWall.REGIONAL_TEXTURE_H
+  local H = CavePanoramas.families[class] and CavePanoramas.sourceH or (roomFinish or (class=="room_door" or class=="room_security_door" or class=="room_breach_exterior" or class=="room_sign")) and 256 or class == "regional" and HorizonWall.REGIONAL_TEXTURE_H
             or (class == "electric_harbor" or class == "dojo_courtyard") and 128
             or (class == "water_fish" or class == "water_glass") and 64
             or class == "water_aquarium" and 128
@@ -6746,6 +7044,7 @@ local function skylineTexture(class)
                and HorizonWall.ENCLOSURE_TEXTURE_H
             or isEnclosure(class) and HorizonWall.ENCLOSURE_TEXTURE_H
             or HorizonWall.HEIGHT
+  if CavePanoramas.families[class] then W,H=CavePanoramas.textureSize(g) end
   local canvas = crispCanvas(g, W, H)
   if not canvas then textureFailures[key] = true return nil end
   pcall(canvas.setWrap, canvas,
@@ -6761,7 +7060,11 @@ local function skylineTexture(class)
     g.setCanvas(canvas)
     isolateInteriorBake(g, class)
     g.clear(0, 0, 0, 0)
-    if class == "regional" then
+    if CavePanoramas.families[class] then
+      if not bakeCompact(g, CavePanoramas.families[class].asset, function(image)
+        CavePanoramas.wall(g, image, W, H)
+      end) then caveSkyline(g, W, H) end
+    elseif class == "regional" then
       if not bakeRegionalLayout(g) then
         error("regional skyline compact asset rejected")
       end
@@ -6819,6 +7122,14 @@ local function skylineTexture(class)
       end) then
         pokecenterRoomSkyline(g, W, H)
       end
+    elseif (class=="room_door" or class=="room_security_door" or class=="room_breach_exterior" or class=="room_sign") then
+      if class=="room_sign" then V.require("Gen1InteriorFinish").sign(g,W,H)
+      elseif class=="room_breach_exterior" then V.require("Gen1BreachExterior").paint(g,W,H)
+      elseif class=="room_security_door" then V.require("Gen1InteriorFinish").securityDoor(g,W,H)
+      else V.require("Gen1InteriorFinish").door(g,W,H) end
+    elseif roomFinish then
+      V.require("Gen1InteriorFinish").paint(g,W,H,roomFinish,
+        assert(editorPanoramaTexture("editor:kanto_"..roomFinish)))
     elseif class == "interior_shell" then
       pokecenterRoomSkyline(g, W, H)
     elseif directional then
@@ -6883,7 +7194,8 @@ local function groundTexture(class)
   local key = "ground:" .. class
   if textures[key] then return textures[key] end
   local g = love.graphics
-  local W = class == "mt_moon" and HorizonWall.MT_MOON_GROUND_PERIOD
+  local W = CavePanoramas.families[class] and CavePanoramas.ceilingSize
+            or class == "mt_moon" and HorizonWall.MT_MOON_GROUND_PERIOD
             or ARCHITECTURAL_MATERIALS[class] and 128
             or class == "tower" and HorizonWall.TOWER_SURFACE_PERIOD
             or class == "pokecenter_room"
@@ -6905,7 +7217,11 @@ local function groundTexture(class)
     isolateInteriorBake(g, class)
     g.clear(0, 0, 0, 1)
     local baked = false
-    if class == "mt_moon" then
+    if CavePanoramas.families[class] then
+      baked = bakeCompact(g, CavePanoramas.families[class].asset, function(image)
+        CavePanoramas.ceiling(g, image)
+      end)
+    elseif class == "mt_moon" then
       baked = bakeCompact(g, "mtMoonCeiling", function(image)
          g.setColor(1, 1, 1, 1)
          g.draw(image, 0, 0)
@@ -6922,7 +7238,7 @@ local function groundTexture(class)
       end)
     end
     if not baked then
-      groundPattern(g, class == "mt_moon" and "cave" or class, W, H)
+      groundPattern(g, (class == "mt_moon" or CavePanoramas.families[class]) and "cave" or class, W, H)
     end
     g.setCanvas()
     g.pop()
@@ -7089,6 +7405,7 @@ end
 
 function HorizonWall.prewarm(map)
   if not HorizonWall.enabled() or not map then return true end
+  if V.require('OutdoorHorizon').active(map,HorizonWall)then return true end
   local class = HorizonWall.classFor(map)
   if class == "interior" then
     local profile = HorizonWall.interiorProfileFor(map)
@@ -7101,6 +7418,12 @@ function HorizonWall.prewarm(map)
     local wallFamily = profile.wallAsset
       and ("editor:" .. profile.wallAsset) or "interior_shell"
     if not skylineTexture(wallFamily) then return false end
+    if profile.nativeRoomPanels and (not skylineTexture("room_finish:"..(profile.theme or "home")) or not skylineTexture("room_door")) then return false end
+    if tostring(map.id):match('^CELADON_MANSION_[123]F$') and not skylineTexture("room_sign") then return false end
+    if profile.nativeRoomPanels and #V.require("Gen1SecurityDoors").forMap(map)>0
+        and not skylineTexture("room_security_door") then return false end
+    if profile.nativeRoomPanels and V.require('Gen1BreachExterior').source(map)
+        and not skylineTexture('room_breach_exterior') then return false end
     if profile.ceiling.enabled then
       local ceilingFamily = profile.ceiling.asset
         and ("editor:" .. profile.ceiling.asset) or "interior_shell"
@@ -7115,6 +7438,7 @@ function HorizonWall.prewarm(map)
     return true
   end
   local families, wantsForeground, missingAsset = {}, false, false
+  if Gen1GymInteriors.exitDoor(map) then families.room_door=true end
   local id = tostring(map.id or map.def and map.def.id or "")
   local rules = HorizonWall.EDGE_PROFILES[id]
   local function includeKind(kind, placement)
@@ -7300,6 +7624,11 @@ end
 local function stateKey(state, maps, canonical)
   local parts = { tostring(TileRenderer.voidFill or "trees"),
                   HorizonWall.enabled() and "full" or "off",
+                  V.require('OutdoorHorizon').setting:get(),
+                  tostring(V.require('Gen1OutdoorScenery').ground:get()),
+                  tostring(V.require('Gen1OutdoorScenery').trees:get()),
+                  tostring(V.require('Gen1PalletVillage').buildings:get()),
+                  tostring(V.require('VoxelItems').setting:get()),
                   canonical and "world" or ("root:" .. tostring(state.map.id)) }
   for _, e in ipairs(maps) do
     parts[#parts + 1] = table.concat({ tostring(e.map.id), e.ox, e.oy,
@@ -7369,6 +7698,11 @@ local function newBuildJob(key, maps, worldMaps)
   local job = { key = key, maps = maps, meshes = {}, complete = true,
                 resumes = 0 }
   job.co = coroutine.create(function()
+    local outdoor=V.require('OutdoorHorizon')
+    local voxelExterior = outdoor.active(maps[1].map,HorizonWall)
+    if voxelExterior then
+      job.meshes=outdoor.build(maps,HorizonWall,function()coroutine.yield('voxel-horizon')end,worldMaps)
+    end
     local coastalVertices, coastalIndices = {}, {}
     local storyVertices, storyIndices = {}, {}
     local seaVertices, seaIndices = {}, {}
@@ -7387,7 +7721,7 @@ local function newBuildJob(key, maps, worldMaps)
       error("horizon mesh allocation failed", 0)
     end
     local function addPart(kind, className, vertices, indices, texture, ox, oy,
-                           animation, shape, castsShadow)
+                           animation, shape, castsShadow, interiorPanel)
       if #vertices == 0 then return end
       if animation and animation.frames > 1 and animation.fps then
         local part = {
@@ -7418,6 +7752,7 @@ local function newBuildJob(key, maps, worldMaps)
         aquariumBase = className=="water_fish" and vertices or nil,
         prismBase = className=="garden_light" and vertices or nil,
         class = className, kind = kind, shape = shape,
+        interiorPanel = interiorPanel,
         castsShadow = castsShadow == true,
       }
     end
@@ -7525,9 +7860,11 @@ local function newBuildJob(key, maps, worldMaps)
     for i, e in ipairs(maps) do
       local built = geometryFor(e, i, maps, function()
         coroutine.yield("geometry")
-      end, groundCells, seaCells, ruralTerminals, worldMaps)
+      end, groundCells, seaCells, ruralTerminals, worldMaps, voxelExterior)
       coroutine.yield("geometry-ready")
-      if built then
+      if built and voxelExterior then
+        appendSea(built)
+      elseif built then
         -- Canvas/image decode is one bounded prewarm step. Never yield while a
         -- Canvas is bound; the next resume starts only after state is restored.
         local wallTextures = {}
@@ -7558,8 +7895,8 @@ local function newBuildJob(key, maps, worldMaps)
                       group.shape, group.castsShadow)
             end
           else
-            addPart("wall", group.family, group.vertices, group.indices,
-                    texture, built.ox, built.oy)
+            addPart(group.kind or "wall", group.family, group.vertices, group.indices,
+                    texture, built.ox, built.oy, nil, nil, nil, group.interiorPanel)
           end
         end
         addPart("ground", built.class, built.groundVertices,
@@ -7591,6 +7928,8 @@ local function newBuildJob(key, maps, worldMaps)
       coroutine.yield("sea-texture-ready")
       addPart("water", "water", seaVertices, seaIndices, texture, 0, 0)
     end
+
+    if voxelExterior then return end
 
     -- Route 8 is the only owner, but aggregate before allocation so even a
     -- synthetic/re-rooted union can never grow beyond one midground draw.
@@ -7770,6 +8109,10 @@ function HorizonWall.blockAffectsGeometry(map, bx, by)
      or type(bx) ~= "number" or type(by) ~= "number" then
     return true
   end
+  -- Native room panels include internal partitions and story door stamps.
+  -- Their dependencies extend beyond the map's outermost block ring.
+  local interior=HorizonWall.interiorProfileFor(map)
+  if interior and interior.nativeRoomPanels then return true end
   -- This guarded visual screen reads the entire blocked reserve, not just
   -- its shell. Opening any cell must remove it on the next geometry rebuild.
   if (map.id or def.id) == "ROUTE_2" and w == 10 and h == 36

@@ -64,7 +64,7 @@ GlassMask._isBlack = isBlack     -- named for the suite
 -- testable headless: `getPixel(x, y)` returns r, g, b in 0..1 for 0-based
 -- coordinates. Returns { {x=, y=, w=, h=}, ... } rects of GLASS texels
 -- (the border is the detector's evidence, not part of the answer).
-function GlassMask.scan(getPixel, w, h)
+function GlassMask.scan(getPixel, w, h, checkpoint)
   -- Shape tests revisit the same texel many times (a black border candidate
   -- is read by six horizontal probes and then again by neighbouring
   -- candidates). ImageData:getPixel crosses the Lua/C boundary, so doing that
@@ -77,6 +77,7 @@ function GlassMask.scan(getPixel, w, h)
     local i = y * w + x + 1
     local value = blackPixels[i]
     if value == nil then
+      if checkpoint then checkpoint() end
       value = isBlack(getPixel(x, y))
       blackPixels[i] = value
     end
@@ -101,6 +102,7 @@ function GlassMask.scan(getPixel, w, h)
   local rects = {}
   for y = 0, h - 1 do
     for x = 0, w - 8 do
+      if checkpoint then checkpoint() end
       if borderRow(x, y) then
         local n = 0
         while y + 1 + n < h and glassRow(x, y + 1 + n) do
@@ -120,42 +122,54 @@ end
 
 local cache = {}       -- image path -> { rects, texture (or false) }
 
-local function entry(tileset)
+local function entry(tileset, advance)
   local path = tileset and tileset.image
   if not path then return nil end
   local hit = cache[path]
-  if hit then return hit end
-  -- Glass is an optional lighting accent.  Its detector crosses the Lua/C
-  -- boundary once per atlas texel and then uploads another atlas-sized image;
-  -- doing that synchronously before the first terrain job is precisely the
-  -- wrong trade on a phone.  Cache an explicit empty verdict so prefetch does
-  -- not retry, and let the scene shader bind the existing 1x1 transparent
-  -- stand-in. Desktop keeps the complete shape detector and glass lighting.
-  if MOBILE_RUNTIME then
-    cache[path] = { rects = {}, texture = false }
-    mobileDiagnostic("checkpoint", "mobile-glass-mask-skipped", {
-      caller="GlassMask.prepare", context="world", path=path,
-      reason="mobile-world-core",
+  if hit and not hit.scan then return hit end
+  -- Mobile draw-time readers only consume completed work. Preparation runs
+  -- from VoxelScene.prefetch, whose readiness gate keeps the transition up.
+  if MOBILE_RUNTIME and not advance then return nil end
+  if not hit then
+    mobileDiagnostic("checkpoint", "glass-mask-image-read-start", {
+      caller="Assets.imageData", context="world", path=path,
     })
-    return cache[path]
+    local ok, data = pcall(Assets.imageData, path)
+    if not (ok and data) then
+      cache[path] = { rects = {}, texture = false }
+      return cache[path]
+    end
+    local w, h = data:getDimensions()
+    mobileDiagnostic("checkpoint", "glass-mask-scan-start", {
+      caller="GlassMask.scan", context="world", path=path,
+      width=w, height=h,
+    })
+    hit = { rects = {}, texture = false, w = w, h = h }
+    cache[path] = hit
+    hit.scan = coroutine.create(function()
+      local work = 0
+      local function checkpoint()
+        work = work + 1
+        if work > 1024 then
+          coroutine.yield()
+          work = 1
+        end
+      end
+      return GlassMask.scan(function(x, y) return data:getPixel(x, y) end,
+        w, h, MOBILE_RUNTIME and checkpoint or nil)
+    end)
   end
-  mobileDiagnostic("checkpoint", "glass-mask-image-read-start", {
-    caller="Assets.imageData", context="world", path=path,
-  })
-  local ok, data = pcall(Assets.imageData, path)
-  if not (ok and data) then
-    -- unreadable art is a verdict for the session, not a retry loop
-    cache[path] = { rects = {}, texture = false }
-    return cache[path]
+  local ok, rects = coroutine.resume(hit.scan)
+  if not ok then
+    hit.scan = nil
+    mobileDiagnostic("checkpoint", "glass-mask-scan-failed", {
+      caller="GlassMask.prepare", context="world", path=path,
+    })
+    return hit
   end
-  local w, h = data:getDimensions()
-  mobileDiagnostic("checkpoint", "glass-mask-scan-start", {
-    caller="GlassMask.scan", context="world", path=path,
-    width=w, height=h,
-  })
-  local rects = GlassMask.scan(function(x, y)
-    return data:getPixel(x, y)
-  end, w, h)
+  if coroutine.status(hit.scan) ~= "dead" then return nil end
+  hit.scan = nil
+  local w, h = hit.w, hit.h
   local texture = false
   if #rects > 0 and love.image and love.image.newImageData
      and love.graphics and love.graphics.newImage then
@@ -203,11 +217,11 @@ end
 -- lands under the transition instead of the first visible 3D draw.
 function GlassMask.prepared(tileset)
   local path = tileset and tileset.image
-  return not path or cache[path] ~= nil
+  return not path or (cache[path] ~= nil and cache[path].scan == nil)
 end
 
 function GlassMask.prepare(tileset)
-  entry(tileset)
+  entry(tileset, true)
   return GlassMask.prepared(tileset)
 end
 
@@ -228,8 +242,8 @@ function GlassMask.blank()
   return blank or nil
 end
 
--- Drop the GPU objects (window resize, hot reload). The rects survive --
--- they are a fact about the art -- but textures are rebuilt on demand.
+-- Drop completed GPU objects and pending scans (window resize, hot reload).
+-- A later update-time prepare starts again from the current artwork.
 function GlassMask.invalidate()
   for _, e in pairs(cache) do
     if e.texture and e.texture.release then pcall(e.texture.release, e.texture) end

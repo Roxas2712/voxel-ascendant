@@ -8,13 +8,13 @@
 local V = ...
 local Hosts = {}
 
-local Boxes = require("src.pokemon.Boxes")
+local Boxes = V.storageBoxes or require("src.pokemon.Boxes")
 local Party = require("src.pokemon.Party")
 local Stats = require("src.pokemon.Stats")
 local Screens = require("src.ui.Screens")
 local GameVersion = require("src.core.GameVersion")
 local AscBoxProvider = V.require("AscBoxProvider")
-local PartyMenuSkins = V.require("PartyMenuSkins")
+local PartyMenuSkins -- Gen-1 battle presentation is loaded only by install().
 local EquipmentView
 do
   local ok,value=pcall(V.require,"PokemonEquipmentView")
@@ -586,7 +586,7 @@ function PcSession:buildModel()
   }
   return {
     schema=self.PokemonUi.MODEL_SCHEMA, apiVersion=self.PokemonUi.API_VERSION,
-    host="vasc_gen1_native", hostGeneration=self.PokemonUi.HOST_GENERATION,
+    host=self.hostId or "vasc_gen1_native", hostGeneration=self.PokemonUi.HOST_GENERATION,
     surface="pc_box", session=self.id, revision=self.revision,
     locale=language, edition=edition(), mode="browse_box",
     title="ASC BOX", help=language == "de"
@@ -760,6 +760,13 @@ function PcSession:move(envelope, forcedDestination)
     end
   end
 
+  local moveContext
+  if self.beforeMove then
+    local allowed, reason, context = self:beforeMove(source, destination, targetMon)
+    if not allowed then return self:reject(envelope, "storage_rule", reason) end
+    moveContext = context
+  end
+
   if sameContainer then
     if targetMon then
       if source.zone == "box" then
@@ -807,15 +814,19 @@ function PcSession:move(envelope, forcedDestination)
     if source.zone == "box" then normalizeBox(sourceList, source.box, {}) end
   end
 
-  if source.zone == "party" and destination.zone == "box" then
+  if not self.afterMove and source.zone == "party" and destination.zone == "box" then
     pcall(function()
       require("src.world.PikachuFollower")
         .modifyHappiness(self.game.save, "DEPOSITED", source.mon)
     end)
   end
-  for _, mon in ipairs(party) do
-    local def = self.game.data.pokemon and self.game.data.pokemon[mon.species]
-    if def then pcall(Stats.ensure, def, mon) end
+  if self.afterMove then
+    self:afterMove(source, destination, targetMon, moveContext)
+  else
+    for _, mon in ipairs(party) do
+      local def = self.game.data.pokemon and self.game.data.pokemon[mon.species]
+      if def then pcall(Stats.ensure, def, mon) end
+    end
   end
   self.focusZone = destination.zone
   if destination.zone == "box" then
@@ -1384,7 +1395,8 @@ function HostScreen:draw(...)
   -- selected a canvas matching uiSize(); inherited 160x144 transforms or
   -- scissors here only crop/overscale the completed 512x288 layer.
   g.push("all")
-  if not self.__vascMobileHudDrawing and type(g.origin) == "function" then
+  if not self.__vascMobileHudDrawing and not self.preserveHostTransform
+      and type(g.origin) == "function" then
     g.origin()
   end
   if type(g.setShader) == "function" then g.setShader() end
@@ -1523,6 +1535,7 @@ end
 
 function Hosts.install(PokemonUi)
   if Hosts.installed then return true end
+  PartyMenuSkins = V.require("PartyMenuSkins")
   local handle, why = PokemonUi.registerHost({
     schema=PokemonUi.HOST_SCHEMA, apiVersion=PokemonUi.API_VERSION,
     id="vasc_gen1_native", owner=VASC_OWNER,
@@ -1607,6 +1620,8 @@ function Hosts.install(PokemonUi)
   return true
 end
 
+Hosts.hostSurface = hostSurface
+Hosts.installRawInputHooks = installRawInputHooks
 Hosts.HostScreen = HostScreen
 Hosts.PcSession = PcSession
 Hosts.BattleSession = BattleSession

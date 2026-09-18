@@ -142,6 +142,7 @@ local DEFINITIONS = {
       "gen2/lib/EmbeddedWildsMain.lua", "gen2/lib/GoldWildsBridge.lua",
       "gen2/lib/GoldPartyFollower.lua", "gen2/lib/Gen2WorldMap.lua",
       "gen2/lib/GoldFieldMovePresentation.lua",
+      "gen2/lib/FieldActorAppearance.lua",
       "gen2/lib/SpeciesFishingCinematic.lua",
     },
   },

@@ -35,6 +35,31 @@ local function arm(state, game, mapId)
   state.pending = { game = game, mapId = mapId }
   state.warmingMap = nil
   state.warmingBodyOnly = nil
+  state.warmingHorizon = nil
+end
+
+-- The body and its enclosing horizon are separate asynchronous caches. Keep
+-- advancing the exact destination-only enclosure during the existing fade,
+-- even after the body has finished. Never build a guessed connected union or
+-- call prewarm() here (that path may decode all assets synchronously).
+local function advanceHorizon(state, ow, covered)
+  local target = state.warmingHorizon
+  if not target then return end
+  if not covered or not enabled() or ow.map == target.map then
+    state.warmingHorizon = nil
+    return
+  end
+  -- A bounded horizon resume still costs work. Let the priority terrain lane
+  -- finish first, then do at most one ordinary meshes() call per update.
+  if type(ChunkMesher.ready) ~= 'function' then return end
+  local okBody, bodyReady = pcall(ChunkMesher.ready, target.map, target.bodyOnly)
+  if not okBody or not bodyReady then return end
+  if type(HorizonWall.meshes) ~= 'function' then
+    state.warmingHorizon = nil
+    return
+  end
+  local ok, _, ready, failed = pcall(HorizonWall.meshes, target.scene)
+  if not ok or ready or failed then state.warmingHorizon = nil end
 end
 
 function WarpPrefetch.install(game)
@@ -93,6 +118,7 @@ function WarpPrefetch.update(game, covered)
       state.warmingBodyOnly = nil
     end
   end
+  advanceHorizon(state, ow, covered)
   local pending = state.pending
   if not pending or not covered then return state.warmingMap ~= nil end
   state.pending = nil
@@ -126,6 +152,12 @@ function WarpPrefetch.update(game, covered)
   if requestOK then
     state.warmingMap = map
     state.warmingBodyOnly = bodyOnly
+    if map ~= ow.map then
+      state.warmingHorizon = {
+        map = map, bodyOnly = bodyOnly,
+        scene = { map=map, neighbors={}, worldMaps=game.data and game.data.maps },
+      }
+    end
   end
   return requestOK
 end

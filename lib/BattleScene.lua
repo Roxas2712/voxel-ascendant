@@ -1,4 +1,4 @@
-﻿-- Overworld battles: one frame of the arena, as geometry.
+-- Overworld battles: one frame of the arena, as geometry.
 --
 -- The same world the free-roam mode draws, from a placed camera instead of
 -- the orbit, at the WINDOW's own pixel resolution -- not the GB's. The
@@ -868,6 +868,10 @@ function BattleScene.presentationLayout(arena, groundY, textures, map, vp)
       end
       -- Menu axes follow screen convention: positive Y moves down.  World Y
       -- grows upward, hence the subtraction here.
+      if arena.terarrium then
+        x,y,z=stage.presentationPosition(arena,side,groundY,texture and texture.trainer==true)
+        role.x,role.y=0,0
+      end
       layout[side] = { x + role.x, y - role.y, z }
       layout.actorScale[side] = role.scale
       layout.target[side] = role.target
@@ -1039,13 +1043,15 @@ end
 -- its owner stood still. Authored full-frame backdrops cannot receive that
 -- silhouette through ShadowMap, so they also retain one conservative contact
 -- footprint derived from the visible ink width.
-local function monCards(arena, groundY, textures, map, vp, eye)
+local function monCards(arena, groundY, textures, map, vp, eye, probe)
   local out = {}
   if not textures then return out end
   local stage = V.require("VoxelBattleStage")
   local baseScale = stage.presentationScale(arena)
   local layout = BattleScene.presentationLayout(arena, groundY, textures,
                                                  map, vp)
+  layout.actorInkWidth={}
+  layout.actorInkHeight={}
   for _, side in ipairs({ "enemy", "player" }) do
     local tex = textures[side]
     local cell = (side == "player") and arena.player or arena.enemy
@@ -1075,6 +1081,8 @@ local function monCards(arena, groundY, textures, map, vp, eye)
       local metrics = BattleScene.presentationMetrics(
         tex, actorScale, profileObject)
       local inkWidth = tonumber(metrics.worldInkWidth) or BattleScene.CELL
+      layout.actorInkWidth[side]=inkWidth
+      layout.actorInkHeight[side]=tonumber(metrics.worldInkHeight)
       local contactRadiusX = math.max(2.5, math.min(7.5, inkWidth * .28))
       local contactRadiusZ = math.max(1.8,
         math.min(4.2, contactRadiusX * .58))
@@ -1096,6 +1104,19 @@ local function monCards(arena, groundY, textures, map, vp, eye)
                                                 actorScale, profileObject) }
     end
   end
+  if textures.battleHeroes and (textures.battleHeroes.player or textures.battleHeroes.enemy)
+      and V.stadium2ForGen1 then
+    local stadium=V.require('Stadium')
+    if stadium.presentationMatrices and stadium.visualReceipt then
+      local matrices=stadium.presentationMatrices(layout)
+      layout.actorScreenHulls={}
+      for _,side in ipairs({'player','enemy'})do
+        local receipt=stadium.visualReceipt(side,vp,2,2,nil,matrices[side])
+        if receipt then layout.actorScreenHulls[side]=receipt.hull end
+      end
+    end
+  end
+  V.require('BattleHeroesBridge').append(out,textures,layout,eye or Voxel3D.eye,map,arena,vp,probe)
   return out
 end
 
@@ -1143,6 +1164,7 @@ local function actorVisualForCard(card, vp, pw, ph, renderToken)
   return {
     schema="voxel-ascendant/actor-render/v1",
     side=card.side, renderToken=renderToken,
+    placementSafe=card.placementSafe,
     hull={ left, top, right - left, bottom - top },
     head={ x=(left + right) * .5, y=top },
     foot={ x=(left + right) * .5, y=bottom },
@@ -1161,7 +1183,7 @@ actorVisualsFor = function(arena, groundY, textures, map, vp, pw, ph,
                            renderToken, eye)
   local visuals = {}
   for _, card in ipairs(monCards(
-      arena, groundY, textures, map, vp, eye)) do
+      arena, groundY, textures, map, vp, eye, true)) do
     local receipt = actorVisualForCard(card, vp, pw, ph, renderToken)
     if receipt then visuals[card.side] = receipt end
   end
@@ -1309,20 +1331,39 @@ end
 local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
                            atlasFor, cards, token, host, neighbors,
                            water, nbWater, groundY, horizon, screenBackdrop,
-                           backdropIdentity)
+                           backdropIdentity, mapProps)
   if not Shadows.enabled() then return end
   if not ShadowMap.available() then return end
   local sig = shadowSignature(state, arena, terrain, nbMesh, token, horizon,
                               backdropIdentity)
+  if mapProps then sig=sig..","..table.concat(mapProps.signature,",") end
   if not ShadowMap.stale(sig) then return end
-  if not ShadowMap.begin(cx, cy, vw, vh) then return end
+  local staticSig
+  if not arena.discs and type(ShadowMap.storeStatic) == "function" then
+    local parts = {shadowSignature(state, arena, terrain, nbMesh, nil, horizon,
+      backdropIdentity), tostring(water), tostring(ChunkMesher.flowers(host)),
+      tostring(atlasFor(host))}
+    for i, nb in ipairs(neighbors) do
+      parts[#parts+1] = tostring(nbWater and nbWater[i])
+      parts[#parts+1] = tostring(ChunkMesher.flowers(nb.map))
+      parts[#parts+1] = tostring(atlasFor(nb.map))
+      parts[#parts+1] = tostring(nb.ox)
+      parts[#parts+1] = tostring(nb.oy)
+    end
+    if mapProps then parts[#parts+1] = table.concat(mapProps.signature, ",") end
+    staticSig = table.concat(parts, ";")
+  end
+  local casterHeight=host and V.require('VoxelFurniture').shadowHeight({map=host,neighbors=neighbors})or 160
+  local begun, reusedStatic = ShadowMap.begin(cx, cy, vw, vh,casterHeight,staticSig)
+  if not begun then return end
   local ok, err = pcall(function()
     -- A DISC RUNG: the two discs are the only ground there is, so they are the
     -- only thing the sun has to see besides the Pokemon themselves. Everything
     -- below this is a map that is not in the shot.
     if arena.discs then
       V.require("VoxelBattleStage").cast(ShadowMap, arena, groundY or 0)
-    else
+    elseif not reusedStatic then
+      if mapProps then V.require("BattleMapProps").cast(mapProps,ShadowMap) end
       ShadowMap.draw(terrain, atlasFor(host), nil)
       for i, nb in ipairs(neighbors) do
         ShadowMap.draw(nbMesh[i], atlasFor(nb.map),
@@ -1357,6 +1398,7 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
         ShadowMap.draw(ChunkMesher.flowers(nb.map), atlasFor(nb.map),
                        ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
       end
+      if staticSig then ShadowMap.storeStatic(staticSig) end
     end
 
     -- the mons themselves, with the same texture/silhouette the camera sees
@@ -1519,8 +1561,14 @@ function BattleScene.groundY(map, arena)
   -- the stage at whatever elevation the map happens to have at a spot the
   -- fight is not actually happening on
   if arena and arena.discs then return 0 end
-  local ok, h = pcall(VoxelScene.groundAt, map,
-                      arena.playerCell[1], arena.playerCell[2])
+  -- Diagonal formations use fractional cell anchors. Native tile lookup
+  -- requires integer cells, and the +half-cell centre may cross into the
+  -- next one. Sample the actual world foot, as arena validation already does.
+  local px = arena.player and math.floor(arena.player[1] / BattleScene.CELL)
+    or math.floor(arena.playerCell[1])
+  local pz = arena.player and math.floor(arena.player[2] / BattleScene.CELL)
+    or math.floor(arena.playerCell[2])
+  local ok, h = pcall(VoxelScene.groundAt, map, px, pz)
   return (ok and h) or 0
 end
 
@@ -1637,7 +1685,8 @@ function BattleScene.render(state, arena, textures, token)
   DayNight.applyRig(outdoor)
   -- a canopy floor (Viridian Forest) fights under the hour's tint too,
   -- with the rig and the void exactly as they were
-  Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(host))
+  Voxel3D.tint = V.require("TowerAtmosphere").tint(host,DayNight.tint(outdoor or DayNight.isCanopy(host)))
+  Voxel3D.tint = V.require("IndoorMist").tint(host,Voxel3D.tint)
   local GlassMask = V.require("GlassMask")
   Voxel3D.glassMask = outdoor and GlassMask.texture(host.tileset) or nil
   Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
@@ -1668,6 +1717,14 @@ function BattleScene.render(state, arena, textures, token)
     nbWater, horizon = stage.waters, stage.horizon
   end
 
+  local roomView
+  if not discs and not arena.portableStage then
+    local err
+    roomView,err=V.require('CurrentRoom').prepare({map=host,
+      player={px=arena.mid[1]-8,py=arena.mid[2]-8}})
+    if err then return decline('current-room:'..err)end
+  end
+  local mapProps = not discs and V.require("BattleMapProps").capture(state,host,neighbors)
   local lx, ly, s, pw, ph = BattleScene.letterbox()
   if not (pw > 0 and ph > 0 and s > 0) then
     return decline("invalid-letterbox")
@@ -1747,11 +1804,14 @@ function BattleScene.render(state, arena, textures, token)
         arena, groundY, textures, host, provisionalVP))
     end
   end
-  local cards = monCards(arena, groundY, textures, host, provisionalVP)
+  local cards = monCards(arena, groundY, textures, host, provisionalVP, nil, true)
   Voxel3D.camera = nil
+  if not discs then
+    terrain,mapProps=V.require('BattleMapClearance').apply(arena,terrain,mapProps,host,cards,Voxel3D.eye)
+  end
   castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh, atlasFor,
               cards, token, host, neighbors, water, nbWater, groundY, horizon,
-              screenBackdrop, portableBackdrop)
+              screenBackdrop, portableBackdrop, mapProps)
 
   -- An opaque void either way. Outdoors the camera is low enough that the
   -- horizon is genuinely in frame, so it is sky; indoors it is the dark end
@@ -1764,7 +1824,9 @@ function BattleScene.render(state, arena, textures, token)
   else
     mapSky = VoxelScene.skyColor(host, 1)
   end
-  local sky = mapSky or VoxelScene.skyShade(INDOOR_SHADE, 1)
+  local caveMist = V.require("CaveBattleMist").forView(host,roomView)
+  local sky = caveMist or mapSky or VoxelScene.skyShade(INDOOR_SHADE, 1)
+  if arena.terarrium then sky=arena.terarrium.family=='cave' and {.47,.47,.53}or{.78,.74,.65};mapSky=nil end
   local diskBackground = discs and arena.diskStyle
       and V.require("VoxelBattleStage").diskBackgroundColor(arena) or nil
   -- FRLG-like DISCS deliberately use a near-white flat renderer clear tinted
@@ -1830,6 +1892,9 @@ function BattleScene.render(state, arena, textures, token)
       mapId = host and host.id or nil,
       arena = discs and arena.arenaStyle and true or false,
       battleView = true,
+      caveBattleMist = caveMist,
+      towerMood = V.require("TowerAtmosphere").uniforms(host),
+      towerLight = V.require("TowerAtmosphere").lights(host,state.dark),
     }) then
       declineReason = "begin-scene-declined"
       return
@@ -1874,6 +1939,7 @@ function BattleScene.render(state, arena, textures, token)
           surfaces=surfaceWeather,
         })
       end
+    Voxel3D.roomVisibility(roomView)
     Voxel3D.draw(terrain, atlasFor(host), nil)
     for i, nb in ipairs(neighbors) do
       Voxel3D.draw(nbMesh[i], atlasFor(nb.map),
@@ -1885,17 +1951,45 @@ function BattleScene.render(state, arena, textures, token)
     -- known-good meshes and a cold neighbour can never become a sky-coloured
     -- hole when BTL CAM widens to 2X or 3X.
     Voxel3D.glass(false)
+    Voxel3D.seams(false)
+    Voxel3D.roomVisibility(roomView,true)
+    local completeArenaCeiling = HorizonWall.arenaViewFor(host) ~= nil
+    local outdoorHorizon=V.require('OutdoorHorizon')
+    local horizonVisible=outdoorHorizon.visibility()
     for _, rim in ipairs(horizon or {}) do
-      if rim.kind ~= "water" then
-        if HorizonWall.architecturalRoom and HorizonWall.architecturalRoom(host) then
+      -- Native indoor walls use the same whole-panel cutaway as the world.
+      -- A battle camera outside a small room must not stare at its near wall.
+      if rim.kind ~= "water" and (not rim.interiorPanel
+          or V.require("InteriorCutaway").rimVisible(
+            rim,true,Voxel3D.eye,Voxel3D.focus)) then
+        Voxel3D.towerBackdrop(V.require("TowerAtmosphere").active(host))
+        local unmaskedCeiling = completeArenaCeiling and rim.kind == "ground"
+        if unmaskedCeiling then Voxel3D.roomVisibility(nil) end
+        if rim.class=='voxel_horizon'then
+          outdoorHorizon.draw(rim,Mat4.translate(rim.ox,0,rim.oy),horizonVisible)
+        elseif rim.class=='room_breach_exterior' or rim.class=='room_breach_roof' then
+          V.require('Gen1BreachExterior').draw(Voxel3D,rim,
+            Mat4.translate(rim.ox,0,rim.oy),DayNight,love.graphics)
+        elseif HorizonWall.architecturalRoom and HorizonWall.architecturalRoom(host) then
           ArenaScenery.draw(Voxel3D, rim, rim.texture,
             Mat4.translate(rim.ox, 0, rim.oy), {outdoor=false, surfaces=false})
         else
           Voxel3D.draw(rim.mesh, rim.texture,
                        Mat4.translate(rim.ox, 0, rim.oy))
         end
+        if unmaskedCeiling then Voxel3D.roomVisibility(roomView,true) end
       end
     end
+    Voxel3D.towerBackdrop(false)
+    Voxel3D.roomVisibility(roomView)
+    local roomTexture=V.require('CurrentRoom').texture(roomView,horizon)
+    if roomView and roomView.mesh and roomTexture then
+      Voxel3D.setCutaway(V.require('InteriorCutaway').wallPlane(Voxel3D.eye,Voxel3D.focus))
+      Voxel3D.draw(roomView.mesh,roomTexture,nil)
+      Voxel3D.setCutaway()
+    end
+    Voxel3D.seams(false)
+    V.require("BattleMapProps").draw(mapProps)
     Voxel3D.glass(true)
     -- and the water over it -- PLAIN, always: the flat animated tiles, never
     -- the reflective pass, whatever the WATER row says. The reflection is
@@ -1916,6 +2010,7 @@ function BattleScene.render(state, arena, textures, token)
     -- This texture is procedural rather than a tileset-atlas slot, so the
     -- host map's window mask has no meaningful coordinates on it.
     Voxel3D.glass(false)
+    Voxel3D.seams(false)
     for _, rim in ipairs(horizon or {}) do
       if rim.kind == "water" then
         Voxel3D.draw(rim.mesh, rim.texture,
@@ -1924,6 +2019,7 @@ function BattleScene.render(state, arena, textures, token)
     end
     Voxel3D.glass(true)
     end
+    Voxel3D.roomVisibility(nil) -- battle actors remain complete at room edges
     -- A full-frame painting owns the visible ground pixels and has no depth
     -- surface for ShadowMap to shade. Put the bounded soft contact ellipses
     -- onto that painting before the Pokemon themselves; OFF performs no draw.
@@ -2027,6 +2123,10 @@ function BattleScene.render(state, arena, textures, token)
     -- overworld path. Rain/snow therefore keep the same pixel scale and fog
     -- or lightning cover the whole 3D shot without touching the engine HUD,
     -- which is composited later by OverworldBattle.
+    if arena.terarrium and arena.terarriumService.overlay then
+      arena.terarriumService.overlay(arena,groundY)
+    end
+    if not discs then Voxel3D.indoorMist(host,state.dark) end
     local rendered = Voxel3D.endScene()
     rendered = BattleScene.applyWeather(rendered, rw, rh, host,
                                         Voxel3D.cell, weatherMode)
@@ -2059,6 +2159,7 @@ function BattleScene.render(state, arena, textures, token)
         end
       end
     end
+    V.require('BattleHeroesBridge').reserveHUD(geometry,actorVisuals)
     out = {
       canvas = canvas,
       player = geometry.player,

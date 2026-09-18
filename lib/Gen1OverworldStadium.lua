@@ -3,6 +3,8 @@
 local V = ...
 local Pack = V.require("StadiumPack")
 local Mon = V.require("StadiumMon")
+local Bounds = V.require("StadiumActorBounds")
+local identity={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}
 local M = {}
 local slots = {}
 local baseKeep = tonumber(Pack.KEEP) or 4
@@ -47,8 +49,29 @@ local function prepareOne(p,dex,dt)
   elseif p.facing=="left" then fx,fz=-1,0
   elseif p.facing=="right" then fx,fz=1,0 end
   local matrix=mon:matrix(p.px+8,p.gh+(p.lift or 0),p.py+8,fx,fz)
-  if not matrix or not mon:build() then return false end
+  if not matrix then return false end
+  -- The existing safety fallback holds an immutable bind pose. Movement
+  -- still changes the world matrix, but cannot require another CPU skin /
+  -- GPU vertex upload until its rig or facing-dependent lighting changes.
+  local static=mon.staticPose and not mon.anim
+  local reuse=static and slot.builtRig==mon.rig and slot.builtYaw==mon.yaw
+  if not reuse then
+    if not mon:pose()then return false end
+  end
   p.stadiumMon,p.stadiumMatrix,p.stadiumDex=mon,matrix,dex
+  p.stadiumUploadPending=not reuse
+  p.stadiumSlot=slot
+  p.stadiumBounds=Bounds.world(mon.rig,matrix)
+  if p.swimming and p.waterline and p.stadiumBounds then
+    -- Imported rigs can carry a native hover offset (Tentacool, for example).
+    -- Anchor the actually posed body to the water, not to its hovering root.
+    -- Reuse its already calculated bounds; no extra skin/upload/readback.
+    local b=p.stadiumBounds
+    local height=math.max(.1,b[5]-b[2])
+    local offset=p.waterline-height*.45+(p.swimBob or 0)-b[2]
+    matrix[8]=matrix[8]+offset
+    b[2],b[5]=b[2]+offset,b[5]+offset
+  end
   p.stadiumShadowTick=math.floor((mon.time or 0)*12)
   return true
 end
@@ -57,6 +80,8 @@ function M.prepare(posed)
   local count=0
   for _,p in ipairs(posed or {}) do
     p.stadiumMon,p.stadiumMatrix,p.stadiumDex,p.stadiumShadowTick=nil,nil,nil,nil
+    p.stadiumBounds=nil
+    p.stadiumUploadPending,p.stadiumSlot=nil,nil
     local dex=selected(p)
     if dex then
       live[p.entity]=true
@@ -83,8 +108,24 @@ function M.prepare(posed)
     end
   end
 end
-function M.draw(p)
+local function upload(p)
+  if not p.stadiumUploadPending then return true end
+  local ok,ready=pcall(p.stadiumMon.upload,p.stadiumMon)
+  if not ok or ready==false then
+    stats.lastError=tostring(ready);stats.failed=stats.failed+1
+    return false
+  end
+  p.stadiumUploadPending=false
+  local slot=p.stadiumSlot
+  slot.builtRig,slot.builtYaw=p.stadiumMon.rig,p.stadiumMon.yaw
+  return true
+end
+function M.draw(p,visible)
   if not (p.stadiumMon and p.stadiumMatrix) then return false end
+  -- A culled imported model is still the owner: never draw its sprite
+  -- fallback, release its rig, or interrupt its animation clock here.
+  if visible and not visible(p.stadiumBounds,identity)then return true end
+  if not upload(p)then return false end
   local ok,result=pcall(p.stadiumMon.rig.draw,p.stadiumMon.rig,p.stadiumMatrix,nil)
   -- StadiumRig restores atlas state. The following actors still need the
   -- billboard state until VoxelScene finishes the complete actor pass.
@@ -97,8 +138,10 @@ function M.draw(p)
   stats.drawn=stats.drawn+1
   return true
 end
-function M.cast(p,shadow)
+function M.cast(p,shadow,visible)
   if not (p.stadiumMon and p.stadiumMatrix) then return false end
+  if visible and not visible(p.stadiumBounds,identity)then return true end
+  if not upload(p)then return false end
   local ok,result=pcall(p.stadiumMon.rig.caster,p.stadiumMon.rig,shadow,p.stadiumMatrix)
   return ok and result~=false
 end

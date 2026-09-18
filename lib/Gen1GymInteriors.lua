@@ -13,6 +13,16 @@ M.profiles = {
   CINNABAR_GYM={tileset='FACILITY',width=10,height=9,material='fire_arena',theme='quiz_laboratory'},
   VIRIDIAN_GYM={tileset='GYM',width=10,height=9,material='earth_arena',theme='giovanni_earth'},
 }
+-- Only the formerly windowless rooms receive a small, authored north-wall
+-- clerestory: one bay in compact gyms, two in the larger halls. The artwork
+-- reserves a calm upper band, leaving every motif and the other walls whole.
+M.windowViews = {
+ quarry_arena={city='PEWTER_CITY',material='quarry_arena',sill=126,head=144,northOnly=true,windows={{center=.5,width=56}}},
+ poison_arena={city='FUCHSIA_CITY',material='poison_arena',sill=126,head=144,northOnly=true,windows={{center=.5,width=56}}},
+ psychic_arena={city='SAFFRON_CITY',material='psychic_arena',sill=126,head=144,northOnly=true,windows={{center=.3,width=56},{center=.7,width=56}}},
+ fire_arena={city='CINNABAR_ISLAND',material='fire_arena',sill=126,head=144,northOnly=true,windows={{center=.3,width=56},{center=.7,width=56}}},
+ earth_arena={city='VIRIDIAN_CITY',material='earth_arena',sill=126,head=144,northOnly=true,windows={{center=.3,width=56},{center=.7,width=56}}},
+}
 local colors = {
  quarry_arena={{.49,.48,.42},{.66,.64,.55},{.28,.29,.27},{.77,.70,.47}},
  water_arena={{.78,.87,.87},{.91,.95,.93},{.22,.42,.50},{.24,.63,.74}},
@@ -24,9 +34,34 @@ local colors = {
  earth_arena={{.59,.52,.40},{.76,.67,.51},{.32,.28,.22},{.62,.40,.22}},
 }
 function M.supports(material) return colors[material] ~= nil end
+-- Cinnabar uses the arena enclosure, not Gen1InteriorLayout's room panels.
+-- Place the two exit leaves at the real southern warp cells. The distant
+-- arena backdrop and its windows remain independent of this human-scale door.
+function M.exitDoor(map)
+ local d=map and map.def
+ if not d or map.id~='CINNABAR_GYM' or d.generation==2
+     or d.tileset~='FACILITY' or d.width~=10 or d.height~=9
+     or next(d.connections or{})~=nil then return nil end
+ local exits={}
+ for _,w in ipairs(d.warps or{})do
+  if w.y==17 and (w.x==16 or w.x==17) and w.destMap=='LAST_MAP' then exits[w.x]=true end
+ end
+ if not (exits[16] and exits[17])then return nil end
+ local g={vertices={},indices={},family='room_door'}
+ for x=16,17 do
+  local a,b,z=x*16,(x+1)*16,288-.125
+  local n=#g.vertices
+  for _,v in ipairs({{b,0,z,0,1,1},{a,0,z,1,1,1},
+    {a,24,z,1,0,1},{b,24,z,0,0,1}})do g.vertices[#g.vertices+1]=v end
+  for _,i in ipairs({1,2,3,1,3,4})do g.indices[#g.indices+1]=n+i end
+ end
+ return g
+end
 function M.paint(g, material, W, H, wall)
  local c=assert(colors[material], 'unreviewed Gen1 gym material')
+ local motifBand=false
  local function r(color,x,y,w,h)
+  if motifBand and M.windowViews[material]then y=y+12 end
   local x1,y1=math.min(W,math.ceil(x+w)),math.min(H,math.ceil(y+h))
   x,y=math.max(0,math.floor(x)),math.max(0,math.floor(y))
   if x1>x and y1>y then g.setColor(color[1],color[2],color[3],1);g.rectangle('fill',x,y,x1-x,y1-y)end
@@ -51,6 +86,7 @@ function M.paint(g, material, W, H, wall)
  end
  r(c[3],0,H-40,W,40);r(c[1],0,H-37,W,28)
  for _,y in ipairs({8,H-42,H-10})do r(c[3],0,y,W,4);r(c[4],0,y+1,W,2)end
+ motifBand=true
  if material=='quarry_arena' then
   -- Brock: a compact rock training gallery, with strata and fossil plaques.
   for _,cx in ipairs({32,96})do
@@ -141,6 +177,7 @@ function M.paint(g, material, W, H, wall)
    line(c[2],cx+11,83,cx-12,84,2)
   end
  end
+ motifBand=false
  -- Continuous edge framing joins repeated bays cleanly, with no floor props.
  for _,x in ipairs({0,W-4})do r(c[3],x,0,4,H);r(c[2],x+1,2,1,H-4)end
 end

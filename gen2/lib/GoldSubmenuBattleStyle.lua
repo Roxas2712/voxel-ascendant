@@ -4380,6 +4380,9 @@ local function patchScreen(path, renderer)
     -- native.  No callback or update method is replaced.
     local context = partyContext(game, path, opts)
     local instance = nativeNew(game, opts, ...)
+    -- A Host-v1 surface already has an exclusive controller and an atomic
+    -- renderer. Native list decoration would draw an empty second box view.
+    if type(instance) == "table" and instance.__pokemonUiHostV1 then return instance end
     if path == "src.ui.gen2.BoxMenu" and type(instance) == "table" then
       decorateBoxSearch(instance)
     end
@@ -4621,7 +4624,8 @@ local function installResolvedScreenWatcher(specs)
     local state = type(event) == "table" and event.state or nil
     local screenId = type(state) == "table" and tostring(state.screenId or "") or ""
     local spec = byId[screenId]
-    if not spec or state._vascGen2ResolvedPresentation then return end
+    if not spec or state._vascGen2ResolvedPresentation
+        or state.__pokemonUiHostV1 then return end
 
     local context = partyContext(state.game, spec.path, state)
     state._vascGen2PartyUiContext = state._vascGen2PartyUiContext or context

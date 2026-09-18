@@ -129,7 +129,7 @@ local SETTING_HELP_DE = {
   battle_textbox_y = "Kampf-Textbox vertikal verschieben. Negative Werte: nach oben. Standard: 0%.",
   battle_controls_scale = "Größe nur der Kampfbuttons und Attackenauswahl. Standard: 100%.",
   battle_controls_x = "Buttons seitlich verschieben. Standard: 0%.",
-  battle_controls_y = "Buttons über die Touchsteuerung anheben. Standard: 0%.",
+  battle_controls_y = "Buttons anheben und Originalgrafiken automatisch vervollständigen. GLASS bleibt erhalten. Standard: 0%.",
   battle_controls_transparency = "Transparenz von Kampfbuttons, Mega, Attacken und Zurück. 0% = bisherige Darstellung; höhere Werte lassen mehr vom Hintergrund durchscheinen.",
   battle_controls_shape = "AUTO ergänzt bei eigener Platzierung die Originalgrafiken. COMPLETE ORAS zeigt sie immer vollständig; GLASS wählt transparente Ersatzbuttons.",
   hud_scale = "Skaliert die komplette ORAS-Auswahl proportional, ohne "
@@ -1307,7 +1307,8 @@ local function newSettings(mod, game, opts)
   local function change(item, direction, active)
     local changed = stepSetting(game, item, direction)
     if changed and item and (item.settingKey == "battles"
-        or item.settingKey == "battleHudStyle") then
+        or item.settingKey == "battleHudStyle"
+        or item.settingKey == "battle_controls_y") then
       refreshConditionalRows(mod, active, game, section, item.settingKey)
     end
     return changed
@@ -1767,17 +1768,10 @@ function VascMenu.install(mod, opts)
     new=function(game) return newHub(mod, game) end,
   })
   screens:register("VascPokemonHdDownloads", {
-    new=function(game)
-      local source=assert(mod:read("lib/HdContentMenu.lua"))
-      local DownloadMenu=assert((loadstring or load)(source,"@HdContentMenu"))()
-      return DownloadMenu.new(mod,game,guidedMenu,languageCode(mod)=="de")
-    end,
+    new=function(game)return assert(mod.exports.ascendantContent):menu(game,guidedMenu,languageCode(mod)=="de",config.stadiumRomMenu)end,
   })
   screens:register("VascPokemonHdOffer", {
-    new=function(game,spec)
-      local source=assert(mod:read("lib/HdContentMenu.lua"))
-      return assert((loadstring or load)(source,"@HdContentMenu"))().offer(mod,game,guidedMenu,languageCode(mod)=="de",spec)
-    end,
+    new=function(game)return assert(mod.exports.ascendantContent):offer(game,guidedMenu,languageCode(mod)=="de",config.stadiumRomMenu)end,
   })
   screens:register("VascSettings", {
     new=function(game, screenOpts) return newSettings(mod, game, screenOpts) end,

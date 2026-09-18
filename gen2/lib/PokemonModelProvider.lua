@@ -28,7 +28,14 @@ local function stagedMode()
   local ok, battle = pcall(V.require, "OverworldBattle")
   if not ok or type(battle) ~= "table" then return nil end
   local mode
-  if type(battle.mode) == "function" then
+  -- Gen 1 can restage a live encounter independently of the saved option.
+  if type(battle.presentationPlan)=="function" then
+    local ok,plan=pcall(battle.presentationPlan)
+    if ok and plan then mode=plan.mode end
+  end
+  if mode~=nil then
+    -- Exact live presentation already selected above.
+  elseif type(battle.mode) == "function" then
     local called, value = pcall(battle.mode)
     if called then mode = value end
   elseif battle.setting and type(battle.setting.get) == "function" then
@@ -43,7 +50,7 @@ local function stagedMode()
     return "ARENA"
   end
   if mode == battle.DISCS or mode == "discs" or mode == "flatB"
-      or mode == "stadiumB" then
+      or mode == "stadiumB" or mode == "terarrium" then
     return "DISCS"
   end
   return nil
@@ -89,7 +96,7 @@ function M.mode() return stagedMode() end
 function M.resolve(requested)
   local mode = stagedMode()
   if not mode then return M.CRYSTAL, "battle-mode-off" end
-  requested = requested or M.setting:get()
+  requested = requested or (V.BattleSpriteControl and V.BattleSpriteControl.modelRequest()) or M.setting:get()
   if requested == M.CRYSTAL then return M.CRYSTAL, "selected" end
   if requested == M.STADIUM1 then
     if externalReady(M.STADIUM1, mode) then return M.STADIUM1, "provider" end

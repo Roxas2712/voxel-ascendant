@@ -317,7 +317,8 @@ function SpeciesFlyCinematic.install()
     end
     local ok, image = pcall(function()
       local path = mod.assets:path(rel)
-      local loaded = assert(love.graphics.newImage(path))
+      -- Assets.image resolves mounted DLC as well as retained mod files.
+      local loaded = assert(require("src.render.Assets").image(path))
       local width, height = loaded:getDimensions()
       local directional = width == height
         and width >= 128 and width <= 256
@@ -653,11 +654,21 @@ function SpeciesFlyCinematic.install()
     -- walking renderer during that one-frame seam instead of flashing their
     -- bicycle sheet as the cinematic begins.
     if player.onBike and player.sprite then sprite = player.sprite end
+    local okWalker, walker = pcall(V.require, "ExternalKascWalker")
+    if okWalker and walker and type(walker.resolveRider) == "function" then
+      sprite = walker.resolveRider(player, sprite) or sprite
+    end
+    local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+    if okAppearance then sprite = appearance.resolve(player, sprite) or sprite end
     if not sprite or type(sprite.resolveImage) ~= "function" then
       return false
     end
     facing = facingOverride or facing or "down"
-    local image = sprite:resolveImage()
+    -- The voxel rider uses KASC's authored colour sheet. The engine's SGB
+    -- resolveImage path bakes that same sheet to DMG before the native 2-D
+    -- palette pass, which this overlay does not run through.
+    local image = sprite.def and sprite.def.trueColor and sprite.image
+      or sprite:resolveImage()
     local frame = PLAYER_STAND[facing] or 0
     local quad = sprite.frames and (sprite.frames[frame] or sprite.frames[0])
     if not image or not quad then return false end
@@ -679,7 +690,8 @@ function SpeciesFlyCinematic.install()
       love.graphics.setShader(shader)
     end
     love.graphics.draw(image, quad, math.floor(x + 0.5),
-      math.floor(y + 0.5), 0, sx, scale)
+      math.floor(y + 0.5), 0, sx * (sprite.fieldHD and 16 / sprite.def.frameWidth or 1),
+      scale * (sprite.fieldHD and 16 / sprite.def.frameWidth or 1))
     if shader then love.graphics.setShader() end
     return true
   end
@@ -1091,7 +1103,7 @@ function SpeciesFlyCinematic.install()
         or profile.departureMode == "runner_mount"
         or profile.departureMode == "sky_swim" then
       return monX + profile.seatX * scale,
-        monFootY - profile.seatLift * scale, riderScale
+        monFootY - (profile.seatLift + (profile.fieldRiderLift or 0)) * scale, riderScale
     end
     if profile.mode == "carry" then
       return monX + profile.carryX * scale,
@@ -1099,7 +1111,7 @@ function SpeciesFlyCinematic.install()
         riderScale
     end
     return monX + profile.seatX * scale,
-      monFootY - profile.seatLift * scale, riderScale
+      monFootY - (profile.seatLift + (profile.fieldRiderLift or 0)) * scale, riderScale
   end
 
   local function cubic(a, b, c, d, t)
@@ -1149,9 +1161,15 @@ function SpeciesFlyCinematic.install()
     shot.profile = profile
     local paletteColors = ctx and type(ctx.spriteColors) == "function"
       and ctx.spriteColors() or nil
+    local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+    local hdRider = okAppearance and appearance.resolve(p, p and p.sprite) ~= nil
+    profile.fieldRiderLift = hdRider and 6 or 0
     local playerDrawn = false
+    local landingRider
     local function drawLivePlayer(...)
-      if drawPlayer(...) then playerDrawn = true end
+      if hdRider and shot.phase == "landing" and profile.mode == "mount" then
+        landingRider = {...}
+      elseif drawPlayer(...) then playerDrawn = true end
     end
 
     love.graphics.push("all")
@@ -1337,6 +1355,10 @@ function SpeciesFlyCinematic.install()
           drawJetpackBody(riderX, riderY, scale, trainerDeploy, 1)
         end
 
+        -- The mounted HD body sits above the back. Painting the entire
+        -- bird over it hid everything except the rider's hair behind wings.
+        if hdRider and (mode == "back_mount" or mode == "runner_mount"
+            or mode == "sky_swim") then playerBehind = false end
         if playerBehind then
           drawLivePlayer(p, riderX, riderY, riderScale, riderFacing, 1,
             paletteColors)
@@ -1482,6 +1504,9 @@ function SpeciesFlyCinematic.install()
         local tint = recall > 0 and { 1, 0.72, 0.62 } or nil
         drawPokemon(shot.image, row, col, monX, monY,
           monScale, bodyAlpha, tint)
+        if landingRider then
+          if drawPlayer((table.unpack or unpack)(landingRider)) then playerDrawn = true end
+        end
         if profile.departureMode == "balloon_rig" and bodyAlpha > 0 then
           if f < 40 then
             drawBalloonTowBand(monX, monY, riderX, riderY, scale,

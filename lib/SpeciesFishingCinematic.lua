@@ -149,7 +149,7 @@ local function spriteFor(world, mon)
   local g = love and love.graphics
   if not (path and g and type(g.newImage) == "function") then return nil end
   local ok
-  ok, image = pcall(g.newImage, path)
+  ok, image = pcall(function() return require("src.render.Assets").image(path) end)
   if not ok or not image then
     imageCache[key] = false
     return nil
@@ -637,14 +637,32 @@ function M.install()
   -- engines whose pose() still reads only `player.sprite`. A missing or unsafe
   -- fishing renderer keeps the established standing/walking fallback. Every
   -- value is restored before the engine decides between Canvas and native 2D.
+  local fishingViews = setmetatable({}, { __mode = "k" })
   local function liveFishingRenderer(player, playerFishing)
     if not (player and playerFishing) then return nil end
+    local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+    if okAppearance then
+      local body = appearance.resolve(player, player.sprite)
+      if body then return body end
+    end
     local sprite = rawget(player, "fishingSprite")
     if type(sprite) ~= "table" or type(sprite.resolveImage) ~= "function"
         or type(sprite.frames) ~= "table" then return nil end
     local ok, image = pcall(sprite.resolveImage, sprite)
     if not ok or not image then return nil end
     if not (sprite.frames[0] or sprite.frames[1]) then return nil end
+    if sprite.def and sprite.def.trueColor and sprite.image then
+      -- The native SGB resolver thresholds authored colour art into DMG
+      -- shades (including transparency). Keep the actual fishing sheet in
+      -- the voxel pass, without altering the native renderer or controller.
+      local view = fishingViews[sprite]
+      if not view then
+        view = setmetatable({ resolveImage = function() return sprite.image end },
+          { __index = sprite })
+        fishingViews[sprite] = view
+      end
+      return view
+    end
     return sprite
   end
 
@@ -731,14 +749,23 @@ function M.install()
       end
       local cast = world and pendingCastByWorld[world]
       if cast then
-        pendingCastByWorld[world] = nil
         if world.fishing then
+          pendingCastByWorld[world] = nil
           local okBegin, beginErr = pcall(startState, world, cast.rod,
             cast.roll, world.fishing, false)
           if not okBegin then
             activeByWorld[world] = nil
             lastError = tostring(beginErr)
             safeLog("warn", "Fishing cinematic start failed open: %s", lastError)
+          end
+        else
+          -- The engine rolls before its used-item TextBox and starts the rod
+          -- only 90 logic ticks later. Retain that result during this exact
+          -- text, rather than throwing it away on the first render update.
+          local top = stackTop(world)
+          cast.waitingTop = cast.waitingTop or top
+          if not top or top == world or top ~= cast.waitingTop then
+            pendingCastByWorld[world] = nil
           end
         end
       end

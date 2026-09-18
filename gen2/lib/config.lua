@@ -532,6 +532,10 @@ function Config.setSpriteStyle(mod, value, source, opts)
   end
 
   local game = resolveGame(mod, opts)
+  local content=mod and mod.exports and mod.exports.ascendantContent
+  if content and content.allowSetting and not content:allowSetting("sprite_style",value,game)then
+    return false,"sprite_download_required"
+  end
   writeOptionBucket(mod, game, "sprite_style", value)
 
   local render = opts.render

@@ -47,6 +47,7 @@ local StadiumPack = V.require("StadiumPack")
 
 local StadiumInstall = {}
 local Compat = V.require("EngineCompat")
+local ContentState = assert((loadstring or load)(assert(V.mod:read("lib/StadiumContentState.lua"))))()
 
 -- Where a ROM is looked for, and where the built packs are kept.
 StadiumInstall.ROM_DIR = "baseroms"
@@ -62,7 +63,9 @@ StadiumInstall.FORMAT = "DSM7"
 -- CONTENT again so SetTileSize origin/window semantics are baked into UVs and
 -- per-material texture variants.  FORMAT (not REV) changes because an older
 -- pack cannot supply those discarded tile fields.
-StadiumInstall.REV = 1
+-- Static phase-5 reflection textures (notably Porygon2) were omitted by rev 1.
+-- Revision 3 reads GS animation flags as u16, restoring Hermite/wide streams.
+StadiumInstall.REV = 3
 
 local function gameGeneration()
   -- The dispatcher already resolved the active cartridge before either
@@ -224,7 +227,8 @@ function StadiumInstall.ready()
   local formatOk = m and m.format == StadiumInstall.FORMAT
     and m.rev == StadiumInstall.REV
   readyCount = wanted
-  readyCache = (formatOk and m.count >= wanted) and true or false
+  readyCache = (formatOk and m.count >= wanted
+    and ContentState.inspect(fs(), StadiumInstall.DIR, StadiumInstall.FORMAT, StadiumInstall.REV, wanted)) and true or false
   return readyCache
 end
 
@@ -261,6 +265,7 @@ end
 -- be correct and would also mean a ten-second loading screen on the first run
 -- of every checkout, to arrive at the files that were already sitting there.
 function StadiumInstall.pending()
+  if V.mod and V.mod.cache and V.mod.cache:read("sprite-content/stadium-disabled")=="1" then return false end
   if StadiumInstall.available() then return false end
   return StadiumInstall.romPresent()
 end
@@ -280,6 +285,7 @@ StadiumInstall.status = status
 local function writePack(species, bytes)
   local f = fs()
   if not f then return false, "no filesystem" end
+  if not ContentState.validate(bytes, species) then return false, "invalid generated Stadium model" end
   local ok, err = f.write(("%s/%03d.dsm"):format(StadiumInstall.DIR, species),
                           bytes)
   if not ok then return false, tostring(err) end
@@ -400,6 +406,15 @@ function StadiumInstall.beginFrom(bytes, label)
   end
 
   pcall(f.createDirectory, StadiumInstall.DIR)
+  -- A rebuild must not leave an old complete marker above partially replaced models.
+  if isFile(StadiumInstall.MARKER) then
+    local removed = f.remove(StadiumInstall.MARKER)
+    if removed ~= true or isFile(StadiumInstall.MARKER) then return false, "could not invalidate old Stadium package" end
+  end
+  StadiumInstall.forget()
+  if V.mod.cache then
+    V.mod.cache:delete("sprite-content/stadium-disabled")
+  end
   job = StadiumBuild.job(rom, writePack, wanted)
   job.md5 = rom:md5()
   job.sourceGame = status.sourceGame
@@ -429,14 +444,15 @@ function StadiumInstall.step()
     -- what makes a set count as installed, so it must never be written for a
     -- build that did not happen. beginFrom refuses such a ROM outright; this
     -- is the same rule stated where the consequence is.
-    local wrote = #job.failed == 0 and job.total > 0
+    local wrote = #job.failed == 0 and job.total > 0 and f ~= nil
     if wrote and f then
-      pcall(f.write, StadiumInstall.MARKER,
-            ("%s %d %s %d\n"):format(StadiumInstall.FORMAT, job.total,
-                                     tostring(job.md5 or ""),
-                                     StadiumInstall.REV))
+      local marker = ("%s %d %s %d\n"):format(StadiumInstall.FORMAT, job.total,
+                                     tostring(job.md5 or ""), StadiumInstall.REV)
+      local called, saved = pcall(f.write, StadiumInstall.MARKER, marker)
       readyCache = nil
       StadiumPack.forget()
+      wrote = called and saved == true and StadiumInstall.ready()
+      if not wrote then pcall(f.remove, StadiumInstall.MARKER) end
     end
     if not wrote then
       status.state = "failed"
@@ -446,7 +462,9 @@ function StadiumInstall.step()
       -- is the mistake a file picker invites -- misses on all 151 rather than
       -- on a few. Worth telling apart, because "0 of 151 models were built"
       -- reads as a broken mod and this reads as a wrong click.
-      if #job.failed >= job.total then
+      if #job.failed == 0 then
+        status.error = "Generated Stadium package is incomplete or could not be saved. Please import again."
+      elseif #job.failed >= job.total then
         if usesStadium2() then
           status.error = "needs a compatible Pokemon Stadium 2 ROM / GS model+animation archives"
         else

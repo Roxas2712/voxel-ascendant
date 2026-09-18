@@ -27,6 +27,23 @@ local ROOT_HELP = {
 }
 
 local SETTING_HELP_DE = {
+  liveDisplay="Kleine Live-Anzeige oben rechts in Welt, Kämpfen und Menüs. AUS beendet alle Messungen; die Einzelschalter bleiben gespeichert.",
+  liveClock="Lokale Geräteuhrzeit im 24-Stunden-Format. Unabhängig von der Tageszeit im Spiel.",
+  liveFps="Tatsächliche Bilder pro Sekunde und mittlere Bildzeit der letzten halben Sekunde. Grün: ab 55 FPS; Gelb: 30 bis 54; Rot: unter 30.",
+  liveCpu="CPU-Zeit des Spielprozesses pro Bild, gemittelt über eine halbe Sekunde. Einschließlich Prozess-Threads; keine CPU-Prozentanzeige oder GPU-Wartezeit.",
+  liveGpu="Speicher für LÖVE-Texturen und Renderflächen in MiB. Keine GPU-Auslastung und kein gesamter Grafikspeicherverbrauch.",
+  outdoorHorizon="Voxel-Wälder, Felsen und Dächer am äußeren Kartenrand, bisherige Bitmap-Kulisse oder AUS. Innenraum-Panoramen bleiben separat.",
+  desktopNeighborRing="PC: aktuelle Karte und alle direkten Nachbarn vorbereiten. AUS lädt zusätzlich weiter entfernte Karten. Android behält seinen mobilen Kartenring.",
+  terarriumBehindRed="Blick hinter dem eigenen Trainer oder seitlich auf beide Teams.",
+  terarriumIdleAnimation="Terrarium bei einer Pause im Befehlsmenue sanft wippen lassen.",
+  terarriumIdleSound="Leiser Aufprallklang beim Wippen des Terrariums.",
+  terarriumBallStyle="Terrarium-Schale waehlen. AUTO folgt der KASC-Schwierigkeit, sofern vorhanden.",
+  terarriumBackground="Passende Umgebung um das Terrarium waehlen.",
+  terarriumDome="Optionale Glaskuppel ueber dem Terrarium.",
+  battleHeroesEnabled="Johto-Ballwurf einschalten. Stehende Trainer haben einen eigenen Schalter. Laufende Wuerfe enden beim Ausschalten sicher. Die separate Battle-Heroes-Mod hat Vorrang.",
+  battleHeroesTrainerStays="Beide Trainer im 3D-Kampf anzeigen, auch bei ausgeschaltetem Johto-Ballwurf. In 2D automatisch aus.",
+  battleHeroesGestures="Trainer geben waehrend des Kampfes animierte Kommandos.",
+  battleHeroesModernBalls="Moderne Balloptik fuer die Johto-Wurfanimation verwenden.",
   deviceProfile = "Wähle ein dauerhaftes Geräteprofil. AUTO erkennt die "
     .. "Plattform; einzelne Änderungen wechseln sicher auf CUSTOM.",
   sky = "Outdoor-Himmel über Kanto. FULL zeichnet den tageszeitabhängigen "
@@ -59,6 +76,20 @@ local SETTING_HELP_DE = {
     .. "bisherige begrenzte Kartenlogik. Echte Treppen und Bauwerke bleiben "
     .. "in allen Modi erhalten.",
   battleGrid = "Voxel-Kanten im 3D-Kampf. Unabhängig vom Oberwelt-Gitter.",
+  voxelItems = "Räumliche Repliken in 3D; Gen1 bleibt in 2D original. Kapseln, Pokémon-Bälle, Pokédex, Steine, Fossilien und Einrichtung. AUS zeigt die ursprüngliche Grafik.",
+  outdoorSigns = "Große Ortsschilder mit vollem Namen; kleine Hinweisschilder. Beim Lesen erscheint der originale Text. AUS und 2D zeigen die alten Schilder.",
+  outdoorGround = "Natürliche Außenböden: Gras, Sand, Waldgrund und Wege. Wasser und hohes Gras bleiben erkennbar. AUS stellt die Originalgrafik wieder her.",
+  outdoorTrees = "Verschiedene Voxelbäume passend zur Region. Alabastia hat seinen eigenen Umgebungsschalter. Zerschneider und Wege bleiben erhalten.",
+  outdoorStone = "Voxelsteine, niedrige Steinhecken und Holzpfähle außerhalb Alabastias. Getrennt von Bäumen und Boden schaltbar.",
+  palletBuildings = "Regionale Voxelgebäude in Kanto, moderne Pokémon-Center und die Liga. Grundflächen und Eingänge bleiben. AUS und 2D zeigen die alten Gebäude.",
+  palletSurrounds = "Voxelbäume, Felsen und Pfähle. Wege bleiben erhalten. AUS und 2D zeigen die alte Umgebung.",
+  palletWindowLights = "Beleuchtete Fenster an den neuen Gebäuden bei Dämmerung und Nacht. Separat abschaltbar.",
+  waterActors = "Schwimmer und Wasser-Pokémon tauchen in 3D ins Wasser ein und wippen leicht. AUS zeigt sie wie bisher. Bewegung, Surfer und 2D bleiben unverändert.",
+  caveTorches = "Wenige Wandfackeln nahe echten Höhleneingängen und Leitern. Wege bleiben frei; Blitz bleibt in dunklen Höhlen nötig. AUS entfernt Fackeln und Lichtschein.",
+  towerAtmosphere = "Düstere Beleuchtung, leichter Bodennebel und flackernde Grabkerzen im Pokémon-Turm. AUS stellt die normale Raumbeleuchtung wieder her.",
+  voxelStairs = "Deutliche Voxel-Trittstufen mit hellen Kanten und passendem Holz, Stein oder Metall. AUS stellt die ursprüngliche Treppengrafik wieder her.",
+  currentRoom = "Nur den aktuellen Innenbereich sehen. Zwischenwände verdecken Nachbarräume und Rätsellösungen. Standard AN; AUS zeigt wieder die ganze 3D-Karte.",
+  interiorFloors = "Passende Böden in 3D-Räumen und MAP-Kämpfen. Unabhängig von KULISSE. AUS zeigt den Originalboden. 2D bleibt original.",
   shadows = "Objekt-, Figuren-, Wolken- und Flugschatten gemäß VASC-Regeln. "
     .. "Auf schwächeren Mobilgeräten kann OFF Leistung sparen.",
   curve = "Biegt die ferne Welt wie bei Animal Crossing nach unten, ohne HUD "
@@ -133,7 +164,7 @@ local SETTING_HELP_DE = {
   battle_textbox_y = "Kampf-Textbox vertikal verschieben. Negative Werte: nach oben. Standard: 0%.",
   battle_controls_scale = "Größe nur der Kampfbuttons und Attackenauswahl. Standard: 100%.",
   battle_controls_x = "Buttons seitlich verschieben. Standard: 0%.",
-  battle_controls_y = "Buttons über die Touchsteuerung anheben. Standard: 0%.",
+  battle_controls_y = "Buttons anheben und Originalgrafiken automatisch vervollständigen. GLASS bleibt erhalten. Standard: 0%.",
   battle_controls_transparency = "Transparenz von Kampfbuttons, Mega, Attacken und Zurück. 0% = bisherige Darstellung; höhere Werte lassen mehr vom Hintergrund durchscheinen.",
   battle_controls_shape = "AUTO ergänzt bei eigener Platzierung die Originalgrafiken. COMPLETE ORAS zeigt sie immer vollständig; GLASS wählt transparente Ersatzbuttons.",
   hud_scale = "Skaliert die komplette ORAS-Auswahl proportional, ohne "
@@ -186,6 +217,9 @@ local SETTING_HELP_DE = {
     .. "KASC; VASC selbst liefert und lädt keine Musik aus dem Netz.",
   daytime = "Outdoor-Tageszeit: DAY, NIGHT, DUSK, DAWN oder AUTO mit langen "
     .. "Tag-/Nachtphasen und kurzen Übergängen.",
+  sceneResolution = "Interne Auflösung der 3D-Welt und Kämpfe. 1080P begrenzt die GPU-Last "
+    .. "auf großen/Retina-Bildschirmen. 720P spart mehr Leistung; NATIVE nutzt "
+    .. "alle Bildschirmpixel. Menüs und Texte bleiben scharf.",
   aa = "Kantenglättung der 3D-Welt per Supersampling. 2X/4X kosten deutlich "
     .. "mehr GPU-Leistung; Menüs und Kampftext bleiben scharf.",
 }
@@ -198,6 +232,28 @@ local PIPELINE_HELP_DE = {
 }
 
 local SECTION_DEFS = {
+  liveDisplay={title="LIVE DISPLAY",help={
+    en="Clock, frame rate, process CPU time and texture memory. Each readout and the whole display can be switched independently.",
+    de="Uhr, Bildrate, Prozess-CPU-Zeit und Texturspeicher. Jede Anzeige und die gesamte Karte sind einzeln schaltbar."},
+    keys={liveDisplay=true,liveClock=true,liveFps=true,liveCpu=true,liveGpu=true}},
+  horizon={title="OUTDOOR HORIZON",help={
+    en="A distant voxel skyline, the original bitmap edge, or no outdoor backdrop. Indoor panoramas remain separate.",
+    de="Ferne Voxel-Kulisse, bisheriger Bitmap-Rand oder kein Außenhorizont. Innenraum-Panoramen bleiben separat."},
+    keys={outdoorHorizon=true,desktopNeighborRing=true}},
+  pallet={title="KANTO SCENERY",help={
+    en="Kanto buildings, outdoor ground, regional trees, rocks and window lighting can be switched independently.",
+    de="Kanto-Gebäude, Außenboden, regionale Bäume, Steine und Fensterlicht lassen sich einzeln schalten."},
+    keys={palletBuildings=true,palletSurrounds=true,palletWindowLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
+  terarrium={title="TERRARIUM",help={
+    en="Built-in Terrarium battle stage. Select with 8 in battle; customize camera, shell, background and dome here.",
+    de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
+    keys={terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
+      terarriumBallStyle=true,terarriumBackground=true,terarriumDome=true}},
+  battleHeroes={title="BALLWURF",help={
+    en="Ascendant Battle Heroes: Johto throws in Gen1, trainers and gestures. The separate Battle Heroes mod takes precedence when installed.",
+    de="Ascendant Battle Heroes: Johto-Ballwuerfe in Gen1, Trainer und Gesten. Ist die separate Battle-Heroes-Mod installiert, hat diese Vorrang."},
+    keys={battleHeroesEnabled=true,battleHeroesTrainerStays=true,battleHeroesGestures=true,battleHeroesModernBalls=true}},
+
   world = {
     title = "VIEW + WORLD",
     help = {
@@ -207,7 +263,7 @@ local SECTION_DEFS = {
         .. "dieselben gespeicherten Renderoptionen wie in den Spieloptionen.",
     },
     keys = {
-      grid=true, terrainHeights=true, curve=true, water=true,
+      grid=true, terrainHeights=true, curve=true, water=true, waterActors=true, voxelStairs=true, towerAtmosphere=true, caveTorches=true,
     },
     pipelines = { ["pipeline:voxel"]=true, ["pipeline:tiltshift"]=true },
   },
@@ -222,7 +278,7 @@ local SECTION_DEFS = {
     keys = {
       daytime=true, weather=true, weatherMusic=true, weatherTweak=true,
       sky=true, clouds=true, skyEvents=true,
-      scenery=true,
+      scenery=true, voxelItems=true, interiorFloors=true, currentRoom=true,
     },
   },
   battle = {
@@ -341,7 +397,7 @@ local SECTION_DEFS = {
         .. "eine Einzeländerung wird als CUSTOM bewahrt.",
     },
     keys = {
-      deviceProfile=true, preload=true, shadows=true, aa=true,
+      deviceProfile=true, preload=true, shadows=true, aa=true, sceneResolution=true,
     },
   },
   user = {
@@ -402,8 +458,8 @@ local SECTION_DEFS = {
 }
 
 local DEFAULT_SECTION_ORDER = {
-  "world", "weather", "battle", "skins", "pokemon",
-  "wilds", "performance", "user", "advanced",
+  "world", "weather", "pallet", "horizon", "battle", "terarrium", "battleHeroes", "skins", "pokemon",
+  "wilds", "performance", "liveDisplay", "user", "advanced",
 }
 
 -- Kept as a stable public/manual-QA receipt.  Older tests and standalone
@@ -526,6 +582,9 @@ end
 local UI_LABEL_DE = {
   ["POKEMON HD DOWNLOADS"]="POKéMON-HD-DOWNLOADS",
   ["VIEW + WORLD"]="SICHT + WELT",
+  ["KANTO SCENERY"]="KANTO-UMGEBUNG",
+  ["OUTDOOR HORIZON"]="AUSSENHORIZONT",
+  ["LIVE DISPLAY"]="LIVE-ANZEIGE",
   ["WEATHER + SCENERY"]="WETTER + KULISSE",
   ["BATTLE"]="KAMPF",
   ["SKINS & OVERLAYS"]="DESIGN + HUD",
@@ -560,12 +619,15 @@ local UI_LABEL_DE = {
 }
 
 local SETTING_LABEL_DE = {
+  liveDisplay="LIVE-ANZEIGE", liveClock="UHRZEIT", liveFps="FPS + BILDZEIT",
+  liveCpu="CPU-ZEIT", liveGpu="GPU-TEXTURSPEICHER",
   deviceProfile="GERÄTEPROFIL", sky="HIMMEL", clouds="WOLKEN",
   skyEvents="HIMMELSEREIGNIS", weather="WETTER",
   weatherMusic="WETTERMUSIK", weatherTweak="WETTER-EFFEKTE",
-  scenery="KULISSE", preload="VORLADEN", grid="VOXEL-GITTER",
+  scenery="KULISSE", outdoorHorizon="AUSSENHORIZONT", desktopNeighborRing="PC-KARTENRING", preload="VORLADEN", grid="VOXEL-GITTER",
   terrainHeights="GELÄNDEHÖHEN", battleGrid="KAMPF-GITTER",
-  shadows="SCHATTEN", curve="WELTKRÜMMUNG", water="WASSER",
+  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",
+  voxelItems="Voxel Items", currentRoom="NUR AKTUELLER RAUM", interiorFloors="INNENRAUMBÖDEN", shadows="SCHATTEN", curve="WELTKRÜMMUNG", water="WASSER", waterActors="SCHWIMMEN", voxelStairs="TREPPEN", towerAtmosphere="TURM-ATMOSPHÄRE", caveTorches="WANDFACKELN",
   battles="3D-KÄMPFE", arenaArt="ARENA-GRAFIK",
   diskArt="DISK-GRAFIK", qol_ui_skin="MENÜ-DESIGN",
   vascMenuSkin="VASC-MENÜ-DESIGN", qol_bag_skin="TASCHEN-DESIGN",
@@ -592,7 +654,7 @@ local SETTING_LABEL_DE = {
   battleHudCaught="GEFANGEN-SYMBOL", battleCameraDistance="KAMERA-ABSTAND",
   arenaCamera="ARENA-KAMERA", trainerBack="TRAINER-RÜCKSEITE",
   battleBack="POKéMON-RÜCKSEITE", battleMusicMode="KAMPFMUSIK",
-  daytime="TAGESZEIT", aa="KANTENGLÄTTUNG",
+  daytime="TAGESZEIT", aa="KANTENGLÄTTUNG", sceneResolution="3D-AUFLÖSUNG",
 }
 
 local VALUE_DE = {
@@ -1429,7 +1491,8 @@ local function newSettings(mod, game, opts)
   local function change(item, direction, active)
     local changed = stepSetting(game, item, direction)
     if changed and item and (item.settingKey == "battles"
-        or item.settingKey == "battleHudStyle") then
+        or item.settingKey == "battleHudStyle"
+        or item.settingKey == "battle_controls_y") then
       refreshConditionalRows(mod, active, game, section, item.settingKey)
     end
     return changed
@@ -2126,15 +2189,12 @@ function VascMenu.install(mod, opts)
   })
   screens:register("VascPokemonHdDownloads", {
     new=function(game)
-      local source=assert(mod:read("lib/HdContentMenu.lua"))
-      local DownloadMenu=assert((loadstring or load)(source,"@HdContentMenu"))()
-      return DownloadMenu.new(mod,game,guidedMenu,languageCode(mod)=="de")
+      return assert(mod.exports.ascendantContent):menu(game,guidedMenu,languageCode(mod)=="de",config.stadiumRomMenu)
     end,
   })
   screens:register("VascPokemonHdOffer", {
-    new=function(game,spec)
-      local source=assert(mod:read("lib/HdContentMenu.lua"))
-      return assert((loadstring or load)(source,"@HdContentMenu"))().offer(mod,game,guidedMenu,languageCode(mod)=="de",spec)
+    new=function(game)
+      return assert(mod.exports.ascendantContent):offer(game,guidedMenu,languageCode(mod)=="de",config.stadiumRomMenu)
     end,
   })
   screens:register("VascSettings", {

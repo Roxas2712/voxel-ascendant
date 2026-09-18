@@ -55,8 +55,13 @@ local Structures = V.require("Structures")
 local TileShape = V.require("TileShape")
 local Voxel3D = V.require("Voxel3D")
 local LedgeElevation = V.require("LedgeElevation")
+local WalkableGrades = V.require("WalkableGrades")
 local Budget = V.require("BuildBudget")
+local Stairs = V.require("Gen1Stairs")
 local ModSetting = V.require("ModSetting")
+local InteriorFloors = V.require("Gen1InteriorFloors")
+local CaveSurfaces = V.require("Gen1CaveSurfaces")
+local OutdoorScenery = V.require("Gen1OutdoorScenery")
 
 local ChunkMesher = {}
 
@@ -180,6 +185,9 @@ local function invalidateElevation(mapId)
 end
 
 ChunkMesher.elevation = elevationFor
+function ChunkMesher.surfaceAt(map, wx, wz)
+  return WalkableGrades.height(map, elevationFor(map), Structures.forMap(map), wx, wz)
+end
 
 -- Horizontal neighbours: tile step, face direction id (see Voxel3D).
 local SIDES = {
@@ -610,6 +618,10 @@ end
 -- Omitted, water stays in the terrain mesh exactly as it always did, which
 -- is what the headless geometry() below and the sun's own pass both want.
 local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
+  local caveProfile=CaveSurfaces and CaveSurfaces.profile and CaveSurfaces.profile(map)
+  local outdoorProfile = OutdoorScenery and OutdoorScenery.profile and OutdoorScenery.profile(map)
+  local floorProfile = InteriorFloors and InteriorFloors.profile
+    and InteriorFloors.profile(map)
   local push = sink.push
   local pushValues = sink.pushValues
   local waterPush = waterSink and waterSink.push or nil
@@ -716,9 +728,15 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     return baseAtTile(math.floor(wx / 8), math.floor(wz / 8))
   end
 
+  local caveCaps
   local function heightAt(tx, ty)
+    if caveCaps and caveCaps[keyOf(tx,ty)]then return caveCaps[keyOf(tx,ty)]end
     local k = keyOf(tx, ty)
     local base = baseAtTile(tx, ty)
+    if S.furnitureWater and S.furnitureWater[k] then
+      local wet=S.furnitureWater[k]
+      return baseAtTile(wet.tx,wet.ty)+wet.h
+    end
     if S.skip[k] then return base end
     local run = S.runs[k]
     if run then return base + run.h end
@@ -729,9 +747,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     -- retaining the full 6px lip while suppressing the terrace behind it
     -- creates open green niches in towns.
     if flatTerrain and s and s.class == "ledge" then
-      intrinsic = flatLedgeMarker
+      intrinsic = (Stairs.caveFloorHeight and Stairs.caveFloorHeight(map,S.tileAt[k])) or flatLedgeMarker
     end
     return base + intrinsic
+  end
+
+  if caveProfile and caveProfile.walls then
+    caveCaps=V.require('Gen1CaveCaps').plan(map,S,heightAt)
   end
 
   local function route4PortalV2(st, base)
@@ -915,8 +937,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
 
   -- `to` routes the quad somewhere other than the main sink -- the water
   -- surface is the only caller that ever does (see runGeometry's header).
-  local function topQuad(x0, z0, h, tile, shade, to, transform)
+  local function topQuad(x0, z0, h, tile, shade, to, transform, material)
     local aU, aV, bU, bV, cU, cV, dU, dV = topUV(tile, transform)
+    if material then aU,bU,cU,dU=material,material,material,material end
     local shades = aoShades(x0 / 8, z0 / 8, h, shade)
     local scalar = to and waterPushValues or pushValues
     if scalar then
@@ -945,9 +968,11 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     return high, high, high, high
   end
 
-  local function rampTopQuad(x0, z0, tile, direction, high, low, transform)
-    local h1, h2, h3, h4 = rampCorners(direction, high, low)
+  local function gradedTopQuad(x0, z0, tile, h1, h2, h3, h4, transform)
     local aU, aV, bU, bV, cU, cV, dU, dV = topUV(tile, transform)
+    local material=outdoorProfile and OutdoorScenery.material(map,outdoorProfile,tile,x0/8,z0/8)
+      or (OutdoorScenery and OutdoorScenery.wallMaterial and OutdoorScenery.wallMaterial(map,'ledge',tile))
+    if material then aU,bU,cU,dU=material,material,material,material end
     if pushValues then
       pushValues(x0, h1, z0, aU, aV,
                  x0 + 8, h2, z0, bU, bV,
@@ -974,6 +999,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                         math.max(ours2, neighbour2)
     if low1 == high1 and low2 == high2 then return end
     local u0, u1, v0, v1 = uvRect(tile, 0, 8)
+    local material=OutdoorScenery.foundationMaterial(map,outdoorProfile,'ground',tile)
+    if material then u0,u1=material,material end
     local shade = Voxel3D.FACE_SHADE[d]
     local c
     if d == 5 then
@@ -997,9 +1024,10 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   -- Corners run bottom-left, bottom-right, top-right, top-left as seen
   -- from outside; u follows +X on the north/south faces so a door or sign
   -- never draws mirrored.
-  local function sideQuad(d, x0, z0, y0, y1, tile, vTop, vBot, shade)
+  local function sideQuad(d, x0, z0, y0, y1, tile, vTop, vBot, shade, material)
     local x1, z1 = x0 + 8, z0 + 8
     local u0, u1, v0, v1 = uvRect(tile, vTop, vBot)
+    if material then u0,u1=material,material end
     if pushValues then
       if d == 5 then                                     -- south, at z1
         pushValues(x0, y0, z1, u0, v1, x1, y0, z1, u1, v1,
@@ -1085,9 +1113,17 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- an object stands here; paint its synthesized ground and let the
         -- prebuilt prism quads (appended below) carry the art
         local g = S.ground[k]
-        if g then
+        local wet=S.furnitureWater and S.furnitureWater[k]
+        if wet then
+          local waterBase=baseAtTile(wet.tx,wet.ty)+wet.h
+          topQuad(tx*8,ty*8,waterBase,wet.tile,1,waterPush,nil,
+            OutdoorScenery.waterMaterial(map,outdoorProfile,'water',wet.tile))
+        elseif g then
           local base = baseAtTile(tx, ty)
-          topQuad(tx * 8, ty * 8, base, g, 1)
+          topQuad(tx * 8, ty * 8, base, g, 1, nil, nil,
+            inBody and ((caveProfile and CaveSurfaces.material(caveProfile,"ground",g,"top",true,tx,ty))
+              or (floorProfile and InteriorFloors.material(map,floorProfile,g,true))
+              or (outdoorProfile and OutdoorScenery.material(map,outdoorProfile,g,tx,ty))))
           -- the claimed tile is still ground at its ledge datum, and water next
           -- door still recesses below it: without the same below-ground
           -- side bands ordinary ground emits, the two-pixel shoreline
@@ -1111,7 +1147,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                   sideQuad(d, tx * 8, ty * 8, y0, y1, g,
                            8 - (y1 - y0), 8,
                            sideShades(hl, hr, y0, y1, y0 <= nh,
-                                      Voxel3D.FACE_SHADE[d]))
+                                      Voxel3D.FACE_SHADE[d]),
+                           inBody and OutdoorScenery.foundationMaterial(map,outdoorProfile,'ground',g,
+                             (S.shapeAt[keyOf(tx+side[1],ty+side[2])]or{}).class))
                 end
                 y1 = y0
               end
@@ -1121,9 +1159,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
       elseif s then
         local run = S.runs[k]
         local base = baseAtTile(tx, ty)
+        local cap=caveCaps and caveCaps[k]
+        if cap then
+          s={class='wall',h=cap-base,art='top'};tile=2;run=nil
+        end
         local localH = run and run.h or s.h
         if flatTerrain and not run and s.class == "ledge" then
-          localH = flatLedgeMarker
+          localH = (Stairs.caveFloorHeight and Stairs.caveFloorHeight(map,tile)) or flatLedgeMarker
         end
         local h = base + localH
         local x0, z0 = tx * 8, ty * 8
@@ -1132,6 +1174,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
            and s.class ~= "water" and type(elevation.rampAtTile) == "function" then
           rampDirection, rampHigh, rampLow = elevation:rampAtTile(tx, ty)
         end
+        local g1,g2,g3,g4=WalkableGrades.corners(map,elevation,S,tx,ty)
+        local graded=g1~=nil and (g1~=h or g2~=h or g3~=h or g4~=h)
 
         -- top face. A roofed volume gets a GABLE segment: the roof rises
         -- from the facade top at the south eave to a ridge across the
@@ -1144,11 +1188,12 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- drops toward the eave, rounding the drawn corner tiles into 45
         -- degree corners. Flat-topped volumes wear their top rows;
         -- everything else its own art.
-        if rampDirection then
+        if rampDirection or graded then
           local topTile = S.topTileAt and S.topTileAt[k] or tile
           if s.topTile ~= nil then topTile = s.topTile end
-          rampTopQuad(x0, z0, topTile, rampDirection, rampHigh, rampLow,
-                      S.topUVAt and S.topUVAt[k] or nil)
+          local h1,h2,h3,h4=g1,g2,g3,g4
+          if h1==nil then h1,h2,h3,h4=rampCorners(rampDirection,rampHigh,rampLow)end
+          gradedTopQuad(x0,z0,topTile,h1,h2,h3,h4,S.topUVAt and S.topUVAt[k] or nil)
         elseif run and run.rise > 0 then
           local mid = run.extent / 2
           local function gableH(d)     -- d = rows north of the south eave
@@ -1179,7 +1224,11 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         elseif run then
           local m = math.min(2, run.extent)
           local topTile = map:tileAt(tx, run.north + ((ty - run.north) % m))
-          topQuad(x0, z0, h, topTile, VOLUME_TOP_SHADE)
+          -- Folded wall runs need the same optional stone finish as their
+          -- sides; otherwise the original atlas survives on the broad cap.
+          topQuad(x0, z0, h, topTile, VOLUME_TOP_SHADE, nil, nil,
+            inBody and OutdoorScenery and OutdoorScenery.wallMaterial
+              and OutdoorScenery.wallMaterial(map,s.class,tile,'top'))
         else
           -- A visual-only material substitution belongs to the plan-view
           -- surface, not to collision or structure classification.  Route 8's
@@ -1243,16 +1292,29 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           -- on the pond.
           topQuad(x0, z0, h, topTile, topShade,
                   (s.class == "water") and waterPush or nil,
-                  S.topUVAt and S.topUVAt[k] or nil)
+                  S.topUVAt and S.topUVAt[k] or nil,
+                  inBody and ((caveProfile and CaveSurfaces.material(caveProfile,s.class,tile,'top',false,tx,ty))
+                    or (OutdoorScenery and OutdoorScenery.waterMaterial(map,outdoorProfile,s.class,tile))
+                    or ((localH==0 and (s.class=='ground' or s.class=='grass'))
+                    and ((floorProfile and InteriorFloors.material(map,floorProfile,topTile,false))
+                      or (outdoorProfile and OutdoorScenery.material(map,outdoorProfile,topTile,tx,ty))))
+                    or (OutdoorScenery and OutdoorScenery.wallMaterial and OutdoorScenery.wallMaterial(map,s.class,tile,'top'))))
+        end
+
+        if inBody and not run and s.class=='ledge' and OutdoorScenery.jumpDirection then
+          local jumpDirection=OutdoorScenery.jumpDirection(map,tx,ty)
+          if jumpDirection then OutdoorScenery.jumpLip(jumpDirection,tx,ty,h,push)end
         end
 
         -- sides: 8px bands wherever the neighbour is lower. Band k spans
         -- heights [8k, 8k+8) and shows one full tile of art; a partial
         -- band crops the art rows to match, so nothing ever stretches.
-        if rampDirection then
-          local h1, h2, h3, h4 = rampCorners(rampDirection,
-                                             rampHigh, rampLow)
+        if rampDirection or g1~=nil then
+          local h1,h2,h3,h4=g1,g2,g3,g4
+          if h1==nil then h1,h2,h3,h4=rampCorners(rampDirection,rampHigh,rampLow)end
           local function surfaceCorners(nx, ny)
+            local a,b,c,d=WalkableGrades.corners(map,elevation,S,nx,ny)
+            if a~=nil then return a,b,c,d end
             local direction, high, low
             if type(elevation.rampAtTile) == "function" then
               direction, high, low = elevation:rampAtTile(nx, ny)
@@ -1294,7 +1356,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
               sideQuad(d, x0, z0, fy0, fy1, tile,
                        8 - (fy1 - fy0), 8,
                        sideShades(hl, hr, fy0, fy1, fy0 <= nh,
-                                  Voxel3D.FACE_SHADE[d]))
+                                  Voxel3D.FACE_SHADE[d]),
+                       inBody and OutdoorScenery.foundationMaterial(map,outdoorProfile,s.class,tile,
+                         (S.shapeAt[keyOf(tx+side[1],ty+side[2])]or{}).class))
               fy1 = fy0
             end
 
@@ -1355,7 +1419,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                 sideQuad(d, x0, z0, y0, y1, src,
                          (band * 8 + 8) - (y1 - base),
                          (band * 8 + 8) - (y0 - base),
-                         sideShades(hl, hr, y0, y1, y0 <= nh, shade))
+                         sideShades(hl, hr, y0, y1, y0 <= nh, shade),
+                         inBody and ((caveProfile and CaveSurfaces.material(caveProfile,s.class,tile,'side',false,tx,ty))
+                           or (OutdoorScenery and OutdoorScenery.wallMaterial and OutdoorScenery.wallMaterial(map,s.class,tile))))
               end
             end
           end
@@ -1380,10 +1446,14 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         local depth = edge.depths and edge.depths[column + 1] or 4
         local u0, u1, v0, v1 =
           uvCrop(edge.tiles[column + 1], 0, 8, 8 - depth, 8)
+        local bank=OutdoorScenery.bankMaterial(map,outdoorProfile,'ground',edge.tiles[column+1],'water')
+        if bank then u0,u1=bank,bank end
         local x0 = edge.cx * 16 + column * 8
-        push({ { x0, 0, zLand }, { x0 + 8, 0, zLand },
-               { x0 + 8, -2, zLand + depth },
-               { x0, -2, zLand + depth } },
+        local land = baseAtTile(edge.cx * 2 + column, edge.cy * 2 + 1)
+        local wet = heightAt(edge.cx * 2 + column, edge.cy * 2 + 2)
+        push({ { x0, land, zLand }, { x0 + 8, land, zLand },
+               { x0 + 8, wet, zLand + depth },
+               { x0, wet, zLand + depth } },
              { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, 1)
       end
     elseif edge.side == "west" then
@@ -1393,10 +1463,14 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         local depth = edge.depths and edge.depths[row + 1] or 4
         local u0, u1, v0, v1 =
           uvCrop(edge.tiles[row + 1], 0, 8, 8 - depth, 8)
+        local bank=OutdoorScenery.bankMaterial(map,outdoorProfile,'ground',edge.tiles[row+1],'water')
+        if bank then u0,u1=bank,bank end
         local z0 = edge.cy * 16 + row * 8
-        push({ { xLand, 0, z0 }, { xLand, 0, z0 + 8 },
-               { xLand - depth, -2, z0 + 8 },
-               { xLand - depth, -2, z0 } },
+        local land = baseAtTile(edge.cx * 2, edge.cy * 2 + row)
+        local wet = heightAt(edge.cx * 2 - 1, edge.cy * 2 + row)
+        push({ { xLand, land, z0 }, { xLand, land, z0 + 8 },
+               { xLand - depth, wet, z0 + 8 },
+               { xLand - depth, wet, z0 } },
              { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, 1)
       end
     end
@@ -1412,6 +1486,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     Budget.tick()
     local depth = edge.depth
     local u0, u1, v0, v1 = uvCrop(edge.tile, 0, 8, 8 - depth, 8)
+    local bank=OutdoorScenery.bankMaterial(map,outdoorProfile,'ground',edge.tile,'water')
+    if bank then u0,u1=bank,bank end
     local x0, z0 = edge.tx * 8, edge.ty * 8
     local corners
     if edge.side == "north" then
@@ -1432,6 +1508,10 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
                   { x0 + 8 + depth, -2, z0 + 8 } }
     end
     if corners then
+      local delta = ({north={0,-1},south={0,1},west={-1,0},east={1,0}})[edge.side]
+      local land = baseAtTile(edge.tx, edge.ty)
+      local wet = heightAt(edge.tx + delta[1], edge.ty + delta[2])
+      for i, point in ipairs(corners) do point[2] = i <= 2 and land or wet end
       push(corners,
            { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }, 1)
     end
@@ -1484,6 +1564,14 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
 
   local scUV = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } }
   local function quadUV(q)
+    if q.outdoorWallTile then
+      local horizontal=q[1][2]==q[2][2]and q[2][2]==q[3][2]and q[3][2]==q[4][2]
+      local finish=OutdoorScenery.wallMaterial(map,'bookcase',q.outdoorWallTile,horizontal and 'top'or 'side')
+      if finish then
+        for i=1,4 do scUV[i][1],scUV[i][2]=finish,0 end
+        return scUV
+      end
+    end
     if q.uv then return q.uv end
     for i = 1, 4 do
       scUV[i][1], scUV[i][2] = q.u, q.v
@@ -2278,6 +2366,7 @@ local function finishStampPlan(job, base, plan)
       mesh = mesh,
       source = source,
       count = count,
+      static = true, -- Completed terrain streams never change in place.
     }
     -- Placement rows are now owned by the driver's source mesh. Do not retain
     -- hundreds of tiny Lua tables beside it for the lifetime of the cache.
@@ -2415,7 +2504,8 @@ local function expandedGrassMesh(groups, job, elevation)
     for at = 1, #p, 2 do
       Budget.tick()
       local mx, mz = p[at], p[at + 1]
-      local base = elevationAtWorld(elevation, mx + 0.001, mz + 0.001)
+      local base = group.elevationBases and group.elevationBases[at]
+      if base==nil then base = elevationAtWorld(elevation, mx + 0.001, mz + 0.001)end
       for _, q in ipairs(group.quads or {}) do
         Budget.tick()
         for i = 1, 4 do
@@ -2443,7 +2533,8 @@ local function instancedGrassMesh(groups, job, elevation)
       for at = 1, #placements, 2 do
         Budget.tick()
         local mx, mz = placements[at], placements[at + 1]
-        local base = elevationAtWorld(elevation, mx + 0.001, mz + 0.001)
+        local base = authored.elevationBases and authored.elevationBases[at]
+        if base==nil then base = elevationAtWorld(elevation, mx + 0.001, mz + 0.001)end
         offsets[#offsets + 1] = { mx, base, mz }
       end
       plan.groups[#plan.groups + 1] = {
@@ -2463,6 +2554,8 @@ local function buildGrassMesh(map, job, elevation)
   -- Compatibility with an analysis made by an older hot-loaded build and
   -- with lightweight fixtures which still provide the historical flat list.
   if not groups then return quadsMesh(S.grassQuads or {}, job, elevation) end
+  if OutdoorScenery and OutdoorScenery.grassGroups then groups=OutdoorScenery.grassGroups(map,groups)end
+  if WalkableGrades.grassGroups then groups=WalkableGrades.grassGroups(map,elevation,S,groups)end
   if not job then return expandedGrassMesh(groups, nil, elevation) end
   if type(Voxel3D.canInstance) ~= "function" or not Voxel3D.canInstance() then
     return expandedGrassMesh(groups, job, elevation)
@@ -2839,6 +2932,12 @@ end
 
 function ChunkMesher.pending()
   return #jobs
+end
+
+-- Read-only status for initial near-seam preparation. A failed/empty slot
+-- has no job and must not hold the first scene indefinitely.
+function ChunkMesher.building(map, bodyOnly)
+  return map ~= nil and jobIndex[jobKey(map.id, bodyOnly and "body" or "full")] ~= nil
 end
 
 -- True when visible play is waiting on work that can affect the current map

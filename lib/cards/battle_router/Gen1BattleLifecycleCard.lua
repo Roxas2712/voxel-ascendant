@@ -741,7 +741,8 @@ function Card.descriptor(dependencies)
               return nil, tostring(current.provider)
                 .. " switch router tokens diverged"
             end
-          elseif current.provider == "DEFAULT" or current.provider == "DISCS" then
+          elseif current.provider == "DEFAULT" or (current.provider == "DISCS"
+              and not (current.context and current.context.liveLegacyPresentation)) then
             return nil, tostring(current.provider)
               .. " switch lost exact router owner"
           end
@@ -928,6 +929,13 @@ function Card.descriptor(dependencies)
             }
             local routed, routeReason
             if event.kind == "created" then
+              -- A front-view DISCS stage is prepared/adopted by the same
+              -- renderer as MAP/ARENA to permit explicit live restaging.
+              -- Back-card DISCS and DEFAULT retain their exact Router owner.
+              local liveFront=raw.provider=="DISCS" and raw.context
+                and raw.context.liveLegacyPresentation==true
+                and raw.context.pokemonBack==false and raw.context.trainerBack==false
+              if not liveFront then
               routed, routeReason = routeRouter.start(battle, routeContext)
               local transitional = raw.provider ~= "DEFAULT"
                 and routeReason == "provider-not-registered:"
@@ -936,6 +944,7 @@ function Card.descriptor(dependencies)
                 return failRuntime("provider-start", routeReason)
               end
               if routed then installed.routerBattle = battle end
+              end
             elseif event.kind == "replacing"
                 or event.kind == "battler-switched-native" then
               if routeRouter.owns(battle) then
@@ -945,6 +954,15 @@ function Card.descriptor(dependencies)
                 end
                 installed.routerBattle = battle
               end
+            elseif event.kind == "presentation-retried" then
+              -- Release only DEFAULT's render ownership. This does not emit
+              -- battle.ended or restart any encounter/content subscription.
+              if not routeRouter.owns(battle) then
+                return failRuntime("provider-retry", "native provider owner missing")
+              end
+              routed, routeReason = routeRouter.finish(battle, routeContext)
+              if not routed then return failRuntime("provider-retry", routeReason) end
+              installed.routerBattle = nil
             elseif event.kind == "native-latched" then
               routed, routeReason = routeRouter.fallback(battle, routeContext)
               if not routed then
@@ -1239,7 +1257,8 @@ function Card.descriptor(dependencies)
               local raw = type(event) == "table" and event.receipt or nil
               local battle = type(raw) == "table" and raw.battle or nil
               if raw and (raw.provider == "DEFAULT"
-                    or raw.provider == "DISCS")
+                    or (raw.provider == "DISCS"
+                      and not (raw.context and raw.context.liveLegacyPresentation)))
                   and event.kind ~= "ended" and event.kind ~= "aborted"
                   and (battle == nil or not router.owns(battle)) then
                 error(raw.provider

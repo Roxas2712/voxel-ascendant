@@ -70,6 +70,7 @@ local OWNER = {
   ["gen2/lib/GoldCameraControls.lua"] = "vasc.gen2.voxel-world",
   ["gen2/lib/GoldColorAtlas.lua"] = "vasc.gen2.voxel-world",
   ["gen2/lib/GoldComposeBridge.lua"] = "vasc.gen2.voxel-world",
+  ["gen2/lib/FieldActorAppearance.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldFieldMovePresentation.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldFlyCinematic.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldPartyFollower.lua"] = "vasc.gen2.field-wilds",

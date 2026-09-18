@@ -42,6 +42,7 @@ local function worldSafe(game,top)
   end
   return idleInput(game)
 end
+M.worldSafe=worldSafe
 function M.safe(game)
   if type(game)~="table"then return false end
   local stack=type(game)=="table" and game.stack

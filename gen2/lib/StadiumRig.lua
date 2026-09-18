@@ -107,6 +107,34 @@ end
 
 -- ------- an instance
 
+-- UV seams/material boundaries duplicate a position many times. Vertices
+-- with the same bone and exact bind position always undergo identical
+-- position arithmetic in skin(), irrespective of their UVs/normals. One row
+-- per such group therefore gives the exact projected envelope, not an AABB
+-- approximation. Build this once for owned, immutable pack geometry only.
+function StadiumRig:buildProjectionSamples()
+  local seen, rows = {}, {}
+  for _, part in ipairs(self.parts or {}) do
+    local p = part.prim
+    if not (p and p.bone and p.px and p.py and p.pz) then return end
+    for i = 1, p.vertCount do
+      local bone, x, y, z = p.bone[i], p.px[i], p.py[i], p.pz[i]
+      for _, value in ipairs({bone, x, y, z}) do
+        if type(value) ~= "number" or value ~= value then return end
+      end
+      if bone == nil or x == nil or y == nil or z == nil then return end
+      local b = seen[bone]; if not b then b={};seen[bone]=b end
+      local xx = b[x]; if not xx then xx={};b[x]=xx end
+      local yy = xx[y]; if not yy then yy={};xx[y]=yy end
+      if not yy[z] then
+        yy[z] = true
+        rows[#rows+1] = part.rows[i]
+      end
+    end
+  end
+  self.projectionSampleParts = {{rows=rows}}
+end
+
 -- `model` is a StadiumPack model. Returns nil where meshes cannot be made,
 -- which is the same "no 3D" answer every other GPU object in this mod gives.
 function StadiumRig.new(model)
@@ -155,6 +183,7 @@ function StadiumRig.new(model)
     pcall(mesh.setVertexMap, mesh, prim.index)
     self.parts[i] = { mesh = mesh, rows = rows, prim = prim }
   end
+  self:buildProjectionSamples()
   -- Lugia is the one Stadium-2 model that exposed a hierarchy interpretation
   -- mismatch severe enough to scatter rigid body parts across the map.  Probe
   -- repair modes before the ordinary bind measurement so measureBind sees the
@@ -183,6 +212,7 @@ function StadiumRig:release()
     end
   end
   self.parts = {}
+  self.projectionSampleParts = nil
 end
 
 -- ------- sampling one track
@@ -707,41 +737,88 @@ function StadiumRig:projectedBounds(mvp, pw, ph)
     if not finite(mvp[index]) then return nil end
   end
 
-  local left, top, right, bottom
-  local lo1, lo2, lo3 = math.huge, math.huge, math.huge
-  local hi1, hi2, hi3 = -math.huge, -math.huge, -math.huge
-  for _, part in ipairs(self.parts or {}) do
-    local rows = part.rows or {}
-    local count = part.prim and tonumber(part.prim.vertCount) or #rows
-    count = math.max(0, math.floor(count or 0))
-    for k = 1, count do
-      local row = rows[k]
-      local x = type(row) == "table" and tonumber(row[1]) or nil
-      local y = type(row) == "table" and tonumber(row[2]) or nil
-      local z = type(row) == "table" and tonumber(row[3]) or nil
-      if finite(x) and finite(y) and finite(z) then
-        local cx = mvp[1] * x + mvp[2] * y + mvp[3] * z + mvp[4]
-        local cy = mvp[5] * x + mvp[6] * y + mvp[7] * z + mvp[8]
-        local cw = mvp[13] * x + mvp[14] * y + mvp[15] * z + mvp[16]
-        if not (finite(cx) and finite(cy) and finite(cw) and cw > 1e-9) then
-          return nil
+  -- Rows belong to the uploaded pose. Validate/copy them once, not once per
+  -- camera candidate and again for normalized trainer clearance and the HUD.
+  local points=self.projectionPose and self.projectionPoints
+  if not (points and self.projectionPointsValid) then
+    points=points or {}
+    points.lo1,points.lo2,points.lo3=math.huge,math.huge,math.huge
+    points.hi1,points.hi2,points.hi3=-math.huge,-math.huge,-math.huge
+    local n=0
+    for _,part in ipairs(self.projectionSampleParts or self.parts or {}) do
+      local rows=part.rows or {}
+      local count=math.max(0,math.floor(tonumber(part.prim and part.prim.vertCount) or #rows))
+      for k=1,count do
+        local row=rows[k]
+        local x=type(row)=='table' and tonumber(row[1]) or nil
+        local y=type(row)=='table' and tonumber(row[2]) or nil
+        local z=type(row)=='table' and tonumber(row[3]) or nil
+        if finite(x) and finite(y) and finite(z) then
+          points[n+1],points[n+2],points[n+3]=x,y,z;n=n+3
+          points.lo1=math.min(points.lo1,x);points.hi1=math.max(points.hi1,x)
+          points.lo2=math.min(points.lo2,y);points.hi2=math.max(points.hi2,y)
+          points.lo3=math.min(points.lo3,z);points.hi3=math.max(points.hi3,z)
         end
-        local sx = (cx / cw * .5 + .5) * pw
-        local sy = (cy / cw * .5 + .5) * ph
-        if not (finite(sx) and finite(sy)) then return nil end
-        left = left and math.min(left, sx) or sx
-        right = right and math.max(right, sx) or sx
-        top = top and math.min(top, sy) or sy
-        bottom = bottom and math.max(bottom, sy) or sy
-        if x < lo1 then lo1 = x end; if x > hi1 then hi1 = x end
-        if y < lo2 then lo2 = y end; if y > hi2 then hi2 = y end
-        if z < lo3 then lo3 = z end; if z > hi3 then hi3 = z end
       end
     end
+    for index=n+1,#points do points[index]=nil end
+    if self.projectionPose then
+      self.projectionPoints=points;self.projectionPointsValid=true
+    end
   end
-  if not (left and right > left and bottom > top) then return nil end
-  return left, top, right-left, bottom-top,
-    lo1, lo2, lo3, hi1, hi2, hi3
+  local a,b,c,d=mvp[1],mvp[2],mvp[3],mvp[4]
+  local e,f,g,h=mvp[5],mvp[6],mvp[7],mvp[8]
+  local i,j,k,l=mvp[13],mvp[14],mvp[15],mvp[16]
+  local left,top,right,bottom=math.huge,math.huge,-math.huge,-math.huge
+  for n=1,#points,3 do
+    local x,y,z=points[n],points[n+1],points[n+2]
+    local cx,cy,cw=a*x+b*y+c*z+d,e*x+f*y+g*z+h,i*x+j*y+k*z+l
+    if not (cw>1e-9 and cw<1e12 and cx>-1e12 and cx<1e12 and cy>-1e12 and cy<1e12) then return nil end
+    local sx,sy=(cx/cw*.5+.5)*pw,(cy/cw*.5+.5)*ph
+    if not (sx>-1e12 and sx<1e12 and sy>-1e12 and sy<1e12) then return nil end
+    if sx<left then left=sx end;if sx>right then right=sx end
+    if sy<top then top=sy end;if sy>bottom then bottom=sy end
+  end
+  if not (right>left and bottom>top) then return nil end
+  return left,top,right-left,bottom-top,
+    points.lo1,points.lo2,points.lo3,points.hi1,points.hi2,points.hi3
+end
+
+-- Camera safety, HUD ownership and the colour pass often ask for exactly
+-- the same projection of the same uploaded pose. Keep a small per-pose
+-- cache of normalized scalar results; never reuse across skinning or matrix
+-- changes, and never retain a caller's mutable matrix. The viewport only
+-- scales the resulting rectangle (trainer clearance asks for a 2x2 view).
+local projectCurrentRows = StadiumRig.projectedBounds
+function StadiumRig:projectedBounds(mvp, pw, ph)
+  if not self.projectionPose or type(mvp) ~= "table" then
+    return projectCurrentRows(self, mvp, pw, ph)
+  end
+  pw, ph = tonumber(pw), tonumber(ph)
+  if not (pw and pw>0 and ph and ph>0) then return nil end
+  local function pixels(r)
+    if r.n==0 or r[1]==nil then return nil end
+    if not (finite(r[1]*pw) and finite(r[2]*ph)
+        and finite((r[1]+r[3])*pw) and finite((r[2]+r[4])*ph)) then return nil end
+    return r[1]*pw,r[2]*ph,r[3]*pw,r[4]*ph,
+      r[5],r[6],r[7],r[8],r[9],r[10]
+  end
+  local cache = self.projectionCache
+  if not cache then cache={count=0,next=1};self.projectionCache=cache end
+  for i=1,cache.count do
+    local row=cache[i]
+    local equal=true
+    for j=1,16 do if row.matrix[j]~=mvp[j] then equal=false;break end end
+    if equal then return pixels(row.result) end
+  end
+  local function values(...)return {n=select('#',...),...}end
+  local result=values(projectCurrentRows(self,mvp,1,1))
+  local i=cache.next
+  local row=cache[i] or {matrix={}}
+  for j=1,16 do row.matrix[j]=mvp[j] end
+  row.result=result
+  cache[i]=row;cache.count=math.min(8,cache.count+1);cache.next=i%8+1
+  return pixels(result)
 end
 
 -- Project the lower contact band onto the arena floor. This measures the
@@ -805,14 +882,22 @@ local function worstMajorBoneTravel(self, bindT, base)
   local model, d = self.model, self.drawM
   local w, total = boneWeights(model)
   if not (total and total > 0) then return 0 end
+  local ox, oy, oz = 0, 0, 0
+  if tonumber(model.species) == 18 then
+    -- Pidgeot's verified Hermite standby lifts the entire bird into flight.
+    -- Test separation relative to its body, not distance from the grounded
+    -- bind pose. The ordinary full-mesh and frame-jump guards still apply.
+    local x, y, z = centre(self, model.boneCount)
+    ox, oy, oz = x-model.bindCX, y-model.bindCY, z-model.bindCZ
+  end
   local worst = 0
   for b = 1, model.boneCount do
     local q = w[b] or 0
     if q / total >= 0.02 then
       local o, t = (b-1)*12, (b-1)*3
-      local dx = (d[o+4] or 0) - (bindT[t+1] or 0)
-      local dy = (d[o+8] or 0) - (bindT[t+2] or 0)
-      local dz = (d[o+12] or 0) - (bindT[t+3] or 0)
+      local dx = (d[o+4] or 0) - (bindT[t+1] or 0) - ox
+      local dy = (d[o+8] or 0) - (bindT[t+2] or 0) - oy
+      local dz = (d[o+12] or 0) - (bindT[t+3] or 0) - oz
       local dist = math.sqrt(dx*dx + dy*dy + dz*dz) / base
       if dist > worst then worst = dist end
     end
@@ -1034,6 +1119,10 @@ function StadiumRig:measureBind()
                        worstSpan, worstDrift, worstBone)
       elseif worst > StadiumRig.ANCHOR_STEADY then
         model.anchorOk = false
+        -- Pre-revision-3 Pidgeot packs decoded Hermite keys as packed angles.
+        -- Their multi-body-length frame jumps must remain a safe decline
+        -- until rebuilt; the corrected flight loop is continuous.
+        if tonumber(model.species) == 18 then model.staticPose = true end
         V.mod.log:info("stadium: species %s moves its own body %.1f "
                        .. "body-heights in one frame of its standby loop -- "
                        .. "not anchoring it, the measurement cannot be "
@@ -1220,6 +1309,11 @@ end
 -- WORLD normal: a Pokemon turned to face its opponent has a differently lit
 -- flank than one facing the camera, and the sun does not turn with it.
 function StadiumRig:skin(yaw)
+  self.projectionPose = (self.projectionPose or 0) + 1
+  self.projectionPointsValid = false
+  if self.projectionCache then
+    self.projectionCache.count,self.projectionCache.next=0,1
+  end
   local cy, sy = cos(yaw or 0), sin(yaw or 0)
   local drw, piv = self.drawM, self.pivotM
   for _, part in ipairs(self.parts) do

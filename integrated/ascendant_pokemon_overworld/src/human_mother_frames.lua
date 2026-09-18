@@ -1,0 +1,1 @@
+return {{row=0,col=0,footX=310.5,bottom=474},{row=0,col=1,footX=252.0,bottom=474},{row=0,col=2,footX=216.0,bottom=476},{row=1,col=0,footX=310.5,bottom=473},{row=1,col=1,footX=250.0,bottom=473},{row=1,col=2,footX=218.0,bottom=474}}

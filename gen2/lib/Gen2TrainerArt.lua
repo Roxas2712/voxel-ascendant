@@ -216,4 +216,74 @@ function M.coverage(classes)
   return { hd=hd, native=native, hdCount=#hd, nativeCount=#native }
 end
 
+-- Native trainer fronts are imported with opaque colour zero. Only the
+-- isolated live-world capture gets a border matte; the native screen and
+-- its palette/intro lifecycle retain the original texture.
+local nativeCache, nativeSerial = {}, 0
+function M.clearNativeCaptures()
+  for _, entry in pairs(nativeCache) do
+    if entry.image then entry.image:release() end
+  end
+  nativeCache = {}
+end
+function M.nativeCaptureScreen(screen, side)
+  if side ~= "enemy" or not screen or screen.showEnemyTrainer ~= true
+      or screen.enemyTrainerTrueColor == true
+      or type(screen.enemyTrainerPath) ~= "string"
+      or not screen.enemyTrainerPath:match("^assets/generated/battle/trainers/[%w_]+%.png$") then return screen end
+  local source = screen.enemyTrainerImage
+  if not source or source:getWidth() ~= 56 or source:getHeight() ~= 56 then return screen end
+  nativeSerial = nativeSerial + 1
+  local entry = nativeCache[source]
+  if not entry then
+    local count, oldest, age = 0
+    for key, item in pairs(nativeCache) do
+      count = count + 1
+      if not age or item.used < age then oldest, age = key, item.used end
+    end
+    if count >= 8 then
+      if nativeCache[oldest].image then nativeCache[oldest].image:release() end
+      nativeCache[oldest] = nil
+    end
+    entry = {}; nativeCache[source] = entry
+    local G = love.graphics
+    local canvas, data, image
+    G.push("all")
+    local ok = pcall(function()
+      canvas = G.newCanvas(56, 56, {dpiscale=1})
+      G.setCanvas(canvas); G.origin(); G.setShader(); G.setScissor()
+      G.setStencilTest(); G.setDepthMode(); G.setColorMask(true,true,true,true)
+      G.clear(0,0,0,0); G.setColor(1,1,1,1)
+      G.setBlendMode("replace", "premultiplied"); G.draw(source)
+      G.setCanvas(); data = canvas:newImageData()
+      -- Match the engine's four-connected colour-zero border matte. White
+      -- enclosed by ink (eyes, hair, clothing) remains opaque.
+      local queue, seen, head = {}, {}, 1
+      local function add(x,y)
+        local key=y*56+x
+        if seen[key] then return end
+        local red,green,blue,alpha=data:getPixel(x,y)
+        if red==1 and green==1 and blue==1 and alpha==1 then
+          seen[key]=true;queue[#queue+1]=key
+        end
+      end
+      for i=0,55 do add(i,0);add(i,55);add(0,i);add(55,i) end
+      while head<=#queue do
+        local key=queue[head];head=head+1
+        local x,y=key%56,math.floor(key/56)
+        data:setPixel(x,y,1,1,1,0)
+        if x>0 then add(x-1,y) end;if x<55 then add(x+1,y) end
+        if y>0 then add(x,y-1) end;if y<55 then add(x,y+1) end
+      end
+      if #queue>0 then image=G.newImage(data);image:setFilter("nearest","nearest") end
+    end)
+    G.pop()
+    if canvas then canvas:release() end;if data then data:release() end
+    if ok then entry.image=image elseif image then image:release() end
+  end
+  entry.used=nativeSerial
+  if not entry.image then return screen end
+  return setmetatable({enemyTrainerImage=entry.image}, {__index=screen})
+end
+
 return M

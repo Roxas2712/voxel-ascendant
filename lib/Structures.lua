@@ -119,7 +119,7 @@ local SAFARI_FOOT_TRIM = { [0x2d] = 0x3d, [0x2f] = 0x3f }
 -- land, buildings, island shores and every other solid inside the same band
 -- retain their authored geometry.
 local OPEN_SEA_EDGES = {
-  ROUTE_19 = { south = true, east = true },
+  ROUTE_19 = { south = true, east = true, west = true },
   ROUTE_20 = { north = true, south = true },
   ROUTE_21 = { west = true, east = true },
   CINNABAR_ISLAND = { south = true, west = true },
@@ -973,6 +973,29 @@ local function openSeaStopCell(map, tx, ty)
 end
 
 local function openSeaBeyondIsWater(map, ax, ay, edge)
+  local originX, originY = ax, ay
+  local function waterAroundEndcap()
+    -- At an ocean corner the inward row can itself contain two stop cells.
+    -- Inspect the adjacent inward rows too, but accept only a small patch
+    -- made entirely of canonical water/stop cells. Any real land keeps the
+    -- marker. This does not extend the free-edge band or change collision.
+    local inward = ({north={0,2},south={0,-2},west={2,0},east={-2,0}})[edge]
+    local water = false
+    for distance = 1, 2 do for lateral = -1, 1 do
+      local x = originX + inward[1] * distance + inward[2] * lateral
+      local y = originY + inward[2] * distance + inward[1] * lateral
+      if x >= 0 and y >= 0 and x + 1 < map.def.width * 4
+         and y + 1 < map.def.height * 4 then
+        local wet = true
+        for dy = 0, 1 do for dx = 0, 1 do
+          wet = wet and map:tileAt(x+dx,y+dy) == OPEN_SEA_WATER_TILE
+        end end
+        if wet then water = true
+        elseif not openSeaStopCell(map,x,y) then return false end
+      end
+    end end
+    return water
+  end
   -- The native stop ring can turn a corner one cell before the free side.
   -- Follow at most the two 16px cells covered by OPEN_SEA_BAND: this opens
   -- the complete decorative ring, but cannot walk inward along a real island
@@ -987,6 +1010,20 @@ local function openSeaBeyondIsWater(map, ax, ay, edge)
       x0, y0, x1, y1 = ax - 1, ay, ax - 1, ay + 1
     else
       x0, y0, x1, y1 = ax + 2, ay, ax + 2, ay + 1
+    end
+    if x0 < 0 or y0 < 0 or x1 >= map.def.width * 4
+       or y1 >= map.def.height * 4 then
+      -- The outermost native stop row has only border-block art outside it.
+      -- Prove the sea on its inner side instead; stop at real land/shore.
+      local inward = ({north={0,2},south={0,-2},west={2,0},east={-2,0}})[edge]
+      for distance = 1, 2 do
+        local ix, iy = originX + inward[1] * distance,
+                       originY + inward[2] * distance
+        if map:tileAt(ix, iy) == OPEN_SEA_WATER_TILE
+           and map:tileAt(ix+1, iy+1) == OPEN_SEA_WATER_TILE then return true end
+        if not openSeaStopCell(map, ix, iy) then return false end
+      end
+      return waterAroundEndcap()
     end
     if map:tileAt(x0, y0) == OPEN_SEA_WATER_TILE
         and map:tileAt(x1, y1) == OPEN_SEA_WATER_TILE then
@@ -1023,7 +1060,20 @@ local function openSeaVisualTile(map, shapes, tile, tx, ty)
                 and ty >= 0 and ty < OPEN_SEA_BAND
   local south = edges.south and not (connections and connections.south)
                 and ty >= th - OPEN_SEA_BAND and ty < th
-  local west = edges.west and not (connections and connections.west)
+  local westConnection = connections and connections.west
+  -- Route20 joins only the lower portion of Route19's west edge. The upper
+  -- open-water stretch is still a free coast, not a connection-wide wall.
+  local westFree = not westConnection or (id == 'ROUTE_19'
+    and ty < (tonumber(westConnection.offset) or 0) * 4)
+  -- The native Route19/20 join starts with a stepped, eight-tile stop cap.
+  -- Route20's ocean side is already open there; retaining the same cap in
+  -- Route19 leaves six floating cylinders at that seam. Only this audited
+  -- cap is eligible, and the canonical quartet/water witness below still
+  -- protects real shore. The playable connection and collision stay native.
+  local joinedSeaCap = id == 'ROUTE_19' and def.width == 10 and def.height == 27
+    and westConnection and westConnection.map == 'ROUTE_20'
+    and westConnection.offset == 18 and ty >= 72 and ty < 80
+  local west = edges.west and (westFree or joinedSeaCap)
                and tx >= 0 and tx < OPEN_SEA_BAND
   local east = edges.east and not (connections and connections.east)
                and tx >= tw - OPEN_SEA_BAND and tx < tw
@@ -1302,6 +1352,12 @@ local function route21LowBarrierCells(map, shapes)
   return out
 end
 
+-- Replacement props belong to the same published terrain as their claims.
+-- A new native Map instance may reuse the cached geometry for this map id.
+function Structures.peek(map)
+  return map and cache[map.id] or nil
+end
+
 function Structures.forMap(map)
   local S = cache[map.id]
   if S then return S end
@@ -1445,6 +1501,9 @@ function Structures.forMap(map)
         figures = {} }
   buildCinnabarQuays(S, map)
   buildOutdoorCavePortals(S, map)
+  V.require("VoxelFurniture").claim(S,map,Structures.peek)
+  V.require("Gen1InteriorWallClaims").claim(S,map)
+  V.require('Gen1Stairs').claim(S,map)
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player
@@ -1740,6 +1799,9 @@ function Structures.forMap(map)
     if g == false then S.ground[k] = best end
   end
 
+  -- Grade-dependent plants need the final claims, after all buildings,
+  -- ledges and native decorations have finished defining the terrain.
+  V.require('VoxelFurniture').prepareTerrainDecoration(S,map)
   cache[map.id] = S
   return S
 end
@@ -2958,6 +3020,7 @@ local function bookcaseRank(S, map, perRow, run, i, j, k, pane, srcU, srcV,
   local r = run[k]
   local tx, northTy, frontTy, capTile = r.tx, r.top, r.front, r.cap
   local quads = S.objectQuads
+  local firstOutdoorWallQuad=#quads+1
   local atlasW = map.tileset.imageWidth or 128
   local atlasH = map.tileset.imageHeight or 48
   local function uvRect(tile)
@@ -3104,6 +3167,11 @@ local function bookcaseRank(S, map, perRow, run, i, j, k, pane, srcU, srcV,
       { x1, h, sz0 + 8 }, { x0, h, sz0 + 8 },
       uv = { { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } },
       shade = BOOK_SHADE.top }
+  end
+  -- Retain source ownership on the folded League masonry. The mesher
+  -- chooses its optional finish; cached geometry remains unchanged.
+  if map.def.tileset=='PLATEAU'then
+    for qi=firstOutdoorWallQuad,#quads do quads[qi].outdoorWallTile=topTile end
   end
 end
 
@@ -3384,7 +3452,18 @@ function Structures.buildStairs(S, map, x0, x1, y0, y1)
             if not down then S.ground[tk] = false end
           end
         end
-        if data then stairCell(S, map, data, cx, cy, s) end
+        if data then
+          local first=#S.objectQuads+1
+          stairCell(S, map, data, cx, cy, s)
+          if s.class=='stair_n' then
+            local mx,mz=cx*16,cy*16
+            for i=first,#S.objectQuads do for j=1,4 do
+              local v=S.objectQuads[i][j];local x,z=v[1]-mx,v[3]-mz
+              v[1],v[2],v[3]=mx+16-z,v[2]+(s.stairBase or 0),mz+x
+            end end
+          end
+          V.require('Gen1Stairs').finish(map,S.objectQuads,first,s)
+        end
       end
     end
   end
@@ -3947,6 +4026,7 @@ function Structures.buildObject(S, map, region, cluster,
   local atlasW = map.tileset.imageWidth or 128
   local atlasH = map.tileset.imageHeight or 48
   local quads = S.objectQuads
+  local battleQuadStart = #quads+1
 
   local function at(lx, ly)
     if lx < 0 or lx >= bw or ly < 0 or ly >= bh then return nil end
@@ -4123,6 +4203,21 @@ function Structures.buildObject(S, map, region, cluster,
       S.skip[k] = true
       S.ground[k] = best
     end
+  end
+  -- Read-only object bounds for the MAP battle's temporary scenery cutaway.
+  -- Include a statue's own pedestal; no source map or collision is changed.
+  if #quads>=battleQuadStart then
+    local bounds={math.huge,0,math.huge,-math.huge,0,-math.huge}
+    for index=battleQuadStart,#quads do for corner=1,4 do
+      local p=quads[index][corner]
+      bounds[1],bounds[3]=math.min(bounds[1],p[1]),math.min(bounds[3],p[3])
+      bounds[4],bounds[5],bounds[6]=math.max(bounds[4],p[1]),math.max(bounds[5],p[2]),math.max(bounds[6],p[3])
+    end end
+    if support then
+      bounds[1]=math.floor(bounds[1]/8)*8;bounds[4]=math.ceil(bounds[4]/8)*8
+      bounds[3]=math.floor(bounds[3]/8)*8;bounds[6]=math.ceil(bounds[6]/8)*8
+    end
+    S.battleObjects=S.battleObjects or {};S.battleObjects[#S.battleObjects+1]=bounds
   end
   return true
 end
@@ -4469,7 +4564,8 @@ function Structures.buildFigures(S, map, x0, x1, y0, y1)
         local hit = true
         for i = 1, #fig.tiles do
           local dx, dy = (i - 1) % fig.w, math.floor((i - 1) / fig.w)
-          if S.tileAt[keyOf(tx + dx, ty + dy)] ~= fig.tiles[i] then
+          if (S.voxelFurnitureClaims and S.voxelFurnitureClaims[keyOf(tx + dx, ty + dy)])
+              or S.tileAt[keyOf(tx + dx, ty + dy)] ~= fig.tiles[i] then
             hit = false
             break
           end
@@ -4541,7 +4637,8 @@ function Structures.buildMounted(S, map, x0, x1, y0, y1)
         local hit = true
         for i = 1, #m.tiles do
           local dx, dy = (i - 1) % m.w, math.floor((i - 1) / m.w)
-          if S.tileAt[keyOf(tx + dx, ty + dy)] ~= m.tiles[i] then
+          if (S.voxelFurnitureClaims and S.voxelFurnitureClaims[keyOf(tx + dx, ty + dy)])
+              or S.tileAt[keyOf(tx + dx, ty + dy)] ~= m.tiles[i] then
             hit = false
             break
           end

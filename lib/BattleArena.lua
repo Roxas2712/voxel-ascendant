@@ -329,9 +329,9 @@ local CELL = 16
 -- variants. `w`/`h` are in cells; `enemy` and
 -- `player` are the offsets, from the shape's north-west corner, of the two
 -- cells a mon stands on. `axisYaw` rotates the canonical north/south battle
--- and camera basis in world space. Rotated shapes are authored-only: a local
--- encounter direction may justify one, while open-ground search must not
--- unpredictably turn unrelated arenas sideways.
+-- and camera basis in world space. Open-ground search retains the wide
+-- north/south court when it fits. A shallow court can then use its diagonal
+-- before squeezing both teams into a one-cell corridor.
 BattleArena.SHAPES = {
   { id = "wide",   w = 3, h = 6, enemy = { 1, 1 }, player = { 1, 4 },
     axisYaw = 0 },
@@ -341,7 +341,16 @@ BattleArena.SHAPES = {
     enemy = { 3, 0 }, player = { 0, 0 },
     axisYaw = math.pi / 2, narrow = true, authoredOnly = true },
 }
-BattleArena.SEARCH_SHAPES = { BattleArena.SHAPES[1], BattleArena.SHAPES[2] }
+-- A broad, shallow room has more usable separation across its diagonal.
+-- Inset both feet from the corners, leaving floor for the trainers. The
+-- whole six-by-four court must still pass native walkability and camera
+-- clearance; existing wide courts keep their original orientation.
+BattleArena.SHAPES[4] = { id="diagonal_east", w=6, h=4,
+  enemy={4.25,.75}, player={.75,2.25}, axisYaw=math.atan2(3.5,1.5) }
+BattleArena.SHAPES[5] = { id="diagonal_west", w=6, h=4,
+  enemy={.75,.75}, player={4.25,2.25}, axisYaw=-math.atan2(3.5,1.5) }
+BattleArena.SEARCH_SHAPES = { BattleArena.SHAPES[1],
+  BattleArena.SHAPES[4], BattleArena.SHAPES[5], BattleArena.SHAPES[2] }
 
 -- Whether a cell is open ground for the purpose above.
 --
@@ -405,13 +414,25 @@ BattleArena.entryList = entryList
 -- The map's open cells as one flat boolean grid, so the rectangle test
 -- below is a lookup rather than a tileset walk per cell. Built once per
 -- search; a battle asks for one.
-local function openGrid(map, surfing)
+local function openGrid(map, surfing, compact)
+  local furniture
+  if compact then
+    local ok, value = pcall(V.require, "VoxelFurniture")
+    if ok and type(value) == "table" then furniture = value end
+  end
   local w, h = map.widthCells, map.heightCells
   local grid = {}
   for cy = 0, h - 1 do
     local row = cy * w
     for cx = 0, w - 1 do
-      grid[row + cx] = openCell(map, cx, cy, surfing)
+      local free = openCell(map, cx, cy, surfing)
+      if free and compact then
+        -- Native chair cells may be walkable so seated NPCs can occupy them.
+        -- Their replacement seat/pedestal deck is not a spare battle aisle.
+        free = furniture and type(furniture.supportAt) == "function"
+          and furniture.supportAt(map, cx * CELL, cy * CELL, true) == nil
+      end
+      grid[row + cx] = free
     end
   end
   return grid, w, h
@@ -544,6 +565,29 @@ local function surfaceArtAt(map, cx, cy)
   return type(shape) == "table" and shape.art or nil
 end
 
+-- One synchronous camera solve may cast hundreds of overlapping rays.
+-- Share cell samples only within that solve; nothing survives into a new
+-- frame, option change, terrain edit or battle. Nested queries share the scope.
+local visibilitySamples
+function BattleArena.withVisibilitySamples(fn,...)
+  if visibilitySamples then return fn(...) end
+  visibilitySamples={}
+  local function pack(...)return {n=select('#',...),...}end
+  local result=pack(pcall(fn,...))
+  visibilitySamples=nil
+  if not result[1] then error(result[2],0) end
+  return unpack(result,2,result.n)
+end
+local function sampleCell(map,cx,cy)
+  if not visibilitySamples then return nil end
+  local cells=visibilitySamples[map]
+  if not cells then cells={};visibilitySamples[map]=cells end
+  local key=cx+cy*65536
+  local cell=cells[key]
+  if not cell then cell={};cells[key]=cell end
+  return cell
+end
+
 local function groundAt(map, wx, wz)
   local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
   if not map:inBounds(cx, cy) then
@@ -551,6 +595,8 @@ local function groundAt(map, wx, wz)
     -- ring is trees; treat it as solid so an arena is never framed through it
     return BattleArena.BORDER_H
   end
+  local sample=sampleCell(map,cx,cy)
+  if sample and sample.ground~=nil then return sample.ground end
   if visibilityVoxelScene == nil then
     local ok, scene = pcall(V.require, "VoxelScene")
     visibilityVoxelScene = ok and scene or false
@@ -558,7 +604,9 @@ local function groundAt(map, wx, wz)
   if not (visibilityVoxelScene
           and type(visibilityVoxelScene.groundAt) == "function") then return 0 end
   local ok, h = pcall(visibilityVoxelScene.groundAt, map, cx, cy)
-  return (ok and tonumber(h)) or 0
+  h=(ok and tonumber(h)) or 0
+  if sample then sample.ground=h end
+  return h
 end
 
 -- Footing uses the terrain surface. Camera rays additionally see the tops
@@ -566,6 +614,8 @@ end
 local function heightAt(map, wx, wz)
   local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
   if not map:inBounds(cx, cy) then return BattleArena.BORDER_H end
+  local sample=sampleCell(map,cx,cy)
+  if sample and sample.height~=nil then return sample.height end
   local h = groundAt(map, wx, wz)
   -- Ground height alone cannot see a house: buildings, walls and trees occupy
   -- collision cells above an otherwise level route. Treat blocked non-water
@@ -587,6 +637,7 @@ local function heightAt(map, wx, wz)
   if art == "grass" or art == "flower" then
     h = h + BattleArena.DECOR_H
   end
+  if sample then sample.height=h end
   return h
 end
 
@@ -705,17 +756,32 @@ function BattleArena.clearance(map, arena)
   return true
 end
 
+local function compactInterior(map)
+  -- A low, close camera is also valid in enclosed forest/cave aisles.
+  -- Candidate footprints, height and visibility still pass the same checks.
+  local tileset=map and map.def and map.def.tileset
+  if tileset=='FOREST' or tileset=='CAVERN' then return true end
+  local ok, rooms = pcall(V.require, "Gen1InteriorPanoramas")
+  return ok and type(rooms) == "table"
+    and type(rooms.profileFor) == "function"
+    and rooms.profileFor(map) ~= nil
+end
+
 -- Promote an otherwise safe placement to the short physical rig when the
--- telephoto eye has no collision-backed room. Ship interiors may additionally
--- use a close aisle seat. Every option must pass the same complete visibility
--- and camera-clearance checks before it can own a physical arena.
-function BattleArena.keepAnchorSafe(map, arena)
+-- telephoto eye has no collision-backed room. Ships and narrow courts in
+-- recognised native interiors may also use a short aisle seat. Every option
+-- must pass the same complete visibility and camera-clearance checks
+-- before it can own a physical arena.
+function BattleArena.keepAnchorSafe(map, arena, allowCompact)
   if BattleArena.clearance(map, arena) then return true end
   local previous = arena and arena.cam
   if arena then arena.cam = "wide" end
   if BattleArena.clearance(map, arena) then return true end
-  if arena and tostring(map and map.id or ""):match("^SS_ANNE_") then
-    arena.cam = "ship"
+  local compactRoom = allowCompact and arena and arena.narrow
+    and compactInterior(map)
+  if arena and (compactRoom
+      or tostring(map and map.id or ""):match("^SS_ANNE_")) then
+    arena.cam = compactRoom and "compact" or "ship"
     if BattleArena.clearance(map, arena) then return true end
   end
   if arena then arena.cam = previous end
@@ -842,6 +908,14 @@ function BattleArena.find(map, fromX, fromY, surfing)
     height = originHeight, maxDistance = BattleArena.MAX_ANCHOR_DISTANCE,
     roomy = urban and true or false, wideOnly = urban and true or false,
   })
+  -- Exhaust the existing placements before adding a shorter indoor camera.
+  -- A nearer compact candidate must not displace an already working arena.
+  if not found and compactInterior(map) then
+    found = BattleArena.search(map, fromX, fromY, surfing, true, {
+      height = originHeight, maxDistance = BattleArena.MAX_ANCHOR_DISTANCE,
+      compact = true,
+    })
+  end
   if found then found.map = map end
   return found
 end
@@ -862,7 +936,7 @@ end
 -- fight is the point, but an obstructed one still beats no battle at all.
 function BattleArena.search(map, fromX, fromY, surfing, wantClear, options)
   options = type(options) == "table" and options or nil
-  local grid, gw, gh = openGrid(map, surfing)
+  local grid, gw, gh = openGrid(map, surfing, options and options.compact)
   local passes = wantClear and { true } or { true, false }
   local shapes = options and options.wideOnly
     and { BattleArena.SEARCH_SHAPES[1] } or BattleArena.SEARCH_SHAPES
@@ -906,7 +980,8 @@ function BattleArena.search(map, fromX, fromY, surfing, wantClear, options)
                 end
               end
               local clear = allowed and (not needClear
-                            or BattleArena.keepAnchorSafe(map, cand))
+                            or BattleArena.keepAnchorSafe(map, cand,
+                              options and options.compact))
               if allowed and clear then
                 best, bestD = cand, d
               end

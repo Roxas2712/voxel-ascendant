@@ -30,7 +30,7 @@ end
 -- Same version-1 roster partition as the offline builder, not a gameplay
 -- generation rule. Expanding beyond 1025 requires an explicit content revision.
 local GEN_ENDS={151,251,386,493,649,721,809,905,1025}
-local function metadata(m,paths)
+local function metadata(m,paths,legacy)
   local gen,first,last=m.id:match("^apo%.pokemon%-hd%.g(%d%d)%.dex(%d%d%d%d)%-(%d%d%d%d)$")
   gen,first,last=tonumber(gen),tonumber(first),tonumber(last)
   if not integer(gen,1,#GEN_ENDS) or m.rosterGeneration~=gen
@@ -38,7 +38,7 @@ local function metadata(m,paths)
   local start=gen==1 and 1 or GEN_ENDS[gen-1]+1
   if first<start or first>GEN_ENDS[gen] or (first-start)%20~=0
       or last~=math.min(first+19,GEN_ENDS[gen]) then return false end
-  local identities,used={},{ }
+  local identities,used,flames={},{ },0
   for _,e in ipairs(m.entries)do
     if type(e)~="table" or not integer(e.dex,first,last)
       or type(e.form)~="string" or #e.form<1 or #e.form>64 or e.form:find("[^%w_-]")
@@ -47,6 +47,12 @@ local function metadata(m,paths)
     local form=e.form:lower();if form:match("^0+$")then form="base"end
     local key=table.concat({e.dex,form,e.gender,e.palette},":")
     if identities[key]then return false end;identities[key]=true
+    if m.schema=='apo.content-package/v2' and e.kind==legacy.KIND then
+      if not legacy.validate(e,paths)then return false end
+      flames=flames+1
+      for _,clip in pairs(e.clips)do used[clip.logicalPath]=true end
+    else
+    if m.schema=='apo.content-package/v2' and (e.kind~='apo.animation/v1' or e.dex==155) then return false end
     local l=e.layout
     if type(l)~="table" or not integer(l.cell_width,1,4096) or not integer(l.cell_height,1,4096)
       or not integer(l.left,0,l.cell_width-1) or not integer(l.right,l.left+1,l.cell_width)
@@ -61,6 +67,7 @@ local function metadata(m,paths)
       local clip=e.clips[kind]
       local file=type(clip)=="table" and paths[clip.logicalPath]
       if not file then return false end
+      if m.schema=='apo.content-package/v2' and not pathOK(clip.logicalPath)then return false end
       used[clip.logicalPath]=true
       if kind=="runtime"then
         if file.width~=16 or file.height~=96 then return false end
@@ -72,18 +79,24 @@ local function metadata(m,paths)
       end
     end
     if decoded>64*1024*1024 or e.clips.idle.logicalPath==e.clips.walk.logicalPath then return false end
+    end
   end
+  if m.schema=='apo.content-package/v2' and (m.id~=legacy.PACKAGE or flames~=2)then return false end
   for path in pairs(paths)do if not used[path]then return false end end
   return true
 end
 function M.new(deps)
   local self={epoch=0,packages={},index={},cache=assert(deps.cache)}
   local hash,decode=assert(deps.sha256),assert(deps.decode)
+  local legacy=deps.legacyFlame155 -- absent: retain the original v1-only parser
   local function read(key,limit)
     local ok,info=pcall(self.cache.info,self.cache,key)
-    if not ok or not info or info.type~="file" or not integer(info.size,1,limit) then return nil end
+    -- Portable cache metadata can omit size; keep limits and hash validation
+    -- based on the real bytes, and reject contradictory metadata when present.
+    if not ok or not info or info.type~="file" or (info.size~=nil and not integer(info.size,1,limit)) then return nil end
     local good,bytes=pcall(self.cache.read,self.cache,key)
-    return good and type(bytes)=="string" and #bytes==info.size and bytes or nil
+    return good and type(bytes)=="string" and integer(#bytes,1,limit)
+      and (info.size==nil or #bytes==info.size) and bytes or nil
   end
   local function write(key,bytes)
     local ok,result=pcall(self.cache.write,self.cache,key,bytes)
@@ -105,20 +118,25 @@ function M.new(deps)
       parts[i]=bytes
     end
     local bytes=table.concat(parts)
-    if #bytes~=file.bytes or hash(bytes)~=file.sha256 or bytes:sub(1,8)~="\137PNG\r\n\26\n"
+    local single=file.chunks[1]
+    local alreadyHashed=#file.chunks==1 and single.sha256==file.sha256 and single.bytes==file.bytes
+    if #bytes~=file.bytes or (not alreadyHashed and hash(bytes)~=file.sha256) or bytes:sub(1,8)~="\137PNG\r\n\26\n"
       or bytes:sub(13,16)~="IHDR" or u32(bytes,17)~=file.width or u32(bytes,21)~=file.height then return nil end
     return bytes
   end
   local function parse(raw,digest)
     if type(raw)~="string" or #raw>MANIFEST or not hashOK(digest) or hash(raw)~=digest then return nil end
     local ok,m=pcall(decode,raw)
-    if not ok or type(m)~="table" or m.schema~="apo.content-package/v1" or m.requiresContentApi~=1
+    if not ok or type(m)~="table" then return nil end
+    local v2=legacy and m.schema=='apo.content-package/v2' and m.requiresContentApi==2
+    if not (m.schema=='apo.content-package/v1' and m.requiresContentApi==1 or v2)
       or not idOK(m.id) or not integer(m.revision,1,2147483647)
       or not array(m.files,1,2048) or not array(m.entries,1,1024)
       or not array(m.dependencies,0,0) then return nil end
     local paths={}
     for _,f in ipairs(m.files) do
-      if type(f)~="table" or not pathOK(f.logicalPath) or paths[f.logicalPath] or not hashOK(f.sha256)
+      if type(f)~="table" or not (pathOK(f.logicalPath) or v2 and legacy.path(f.logicalPath))
+        or paths[f.logicalPath] or not hashOK(f.sha256)
         or not integer(f.bytes,1,FILE) or not integer(f.width,1,16384) or not integer(f.height,1,16384)
         or f.width*f.height>32*1024*1024 or not array(f.chunks,1,8) then return nil end
       local total=0
@@ -129,10 +147,10 @@ function M.new(deps)
       if total~=f.bytes then return nil end
       paths[f.logicalPath]=f
     end
-    if not metadata(m,paths)then return nil end
+    if not metadata(m,paths,legacy)then return nil end
     return m,paths
   end
-  local function loadSlot(id,slot)
+  local function loadSlot(id,slot,indexOnly)
     local record=read("hd-content/active/"..id.."."..slot,256)
     if not record then return nil end
     local seq,digest,checksum=record:match("^VASC%-HD%-1\n(%d+)\n([0-9a-f]+)\n([0-9a-f]+)$")
@@ -143,7 +161,9 @@ function M.new(deps)
     local raw=read("hd-content/manifests/"..digest,MANIFEST)
     local m,paths=parse(raw,digest)
     if not m or m.id~=id then return nil end
-    for _,f in ipairs(m.files) do if not fileBytes(f) then return nil end end
+    if not indexOnly then
+      for _,f in ipairs(m.files) do if not fileBytes(f) then return nil end end
+    end
     return {sequence=seq,digest=digest,manifest=m,paths=paths,slot=slot}
   end
   function self:inspect(raw,digest) return parse(raw,digest) end
@@ -164,14 +184,19 @@ function M.new(deps)
     self.epoch=self.epoch+1
     return true
   end
-  function self:restore(id)
+  local function restore(id,indexOnly)
     if not idOK(id) then return nil,"invalid_package_id" end
-    local a,b=loadSlot(id,0),loadSlot(id,1)
+    local a,b=loadSlot(id,0,indexOnly),loadSlot(id,1,indexOnly)
     local row=a and b and (a.sequence>b.sequence and a or b) or a or b
     if not row then return nil,"no_verified_activation" end
     return mount(row)
   end
-  -- Split a freshly verified boot mount from its writable download view
+  function self:restore(id)return restore(id,false)end
+  -- Recover only previously committed, checksum-verified activation metadata.
+  -- Every later image read still verifies its chunks, file digest and PNG
+  -- dimensions; activation of a new download still checks the entire package.
+  function self:restoreIndex(id)return restore(id,true)end
+  -- Split the verified activation index from its writable download view
   -- without reading every PNG a second time. Copy metadata only; each view
   -- owns its tables and every later read still verifies the underlying bytes.
   function self:forkVerified()

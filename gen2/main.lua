@@ -925,11 +925,9 @@ function V.require(name)
   return BaseV.require(name)
 end
 
--- Publish the generation-neutral PokemonUi v1 exchange in Gen 2 as well.
--- The ASC BOX provider is dormant until an authoritative host (for example a
--- future JASC Legacy Bank) registers. We deliberately do not install the
--- Gen-1 BoxMenu host adapter here, so Johto's reviewed native wide PC/Box
--- presentation and all storage rules remain untouched in a standalone run.
+-- Shared ASC BOX presentation; Gen2 owns its own storage guards and native
+-- summary/PC callbacks. Never install the Gen1 native factory wrappers here.
+BaseV.ascBoxPresentationModule = "AscBoxStoragePresentation"
 local PokemonUi, AscBoxProvider
 local pokemonUiProviderInstalled = false
 local pokemonUiProviderError
@@ -945,6 +943,14 @@ do
       local okInstall, installed, why = pcall(
         AscBoxProvider.install, PokemonUi)
       pokemonUiProviderInstalled = okInstall and installed == true
+      if pokemonUiProviderInstalled then
+        local okHost, hostResult = pcall(function()
+          return V.require("PokemonUiGen2Host").install(PokemonUi)
+        end)
+        if not okHost or hostResult ~= true then
+          pokemonUiProviderError = "Gen2 PC host: " .. tostring(hostResult)
+        end
+      end
       if not pokemonUiProviderInstalled then
         pokemonUiProviderError = tostring(okInstall and why or installed)
       end

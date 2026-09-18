@@ -48,7 +48,7 @@ local function shinyFrom(value)
   return value == "shiny" or value == "rare"
 end
 
-local function monIdentity(entity, species, variant, mapSpecies)
+local function monIdentity(entity, species, variant)
   entity = type(entity) == "table" and entity or {}
   local nested = type(entity.pokemon) == "table" and entity.pokemon
     or type(entity.mon) == "table" and entity.mon
@@ -78,7 +78,7 @@ local function monIdentity(entity, species, variant, mapSpecies)
     or entity.followerSpecies or entity.wildSpecies or entity.spawnSpecies
     or entity.encounterSpecies
     or (nested and (nested.species or nested.pokemonSpecies))
-    or sourceSpecies or entity.ambientSpecies or entity.species or mapSpecies or spriteId
+    or sourceSpecies or entity.ambientSpecies or entity.species or spriteId
   if type(resolvedSpecies) == "string" then
     resolvedSpecies = resolvedSpecies:upper()
   end
@@ -112,6 +112,12 @@ local function monIdentity(entity, species, variant, mapSpecies)
     nationalDex=resolvedDex,
     gender=paletteOwner.gender or paletteOwner.sex or entity.gender or entity.sex,
     shiny=shiny, dvs=paletteOwner.dvs or paletteOwner.dv,
+    -- The live owner's form must reach both presentation policy and the
+    -- actual card binder. Species-only native fallback definitions cannot
+    -- reconstruct it (e.g. Unown11); never alias that form to base. A nested
+    -- live Mon also takes precedence over stale form fields on its NPC.
+    form=paletteOwner.form, formId=paletteOwner.formId,
+    unownForm=paletteOwner.unownForm,
   }
 end
 
@@ -142,7 +148,12 @@ end
 local function entityContext(entity)
   if type(entity) ~= "table" then return nil end
   if entity.isPokemonFollower == true or entity.pikachuFollower == true
-      or entity.pokepcTrailer == true or entity.wildsFollower == true then
+      or entity.pokepcTrailer == true or entity.wildsFollower == true
+      -- KASC's native chain exposes its own marker and live party object;
+      -- it deliberately does not use the standalone/Wilds follower flags.
+      -- Requiring both keeps ordinary authored Pokemon on the city settings.
+      or entity._ascendantNativeFollower == true
+        and type(entity.followerMon) == "table" then
     return "follower"
   end
   if entity.wildsAmbientPokemon == true or entity.ambientSpecies ~= nil then
@@ -173,8 +184,10 @@ function PokemonWorldSprites:enabled(context)
 end
 
 function PokemonWorldSprites:_def(game, entity, species, variant, context, id)
-  local mon = monIdentity(entity, species, variant,
-    self.catalog.mapSpeciesFor and self.catalog.mapSpeciesFor(game, entity))
+  if context=='city' and not species and self.catalog.mapSpeciesFor then
+    species=self.catalog.mapSpeciesFor(game,entity)
+  end
+  local mon = monIdentity(entity, species, variant)
   local def, reason, record = self.sheets:def(game, mon, id, context)
   if not def then return nil, reason end
   def.providerId = "ascendant_walksheets"
@@ -230,7 +243,6 @@ function PokemonWorldSprites:_captureOriginal(entity, context)
       scaleClass=entity.ascendantScaleClass,
       worldHeight=entity.ascendantWorldHeight,
       modelSource=entity.ascendantPokemonModelSource,
-      modelDex=entity.ascendantPokemonModelDex,
       actorGrid=entity.ascendantActorVoxelGrid,
     }
     self.originals[entity] = original
@@ -264,8 +276,10 @@ end
 
 function PokemonWorldSprites:_presentation(game, entity, context, species,
     variant)
-  local mon = monIdentity(entity, species, variant,
-    self.catalog.mapSpeciesFor and self.catalog.mapSpeciesFor(game, entity))
+  if context=='city' and not species and self.catalog.mapSpeciesFor then
+    species=self.catalog.mapSpeciesFor(game,entity)
+  end
+  local mon = monIdentity(entity, species, variant)
   -- Gen-2 follower bridges commonly publish only a symbolic species on the
   -- live party object. Resolve that through the active game's catalogue before
   -- asking providers; passing nil made GO_ONLY incorrectly choose HD_2D even
@@ -384,7 +398,6 @@ function PokemonWorldSprites:_rememberModel(entity, context, boundDef)
   end
   if selected.id ~= "stadium2" and not cardBound then
     entity.ascendantPokemonModelSource = original.modelSource
-  entity.ascendantPokemonModelDex = original.modelDex
   end
   entity.ascendantPokemonSpriteMode = suppressModels and "walksheet_3x4"
     or selected.id == "stadium2" and (selected.id .. "_preferred")
@@ -534,7 +547,6 @@ function PokemonWorldSprites:_restoreEntity(entity, original)
   entity.ascendantScaleClass = original.scaleClass
   entity.ascendantWorldHeight = original.worldHeight
   entity.ascendantPokemonModelSource = original.modelSource
-  entity.ascendantPokemonModelDex = original.modelDex
   entity.ascendantActorVoxelGrid = original.actorGrid
   if original.scaleCaptured then
     entity.visualScale = original.visualScale

@@ -139,6 +139,7 @@ function R.evidence()
     'capture=3-second windows; latest 3 and worst 3 retained; no automatic upload'}
   if love.graphics then
     local w,h=call(love.graphics.getDimensions);lines[#lines+1]='resolution='..w..'x'..h
+    local pw,ph=call(love.graphics.getPixelDimensions);lines[#lines+1]='framebuffer='..pw..'x'..ph
     local stats=R.graphicsStats
     lines[#lines+1]='graphics-sampling=after-draw; at most once per second'
     if type(stats)=='table' then
@@ -159,7 +160,7 @@ function R.evidence()
     if options[key]~=nil then lines[#lines+1]='option.'..key..'='..safe(options[key]) end
   end
   local own=options.modOptions and options.modOptions.VOXEL_ASCENDANT or {}
-  for _,key in ipairs({'aa','battles','battleHudStyle','deviceProfile','shadows','preload','scenery','sky','skyEvents','water','weather','daytime','pokemonModelSkin'}) do
+  for _,key in ipairs({'aa','sceneResolution','battles','battleHudStyle','deviceProfile','shadows','preload','scenery','sky','skyEvents','water','weather','daytime','pokemonModelSkin'}) do
     if own[key]~=nil then lines[#lines+1]='vasc-option.'..key..'='..safe(own[key]) end
   end
   for _,key in ipairs({'voxel','tiltshift','curve','zoom'}) do

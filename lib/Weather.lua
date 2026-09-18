@@ -85,6 +85,12 @@ end
 -- consumes this same predicate for the daylight rig; weather and battles can
 -- therefore never disagree about Safari, the dock or the exposed ship bow.
 -- Real rooms still require an ordinary outdoor definition or an explicit ID.
+-- Lavender has authored local weather; it does not change the regional clock.
+function Weather.isLavender(map)
+  return map and map.def and map.def.generation~=2
+    and mapId(map)=="LAVENDER_TOWN" or false
+end
+
 function Weather.isOutdoor(map)
   if not (map and map.def) then return false end
   return defIsOutdoor(map.def) or SCENIC_OUTDOORS[mapId(map)] == true
@@ -127,6 +133,7 @@ end
 
 function Weather.modeAt(map, selected, clock, visit)
   local id = mapId(map)
+  if Weather.isLavender(map) then return "fog" end
   if not Weather.isOutdoor(map) then
     return "clear"
   end
@@ -197,6 +204,9 @@ end
 
 function Weather.mode(map)
   local id, outdoor = observeMap(map)
+  if Weather.isLavender(map) then
+    SkyEvents.setRainbowPreview(nil);noteResolved(id,"fog");return "fog"
+  end
   local selected = Weather.setting:get()
   if selected == "rainbow" then
     SkyEvents.setRainbowPreview(outdoor and id or nil)
@@ -219,6 +229,7 @@ function Weather.setSkyProvider(provider)
 end
 
 function Weather.skyState(map)
+  if Weather.isLavender(map) then return "fog", false end
   if skyProvider and Weather.isOutdoor(map) then
     local ok, supplied = pcall(skyProvider, map)
     if ok then
@@ -697,6 +708,8 @@ end
 -- Paint into and return the canvas supplied by VoxelScene. Failure is a
 -- visual fallback only: the already-finished world canvas remains valid.
 local function apply(canvas, w, h, map, cell, resolvedMode, battle)
+  -- Its depth-tested air is already in the world canvas, including battles.
+  if Weather.isLavender(map) then return canvas, canvas~=nil end
   local mode = resolvedMode or Weather.mode(map)
   local rainbow = not battle and SkyEvents.rainbowProgress(mapId(map)) or nil
   if not canvas then return canvas, false end

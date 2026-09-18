@@ -208,6 +208,12 @@ function Runtime:configure(game, world, mon)
         and info.type == "file" and (info.size == nil or info.size > 0)
     end
     if not self.assetPresence[relative] then
+      local native = self:_spriteDef(game, world)
+      if native and native.ascendantNativeFollowerFallback then
+        local def = clone(native)
+        def.pokemonSpecies, def.pokemonDex = mon.species, dex
+        return def, def.image, dex
+      end
       return nil, "no_usable_follower_sheet_owner_retained"
     end
   end
@@ -313,19 +319,35 @@ end
 function Runtime:_registerSprite()
   local content = self.mod.content and self.mod.content.sprites
   if not content then return false, "sprite_content_registry_unavailable" end
-  local existing
   if type(content.get) == "function" then
-    local ok, value = pcall(content.get, content, "SPRITE_PIKACHU")
-    if ok then existing = value end
+    local ok, existing = pcall(content.get, content, "SPRITE_PIKACHU")
+    if ok and existing then return true, "original_sprite_owner_retained" end
   end
   local relative = self.catalog.relative(25, false, false)
   if self.mod._vascIntegrated and not self.mod:info(relative) then
     -- The bootstrap record can be constructed before a party is adopted.
     -- Optional HD is not bundled; never publish a missing image to Gen2's
     -- eager SpriteRenderer. configure() selects the actual party art later.
-    if existing then return true, "original_sprite_owner_retained" end
-    relative = "assets/pokemmo-runtime/follower_025_male_normal_base.png"
+    relative = "assets/pokemmo-runtime/follower_025_none_normal_base.png"
     if not self.mod:info(relative) then
+      -- The shipped gender-aware MMO registry has male/female Pikachu,
+      -- not a neutral row. This is only the bootstrap NPC placeholder;
+      -- configure() still resolves the actual party's species and gender.
+      relative = "assets/pokemmo-runtime/follower_025_male_normal_base.png"
+    end
+    if not self.mod:info(relative) then
+      -- Red/Blue have no native Pikachu record. Reuse the cartridge's own
+      -- generic walking Pokemon, including its palette and frame contract.
+      -- No optional PNG is required just to initialise the follower owner.
+      local ok, native = pcall(content.get, content, "SPRITE_MONSTER")
+      if ok and type(native) == "table" and type(native.image) == "string"
+          and native.walker and (tonumber(native.frames) or 0) >= 6 then
+        local fallback = clone(native)
+        fallback.id = "SPRITE_PIKACHU"
+        fallback.ascendantNativeFollowerFallback = true
+        content:register("SPRITE_PIKACHU", fallback)
+        return true, "native_pokemon_fallback"
+      end
       return false, "follower_bootstrap_sheet_unavailable"
     end
   end
@@ -338,6 +360,11 @@ function Runtime:_registerSprite()
     pokemonSpecies="PIKACHU",
     pokemonDex=25,
   }
+  local existing
+  if type(content.get) == "function" then
+    local ok, value = pcall(content.get, content, "SPRITE_PIKACHU")
+    if ok then existing = value end
+  end
   if existing and type(content.patch) == "function" then
     content:patch("SPRITE_PIKACHU", fallback)
   else

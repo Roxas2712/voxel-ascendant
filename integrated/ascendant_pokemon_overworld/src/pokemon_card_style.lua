@@ -5,6 +5,7 @@ local identity = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}
 
 M.shaderSource = [[
 varying float cardShade;
+varying LOVE_HIGHP_OR_MEDIUMP float waterHeight;
 #ifdef VERTEX
 uniform mat4 vp; uniform mat4 model; uniform vec3 eye;
 uniform vec3 curve; uniform float pull;
@@ -12,6 +13,7 @@ attribute float VertexShade;
 vec4 position(mat4 transform_projection, vec4 vertex_position) {
   cardShade = VertexShade;
   vec4 w = model * vertex_position;
+  waterHeight = w.y;
   if (curve.z > 0.0) {
     vec2 cd = w.xz - curve.xy;
     w.y -= dot(cd, cd) * curve.z;
@@ -26,6 +28,7 @@ uniform vec2 cardTexel;
 uniform float cardOutlineWidth;
 uniform float cardToon;
 uniform float cardAlphaPass;
+uniform float actorWaterline;
 float cellAlpha(Image tex, vec2 uv) {
   // Test before clamping: adjacent cells are never allowed to contribute.
   if (uv.x < cardCell.x || uv.y < cardCell.y ||
@@ -49,6 +52,7 @@ vec3 softToon(vec3 rgb) {
   return value > 0.00001 ? rgb * (target / value) : rgb;
 }
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+  if (waterHeight < actorWaterline) discard;
   vec2 lo = cardCell.xy + cardTexel * 0.5;
   vec2 hi = cardCell.zw - cardTexel * 0.5;
   vec4 p = Texel(tex, clamp(tc, lo, hi));
@@ -163,6 +167,7 @@ function M.new()
       self.shader:send("cardOutlineWidth", descriptor.width)
       self.shader:send("cardToon", descriptor.toon)
       self.shader:send("cardAlphaPass", 0)
+      self.shader:send("actorWaterline", scene.actorWaterline or -30000)
     end)
     if not ok then self.error = tostring(err) return nil end
     return self.shader, descriptor

@@ -556,6 +556,14 @@ function M.installModManagerOptions(mod)
   return true
 end
 
+function M.contentState()
+  local ok, install = pcall(V.require, "StadiumInstall")
+  if not ok or type(install) ~= "table" then return {ready=false} end
+  local state = install.status and install.status.state
+  if state == "building" then return {ready=false,building=true,state=state} end
+  return {ready=install.ready()==true,building=false,state=state}
+end
+
 function M.available()
   -- The picker is available even without Dramatic Shape's optional helper;
   -- Android native-pick fallback is handled by M.choose.

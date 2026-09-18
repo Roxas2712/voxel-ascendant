@@ -478,7 +478,7 @@ if not INTEGRATED_KASC and not INTEGRATED_VASC then mod.options:define({
 -- intentionally queried at draw/update time rather than cached at startup so a
 -- launcher that applies mod options live can hand ownership back to another UI
 -- mod without requiring separate compatibility builds.
-local function optionChoice(key, fallback)
+function FloatingHud.readOptionChoice(key)
   -- The in-game VASC/KASC pages write the active save immediately, while the
   -- launcher-facing mod.options reader may still describe the boot value.
   -- Prefer the live VASC bucket so ORAS -> STANDARD -> ORAS takes effect in
@@ -490,12 +490,41 @@ local function optionChoice(key, fallback)
     local buckets = options and options.modOptions
     if type(buckets) ~= "table" then return nil end
     local own = type(mod.id) == "string" and buckets[mod.id] or nil
-    return type(own) == "table" and own[key] or nil
+    if type(own) == "table" then return own[key] end
   end)
   if okSaved and saved ~= nil then return tostring(saved) end
   local ok, value = pcall(function() return mod.options:get(key) end)
-  if not ok or value == nil then return fallback end
+  if not ok or value == nil then return nil end
   return tostring(value)
+end
+
+local function optionChoice(key, fallback)
+  local cache = FloatingHud.optionSnapshot
+  if not cache then
+    local value = FloatingHud.readOptionChoice(key)
+    if value == nil then return fallback end
+    return value
+  end
+  local value = cache[key]
+  if value == nil then
+    value = FloatingHud.readOptionChoice(key)
+    if value == nil then value = false end
+    cache[key] = value
+  end
+  if value == false then return fallback end
+  return value
+end
+
+-- Only one synchronous provider call owns this snapshot. Defaults may require
+-- a linear loader-schema search; repeated layout/asset queries in the same
+-- draw must not repeat it. The next draw/probe reads the live save again.
+function FloatingHud.withOptionSnapshot(fn, ...)
+  if FloatingHud.optionSnapshot then return fn(...) end
+  FloatingHud.optionSnapshot = {}
+  local ok, a, b, c, d = pcall(fn, ...)
+  FloatingHud.optionSnapshot = nil
+  if not ok then error(a, 0) end
+  return a, b, c, d
 end
 
 local function optionEnabled(key, fallback)
@@ -859,7 +888,9 @@ function FloatingHud.styleAsset(key)
   local original = assetImage("assets/hud/oras/" .. prefix .. key .. ".png")
   if FloatingHud.roundControls and FloatingHud.roundControls()
       and (key == "bag" or key == "pokemon" or key == "run" or key == "mega") then
-    local ok, art = pcall(V.require, "CompletedBattleButtons")
+    local art = Bundle.CompletedBattleButtons
+    local ok = type(art) == "table"
+    if not ok then ok, art = pcall(V.require, "CompletedBattleButtons") end
     if ok and type(art) == "table" then
       return art.image("assets/hud/oras/completed/" .. prefix .. key .. ".png", original, assetImage)
     end
@@ -2449,6 +2480,15 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
     end
   end
 
+  -- battle-heroes: trainer clearance, independent of Pokemon ownership.
+  for _, heroSide in ipairs({ 'playerHero', 'enemyHero' }) do
+    local actor = shot.actorVisuals and shot.actorVisuals[heroSide]
+    local rect = actor and actor.hull
+    if rect and x < rect[1] + rect[3] + clearance
+        and x + w + clearance > rect[1] then
+      y = math.max(minY, math.min(y, rect[2] - h - clearance))
+    end
+  end
   return { x, y, w, h }, drawScale, logicalW, logicalH, anchor
 end
 
@@ -2565,12 +2605,16 @@ end
 -- Head-projected slots re-run this exact evaluator. Safe-area, actor-hull,
 -- peer-card and reserved-band collisions remain authoritative and suppress an
 -- unsafe presentation frame.
-function FloatingHud.statusLatchFrameSafe(shot, slots, reserved)
+function FloatingHud.statusLatchFrameSafe(shot, slots, reserved, frame)
   if not (shot and tonumber(shot.pw) and tonumber(shot.ph)) then
     return false, "viewport-unavailable"
   end
-  local insetLeft, insetTop, insetRight, insetBottom =
-    FloatingHud.safeInsets(shot)
+  local insetLeft, insetTop, insetRight, insetBottom
+  if frame then
+    insetLeft,insetTop,insetRight,insetBottom=unpack(frame)
+  else
+    insetLeft,insetTop,insetRight,insetBottom=FloatingHud.safeInsets(shot)
+  end
   local padding = math.max(8, math.floor(math.min(shot.pw, shot.ph) * .012))
   local present = {}
   for _, side in ipairs({ "player", "enemy" }) do
@@ -2612,10 +2656,38 @@ end
 -- Any requested card anchor can collide after camera/phase/viewport changes.
 -- Search a bounded set of alternate seats before asking the camera to move.
 -- Keep dimensions, exact owner receipts and every collision gate unchanged.
-function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
-  local left,top,right,bottom=FloatingHud.safeInsets(shot)
+function FloatingHud.searchOwnerStatus(shot, slots, reserved, frame)
+  local left,top,right,bottom=unpack(frame)
   local pad=math.max(8,math.floor(math.min(shot.pw,shot.ph)*.012))+1
   local choices={}
+  local function before(distance,x,y,candidate)
+    if distance~=candidate.distance then return distance<candidate.distance end
+    if y~=candidate.rect[2] then return y<candidate.rect[2] end
+    return x<candidate.rect[1]
+  end
+  -- The obstacles are constant throughout this search. Expand them once;
+  -- individual candidates only need four comparisons per obstacle.
+  local blocked={}
+  local function obstacle(h)
+    if type(h)=="table" then
+      blocked[#blocked+1]={h[1]-(pad-1),h[2]-(pad-1),
+        h[1]+h[3]+pad-1,h[2]+h[4]+pad-1}
+    end
+  end
+  for _,side in ipairs({"player","enemy"}) do
+    obstacle(shot.actorVisuals and shot.actorVisuals[side]
+      and shot.actorVisuals[side].hull)
+  end
+  for _,h in ipairs(reserved or {}) do obstacle(h) end
+  local frameRight,frameBottom=shot.pw-(right or 0),shot.ph-(bottom or 0)
+  local function clear(x,y,w,h)
+    if x<(left or 0) or y<(top or 0) or x+w>frameRight or y+h>frameBottom then return false end
+    for i=1,#blocked do
+      local b=blocked[i]
+      if x<b[3] and x+w>b[1] and y<b[4] and y+h>b[2] then return false end
+    end
+    return true
+  end
   for _,side in ipairs({"player","enemy"}) do
     local slot=slots[side]
     if slot then
@@ -2647,22 +2719,25 @@ function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
       local list,seen={},{}
       for _,x in ipairs(xs) do for _,y in ipairs(ys) do
         if not retained then x,y=clamp(x,minX,maxX),clamp(y,minY,maxY) end
-        local key=tostring(x)..":"..tostring(y)
-        if not seen[key] then
-          seen[key]=true
-          local candidate={}
-          for k,v in pairs(slot) do candidate[k]=v end
-          candidate.rect={x,y,r[3],r[4]}
-          if FloatingHud.statusLatchFrameSafe(shot,{[side]=candidate},reserved) then
-            list[#list+1]={slot=candidate,distance=(x-r[1])^2+(y-r[2])^2}
+        local row=seen[x]
+        if not row then row={};seen[x]=row end
+        if not row[y] then
+          row[y]=true
+          local distance=(x-r[1])^2+(y-r[2])^2
+          -- Pair selection has always considered only the nearest 24 seats.
+          -- Keep exactly those in order instead of allocating and sorting
+          -- every valid combination, most of which is discarded immediately.
+          if (#list<24 or before(distance,x,y,list[24])) and clear(x,y,r[3],r[4]) then
+            local lo,hi=1,#list
+            while lo<=hi do
+              local mid=math.floor((lo+hi)/2)
+              if before(distance,x,y,list[mid]) then hi=mid-1 else lo=mid+1 end
+            end
+            table.insert(list,lo,{rect={x,y,r[3],r[4]},distance=distance})
+            list[25]=nil
           end
         end
       end end
-      table.sort(list,function(a,b)
-        if a.distance~=b.distance then return a.distance<b.distance end
-        if a.slot.rect[2]~=b.slot.rect[2] then return a.slot.rect[2]<b.slot.rect[2] end
-        return a.slot.rect[1]<b.slot.rect[1]
-      end)
       if #list==0 then return nil end
       choices[side]=list
     else choices[side]={{}} end
@@ -2672,15 +2747,77 @@ function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
     for ei=1,math.min(24,#choices.enemy) do
       local player,enemy=choices.player[pi],choices.enemy[ei]
       local distance=(player.distance or 0)+(enemy.distance or 0)
+      if bestDistance and distance>=bestDistance then break end
       if not bestDistance or distance<bestDistance then
-        local pair={player=player.slot,enemy=enemy.slot}
-        if FloatingHud.statusLatchFrameSafe(shot,pair,reserved) then
-          best,bestDistance=pair,distance
+        -- Each candidate already passed the same frame and obstacle gates.
+        -- Only collision with the other accepted card remains to be checked.
+        if not (player.rect and enemy.rect and
+            FloatingHud.rectanglesHit(player.rect,enemy.rect,pad-1)) then
+          best,bestDistance={player=player.rect,enemy=enemy.rect},distance
         end
       end
     end
   end
-  return best
+  if not best then return nil end
+  local result={}
+  for side,rect in pairs(best) do
+    local slot={}
+    for k,v in pairs(slots[side]) do slot[k]=v end
+    slot.rect=rect;result[side]=slot
+  end
+  return result
+end
+
+-- Camera reservations and the HUD compositor can ask for the same geometric
+-- search several times in one picture. Cache only scalar input/output geometry,
+-- never battlers, textures, shots or an attachment/commit decision.
+function FloatingHud.reflowOwnerStatus(shot, slots, reserved)
+  local l,t,r,b=FloatingHud.safeInsets(shot)
+  local frame={l or 0,t or 0,r or 0,b or 0}
+  local key={shot.pw,shot.ph,frame[1],frame[2],frame[3],frame[4]}
+  local function rect(value)
+    key[#key+1]=type(value)=="table"
+    if type(value)=="table" then
+      for i=1,4 do key[#key+1]=value[i] end
+    end
+  end
+  for _,side in ipairs({"player","enemy"}) do rect(slots[side] and slots[side].rect) end
+  local names={}
+  for name in pairs(shot.actorVisuals or {})do names[#names+1]=name end
+  table.sort(names)
+  key[#key+1]=#names
+  for _,name in ipairs(names) do
+    key[#key+1]=name;rect(shot.actorVisuals[name].hull)
+  end
+  key[#key+1]=#(reserved or {})
+  for _,value in ipairs(reserved or {})do rect(value) end
+  local cache=FloatingHud.reflowGeometryCache
+  if not cache then cache={};FloatingHud.reflowGeometryCache=cache end
+  local saved
+  for _,entry in ipairs(cache) do
+    local equal=#key==#entry.key
+    if equal then for i=1,#key do
+      if key[i]~=entry.key[i] then equal=false;break end
+    end end
+    if equal then saved=entry;break end
+  end
+  if not saved then
+    local result=FloatingHud.searchOwnerStatus(shot,slots,reserved,frame)
+    saved={key=key,rects=result and {} or false}
+    if result then for side,slot in pairs(result) do
+      saved.rects[side]={unpack(slot.rect)}
+    end end
+    if #cache==8 then table.remove(cache,1) end
+    cache[#cache+1]=saved
+    return result
+  end
+  if not saved.rects then return nil end
+  local result={}
+  for side,position in pairs(saved.rects) do
+    local slot={};for k,v in pairs(slots[side]) do slot[k]=v end
+    slot.rect={unpack(position)};result[side]=slot
+  end
+  return result
 end
 
 function FloatingHud.proposeStatusLatch(
@@ -3399,6 +3536,40 @@ end
 
 local cardCanvases = {}
 local cardMeshes = {}
+-- Keep only the two finished status textures. Camera transforms belong to
+-- drawCard, not to their contents; every visible gameplay value is sampled
+-- again before reuse (including animated HP and optional companion markers).
+FloatingHud.statusCanvasContents = {}
+function FloatingHud.statusCanvasKey(battle, side, battler, k, w, h, canvas)
+  local mon = battler.mon
+  local hp, maxHP = shownHP(battler)
+  local accent = editionAccentColor()
+  local theme = hudTheme()
+  local key = {canvas, side, k, w, h, hudStyle(), hp, maxHP,
+    tostring(battler.name or mon.species or ""), mon.level or "?",
+    mon.status or false, genderSymbol(battle, mon) or false,
+    hudLanguage(), FloatingHud.statusGlassStrength(),
+    hudExpChoice(battle), expRatio(battle, battler), hudCaughtChoice(battle),
+    showWildDVs(battle, side, battler) and (dvText(mon) or false) or false,
+    table.concat(FloatingHud.statusMarkerKinds(battle, side, battler), ","),
+    type(FloatingHud.partyForSide(battle, side)) == "table",
+    FloatingHud.ASSET_SCALE, FloatingHud.SHADOW_PX,
+    FloatingHud.SHADOW_GROW_PX, FloatingHud.CANVAS_PAD,
+    FloatingHud.CANVAS_RENDER_SCALE}
+  for _, color in ipairs({accent, theme.plate, theme.text, theme.shadow, theme.accent}) do
+    for i = 1, 4 do key[#key + 1] = color[i] or 1 end
+  end
+  for slot = 1, 6 do
+    key[#key + 1] = FloatingHud.partyBallState(battle, side, slot, battler)
+  end
+  return key
+end
+
+function FloatingHud.sameStatusCanvasKey(a, b)
+  if not a or #a ~= #b then return false end
+  for i = 1, #b do if a[i] ~= b[i] then return false end end
+  return true
+end
 -- VASC presents its world canvas upside-down on iOS. Intermediate HUD canvases
 -- are always authored upright; only their final world-plane draw is pre-flipped.
 FloatingHud.activeWorldPreflipHeight = nil
@@ -3437,6 +3608,15 @@ local function renderCardCanvas(battle, side, battler, k, logicalW, logicalH)
   local canvas, cw, ch, pad, raster, logicalCW, logicalCH =
     cardCanvas(side, logicalW, logicalH)
   if not canvas then return nil end
+
+  local contentKey = FloatingHud.statusCanvasKey(
+    battle, side, battler, k, logicalW, logicalH, canvas)
+  if FloatingHud.sameStatusCanvasKey(
+      FloatingHud.statusCanvasContents[side], contentKey) then
+    return canvas, logicalCW, logicalCH, pad
+  end
+  -- An interrupted draw must never publish partially rendered contents.
+  FloatingHud.statusCanvasContents[side] = nil
 
   local layout = FloatingHud.LAYOUT[side]
   local mon = battler.mon
@@ -3521,6 +3701,7 @@ local function renderCardCanvas(battle, side, battler, k, logicalW, logicalH)
   g.setBlendMode(prevBlend or "alpha", prevAlpha)
   g.setColor(1, 1, 1, 1)
   if not ok then error(err, 0) end
+  FloatingHud.statusCanvasContents[side] = contentKey
   return canvas, logicalCW, logicalCH, pad
 end
 
@@ -4193,6 +4374,11 @@ end
 
 function FloatingHud.roundControls()
   local shape = optionChoice("battle_controls_shape", "auto")
+  -- Old saves and selecting ORIGINAL after moving the dock must not restore
+  -- the cropped bottom edge in mid-air. GLASS remains its own complete style.
+  if shape == "original" and (tonumber(optionChoice("battle_controls_y", 0)) or 0) > 0 then
+    return true
+  end
   return shape == "round" or (shape == "auto" and (
     (tonumber(optionChoice("battle_controls_y", 0)) or 0) ~= 0
     or (tonumber(optionChoice("battle_controls_x", 0)) or 0) ~= 0
@@ -5659,14 +5845,41 @@ function FloatingHud.configureControls(ww, wh, rect, scale, logicalW, logicalH)
     scale * factor, logicalW, logicalH
 end
 
+-- Reserve the live touch hit areas, not just the device's home indicator.
+-- Layout is read again after rotation and respects the player's editor layout.
+function FloatingHud.touchCommandArea(shot,left,width,bottom)
+  local controls=Bundle and Bundle.TouchControls
+  if not (controls and type(controls.visible)=='function' and controls:visible()
+      and type(controls.layout)=='function')then return left,width,bottom end
+  local layout=controls:layout()
+  if type(layout)~='table'then return left,width,bottom end
+  local ww,wh=g.getDimensions()
+  local sx,sy=shot.pw/math.max(1,ww),shot.ph/math.max(1,wh)
+  local gap=math.max(8,math.min(shot.pw,shot.ph)*.018)
+  local right=left+width;local portrait=shot.ph>shot.pw
+  for _,name in ipairs({'dpad','a','b','start','select'})do
+    local zone=layout[name]
+    if zone and tonumber(zone.cx) and tonumber(zone.cy) and tonumber(zone.w) then
+      local rx=zone.w*.72*sx;local ry=(zone.h or zone.w)*.72*sy
+      local x,y=zone.cx*sx,zone.cy*sy
+      -- Top-corner START/SELECT do not consume the bottom menu's band.
+      if y+ry>shot.ph*.55 then
+        if portrait or name=='start' or name=='select' then bottom=math.min(bottom,y-ry-gap)
+        elseif x<shot.pw*.5 then left=math.max(left,x+rx+gap)
+        else right=math.min(right,x-rx-gap)end
+      end
+    end
+  end
+  return left,math.max(1,right-left),math.max(1,bottom)
+end
+
 function FloatingHud.screenDockRect(shot, kind)
   if not shot then return nil end
   local logicalW, logicalH = FloatingHud.panelLogicalSize(kind)
   if not (logicalW and logicalH) then return nil end
   -- Horizontal breathing room clears rounded phone corners. Vertically the
-  -- command cluster is deliberately anchored to the framebuffer itself on every
-  -- device. A reported iOS/Android home-indicator inset may reduce the scale, but
-  -- it must never make this visually continuous bottom UI float above the edge.
+  -- command cluster remains bottom-anchored on desktop. On touch screens the
+  -- complete menu lives above/between the actual controls and home indicator.
   -- The transparent supersampling pad may clip outside the framebuffer without
   -- clipping any authored control pixels.
   local insetLeft, _, insetRight, insetBottom = FloatingHud.safeInsets(shot)
@@ -5674,24 +5887,35 @@ function FloatingHud.screenDockRect(shot, kind)
   local pad = math.max(0, tonumber(FloatingHud.CANVAS_PAD) or 0)
   local totalAvailable = math.max(1,
     shot.pw - insetLeft - insetRight - safe * 2)
+  local dockLeft,dockWidth,dockBottom=FloatingHud.touchCommandArea(shot,
+    insetLeft+safe,totalAvailable,shot.ph-insetBottom-safe)
+  local touchDock=dockLeft~=insetLeft+safe or dockWidth~=totalAvailable
+    or dockBottom~=shot.ph-insetBottom-safe
   local safeHeight = math.max(1,
     shot.ph - insetBottom - safe * 2)
   local heightCap = math.max(0.25,
     (safeHeight * (FloatingHud.DOCK_HEIGHT_SHARE or 0.31))
       / (logicalH + pad * 2))
-  local scale = math.min(uiScale(shot), heightCap)
+  local scale = math.min(uiScale(shot), heightCap,touchDock and dockWidth/280 or math.huge)
   local padPixels = pad * scale
-  local contentAvailable = math.max(1, totalAvailable - padPixels * 2)
+  local contentAvailable = math.max(1, dockWidth - padPixels * 2)
   local maxLogicalWidth = math.max(1,
     tonumber(FloatingHud.DOCK_MAX_LOGICAL_WIDTH) or 720)
   local available = math.min(contentAvailable, maxLogicalWidth * scale)
-  local left = insetLeft + safe + (totalAvailable - available) * 0.5
-  local bottom = 0
+  local left = dockLeft + (dockWidth - available) * 0.5
+  local bottom = touchDock and shot.ph-dockBottom or insetBottom
   logicalW = available / scale
   local height = logicalH * scale
-  return FloatingHud.configureControls(shot.pw, shot.ph,
+  local rect,k,lw,lh=FloatingHud.configureControls(shot.pw, shot.ph,
     { left, shot.ph - bottom - height, available, height },
     scale, logicalW, logicalH)
+  if touchDock then
+    local fit=math.min(1,dockWidth/math.max(1,rect[3]),dockBottom/math.max(1,rect[4]))
+    rect[3],rect[4],k=rect[3]*fit,rect[4]*fit,k*fit
+    rect[1]=clamp(rect[1],dockLeft,math.max(dockLeft,dockLeft+dockWidth-rect[3]))
+    rect[2]=math.max(0,math.min(rect[2],dockBottom-rect[4]))
+  end
+  return rect,k,lw,lh
 end
 
 function FloatingHud.drawMenuPlane(canvas, cx, cy, width, height, side)
@@ -8740,6 +8964,15 @@ local hudProvider = {
 local registerProvider = INTEGRATED_VASC
   and registerBundledProvider
   or OverworldBattle.setBattleHudProvider
+function FloatingHud.snapshotProviderOptions(provider)
+  for _, method in ipairs({"draw", "cameraBounds", "damageBounds"}) do
+    local call = provider[method]
+    provider[method] = function(...)
+      return FloatingHud.withOptionSnapshot(call, ...)
+    end
+  end
+end
+FloatingHud.snapshotProviderOptions(hudProvider)
 if isAscendantHost and type(registerProvider) == "function" then
   local okProvider, providerReason = pcall(
     registerProvider, hudProvider)

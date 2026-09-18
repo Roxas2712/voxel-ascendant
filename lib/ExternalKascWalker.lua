@@ -141,7 +141,11 @@ end
 -- `deps` is a narrow deterministic test seam. Runtime callers omit it and
 -- resolve the already merged engine registry plus the public SpriteRenderer.
 function ExternalKascWalker.resolve(player, sprite, deps)
-  if independentState(player, sprite) then
+  local rider = deps and deps.rider == true and player
+    and not player._pokepcAsPokemon and not player._pokepcControlSpecies
+    and not player.pokepcControlSpecies
+    and not (spriteDef(sprite) and spriteDef(sprite).id == "SPRITE_PLAYER_POKEMON")
+  if independentState(player, sprite) and not rider then
     return sprite, "independent-state"
   end
 
@@ -206,6 +210,13 @@ function ExternalKascWalker.resolve(player, sprite, deps)
     cache[player] = { def=target, renderer=renderer }
   end
   return renderer, contract.id
+end
+
+-- Field cinematics draw a seated/standing human over their own vehicle.
+-- Reuse the same character as WALK without changing the native actor or its
+-- independent bike, surf and fishing renderers.
+function ExternalKascWalker.resolveRider(player, sprite)
+  return ExternalKascWalker.resolve(player, sprite, { rider = true })
 end
 
 function ExternalKascWalker.invalidate()

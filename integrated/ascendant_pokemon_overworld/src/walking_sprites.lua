@@ -10,6 +10,17 @@ WalkingSprites.__index = WalkingSprites
 
 WalkingSprites.SCHEMA = "ascendant.walking-sprite-replacements/v1"
 
+-- Character providers such as KASC publish their selected native renderer on
+-- the ordinary lifecycle events.  Bind the VASC presentation afterwards so
+-- their identity remains authoritative while our animated card remains the
+-- final visible renderer.
+local PRESENTATION_PRIORITY = -1000
+
+local unpackValues = table.unpack or unpack
+local function packValues(...)
+  return { n=select("#", ...), ... }
+end
+
 -- Explicitly rejected/not-yet-approved artwork never replaces the cartridge
 -- sprite.  Keeping the files outside runtime selection makes rollback exact
 -- while a corrected sheet is prepared.
@@ -96,8 +107,12 @@ local function identityRole(id, generation, kascActive)
   -- Gen 2's original male player constant is CHRIS.  KRIS is the Crystal
   -- heroine; treating both as Kris caused JASC Gold/Kris to inherit Red.
   if generation == 2 and value == "SPRITECHRIS" then return "gold" end
-  if generation == 2 and value == "SPRITEKRIS" then return "kris" end
-  if generation == 2 and (value == "SPRITEGOLD" or value == "SPRITEETHAN") then
+  if generation == 2 and (value == "SPRITEKRIS"
+      or value:find("JASCKRIS", 1, true)) then return "kris" end
+  if generation == 2 and (value == "SPRITESILVER"
+      or value:find("JASCSILVER", 1, true)) then return "silver" end
+  if generation == 2 and (value == "SPRITEGOLD" or value == "SPRITEETHAN"
+      or value:find("JASCGOLD", 1, true) or value:find("JASCETHAN", 1, true)) then
     return "gold"
   end
   if kascActive and (value == "SPRITEKAGREEN"
@@ -297,23 +312,8 @@ function WalkingSprites:_playerRole(refreshAuthority, player)
   -- briefly report nil/a default while advancing the world; retaining the
   -- role established by a load/map/selection event prevents Kris becoming
   -- Gold immediately after the first step.
-  if refreshAuthority == false and self.generation == 1
-      and self.playerRole == "red" then
-    for _, source in ipairs(self.compat.characterSources() or {}) do
-      if source.kind == "kasc" then
-        local role = tostring(invoke(source.provider,
-          "getPlayerCharacter") or ""):lower()
-        if role ~= "red" and self.atlasByRole[role] then
-          self.playerRole = role
-          if self.debugLog then
-            self.debugLog:role("kasc-save-recovery", role,
-              self.activeGame, player)
-          end
-          return role
-        end
-      end
-    end
-  end
+  -- Red follows the same identity latch as every other hero. A provider's
+  -- temporary value during an NPC/world update must not select another hero.
   if refreshAuthority == false and self.atlasByRole[self.playerRole] then
     return self.playerRole
   end
@@ -447,6 +447,19 @@ function WalkingSprites:_atlasFor(mapId, entity, row)
   return nil
 end
 
+-- KASC resolves the story role without rewriting the static map sprite.
+-- Use that live identity before consulting the generic NPC atlas catalog.
+function WalkingSprites:_npcVisual(mapId,entity,kascActive)
+  local selected=tostring(entity.ascendantCharacter or ""):lower()
+  if kascActive and (selected=="red" or selected=="blue" or selected=="green")
+      and self.atlasByRole[selected] then return self.atlasByRole[selected],selected end
+  local row=self:_rowFor(mapId,entity)
+  local atlas=self:_atlasFor(mapId,entity,row)
+  local role=atlas and roleFromPath(atlas)
+    or identityRole(self:_identity(entity),self.generation,kascActive)
+  return atlas or self.atlasByRole[role],role
+end
+
 function WalkingSprites:_bind(entity, atlas, role, identityOwner, action)
   if type(entity) ~= "table" or not atlas then return false end
   local runtime = self.runtimeByAtlas[atlas]
@@ -503,6 +516,13 @@ function WalkingSprites:_bind(entity, atlas, role, identityOwner, action)
 end
 
 function WalkingSprites:restore()
+  local bridge = self.showObjectBridge
+  if bridge then
+    if bridge.commands.show_object == bridge.wrapper then
+      bridge.commands.show_object = bridge.original
+    end
+    self.showObjectBridge = nil
+  end
   local count = 0
   for player, bridge in pairs(self.playerBridges) do
     if bridge.bike and player.bikeSprite == bridge.bike.sprite then
@@ -531,7 +551,6 @@ end
 function WalkingSprites:apply(game, refreshAuthority)
   game = game or self.activeGame
   if game then self.activeGame = game end
-  if not self:enabled() then return self:restore() end
   local world = worldFor(game)
   if type(world) ~= "table" then return 0 end
   local count = 0
@@ -542,6 +561,8 @@ function WalkingSprites:apply(game, refreshAuthority)
   local authority = refreshAuthority
   if authority == nil then authority = self.playerRole == nil end
   local playerRole = self:_playerRole(authority, player)
+  if not self:enabled() then return self:restore() end
+  self:_observeShownObjects()
   if player then count = count + self:_bindPlayer(game, player, playerRole) end
   local mapId = world.map and world.map.id
   local kascActive = self:_kasc() ~= nil
@@ -555,13 +576,7 @@ function WalkingSprites:apply(game, refreshAuthority)
       for _, entity in pairs(bucket) do
         if type(entity) == "table" and not seen[entity] then
           seen[entity] = true
-          local row = self:_rowFor(mapId, entity)
-          local atlas = self:_atlasFor(mapId, entity, row)
-          local sourceDef = entity.sprite and entity.sprite.def or entity.spriteDef or {}
-          local identity = self:_identity(entity) or sourceDef.id
-          local role = atlas and roleFromPath(atlas)
-            or identityRole(identity, self.generation, kascActive)
-          atlas = atlas or self.atlasByRole[role]
+          local atlas,role=self:_npcVisual(mapId,entity,kascActive)
           if self:_bind(entity, atlas, role) then count = count + 1 end
         end
       end
@@ -569,6 +584,41 @@ function WalkingSprites:apply(game, refreshAuthority)
   end
   self.applied = self.applied + count
   return count
+end
+
+-- Gen 1's show_object creates a fresh NPC without emitting npc_spawned.
+-- Bind only that named live object after the native command; never respawn
+-- the map or rescan its actors every frame during an escort/cutscene.
+function WalkingSprites:_observeShownObjects()
+  if self.generation ~= 1 or self.showObjectBridge then return end
+  local ok, commands = pcall(require, "src.script.Commands")
+  if not ok or type(commands) ~= "table"
+      or type(commands.show_object) ~= "function" then return end
+  local binder, original = self, commands.show_object
+  local bridge = { commands=commands, original=original }
+  local function finish(ctx, mapId, objName, ...)
+    if binder.showObjectBridge == bridge and binder:enabled()
+        and type(ctx) == "table" and ctx.game == binder.activeGame then
+      local world = worldFor(ctx.game)
+      if world and ctx.overworld == world and world.map and world.map.id == mapId then
+        for _, entity in pairs(world.npcs or {}) do
+          if entity ~= world.player and entity.def and entity.def.name == objName then
+            local atlas,role=binder:_npcVisual(mapId,entity,binder:_kasc()~=nil)
+            if binder:_bind(entity,atlas,role) then
+              binder.applied = binder.applied + 1
+            end
+            break
+          end
+        end
+      end
+    end
+    return ...
+  end
+  bridge.wrapper = function(ctx, mapId, objName, ...)
+    return finish(ctx, mapId, objName, original(ctx, mapId, objName, ...))
+  end
+  self.showObjectBridge = bridge
+  commands.show_object = bridge.wrapper
 end
 
 -- KASC may replace only the live player renderer after changing its Kanto
@@ -598,8 +648,12 @@ function WalkingSprites:_bindPlayer(game, player, role)
       if type(raw) == "function" then
         local entry = {own=rawget(player, name)}
         entry.wrapper = function(p, ...)
+          local result = packValues(raw(p, ...))
+          -- KASC can replace the live renderer while the player method runs.
+          -- Repair after it returns so Green/Blue cannot flash back to their
+          -- provider card and silently leave the blink/motion renderer.
           self:refreshPlayer(game)
-          return raw(p, ...)
+          return unpackValues(result, 1, result.n)
         end
         bridge[name] = entry
         player[name] = entry.wrapper
@@ -643,16 +697,17 @@ function WalkingSprites:install()
         if binder.generation == 2 then
           binder.playerRole = binder:_savedPlayerRole(game)
           binder:apply(game, binder.playerRole == nil)
-        elseif event == "save.loaded" then
-          binder:apply(game, false)
+        else
+          binder.playerRole = nil
+          binder:apply(game, "kasc-event")
         end
-      end)
+      end, PRESENTATION_PRIORITY)
     end
     for _, event in ipairs({ "game.ready", "map.entered",
         "map.reloaded" }) do
       self.mod.events:on(event, function(ev)
         binder:apply(ev and ev.game or binder.activeGame, false)
-      end)
+      end, PRESENTATION_PRIORITY)
     end
     self.mod.events:on("character.selected", function(ev)
       -- JASC currently also emits this seam while rebuilding the player on
@@ -662,7 +717,7 @@ function WalkingSprites:install()
       -- remains latched; a newly loaded/created runtime gets its own binder.
       binder:apply(ev and ev.game or binder.activeGame,
         binder.generation == 1 and "kasc-event" or false)
-    end)
+    end, PRESENTATION_PRIORITY)
     self.mod.events:on("mod.johto_ascendant.character_selected", function(ev)
       if binder.generation ~= 2 then return end
       local selected = tostring(ev and ev.character or ""):lower()
@@ -678,15 +733,15 @@ function WalkingSprites:install()
         end
       end
       binder:apply(ev and ev.game or binder.activeGame, false)
-    end)
+    end, PRESENTATION_PRIORITY)
     self.mod.events:on("world.stepped", function(ev)
       binder:refreshPlayer(ev and ev.game or binder.activeGame)
-    end)
+    end, PRESENTATION_PRIORITY)
     self.mod.events:on("mod.options_changed", function(ev)
       if not ev or not ev.mod or ev.mod == binder.mod.id then
         binder:apply(binder.activeGame)
       end
-    end)
+    end, PRESENTATION_PRIORITY)
   end
   return true
 end
@@ -703,11 +758,59 @@ function WalkingSprites:health()
   }
 end
 
+-- A render-only normal body for field actions. Selection and outfit come
+-- from the same authority as walking; no action may invent a default hero.
+function WalkingSprites:fieldSprite(player)
+  if not self:enabled() or not player then return nil end
+  local role = self:_playerRole(false, player)
+  local current = player.sprite
+  local def = current and current.def or {}
+  local atlas = def.ascendantAtlasRelative
+  if def.ascendantCharacterAction or def.ascendantRole ~= role or not atlas then
+    atlas = self.atlasByRole[role]
+  end
+  if not atlas or not self.runtimeByAtlas[atlas] then return current end
+  self.fieldSprites = self.fieldSprites or {}
+  local key = tostring(role) .. ":" .. atlas
+  if not self.fieldSprites[key] then
+    local actor = {sprite=current, spriteDef=def, id="player"}
+    if not self:_bind(actor, atlas, role, self:_playerIdentityOwner()) then
+      if not (actor.sprite and actor.sprite.def.ascendantAtlasImage) then return nil end
+    end
+    self.fieldSprites[key] = actor.sprite
+  end
+  return self.fieldSprites[key]
+end
+
+-- Recover the chosen normal cartridge body while Gen 2 temporarily owns a
+-- SURF/bicycle renderer. Gender alone cannot distinguish Gold from Silver.
+function WalkingSprites:fieldNativeDef(player, world)
+  local role = self:_playerRole(false, player)
+  local function matches(def)
+    if type(def) ~= "table" or def.ascendantAtlasImage then return false end
+    local id = normalize(def.id)
+    return not (id:find("SURF") or id:find("BIKE") or id:find("FISH"))
+      and identityRole(def.id, self.generation, self:_kasc() ~= nil) == role
+  end
+  local original = self.originals and self.originals[player]
+  for _,sprite in pairs({player and player.sprite, original and original.sprite}) do
+    if sprite and matches(sprite.def) then return sprite.def end
+  end
+  local names = {}
+  for name,def in pairs(world and world.sprites or {}) do
+    if matches(def) then names[#names+1]=name end
+  end
+  table.sort(names)
+  return names[1] and world.sprites[names[1]] or nil
+end
+
 function WalkingSprites:public()
   local binder = self
   return {
     schema=WalkingSprites.SCHEMA,
     enabled=function() return binder:enabled() end,
+    fieldSprite=function(player) return binder:fieldSprite(player) end,
+    fieldNativeDef=function(player, world) return binder:fieldNativeDef(player, world) end,
     refresh=function(game) return binder:apply(game) end,
     restore=function() return binder:restore() end,
     health=function() return binder:health() end,

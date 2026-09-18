@@ -416,6 +416,7 @@ local function createController(mod, opts)
     if type(state) ~= "table" or (not BagSkin and not FrlgBagSkin) then
       return false
     end
+    if state.kind == "elevator_floors" then return false end
     -- Screens assigns this stable id to the final state returned by every
     -- BagMenu provider.  KASC's pocket title changes from ITEMS to e.g.
     -- KEY ITEMS and provider wrappers may hide the original ListMenu
@@ -795,6 +796,59 @@ local function createController(mod, opts)
 
   function G.decorate(state, forcedBagStyle)
     if type(state) ~= "table" or state[G.decoratedMarker] then return state, false end
+
+    -- Gen-I elevators reuse the engine's item-list widget, not its inventory.
+    -- Keep its floor callbacks and native input, with a compact cabin overlay.
+    if state.kind == "elevator_floors" and type(state.items) == "table" then
+      state[G.decoratedMarker] = true
+      state.__ascendantElevatorFloors = true
+      state.__ascendantGlobalUiSkinBagSkipped = "elevator_floors"
+      state.isOpaque = false
+      state.rows = math.min(7, math.max(1, #state.items))
+      state.cursorRows = state.rows
+      local game = gameFor(state)
+      local states = game and game.stack and game.stack.states
+      local prompt = states and states[#states-1]
+      if prompt and classInstance(prompt, classes.TextBox) and type(prompt.draw)=="function" then
+        local drawPrompt = prompt.draw
+        prompt.draw = function(self,...)
+          if game.stack:top()==state then return end
+          return drawPrompt(self,...)
+        end
+      end
+      local function drawFloors(self)
+        local g = loveRuntime().graphics
+        local rows = self.rows
+        local x,w,h = 28,104,38+rows*12
+        local y = math.floor((144-h)/2)
+        local de = tostring(activeLanguage(gameFor(self))):sub(1,2) == "de"
+        g.setColor(.035,.055,.075,.96);g.rectangle("fill",x,y,w,h,2,2)
+        g.setColor(.40,.66,.72,1);g.rectangle("line",x+.5,y+.5,w-1,h-1,2,2)
+        g.setColor(.94,.87,.62,1);Font.draw(de and "FAHRSTUHL" or "ELEVATOR",x+8,y+7)
+        g.setColor(.30,.39,.43,1);g.rectangle("fill",x+7,y+20,w-14,1)
+        for row=1,rows do
+          local i=(self.scroll or 0)+row;local item=self.items[i]
+          if item then
+            local yy=y+25+(row-1)*12
+            if i==self.index then
+              g.setColor(.18,.32,.36,1);g.rectangle("fill",x+5,yy-2,w-10,12)
+              g.setColor(1,.82,.39,1);g.polygon("fill",x+8,yy,x+13,yy+4,x+8,yy+8)
+            else g.setColor(.86,.91,.92,1)end
+            local label=tostring(item.label or "")
+            if item.cancel or label=="CANCEL" then label=de and "ZURUECK" or "CANCEL" end
+            Font.draw(label,x+21,yy)
+          end
+        end
+        g.setColor(.62,.74,.77,1)
+        Font.draw("A OK  B "..(de and "ZUR." or "BACK"),x+7,y+h-10)
+        markTrueColorRect(g,x,y,w,h)
+        g.setColor(1,1,1,1)
+      end
+      state.draw = function(self,...)
+        return drawWithSkin(self,drawFloors,true,...)
+      end
+      return state,true
+    end
 
     local authoredMenu = authoredNonBagMenuMarker(state)
     if authoredMenu then

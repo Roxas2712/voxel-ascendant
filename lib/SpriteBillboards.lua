@@ -61,9 +61,16 @@ local function sourceFrameSize(def, iw, ih)
   return fw, fh
 end
 
-local function buildCard(def, frame)
-  local ok, img = pcall(Assets.image, def.image)
-  if not (ok and img) then return nil end
+local function buildCard(def, frame, sourceImage)
+  -- The live renderer already owns this sheet. Reuse its dimensions instead
+  -- of requesting (and possibly generating) the same runtime PNG again.
+  local img = sourceImage
+  if not img then
+    local ok, loaded = pcall(Assets.image, def.image)
+    if not ok then return nil end
+    img = loaded
+  end
+  if not img then return nil end
   local iw, ih = img:getDimensions()
   local fw, fh = sourceFrameSize(def, iw, ih)
   frame = math.max(0, math.floor(tonumber(frame) or 0))
@@ -94,7 +101,7 @@ end
 -- the mesh would read as "behind something" and repaint the figure on open
 -- ground whether or not anything hides it; and the sun must see the same
 -- outline the camera does, or a shadow stops matching what casts it.
-function SpriteBillboards.mesh(def, frame)
+function SpriteBillboards.mesh(def, frame, sourceImage)
   local key = table.concat({
     def.image,
     tostring(def.frames or ""),
@@ -103,7 +110,7 @@ function SpriteBillboards.mesh(def, frame)
     tostring(math.max(0, math.floor(tonumber(frame) or 0))),
   }, "#")
   if meshes[key] == nil then
-    local ok, m = pcall(buildCard, def, frame)
+    local ok, m = pcall(buildCard, def, frame, sourceImage)
     meshes[key] = (ok and m) or false
   end
   return meshes[key] or nil

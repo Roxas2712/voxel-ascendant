@@ -151,6 +151,15 @@ end
 -- Prepare metadata before option schemas; boot after the generation exports
 -- and declared provider dependencies, but before content registration closes.
 -- The external host stays closed.
+local nativeContentInfo=mod.info
+local contentSession = runEntry(mod, "lib/AscendantContentSession.lua").new(mod)
+runEntry(mod, "lib/SpriteBundledSession.lua").attach(contentSession,mod,nativeContentInfo,"vasc")
+runEntry(mod, "lib/SpriteStartupOffer.lua").attach(contentSession)
+mod.hooks:wrap("core.update",function(nextFn,game,dt)
+  local result={nextFn(game,dt)}
+  contentSession:update(game,dt)
+  return (unpack or table.unpack)(result)
+end)
 local OverworldCard = runEntry(mod, "lib/OverworldPokemonCard.lua")
 local overworldCard = OverworldCard.new(mod)
 mod._vascOverworldCard = overworldCard
@@ -226,8 +235,13 @@ local GEN2_A21_SHARED_UI = {
   -- The sort action is generation-neutral; its Gen-2 adapter supplies the
   -- four-pocket ordering callback while the shared renderer owns the button.
   ["lib/ManualBagSort.lua"] = "lib/ManualBagSort.lua",
-  ["lib/PokemonUi.lua"] = "lib/gen2_a21_shared/PokemonUi.lua",
-  ["lib/AscBoxProvider.lua"] = "lib/gen2_a21_shared/AscBoxProvider.lua",
+  -- ASC BOX is now one shared controller/renderer with a dedicated Gen2
+  -- native host; other A21 menu adapters retain their original contracts.
+  ["lib/PokemonUi.lua"] = "lib/PokemonUi.lua",
+  ["lib/AscBoxProvider.lua"] = "lib/AscBoxProvider.lua",
+  ["lib/PokemonUiGen1Hosts.lua"] = "lib/PokemonUiGen1Hosts.lua",
+  ["lib/MobileMenuPresentation.lua"] = "lib/MobileMenuPresentation.lua",
+  ["lib/AscBoxStoragePresentation.lua"] = "lib/OrasPartyPresentation.lua",
   ["lib/BattleLayout.lua"] = "lib/gen2_a21_shared/BattleLayout.lua",
   ["lib/BattleLayoutProfile.lua"] =
     "lib/gen2_a21_shared/BattleLayoutProfile.lua",

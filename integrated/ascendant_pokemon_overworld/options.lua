@@ -1,5 +1,16 @@
 return {
   {
+    key = "card_animation_mode", type = "choice", label = "KARTENANIMATION",
+    default = "classic",
+    choices = {{"KLASSISCH", "classic"}, {"NATUERLICH", "natural"}},
+    description = "NATUERLICH aktiviert neue menschliche Lauf- und Ruhebewegungen. KLASSISCH stellt sofort die bisherige Kartenanimation wieder her. Originalgrafiken bleiben ueber HD-MENSCHEN erreichbar.",
+  },
+  {
+    key = "human_acting_pilot", type = "toggle", label = "DIALOGPOSEN (TEST)",
+    default = false,
+    description = "Figuren-Test: Eich und Blau schauen im Alabastia-Startdialog zum Gespraechspartner. Rots Mutter sitzt auf ihrem Stuhl und dreht im Gespraech den Kopf. Benoetigt NATUERLICH und HD-MENSCHEN; Figurenraster AUS. Lind und die Mutter in Neuborkia blinzeln und atmen im direkt gestarteten Gespraech. Die Besucherin gegenueber atmet im Gespraech. Weitere Figuren folgen. KLASSISCH oder HD-MENSCHEN AUS setzt die Darstellung zurueck.",
+  },
+  {
     key = "hd_walking_sprites",
     type = "toggle",
     label = "HD-MENSCHEN",
@@ -156,7 +167,7 @@ return {
       { "NUR POKEMON", "pokemon" },
       { "BEIDE", "both" },
     },
-    description = "Zerlegt die sichtbare Alpha-Silhouette der von dieser Mod gezeichneten Menschen und/oder Pokemon in getrennte kleine 3D-Wuerfel mit dunklen Fugen. Transparente Zellen bleiben leer; VASCs Terrain- und Kampfraster bleiben davon unabhaengig.",
+    description = "Stellt Menschen und/oder Pokemon aus kleinen 3D-Zellen dar. Natuerlich animierte Menschen erhalten geschlossene, farbige Oberflaechen ohne schwarze Rasterfugen. Klassisch behaelt das bisherige Raster. Terrain- und Kampfraster bleiben unabhaengig.",
   },
   {
     key = "actor_voxel_cubes",
@@ -170,7 +181,7 @@ return {
       { "STARK", "strong" },
       { "EXTREM", "extreme" },
     },
-    description = "Regelt bei aktivem FIGUREN-VOXELRASTER Tiefe und Anzahl der miteinander verbundenen Wuerfelstufen. Das schwarze Trenngitter bleibt erhalten. MITTEL entspricht ungefaehr dem bisherigen 3D-Schalter; EXTREM baut den deutlichsten Minecraft-Koerper.",
+    description = "Regelt bei aktivem FIGUREN-VOXELRASTER Tiefe und Anzahl der miteinander verbundenen Wuerfelstufen. MITTEL entspricht ungefaehr dem bisherigen 3D-Schalter; EXTREM baut den deutlichsten Minecraft-Koerper.",
   },
   {
     key = "atmospheric_sprite_shading",

@@ -166,7 +166,7 @@ local function spriteFor(world, mon)
   local path = imagePath(ASSET_DIR .. "/" .. key .. ".png")
   if not (g and type(g.newImage) == "function" and path) then return nil end
   local ok
-  ok, image = pcall(g.newImage, path)
+  ok, image = pcall(function() return require("src.render.Assets").image(path) end)
   if not ok or not image then
     imageCache[key] = false
     return nil

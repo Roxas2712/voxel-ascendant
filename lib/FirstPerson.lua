@@ -608,6 +608,14 @@ function FirstPerson.frame(me, cx, cy, vw, vh)
   -- diorama) this hands back the head and the focus untouched, so the two
   -- rungs are one rig with one number between them.
   local camEye, camFocus = ThirdPerson.place(head, lx, ly, lz, fpFocus)
+  if me and me.fieldCinematic then
+    -- Pickup/landing needs room for the chosen rider and Pokemon. The normal
+    -- first-person eye (or a collapsed third-person boom) can put the foot
+    -- behind the lens, preventing the cinematic from claiming any frame.
+    -- This camera is render-local: keep the user's level, yaw and zoom.
+    camEye={head[1],head[2]+52,head[3]+96}
+    camFocus={head[1],head[2]-9,head[3]}
+  end
 
   local oEye, oFocus, oFov, oUp = orbitRig(cx, cy, vh)
   local function mix(p, q)

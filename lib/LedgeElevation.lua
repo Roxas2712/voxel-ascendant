@@ -130,6 +130,18 @@ local cache = setmetatable({}, { __mode = "k" })
 local worldMaps = setmetatable({}, { __mode = "v" })
 local worldLocal = setmetatable({}, { __mode = "v" })
 local worldBase = {}
+local worldWater = {}
+local localFields = setmetatable({}, { __mode = "k" })
+
+local function cachedLocal(map, data, buildMode, buildFn)
+  local entry = localFields[map]
+  if entry and entry.data == data and entry.mode == buildMode then
+    return entry.field
+  end
+  local field = buildFn(map, data, buildMode)
+  localFields[map] = { data=data, mode=buildMode, field=field }
+  return field
+end
 
 local testMode
 local function mode()
@@ -920,6 +932,7 @@ local function build(map, data, buildMode)
   -- datum inside its own authored mass. Thus stones enclosing a raised terrace
   -- rise with that terrace, while the road after those stones can immediately
   -- return to zero. No event is extended across the map.
+  local function inheritScenery()
   local blockedVisited, queue = {}, {}
   for y = 0, height - 1 do
     Budget.check()
@@ -1060,6 +1073,54 @@ local function build(map, data, buildMode)
     end
   end
 
+  end
+  inheritScenery()
+
+  -- Contour columns can leave a one-cell walkable channel at zero between
+  -- two raised plateaux (Route 3's lass at 23,4). Such a channel has no
+  -- collision ledge on either side: it is a road, not an authored trench.
+  -- Close only this strictly bracketed single-cell case. Water, warps and
+  -- all actual jump source/lip/landing cells retain their native treatment.
+  local roadClosures = {}
+  if mapTileset == "OVERWORLD" then
+    local protected = {}
+    for _, o in ipairs(occurrences) do
+      protected[o.sy * width + o.sx] = true
+      protected[o.ly * width + o.lx] = true
+      if o.landing then protected[o.ty * width + o.tx] = true end
+    end
+    local function road(x, y)
+      return walkable(x, y) and not water(x, y)
+        and not (type(map.isWarpTileCell) == "function" and map:isWarpTileCell(x, y))
+    end
+    local closureAxes = {{1,0,"right","left"},{0,1,"down","up"}}
+    for y = 1, height - 2 do for x = 1, width - 2 do
+      Budget.tick()
+      local key = y * width + x
+      if not protected[key] and road(x, y) then
+        local old = values[key] or 0
+        local candidate
+        for _, axis in ipairs(closureAxes) do
+          local dx,dy = axis[1],axis[2]
+          local ax,ay,bx,by = x-dx,y-dy,x+dx,y+dy
+          local av,bv = values[ay * width + ax] or 0, values[by * width + bx] or 0
+          if av > old and bv > old and math.abs(av-bv) <= step
+              and road(ax,ay) and road(bx,by) then
+            local nextCandidate = {x=x,y=y,low=math.min(av,bv),high=math.max(av,bv),
+              direction=av>=bv and axis[3] or axis[4]}
+            if candidate and (candidate.low ~= nextCandidate.low
+                or candidate.high ~= nextCandidate.high) then candidate=false;break end
+            candidate = nextCandidate
+          end
+        end
+        if candidate then roadClosures[#roadClosures+1]=candidate end
+      end
+    end end
+    -- Apply simultaneously; a correction must never flood out into the next
+    -- valley or invent further candidates based on its own changed heights.
+    for _, c in ipairs(roadClosures) do values[c.y * width + c.x]=c.low end
+  end
+
   -- The local axis merge can still meet a lip at a mixed-axis endpoint. A
   -- physical lip is always exactly one course below its own standing side;
   -- its high 8px half is restored separately below.
@@ -1092,6 +1153,28 @@ local function build(map, data, buildMode)
       end
     end
     if not changed then break end
+  end
+
+  -- Resolve exaggerated walking grades only after native jump datums have
+  -- reached their fixed point. Rebind neighbouring rock/object foundations
+  -- to the corrected ground before deriving any tile geometry or footing.
+  if mapTileset == "OVERWORLD" and (buildMode == "world" or buildMode == "local") then
+    local protected = {}
+    for _, o in ipairs(occurrences) do
+      protected[o.sy * width + o.sx] = true
+      protected[o.ly * width + o.lx] = true
+      if o.landing then protected[o.ty * width + o.tx] = true end
+    end
+    for _, c in ipairs(roadClosures) do
+      protected[c.y * width + c.x] = true
+      for _, d in ipairs(NEIGHBOURS) do
+        protected[(c.y+d[2]) * width + c.x+d[1]] = true
+      end
+    end
+    if V.require("RoadGradeLimiter").apply(map, values, width, height, step,
+        walkable, water, protected) then
+      inheritScenery()
+    end
   end
 
   -- The bounded contour potential above intentionally remains cell-sized: it is the datum
@@ -1143,6 +1226,18 @@ local function build(map, data, buildMode)
     if direction == "down" then return oy == 1 end
     if direction == "up" then return oy == 0 end
     return ox == 0 -- both left/right ledges use the cell's west atlas half
+  end
+
+  for _, c in ipairs(roadClosures) do
+    if c.high > c.low then
+      for oy=0,1 do for ox=0,1 do
+        if isHighHalf(c.direction,ox,oy) then
+          local tx,ty=c.x*2+ox,c.y*2+oy
+          setTileBase(tx,ty,c.high)
+          rampTiles[ty*tileWidth+tx]={c.direction,c.high,c.low}
+        end
+      end end
+    end
   end
 
   for _, lip in ipairs(occurrences) do
@@ -1253,6 +1348,62 @@ local function build(map, data, buildMode)
     end
   end
 
+  -- A legal connection can enter a raised contour a few cells inside the
+  -- destination (Route 9 -> Route 10). Grade those open approaches using the
+  -- same half-cell ramps as contour openings, never a vertical invented wall.
+  -- Native jump lips and every cell/NPC datum remain authoritative.
+  if (buildMode == "world" or buildMode == "local")
+     and type(map.isWalkableCell) == "function" then
+    local near, queue = {}, {}
+    local function visit(x,y,depth)
+      if x<0 or y<0 or x>=width or y>=height then return end
+      local k=y*width+x
+      if near[k] or lipCells[k] or not map:isWalkableCell(x,y) then return end
+      near[k]=true;queue[#queue+1]={x,y,depth}
+    end
+    local connections=map.def and map.def.connections or {}
+    for edge in pairs(connections) do
+      if edge=='north' or edge=='south' then
+        for x=0,width-1 do visit(x,edge=='north' and 0 or height-1,0) end
+      elseif edge=='west' or edge=='east' then
+        for y=0,height-1 do visit(edge=='west' and 0 or width-1,y,0) end
+      end
+    end
+    local cursor=1
+    while cursor<=#queue do
+      Budget.tick()
+      local p=queue[cursor];cursor=cursor+1
+      if p[3]<4 then
+        for _,d in pairs(highNeighbour) do visit(p[1]+d[1],p[2]+d[2],p[3]+1) end
+      end
+    end
+    for _,p in ipairs(queue) do
+      local x,y=p[1],p[2];local low=values[y*width+x] or 0
+      local chosen,top
+      for direction,d in pairs(highNeighbour) do
+        local hx,hy=x+d[1],y+d[2];local k=hy*width+hx
+        if hx>=0 and hy>=0 and hx<width and hy<height
+           and not lipCells[k] and map:isWalkableCell(hx,hy) then
+          local high=values[k] or 0
+          if high>low then
+            if chosen then chosen=false;break end
+            chosen,top=direction,high
+          end
+        end
+      end
+      if chosen and top-low<=step*2 then
+        for oy=0,1 do for ox=0,1 do
+          if isHighHalf(chosen,ox,oy) then
+            local tx,ty=x*2+ox,y*2+oy;local k=ty*tileWidth+tx
+            if rampTiles[k]==nil and not ledgeTiles[tileAt(tx,ty)] then
+              setTileBase(tx,ty,top);rampTiles[k]={chosen,top,low}
+            end
+          end
+        end end
+      end
+    end
+  end
+
   return readonlySnapshot(width, height, step, values, tileValues, ledgeCount,
                           rampTiles, buildMode)
 end
@@ -1334,6 +1485,7 @@ local function placedSnapshot(source, base, options)
   base = tonumber(base) or 0
   options = type(options) == "table" and options or {}
   local ramps = options.ramps
+  local water = options.water
   local outsideBase = tonumber(options.outsideBase)
   local width, height = source.width or 0, source.height or 0
   local tileWidth, tileHeight = source.tileWidth or width * 2,
@@ -1357,7 +1509,10 @@ local function placedSnapshot(source, base, options)
        and (x < 0 or y < 0 or x >= width or y >= height) then
       return outsideBase
     end
-    return source:at(clamp(x, width), clamp(y, height)) + base
+    x, y = clamp(x, width), clamp(y, height)
+    local wet = water and water[y * width + x]
+    if wet ~= nil then return wet end
+    return source:at(x, y) + base
   end
   function public.atTile(_, tx, ty)
     tx, ty = tonumber(tx), tonumber(ty)
@@ -1367,7 +1522,10 @@ local function placedSnapshot(source, base, options)
        and (tx < 0 or ty < 0 or tx >= tileWidth or ty >= tileHeight) then
       return outsideBase
     end
-    return source:atTile(clamp(tx, tileWidth), clamp(ty, tileHeight)) + base
+    tx, ty = clamp(tx, tileWidth), clamp(ty, tileHeight)
+    local wet = water and water[math.floor(ty / 2) * width + math.floor(tx / 2)]
+    if wet ~= nil then return wet end
+    return source:atTile(tx, ty) + base
   end
   function public.atWorld(self, wx, wz)
     wx, wz = tonumber(wx), tonumber(wz)
@@ -1519,6 +1677,145 @@ local function placeWorld(map, localField)
   return worldBase[id]
 end
 
+-- A component-wide datum aligns the majority of a connection, but an edge
+-- can contain several terraces (Route 16/17). Join each lower, walkable half
+-- tile to the actual neighbour course, leaving cell centres and collision
+-- intact. Resolve neighbours before either mesh is built; never depend on
+-- which map happened to render first.
+local function worldConnectionRamps(map, source, base, data)
+  if not (data and data.maps and data.tilesets) then return nil end
+  local ramps = {}
+  local Map = require("src.world.Map")
+  local ok, Loader = pcall(require, "src.world.MapLoader")
+  local function eligible(m,x,y)
+    return m:inBounds(x,y) and m:isWalkableCell(x,y)
+      and not m:isWaterCell(x,y)
+  end
+  for _, direction in ipairs(DIRECTIONS) do
+    local connection = map.def and map.def.connections and map.def.connections[direction]
+    local id = connection and connection.map
+    local def = id and data.maps[id]
+    if def then
+      local neighbour = ok and Loader.cached and Loader.cached(id)
+      if not neighbour or neighbour.def ~= def then
+        neighbour = Map.new(def, data.tilesets[def.tileset])
+      end
+      local other = cachedLocal(neighbour,data,"world",build)
+      local otherBase = worldBase[id]
+      -- A forest/cave reset separates global datums, not the actual road.
+      -- Resolve that component independently, then join the visible seam to
+      -- its real course just like an ordinary connection. Never propagate
+      -- this map's datum across the reset pair.
+      if otherBase == nil and WORLD_RESET_PAIRS[worldPair(map.id,id)] then
+        otherBase = placeWorld(neighbour,other)
+      end
+      if otherBase == nil then
+        local difference = seamDifference(map,source,neighbour,other,direction,connection)
+        if difference ~= nil then
+          otherBase = base + difference
+          -- The completed ramp is immutable. Reserve the same placement for
+          -- the neighbour's later mesh instead of allowing another load path
+          -- to select a different datum after this edge has been drawn.
+          worldMaps[id],worldLocal[id],worldBase[id] = neighbour,other,otherBase
+        end
+      end
+      if otherBase ~= nil then
+        local offset = math.floor((tonumber(connection.offset) or 0)*2)
+        local horizontal = direction=="north" or direction=="south"
+        local count = horizontal and source.width or source.height
+        for at=0,count-1 do
+          Budget.tick()
+          local x = horizontal and at or (direction=="west" and 0 or source.width-1)
+          local y = horizontal and (direction=="north" and 0 or source.height-1) or at
+          local nx = horizontal and at-offset or (direction=="west" and other.width-1 or 0)
+          local ny = horizontal and (direction=="north" and other.height-1 or 0) or at-offset
+          -- A sign/tree may block the neighbouring cell while its supporting
+          -- earth still meets this road. Match that earth too; the native
+          -- collision continues to stop the player at the prop.
+          if eligible(map,x,y) and neighbour:inBounds(nx,ny)
+             and not neighbour:isWaterCell(nx,ny) then
+            local low,high = source:at(x,y)+base,other:at(nx,ny)+otherBase
+            if high>low then
+              local ramp = ({north="down",south="up",west="right",east="left"})[direction]
+              for half=0,1 do
+                local tx = horizontal and x*2+half or (direction=="west" and 0 or source.tileWidth-1)
+                local ty = horizontal and (direction=="north" and 0 or source.tileHeight-1) or y*2+half
+                if not source:rampAtTile(tx,ty) then
+                  ramps[ty*source.tileWidth+tx] = {ramp,high,low}
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return next(ramps) and ramps or nil
+end
+
+-- A water body crosses a map seam independently of the road datum used to
+-- place that map. Resolve connected native water cells as one basin before
+-- either terrain mesh is published. Separate ponds retain their own levels.
+local function connectedWater(map, data)
+  if not (data and data.maps and data.tilesets
+      and type(map.isWaterCell) == 'function') then return nil end
+  local Map = require('src.world.Map')
+  local records = {}
+  local function record(m)
+    local id=m.id
+    if records[id] then return records[id] end
+    local field=cachedLocal(m,data,'world',build)
+    local base=placeWorld(m,field)
+    worldWater[id]=worldWater[id] or {}
+    local r={map=m,field=field,base=base,water=worldWater[id]}
+    records[id]=r;return r
+  end
+  local root=record(map)
+  local function adjacent(r,x,y)
+    local f=r.field
+    if x>=0 and y>=0 and x<f.width and y<f.height then return r,x,y end
+    local dir=x<0 and 'west' or x>=f.width and 'east' or y<0 and 'north' or 'south'
+    local c=r.map.def.connections and r.map.def.connections[dir]
+    local def=c and data.maps[c.map]
+    if not def then return end
+    local other=worldMaps[c.map]
+    if not other or other.def~=def then other=Map.new(def,data.tilesets[def.tileset]) end
+    local nr=record(other);local offset=(tonumber(c.offset) or 0)*2
+    if dir=='west' then x,y=nr.field.width-1,y-offset
+    elseif dir=='east' then x,y=0,y-offset
+    elseif dir=='north' then x,y=x-offset,nr.field.height-1
+    else x,y=x-offset,0 end
+    if x>=0 and y>=0 and x<nr.field.width and y<nr.field.height then return nr,x,y end
+  end
+  for y=0,root.field.height-1 do for x=0,root.field.width-1 do
+    Budget.tick()
+    local key=y*root.field.width+x
+    if root.water[key]==nil and map:isWaterCell(x,y) then
+      local queue,seen={},{}
+      local low
+      local function add(r,cx,cy)
+        if not r or not r.map:isWaterCell(cx,cy) then return end
+        local k=cy*r.field.width+cx
+        local id=tostring(r.map.id)..':'..k
+        if seen[id] then return end
+        seen[id]=true
+        queue[#queue+1]={r,cx,cy,k}
+        local h=r.field:at(cx,cy)+r.base
+        low=low and math.min(low,h) or h
+      end
+      add(root,x,y)
+      local i=1
+      while i<=#queue do
+        Budget.tick()
+        local n=queue[i];i=i+1
+        for _,d in ipairs(NEIGHBOURS) do add(adjacent(n[1],n[2]+d[1],n[3]+d[2])) end
+      end
+      for _,n in ipairs(queue) do n[1].water[n[4]]=low end
+    end
+  end end
+  return root.water
+end
+
 -- Immutable cached snapshot for a map. Passing a different data authority
 -- rebuilds automatically; mutating the same map/data deliberately requires
 -- invalidate(), so a half-edited map can never change underneath a mesh job.
@@ -1532,10 +1829,14 @@ function LedgeElevation.map(map, explicitData)
   if entry and entry.data == data and entry.mode == buildMode then
     return entry.snapshot
   end
-  local localField = build(map, data, buildMode)
+  local localField = cachedLocal(map, data, buildMode, build)
   local snapshot = localField
   if buildMode == "world" then
-    snapshot = placedSnapshot(localField, placeWorld(map, localField))
+    local base = placeWorld(map, localField)
+    snapshot = placedSnapshot(localField, base, {
+      ramps = worldConnectionRamps(map,localField,base,data),
+      water = connectedWater(map,data),
+    })
   elseif buildMode == "local" then
     local base = localField.step * (LOCAL_CITY_COURSES[map.id] or 0)
     local ramps = localConnectionRamps(map, localField, base)
@@ -1555,10 +1856,36 @@ function LedgeElevation.basisAtCell(map, cellX, cellY, explicitData)
   return LedgeElevation.map(map, explicitData):at(cellX, cellY)
 end
 
+-- Horizon water must continue the resident sea, not a hard-coded world zero.
+-- The land caps name their sea carrier so an inland pond cannot set the ocean.
+function LedgeElevation.waterBase(map, carrierId, explicitData)
+  local data = gameData(explicitData)
+  if not (data and data.maps and data.tilesets and map) then return 0 end
+  LedgeElevation.map(map, data)
+  if carrierId and carrierId ~= map.id then
+    local def = data.maps[carrierId]
+    if not def then return 0 end
+    map = worldMaps[carrierId]
+    if not map or map.def ~= def then
+      map = require('src.world.Map').new(def, data.tilesets[def.tileset])
+    end
+  end
+  if type(map.isWaterCell) ~= 'function' then return 0 end
+  local field = LedgeElevation.map(map, data)
+  for y = field.height - 1, 0, -1 do
+    for x = 0, field.width - 1 do
+      if map:isWaterCell(x, y) then return field:at(x, y) end
+    end
+  end
+  return 0
+end
+
 function LedgeElevation.invalidate(map)
   if map ~= nil then
     local had = cache[map] ~= nil
     cache[map] = nil
+    worldWater = {}
+    localFields[map] = nil
     if type(map) == "table" and map.id ~= nil then
       worldMaps[map.id], worldLocal[map.id] = nil, nil
     end
@@ -1568,6 +1895,8 @@ function LedgeElevation.invalidate(map)
   worldMaps = setmetatable({}, { __mode = "v" })
   worldLocal = setmetatable({}, { __mode = "v" })
   worldBase = {}
+  worldWater = {}
+  localFields = setmetatable({}, { __mode = "k" })
   return true
 end
 

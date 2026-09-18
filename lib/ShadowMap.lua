@@ -141,7 +141,7 @@ local SHADER = [[
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // the same alpha discard the main pass uses: a sprite card casts its
     // silhouette, not its 16x16 bounding box
-    if (Texel(tex, tc).a < 0.5) discard;
+    if (tc.x > -128.5 && Texel(tex, tc).a < 0.5) discard;
     if (objectOnly > 0.5 && vObjectCaster < 0.5 && sprite < 0.5) discard;
     // pack into two channels: the high byte in red, the low in green.
     // Blue says WHAT cast this, which costs a channel that was zero anyway
@@ -164,6 +164,26 @@ local ready = false
 local lastSig = nil
 local prevBlend, prevAlphaMode = nil, nil
 local savedGraphicsState = nil
+local staticCanvas, staticRes, staticKey, staticVP = nil, 0, nil, nil
+local restoreDepthShader
+local function dropStatic()
+  if staticCanvas and staticCanvas.release then pcall(staticCanvas.release, staticCanvas) end
+  staticCanvas, staticRes, staticKey, staticVP = nil, 0, nil, nil
+end
+local function depthRestorer()
+  if restoreDepthShader == nil then
+    local ok, result = pcall(love.graphics.newShader, [[
+      #pragma language glsl3
+      vec4 effect(vec4 color, Image tex, vec2 uv, vec2 pixel) {
+        vec4 packed = Texel(tex, uv);
+        gl_FragDepth = min(1.0, packed.r + packed.g / 255.0);
+        return packed;
+      }
+    ]])
+    restoreDepthShader = ok and result or false
+  end
+  return restoreDepthShader or nil
+end
 
 local unpackValues = table.unpack or unpack
 
@@ -262,6 +282,7 @@ local function getCanvas(res)
   c:setFilter("nearest", "nearest")
   pcall(c.setWrap, c, "clamp", "clamp")
   if canvas and canvas.release then pcall(canvas.release, canvas) end
+  dropStatic()
   canvas, canvasRes = c, res
   ready = false
   return canvas
@@ -372,11 +393,12 @@ end
 -- continuously with the camera reprojects every shadow edge a fraction of a
 -- texel every frame and the whole world's shadows crawl and shimmer while
 -- you walk.
-local function fit(cx, cy, vw, vh)
+local function fit(cx, cy, vw, vh, casterHeight)
   local f = sunDir()
   local view = Mat4.lookAt({ 0, 0, 0 }, f, { 0, 0, -1 })
 
-  local reach = ShadowMap.HEIGHT
+  local height=math.max(ShadowMap.HEIGHT,casterHeight or 0)
+  local reach = height
                 * math.max(math.abs(ShadowMap.KX), math.abs(ShadowMap.KZ)) + 24
   local north = groundReach(vh)
   -- the view widens with distance, so the far ground spans more than the
@@ -384,8 +406,18 @@ local function fit(cx, cy, vw, vh)
   -- frustum's true spread and costs a good deal less resolution
   local spread = north * 0.5
   local xs = { cx - vw / 2 - spread, cx + vw / 2 + spread + reach }
-  local ys = { -32, ShadowMap.HEIGHT }         -- -32 covers recessed water
+  local ys = { -32, height }         -- -32 covers recessed water
   local zs = { cy - north, cy + vh / 2 + reach }
+
+  -- Battle cameras breathe and ease their lens by fractions of a pixel.
+  -- Fitting a new-sized light box on every such change invalidates the
+  -- static-world shadow cache despite unchanged scenery and sun. Round the
+  -- requested footprint OUTWARD to native-cell boundaries: the full view
+  -- stays covered, while small lens changes share the same light matrix.
+  for _, range in ipairs({xs, zs}) do
+    range[1] = math.floor(range[1] / 16) * 16
+    range[2] = math.ceil(range[2] / 16) * 16
+  end
 
   local l, r, b, t, zn, zf
   for _, x in ipairs(xs) do
@@ -504,13 +536,20 @@ end
 
 -- Begin the sun pass. Returns false when it could not start, in which case
 -- the caller must not draw into it or call finish.
-function ShadowMap.begin(cx, cy, vw, vh)
+function ShadowMap.begin(cx, cy, vw, vh, casterHeight, staticSignature)
   local sh = getShader()
   if not sh then return false end
   -- fit first: it is what decides which resolution rung this view wants
-  fit(cx, cy, vw, vh)
+  fit(cx, cy, vw, vh, casterHeight)
   local c = getCanvas(ShadowMap.res)
   if not c then return false end
+  local reused = staticSignature ~= nil and staticSignature == staticKey
+    and staticCanvas ~= nil and staticRes == ShadowMap.res
+  if reused then
+    for i = 1, 16 do
+      if staticVP[i] ~= ShadowMap.clipVP[i] then reused = false break end
+    end
+  end
   savedGraphicsState = captureGraphicsState()
   local ok = pcall(function()
     love.graphics.setCanvas({ c, depth = true })
@@ -522,6 +561,19 @@ function ShadowMap.begin(cx, cy, vw, vh)
     love.graphics.setMeshCullMode("none")
     -- replace, not alpha blend: these are packed numbers, not colors
     love.graphics.setBlendMode("replace", "premultiplied")
+    if reused then
+      -- Restoring colour alone would let actors behind walls overwrite their
+      -- packed depth. Restore the depth attachment too before dynamic draws.
+      love.graphics.push("transform")
+      local copied, copyErr = pcall(function()
+        love.graphics.origin()
+        love.graphics.setShader(depthRestorer())
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(staticCanvas)
+      end)
+      love.graphics.pop()
+      if not copied then error(copyErr, 0) end
+    end
     love.graphics.setShader(sh)
     love.graphics.setColor(1, 1, 1, 1)
     pcall(sh.send, sh, "lightVP", "row", ShadowMap.clipVP)
@@ -538,6 +590,50 @@ function ShadowMap.begin(cx, cy, vw, vh)
   end
   drawing = true
   ready = false
+  return true, reused
+end
+
+-- Called exactly between the static world and animated actors. A single
+-- bounded colour texture is retained; unsupported depth-writing shaders keep
+-- the ordinary complete pass. The key includes geometry and the exact light
+-- matrix, so changed claims, scenery, sun, zoom and maps cannot reuse it.
+function ShadowMap.storeStatic(signature)
+  if not drawing or not signature or not depthRestorer() then return false end
+  if not staticCanvas or staticRes ~= canvasRes then
+    dropStatic()
+    local ok, made = V.require("PixelCanvas").new(canvasRes, canvasRes)
+    if not (ok and made) then return false end
+    staticCanvas, staticRes = made, canvasRes
+    staticCanvas:setFilter("nearest", "nearest")
+  end
+  staticKey, staticVP = nil, nil
+  local graphics = love.graphics
+  local state = captureGraphicsState()
+  graphics.push("transform")
+  local ok, err = pcall(function()
+    graphics.origin()
+    graphics.setCanvas(staticCanvas)
+    graphics.setDepthMode()
+    graphics.setShader()
+    graphics.setBlendMode("replace", "premultiplied")
+    graphics.setColor(1, 1, 1, 1)
+    graphics.draw(canvas)
+    -- A temporary depth attachment need not survive a canvas switch on a
+    -- mobile tile renderer. Rebuild it explicitly on the capture frame too.
+    graphics.setCanvas({canvas, depth=true})
+    graphics.clear(1, 1, 0, 1, true, true)
+    graphics.setDepthMode("lequal", true)
+    graphics.setShader(depthRestorer())
+    graphics.draw(staticCanvas)
+  end)
+  graphics.pop()
+  local restored, restoreErr = restoreGraphicsState(state)
+  if not restored then error(restoreErr, 0) end
+  graphics.setCanvas({canvas, depth=true})
+  if not ok then error(err, 0) end
+  staticVP = {}
+  for i = 1, 16 do staticVP[i] = ShadowMap.clipVP[i] end
+  staticKey = signature
   return true
 end
 
@@ -624,6 +720,7 @@ end
 
 -- Drop the GPU objects (window resize, hot reload).
 function ShadowMap.invalidate()
+  dropStatic()
   canvas, canvasRes, blank = nil, 0, nil
   drawing, ready, lastSig = false, false, nil
   savedGraphicsState = nil

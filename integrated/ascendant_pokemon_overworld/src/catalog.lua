@@ -62,6 +62,30 @@ function Catalog.dexFor(game, value)
 end
 
 function Catalog.presentationDexFor(game, value)
+  -- Private Hoenn candidate. Preserve explicit presentation IDs and all
+  -- existing cartridge behavior; backend private dex slots are not National Dex.
+  local explicit = type(value) == "table" and Catalog.validPresentationDex(
+    value.nationalDex or value.pokemonDex or value.dexNo or value.dex)
+  if explicit then return explicit end
+  local species = type(value) == "table" and (value.species or value.pokemonSpecies) or value
+  local pokemon = game and game.data and game.data.pokemon
+  local definition = type(species) == "string" and pokemon and pokemon[species]
+  local exports = game and game.mods and game.mods.exports
+  local kas = exports and exports.kanto_ascendant
+  local owner = kas and kas.backendGiftSpecies67
+  local sourceDex = definition and tonumber(definition.sourceDex)
+  if sourceDex and sourceDex >= 252 and sourceDex <= 386
+      and sourceDex == math.floor(sourceDex) and type(owner) == "table"
+      and owner.OWNER == "kasc.backend.gift-species/v1" then
+    local key = type(owner.bySpecies) == "table" and owner.bySpecies[species]
+    if key and type(owner.byKey) == "table" and owner.byKey[key] == species then
+      if key == "dex:" .. sourceDex and not definition.backendForm
+          and not definition.formId then return sourceDex end
+      -- Unrepresented persistent forms must not become an unrelated private
+      -- dex slot or the normal Hoenn card. Leave their existing owner in charge.
+      return nil
+    end
+  end
   return dexFor(game, value, Catalog.validPresentationDex)
 end
 
@@ -83,10 +107,15 @@ function Catalog.mapSpeciesFor(game, entity)
   for _, key in ipairs({"name", "text"}) do
     local name = def[key]
     if type(name) == "string" then
+      -- Pewter's native event omits the sex suffix; its authored talk script
+      -- explicitly plays NIDORAN_M's cry. Do not guess other generic monsters.
+      if (name=='PEWTERNIDORANHOUSE_NIDORAN' or name=='TEXT_PEWTERNIDORANHOUSE_NIDORAN')
+          and pokemon.NIDORAN_M then return 'NIDORAN_M' end
       -- Each suffix is matched against an exact species key, including
       -- NIDORAN_M/F. No approximate matching of names or sprite silhouettes.
       for at in name:gmatch("_()") do
         local species = name:sub(at):upper()
+        species = ({NIDORANF='NIDORAN_F',NIDORANM='NIDORAN_M'})[species] or species
         if pokemon[species] then return species end
       end
     end

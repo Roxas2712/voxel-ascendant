@@ -99,6 +99,13 @@ BattleCam.RIGS = {
     side = 4, back = 60, height = 56,
     lookX = 0, lookY = 6, frameH = 35,
   },
+  -- Same short, collision-tested aisle seat with room for both trainers.
+  -- Used only after the ordinary lenses fail in a recognised narrow room;
+  -- the live actor/HUD evaluator remains the final authority.
+  compact = {
+    side = 4, back = 60, height = 56,
+    lookX = 0, lookY = 6, frameH = 65,
+  },
 }
 
 BattleCam.DEFAULT_RIG = "tele"
@@ -106,6 +113,7 @@ BattleCam.DEFAULT_RIG = "tele"
 -- The rig an arena asks for, falling back to the default for anything that
 -- does not ask (and for a name that is not one of the two).
 function BattleCam.rigFor(arena)
+  if arena and arena.terarrium then return {side=95,back=195,height=157,lookX=0,lookY=-12,frameH=204} end
   local want = arena and arena.cam
   return BattleCam.RIGS[want] or BattleCam.RIGS[BattleCam.DEFAULT_RIG]
 end
@@ -312,6 +320,7 @@ function BattleCam.setScreenSafetyEvaluator(evaluator)
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   lastScreenSafe = nil
   portableFovFloor = nil
+  BattleCam.mapRescueLens = nil
   pendingScreenProbe = nil
   return true
 end
@@ -329,6 +338,7 @@ function BattleCam.noteViewport(w, h)
   if not changed then return false end
   lastScreenSafe, pendingScreenProbe = nil, nil
   portableFovFloor = nil
+  BattleCam.mapRescueLens = nil
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   BattleCam.directorPathArena = nil
   BattleCam.directorPathProven = false
@@ -365,6 +375,7 @@ function BattleCam.applyDistanceSetting(force)
   BattleCam.zoom, BattleCam.zoomGoal = wanted, wanted
   appliedDistance = wanted
   portableFovFloor = nil
+  BattleCam.mapRescueLens = nil
   return true
 end
 
@@ -484,7 +495,31 @@ BattleCam.directorPathLegs = 0
 -- this battle, and having to re-find them every encounter would make them
 -- not worth setting. They are session state -- a fresh run opens on the
 -- rig's own shot, which is the one the composition is solved for.
+-- Private render transaction checkpoint. Restore the live camera if an
+-- explicitly requested alternative stage cannot publish a complete frame.
+function BattleCam.checkpoint()
+  local fields = {}
+  for key,value in pairs(BattleCam) do
+    if type(value) ~= "function" then fields[key] = value end
+  end
+  local distance, arena, battle, safe = appliedDistance, activeArena,
+    activeBattle, lastScreenSafe
+  local floor, probe, rollback = portableFovFloor, pendingScreenProbe,
+    pendingManualRollback
+  return function()
+    for key,value in pairs(BattleCam) do
+      if type(value) ~= "function" then BattleCam[key] = nil end
+    end
+    for key,value in pairs(fields) do BattleCam[key] = value end
+    appliedDistance, activeArena, activeBattle, lastScreenSafe =
+      distance, arena, battle, safe
+    portableFovFloor, pendingScreenProbe, pendingManualRollback =
+      floor, probe, rollback
+  end
+end
+
 function BattleCam.reset()
+  BattleCam.directorRecoveryNext = nil
   BattleCam.viewportW, BattleCam.viewportH = nil, nil
   local leftAuthoredArena = authoredArena(activeArena)
                             or activeArena and activeArena.stadiumDirector
@@ -523,6 +558,7 @@ function BattleCam.reset()
   activeBattle = nil
   lastScreenSafe = nil
   portableFovFloor = nil
+  BattleCam.mapRescueLens = nil
   pendingScreenProbe = nil
   pendingManualRollback = nil
   BattleCam.presentationFit = 1
@@ -742,6 +778,7 @@ end
 -- the ground it shows -- which is why BattleScene asks this rather than
 -- multiplying for itself.
 function BattleCam.frameH(arena)
+  if arena and arena.terarrium then return 204 end
   BattleCam.applyDistanceSetting(false)
   local base = BattleCam.rigFor(arena).frameH
   if BattleCam.still then return base end
@@ -1219,16 +1256,24 @@ end
 -- the complete native 2-D battle for the rest of the encounter.
 --
 -- Recover definitive actor-envelope and HUD-overlap failures at the rendered
--- boundary, only for a physical MAP, by widening the same eye/focus lens.
--- Every candidate must pass the complete actor/HUD check. Unknown provider
--- bounds, world clearance and manual-camera failures still decline.
+-- boundary, only for a physical MAP. First widen the same eye/focus lens;
+-- if that cannot separate a large pair, try a bounded vertical camera move.
+-- Every candidate must pass the complete actor/HUD check, and a moved eye
+-- also needs a clear physical route. Unknown bounds/manual failures decline.
 local function renderedActorFrameRescue(arena, groundY, camera, pitch, reason,
                                         context)
   if not (arena and arena.map and not arena.discs and camera
       and type(reason) == "string"
       and (reason == "player-outside-safe-frame"
         or reason == "enemy-outside-safe-frame"
+        or reason == "playerHero-outside-safe-frame"
+        or reason == "enemyHero-outside-safe-frame"
+        or reason == "playerHero-placement-unavailable"
+        or reason == "enemyHero-placement-unavailable"
+        or reason:match("^playerHero%-under%-.+$")
+        or reason:match("^enemyHero%-under%-.+$")
         or reason == "owner-render-unsafe"
+        or reason == "actor-pair-too-close"
         or reason == "status-card-overlap"
         or reason:match("^player%-under%-.+$")
         or reason:match("^enemy%-under%-.+$"))) then
@@ -1238,32 +1283,120 @@ local function renderedActorFrameRescue(arena, groundY, camera, pitch, reason,
   local base = tonumber(camera.fov)
   if not (base and base > 0 and base < math.pi) then return nil end
   local tangent = math.tan(base * .5)
-  -- A narrow phone needs up to 2x to keep a wide posed model clear of the
-  -- edge during send-out. Test modest optical steps against the complete HUD
-  -- receipt; widening alone never authorizes a clipped or obscured actor.
-  for _, factor in ipairs({ 1.15, 1.30, 1.45, 1.60, 1.75, 1.85, 2.0 }) do
-    local candidate = copyCamera(camera)
-    candidate.fov = 2 * math.atan(tangent * factor)
-    local safe, safeReason = screenSafeCamera(
-      activeBattle, arena, groundY, candidate, {
-        phase="rendered-actor-frame-rescue",
-        shot=BattleCam.directorShot, subject=BattleCam.directorSubject,
-        actual=true, opticalOnly=true, safetyFrame=factor,
-      })
-    if safe == true then
-      pendingScreenProbe = nil
-      lastScreenSafe = {
-        arena=arena, battle=activeBattle,
-        camera=copyCamera(candidate), pitch=pitch,
-      }
-      BattleCam.screenSafetyOK = true
-      BattleCam.screenSafetyReason = "rendered-optical-rescue:"
-        .. tostring(safeReason or reason)
-      BattleCam.screenSafetyFallbackUsed = true
-      return candidate, pitch
+  local function reframed()
+    -- A raised command dock can cover the centre of the scene. Widening
+    -- alone pulls the trainer towards that same dock. Aim slightly lower
+    -- from the same physical eye to move the complete cast above it.
+    if not reason:match("%-under%-command$")
+        and not reason:match("%-under%-fight$") then return nil end
+    local dx,dy,dz=camera.eye[1]-camera.focus[1],
+      camera.eye[2]-camera.focus[2],camera.eye[3]-camera.focus[3]
+    local distance=math.sqrt(dx*dx+dy*dy+dz*dz)
+    for _, shift in ipairs({.2,.4,.6,.8,1.0,1.2}) do
+      for _, factor in ipairs({1,1.25,1.5,2}) do
+        local candidate=copyCamera(camera)
+        local focusDrop=distance*tangent*shift
+        candidate.focus[2]=candidate.focus[2]-focusDrop
+        candidate.fov=2*math.atan(tangent*factor)
+        local safe=screenSafeCamera(activeBattle,arena,groundY,candidate,
+          {phase="rendered-map-hud-reframe",actual=true})
+        if safe==true then
+          local nextPitch=math.atan2(math.sqrt(dx*dx+dz*dz),
+            math.max(.001,candidate.eye[2]-candidate.focus[2]))
+          pendingScreenProbe=nil
+          lastScreenSafe={arena=arena,battle=activeBattle,
+            camera=copyCamera(candidate),pitch=nextPitch}
+          BattleCam.mapRescueLens={arena=arena,battle=activeBattle,
+            factor=factor,focusDrop=focusDrop,
+            shot=BattleCam.directorShot,phase=activeBattle.phase}
+          BattleCam.screenSafetyOK=true
+          BattleCam.screenSafetyReason="rendered-map-hud-reframe"
+          BattleCam.screenSafetyFallbackUsed=true
+          return candidate,nextPitch
+        end
+      end
     end
   end
-  return nil
+  local function optical()
+    -- Start with small corrections. At the player's 1X distance a full-size
+    -- trainer intro plus its newly opened textbox can need more than 2X; that
+    -- is still a valid world shot. Use the first complete actor/HUD-safe lens
+    -- in a bounded search, without changing the saved distance or actor scale.
+    for _, factor in ipairs({ 1.15, 1.30, 1.45, 1.60, 1.75, 1.85, 2.0,
+                             2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0 }) do
+      local candidate = copyCamera(camera)
+      candidate.fov = 2 * math.atan(tangent * factor)
+      local safe, safeReason = screenSafeCamera(
+        activeBattle, arena, groundY, candidate, {
+          phase="rendered-actor-frame-rescue",
+          shot=BattleCam.directorShot, subject=BattleCam.directorSubject,
+          actual=true, opticalOnly=true, safetyFrame=factor,
+        })
+      if safe == true then
+        pendingScreenProbe = nil
+        lastScreenSafe = {
+          arena=arena, battle=activeBattle,
+          camera=copyCamera(candidate), pitch=pitch,
+        }
+        BattleCam.screenSafetyOK = true
+        BattleCam.mapRescueLens = {arena=arena, battle=activeBattle,
+          factor=factor,
+          shot=BattleCam.directorShot, phase=activeBattle.phase}
+        BattleCam.screenSafetyReason = "rendered-optical-rescue:"
+          .. tostring(safeReason or reason)
+        BattleCam.screenSafetyFallbackUsed = true
+        return candidate, pitch
+      end
+    end
+  end
+  local function raised()
+    -- A wider lens cannot separate overlapping world silhouettes. Lift the
+    -- same bearing only when both its physical route and the complete rendered
+    -- actor/HUD receipt pass. This handles large battlers without shrinking
+    -- models, moving feet, or letting the camera pass through cave geometry.
+    local A = V.require("BattleArena")
+    for _, lift in ipairs({24,48,72,96}) do
+      local candidate = copyCamera(camera)
+      candidate.eye[2] = candidate.eye[2] + lift
+      local _, readable = visibilityScore(A, arena.map, arena,
+        candidate.eye, groundY, "both")
+      if readable and travelClear(A, arena.map, camera.eye, candidate.eye) then
+        for _, factor in ipairs({1,1.25,1.5,1.75,2}) do
+          candidate.fov = 2 * math.atan(tangent * factor)
+          local safe = screenSafeCamera(activeBattle, arena, groundY, candidate,
+            {phase="rendered-map-lift-rescue", actual=true})
+          if safe == true then
+            local dx = candidate.eye[1]-candidate.focus[1]
+            local dz = candidate.eye[3]-candidate.focus[3]
+            local nextPitch = math.atan2(math.sqrt(dx*dx+dz*dz),
+              math.max(.001,candidate.eye[2]-candidate.focus[2]))
+            pendingScreenProbe = nil
+            lastScreenSafe = {arena=arena,battle=activeBattle,
+              camera=copyCamera(candidate),pitch=nextPitch}
+            BattleCam.mapRescueLens = {arena=arena,battle=activeBattle,
+              factor=factor,lift=lift,
+              shot=BattleCam.directorShot,phase=activeBattle.phase}
+            BattleCam.screenSafetyOK = true
+            BattleCam.screenSafetyReason = "rendered-map-lift-rescue"
+            BattleCam.screenSafetyFallbackUsed = true
+            return candidate,nextPitch
+          end
+        end
+      end
+    end
+  end
+  -- Overlapping silhouettes usually need a changed viewing angle. Trying
+  -- fifteen progressively wider lenses first caused full-frame stalls at
+  -- animation boundaries. Test a physical lift first for this exact reason;
+  -- it still requires clear travel, visibility and the full live HUD verdict.
+  -- Keep the optical fallback for authored providers with different layouts.
+  local reframedCamera,reframedPitch=reframed()
+  if reframedCamera then return reframedCamera,reframedPitch end
+  local first, second = optical, raised
+  if reason == "actor-pair-too-close" then first, second = raised, optical end
+  local result, resultPitch = first()
+  if result then return result, resultPitch end
+  return second()
 end
 
 -- DISCS has no terrain corridors to solve, but a new large battler still
@@ -1339,7 +1472,7 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
     subject=BattleCam.directorSubject, actual=true,
     manual=BattleCam.directorClock < BattleCam.directorManualUntil,
   }
-  local uncorrectedCamera = camera
+  local uncorrectedCamera, uncorrectedPitch = camera, pitch
   if context.manual then portableFovFloor = nil end
   local holdPortableLens = arena.discs and not authoredArena(arena)
     and not context.manual
@@ -1347,6 +1480,38 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
       and camera.fov < portableFovFloor then
     camera = copyCamera(camera)
     camera.fov = portableFovFloor
+  end
+  -- Reuse the last optical correction as a candidate while the shot/phase
+  -- remains the same. Moving eyes still receive a NEW full HUD/actor verdict;
+  -- no safety result is cached. A raised eye also rechecks its world route.
+  -- This avoids replaying rejected lenses for every tiny camera drift.
+  local hint = BattleCam.mapRescueLens
+  if context.manual then BattleCam.mapRescueLens = nil
+  elseif hint and hint.arena == arena and hint.battle == activeBattle
+      and hint.shot == BattleCam.directorShot
+      and hint.phase == activeBattle.phase then
+    local candidate = copyCamera(camera)
+    candidate.fov = 2 * math.atan(math.tan(camera.fov*.5)*hint.factor)
+    local reusable = true
+    if hint.lift then
+      candidate.eye[2] = candidate.eye[2] + hint.lift
+      local A = V.require("BattleArena")
+      local _, readable = visibilityScore(A,arena.map,arena,
+        candidate.eye,groundY,"both")
+      reusable = readable and travelClear(A,arena.map,camera.eye,candidate.eye)
+      if reusable then
+        local dx,dz=candidate.eye[1]-candidate.focus[1],candidate.eye[3]-candidate.focus[3]
+        pitch=math.atan2(math.sqrt(dx*dx+dz*dz),
+          math.max(.001,candidate.eye[2]-candidate.focus[2]))
+      end
+    end
+    if hint.focusDrop then
+      candidate.focus[2]=candidate.focus[2]-hint.focusDrop
+      local dx,dz=candidate.eye[1]-candidate.focus[1],candidate.eye[3]-candidate.focus[3]
+      pitch=math.atan2(math.sqrt(dx*dx+dz*dz),
+        math.max(.001,candidate.eye[2]-candidate.focus[2]))
+    end
+    if reusable then camera = candidate end
   end
   local safe, reason = screenSafeCamera(
     activeBattle, arena, groundY, camera, context)
@@ -1366,7 +1531,7 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
 
   if safe == false then
     local portable, portablePitch = renderedPortableFrameRescue(
-      arena, groundY, uncorrectedCamera, pitch, context,
+      arena, groundY, uncorrectedCamera, uncorrectedPitch, context,
       holdPortableLens and portableFovFloor or nil)
     if portable then
       if holdPortableLens then
@@ -1378,7 +1543,7 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
       return portable, portablePitch
     end
     local rescued, rescuedPitch = renderedActorFrameRescue(
-      arena, groundY, camera, pitch, reason, context)
+      arena, groundY, uncorrectedCamera, uncorrectedPitch, reason, context)
     if rescued then return rescued, rescuedPitch end
   end
 
@@ -1800,7 +1965,8 @@ local function updateSafety(arena, groundY, shotChanged, battle)
   BattleCam.screenSafetyOK = currentScreen == true
   BattleCam.screenSafetyReason = currentScreenReason
   if currentReadable and currentScreen == true and not shotChanged
-      and BattleCam.directorClock < BattleCam.directorSafetyUntil then return end
+      and ((battle and battle.phase == "menu")
+        or BattleCam.directorClock < BattleCam.directorSafetyUntil) then return end
 
   local rawEye, rawFocus, rawYaw, rawLift = safetyCandidate(
     arena, groundY, 0, 0, 1)
@@ -1854,24 +2020,43 @@ local function updateSafety(arena, groundY, shotChanged, battle)
     { math.pi, math.rad(40), .76, .62 },
   }
   local best, bestScore = nil, rawScore
-  for _, candidate in ipairs(candidates) do
+  -- The final guard continues validating every frame. Once a safe menu shot
+  -- exists, distribute speculative camera seats over probes instead of
+  -- blocking one frame with seventeen complete terrain/HUD searches.
+  local budgeted = battle and battle.phase == "menu"
+    and sameScreenOwner(lastScreenSafe, arena, battle)
+  local first = budgeted and not shotChanged and BattleCam.directorRecoveryNext or 1
+  local last = budgeted and math.min(#candidates, first) or #candidates
+  for candidateIndex=first,last do
+    local candidate=candidates[candidateIndex]
     local eye, focus, yaw, lift = safetyCandidate(
       arena, groundY, candidate[1], candidate[2], candidate[3])
     local score, readable = visibilityScore(
       BattleArena, map, arena, eye, groundY, BattleCam.directorSubject)
     local pathOK = travelClear(BattleArena, map, currentEye, eye)
-    local safe = screenSafe(battle, arena, groundY, eye, focus, {
+    local safe
+    -- An obstructed travel path cannot win. Nor can an unreadable candidate
+    -- whose score cannot improve on the current one. Avoid constructing full
+    -- actor/HUD projections for these already-rejected speculative seats.
+    if pathOK and (readable or score > bestScore) then
+      safe = screenSafe(battle, arena, groundY, eye, focus, {
       phase="director-recovery", shot=BattleCam.directorShot,
       subject=BattleCam.directorSubject,
       absoluteYaw=yaw, absoluteLift=lift,
       directorFrame=BattleCam.directorFrameGoal,
       safetyFrame=candidate[4],
-    })
+      })
+    end
     if readable and safe == true and pathOK then best = candidate; break end
     if safe == true and pathOK and score > bestScore then
       best, bestScore = candidate, score
     end
   end
+  if not best and last < #candidates then
+    BattleCam.directorRecoveryNext=last+1
+    return
+  end
+  BattleCam.directorRecoveryNext=nil
   if not best then
     -- Last-resort return to the reviewed canonical bearing.  This is a shot
     -- substitution, not a path through the intervening wall: the easing below
@@ -1947,6 +2132,7 @@ function BattleCam.update(dt, arena, battle, groundY)
     -- old A receipt, and a BattleState __eq alias is still a different owner.
     lastScreenSafe = nil
     portableFovFloor = nil
+  BattleCam.mapRescueLens = nil
     pendingScreenProbe = nil
     pendingManualRollback = nil
     BattleCam.screenSafetyFallbackUsed = false
@@ -2182,6 +2368,7 @@ end
 -- to leave the last battle on would pick a different arena depending on
 -- where they had swung the camera an hour ago.
 function BattleCam.rig(arena, groundY, canonical)
+  if arena and arena.terarrium then return arena.terarriumService.camera(arena,groundY or 0) end
   groundY = groundY or 0
   local R = BattleCam.rigFor(arena)
   local mx, mz = arena.mid[1], arena.mid[2]
@@ -2360,4 +2547,18 @@ function BattleCam.fitPortrait(cam, pitch, pw, ph, arena)
          wanted - elevation
 end
 
+-- Bound cell memoization to each synchronous camera solve. Per-frame final
+-- safety still runs; this only deduplicates identical terrain samples.
+for _,name in ipairs({"rig","update"}) do
+  local original=BattleCam[name]
+  BattleCam[name]=function(...)
+    local stage=name=="update" and select(2,...) or select(1,...)
+    if not stage or stage.discs then return original(...) end
+    local arena=V.require("BattleArena")
+    if arena and arena.withVisibilitySamples then
+      return arena.withVisibilitySamples(original,...)
+    end
+    return original(...)
+  end
+end
 return BattleCam

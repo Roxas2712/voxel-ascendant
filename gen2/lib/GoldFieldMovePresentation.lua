@@ -121,6 +121,17 @@ end
 
 local function loadExactImage(g, rel)
   local path = imagePath(rel)
+  -- Downloaded cinematic sheets have no loose file at the legacy path.
+  -- Retain the exact-file decoder below for bundled/older installations.
+  local owner = V and V.mod
+  if owner and type(owner.spriteAssetVersion) == "function"
+      and owner:spriteAssetVersion(rel) then
+    local ok, image = pcall(function()
+      return require("src.render.Assets").image(path)
+    end)
+    if ok and image then return image, path end
+    return nil, path
+  end
   -- Absolute/symlinked RC paths are not consistently resolved by every LOVE
   -- host.  Decode uniquely named FileData first so one species can never
   -- inherit a previously decoded atlas through the host path cache.
@@ -153,7 +164,13 @@ local function newCanvas(w, h)
   return canvas
 end
 
+local normalBodies = setmetatable({}, {__mode="k"})
 local function normalTrainerRenderer(world)
+  local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+  if okAppearance and world and world.player then
+    local body = appearance.resolve(world.player, world.player.sprite)
+    if body then return body end
+  end
   if not (world and world.player and world.sprites) then return nil end
   local okMoves, FieldMoves = pcall(require, "src.world.gen2.FieldMoves")
   if not okMoves then return nil end
@@ -164,13 +181,16 @@ local function normalTrainerRenderer(world)
   end
   local name = type(FieldMoves.playerSprite) == "function"
     and FieldMoves.playerSprite(gender) or nil
-  local def = name and world.sprites[name] or nil
+  local def = okAppearance and appearance.nativeDef(world)
+    or (name and world.sprites[name] or nil)
   if not (def and type(def.image) == "string") then return nil end
 
   local okRenderer, SpriteRenderer = pcall(require, "src.render.SpriteRenderer")
   if not (okRenderer and SpriteRenderer and type(SpriteRenderer.new) == "function") then
     return nil
   end
+  local held = normalBodies[world]
+  if held and held.def == def then return held end
   local okNew, renderer = pcall(SpriteRenderer.new, def, "vasc-gen2-surf")
   if not (okNew and renderer) then return nil end
   if type(world.applySpritePalette) == "function" then
@@ -178,10 +198,11 @@ local function normalTrainerRenderer(world)
       sprite = renderer, spriteDef = def,
     })
   end
+  normalBodies[world] = renderer
   return renderer
 end
 
-local COMPOSITE_CELL = 64
+local COMPOSITE_CELL = 128
 local COMPOSITE_HEIGHT = COMPOSITE_CELL * 6
 local POSE_DIRECTION = {
   [0] = "down", [1] = "up", [2] = "left",
@@ -317,18 +338,20 @@ function M._actorLayoutForTests(kind, fieldKit, direction)
     fieldKit == true, direction or "down")
 end
 
-local function buildActorRenderer(world, mon, fieldKit, kind)
+local function buildActorRenderer(world, mon, fieldKit, kind, trainer)
   local g = love and love.graphics
   if not (g and g.draw and g.newQuad and g.push and g.pop and g.setCanvas
       and g.clear and g.origin and g.scale and g.rectangle) then
     return nil, "graphics unavailable"
   end
-  local trainer = normalTrainerRenderer(world)
+  trainer = trainer or normalTrainerRenderer(world)
   if not (trainer and trainer.def and trainer.frames
       and type(trainer.resolveImage) == "function") then
     return nil, "normal Gen-2 trainer renderer unavailable"
   end
-  local okTrainer, trainerImage = pcall(trainer.resolveImage, trainer)
+  local okTrainer, trainerImage = pcall(function()
+    return trainer.def and trainer.def.trueColor and trainer.image or trainer:resolveImage()
+  end)
   if not (okTrainer and trainerImage) then return nil, "trainer image unavailable" end
 
   local monImage, monCell, monW, monH, monSourcePath
@@ -367,13 +390,20 @@ local function buildActorRenderer(world, mon, fieldKit, kind)
       local direction, row, trainerStand = compositePose(frame)
       local moving = frame >= 3
       local layout = actorLayout(kind, fieldKit, direction)
+      if trainer.fieldHD and not fieldKit and kind == "surf" then
+        layout.trainerYOffset = 0
+      end
+      -- Seen from behind/side, the rider is in front of the mount's back.
+      -- Only its approaching head/neck may occlude the rider in front view.
+      local riderBehind = kind ~= "fly" and direction == "down"
       local trainerFrame = trainer.frames[trainerStand] or trainer.frames[0]
       local function drawTrainer()
         if trainerFrame then
           setColor(g, 1, 1, 1, 1)
           g.draw(trainerImage, trainerFrame,
             layout.trainerX, y + layout.trainerYOffset, 0,
-            layout.trainerScale, layout.trainerScale)
+            layout.trainerScale * (trainer.fieldHD and 16 / trainer.def.frameWidth or 1),
+            layout.trainerScale * (trainer.fieldHD and 16 / trainer.def.frameWidth or 1))
         end
       end
       if g.setScissor then
@@ -390,7 +420,7 @@ local function buildActorRenderer(world, mon, fieldKit, kind)
       else
         -- While surfing, the trainer is the rear rider and the Pokemon is
         -- the foreground mount/tow partner. Fly keeps its established order.
-        if kind ~= "fly" then drawTrainer() end
+        if riderBehind then drawTrainer() end
         if kind ~= "fly" then
           setColor(g, 0.80, 0.95, 1, 0.72)
           g.rectangle("fill", moving and 0 or 2, y + 13.25,
@@ -409,7 +439,7 @@ local function buildActorRenderer(world, mon, fieldKit, kind)
 
       -- Water/mount motion lives in the composite. The trainer stays on the
       -- directional standing pose instead of walking in place while surfing.
-      if fieldKit or kind == "fly" then drawTrainer() end
+      if fieldKit or not riderBehind then drawTrainer() end
     end
     if g.setScissor then g.setScissor() end
   end)
@@ -444,13 +474,16 @@ local function actorRenderer(world, mon, fieldKit, kind)
   local key = kind .. ":" .. (fieldKit and "FIELD_KIT"
     or (tostring(mon and mon.species) .. ":" .. tostring(shiny(mon))))
   local cached = rendererCache[world]
-  if cached and cached.key == key then return cached.renderer end
-  local renderer, err = buildActorRenderer(world, mon, fieldKit, kind)
+  local trainer = normalTrainerRenderer(world)
+  if cached and cached.key == key and cached.trainer == trainer then return cached.renderer end
+  local renderer, err = buildActorRenderer(world, mon, fieldKit, kind, trainer)
   if not renderer then
     M.lastError = tostring(err)
     return nil
   end
-  rendererCache[world] = { key = key, renderer = renderer }
+  if cached and cached.renderer and cached.renderer.image
+      and cached.renderer.image.release then cached.renderer.image:release() end
+  rendererCache[world] = { key = key, renderer = renderer, trainer = trainer }
   M.lastError = nil
   return renderer
 end
@@ -554,6 +587,19 @@ end
 function M.decorateState(world, state)
   if not (world and state and world.player and bridge) then return state end
   state._vascGen2World = world
+  if world.fishing then
+    local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+    local body = okAppearance and appearance.resolve(world.player, world.player.sprite)
+    if body then
+      local player = world.player
+      local proxy = setmetatable({sprite=body, spriteDef=body.def}, {__index=player})
+      function proxy:pose()
+        local _,x,y,facing = player:pose()
+        return body,x,y,facing,0,false
+      end
+      replaceRenderPlayer(state, player, proxy)
+    end
+  end
   local okMoves, FieldMoves = pcall(require, "src.world.gen2.FieldMoves")
   local surfing = okMoves and FieldMoves and type(FieldMoves.isSurfing) == "function"
     and FieldMoves.isSurfing(world.playerState)

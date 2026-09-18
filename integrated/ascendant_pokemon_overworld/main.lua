@@ -39,7 +39,48 @@ return function(mod)
   local DebugLog = loadSibling(mod, "src/debug_log.lua")
   local ScaleProfiles = loadSibling(mod, "src/scale_profiles.lua")
   local PresentationPolicy = loadSibling(mod, "src/presentation_policy.lua")
+  local HumanBlink = loadSibling(mod, "src/human_blink.lua")
+  local HumanBlinkProfiles = loadSibling(mod, "src/human_blink_profiles.lua")
+  local HumanSeatProfiles = loadSibling(mod, "src/human_seat_profiles.lua")
+  local positionOk, HumanPosition = pcall(loadSibling, mod, "src/human_position.lua")
+  if not positionOk or type(HumanPosition) ~= "table" or type(HumanPosition.apply) ~= "function"
+      or type(HumanPosition.fraction) ~= "function" then HumanPosition = nil end
+  local HumanIdle = loadSibling(mod, "src/human_idle.lua")
+  local HumanDialogueIdle = loadSibling(mod, "src/human_dialogue_idle.lua")
+  local HumanDialogue = loadSibling(mod, "src/human_dialogue.lua")
+  local HumanTurn = loadSibling(mod, "src/human_turn.lua")
+  local HumanActing = loadSibling(mod, "src/human_acting.lua")
+  local HumanActingProfiles = loadSibling(mod, "src/human_acting_profiles.lua")
+  local HumanConversation = loadSibling(mod, "src/human_conversation.lua")
+  local HumanSeatedBreath = loadSibling(mod, "src/human_seated_breath.lua")
+  local HumanJohtoSeat = loadSibling(mod, "src/human_johto_seat.lua")
+  local HumanSeatedMother = loadSibling(mod, "src/human_seated_mother.lua")
+  local motherModules = {
+    mod=mod, idle=HumanIdle, frames=loadSibling(mod, "src/human_mother_frames.lua"),
+    headLayers=loadSibling(mod, "src/human_head_layers.lua"),
+    headMorph=loadSibling(mod, "src/human_head_morph.lua"),
+    seatLayers=loadSibling(mod, "src/human_seat_layers.lua"),
+  }
+  local HumanRig = loadSibling(mod, "src/human_rig.lua")
+  local HumanRigProfiles = loadSibling(mod, "src/human_rig_profiles.lua")
+  local rimOk, HumanRim = pcall(loadSibling, mod, "src/human_rim.lua")
+  if rimOk and type(HumanRim)=="table" and type(HumanRim.shader)=="string"
+      and type(HumanRim.send)=="function" then
+    HumanRig.rim, HumanBlink.rim = HumanRim, HumanRim
+  end
+  local gridOk, HumanGrid = pcall(function()
+    return loadSibling(mod, "src/human_grid.lua")(
+      loadSibling(mod, "src/human_grid_cache.lua"),
+      loadSibling(mod, "src/human_grid_stencil.lua"),
+      loadSibling(mod, "src/human_grid_builder.lua"),
+      loadSibling(mod, "src/human_grid_preparation.lua"))
+  end)
+  if not gridOk then
+    mod.log:warn("Human grid animation unavailable; retaining existing character cards: %s", tostring(HumanGrid))
+    HumanGrid = nil
+  end
   local VoxelCharacters = loadSibling(mod, "src/voxel_characters.lua")
+  local CardBounds = loadSibling(mod, "src/card_bounds.lua")
   local PokemonCardStyle = loadSibling(mod, "src/pokemon_card_style.lua")
   local PikachuRide = loadSibling(mod, "src/pikachu_ride.lua")
   local PokemonWorldSprites = loadSibling(mod, "src/pokemon_world_sprites.lua")
@@ -72,6 +113,11 @@ return function(mod)
     debugLog = debugLog,
   })
   own(walkingSprites):install()
+  local humanDialogueIdle = own(HumanDialogueIdle.new({mod=mod,generation=generation,
+    seatProfiles=HumanSeatProfiles}))
+  local humanActing = own(HumanActing.new({mod=mod,generation=generation,dialogue=HumanDialogue,profiles=HumanActingProfiles,turn=HumanTurn,idle=HumanIdle,
+    conversation=HumanConversation,dialogueIdle=humanDialogueIdle,seatedMother=HumanSeatedMother.new(motherModules)}))
+  humanActing:install()
 
   local followerSpacing = FollowerSpacing.new({ mod=mod, compat=Compat })
   local presentationPolicy = PresentationPolicy.new({ mod=mod, compat=Compat })
@@ -83,6 +129,7 @@ return function(mod)
       tostring(goReason or "registration_failed"))
   end
   local voxelCharacters = VoxelCharacters.new({
+    cardBounds = CardBounds.new(mod),
     mod = mod,
     generation = generation,
     scaleProfiles = ScaleProfiles,
@@ -90,6 +137,18 @@ return function(mod)
     presentationPolicy = presentationPolicy,
     debugLog = debugLog,
     cardStyleModule = PokemonCardStyle,
+    humanBlinkModule = HumanBlink,
+    humanBlinkProfiles = HumanBlinkProfiles,
+    humanIdleModule = HumanIdle,
+    humanPositionModule = HumanPosition,
+    humanActing = humanActing,
+    humanDialogueIdle = humanDialogueIdle,
+    humanSeatedBreathModule = HumanSeatedBreath,
+    humanJohtoSeatModule = HumanJohtoSeat,
+    humanSeatProfiles = HumanSeatProfiles,
+    humanRigModule = HumanRig,
+    humanGridModule = HumanGrid,
+    humanRigProfiles = HumanRigProfiles,
     pikachuRide = PikachuRide.new(),
   })
   own(voxelCharacters):install()

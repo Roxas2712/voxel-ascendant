@@ -222,10 +222,9 @@ return {
   ["DIGLETTS_CAVE"] = { x = 19, y = 16, shape = "wide" },
   ["FIGHTING_DOJO"] = { x = 4, y = 1, shape = "narrow" },
   ["LANCES_ROOM"] = { x = 5, y = 15, shape = "wide" },
-  -- The player approaches Lorelei from the west and talks east. Preserve
-  -- that encounter axis instead of rotating the fight north/south merely
-  -- because the room itself is narrow.
-  ["LORELEIS_ROOM"] = { x = 3, y = 2, shape = "narrow_east" },
+  -- Use the shallow room diagonally with inset feet, leaving foreground
+  -- floor for Red beside Charizard instead of placing him at midfield.
+  ["LORELEIS_ROOM"] = { x = 2, y = 2, shape = "diagonal_east" },
   ["MT_MOON_1F"] = { spots = {
     { x = 7, y = 3, shape = "wide" },
     { x = 14, y = 3, shape = "wide" },

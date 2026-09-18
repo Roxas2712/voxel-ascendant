@@ -29,9 +29,17 @@ end
 function InteriorCutaway.active(map, level)
   if not Voxel.isFull(level) then
     local rung=tonumber(level) or tonumber(Voxel.level)
-    return rung~=nil and rung>1 and rung<(Voxel.FP_LEVEL or 6)
-      and type(HorizonWall.architecturalRoom)=='function'
-      and HorizonWall.architecturalRoom(map) or false
+    if not (rung and rung>1 and rung<(Voxel.FP_LEVEL or 6)) then return false end
+    -- Tower ceilings sit below the orbit camera. Keeping the complete shell
+    -- in these views hides the lobby and its exit behind the roof texture.
+    -- Use the same roof/near-wall cutaway as FULL; eye-level views stay closed.
+    if type(HorizonWall.isOutdoorMap)=='function' and HorizonWall.isOutdoorMap(map) then return false end
+    if InteriorCutaway.classFor(map)=='tower' then return true end
+    local native=type(HorizonWall.interiorProfileFor)=='function'
+      and HorizonWall.interiorProfileFor(map)
+    return (native and native.nativeRoomPanels==true)
+      or (type(HorizonWall.architecturalRoom)=='function'
+          and HorizonWall.architecturalRoom(map)==true) or false
   end
   -- Never apply a room cutaway solely because an external profile happened to
   -- name an outdoor map like an interior. HorizonWall owns the authoritative
@@ -54,7 +62,34 @@ end
 -- The enclosure's ground batch contains its synthetic ceiling and outer cap,
 -- never the map's playable floor.  Suppressing it under FULL therefore opens
 -- the roof without punching a hole in gameplay terrain.
-function InteriorCutaway.rimVisible(rim, enabled)
+function InteriorCutaway.rimVisible(rim, enabled, eye, focus)
+  if rim and rim.kind=='cutaway_base' then
+    if not enabled then return false end
+    -- A hidden tall wall keeps its low, textured footprint. The complete
+    -- face owns that same area whenever it is visible, avoiding duplicates.
+    return not InteriorCutaway.rimVisible({kind='wall',
+      interiorPanel=rim.interiorPanel,ox=rim.ox,oy=rim.oy},true,eye,focus)
+  end
+  if enabled and rim and rim.interiorPanel and eye and focus then
+    local p=rim.interiorPanel
+    local function faceVisible(face)
+      local horizontal=face.edge=='north' or face.edge=='south'
+      local axis=horizontal and 3 or 1
+      local at=face.at+(horizontal and (rim.oy or 0) or (rim.ox or 0))
+      local sign=(face.edge=='north' or face.edge=='west') and 1 or -1
+      return ((eye[axis] or 0)-at)*sign>0 and ((focus[axis] or 0)-at)*sign>=0
+    end
+    if p.endcap and p.cutawayFaces then
+      local parentVisible=false
+      for _,face in ipairs(p.cutawayFaces)do
+        if faceVisible(face)then parentVisible=true;break end
+      end
+      if not parentVisible then return false end
+    end
+    -- Only a whole wall facing the camera and its room is visible. Never
+    -- cut through the middle of an image with the old global half-space.
+    return faceVisible(p)
+  end
   return not (enabled and rim and rim.kind == "ground")
 end
 

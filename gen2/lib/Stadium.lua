@@ -185,6 +185,17 @@ function Stadium.begin(arena)
   return true
 end
 
+-- Restage the same actors without reloading species, replaying entrances or
+-- losing animation/Transform state. Used only by explicit Gen-1 view changes.
+function Stadium.retarget(arena, groundY)
+  if not session then return false end
+  session.arena = arena
+  session.groundY = groundY or session.groundY
+  refreshEffectProfile("player")
+  refreshEffectProfile("enemy")
+  return true
+end
+
 function Stadium.finish()
   if not session then return end
   session.player:release()

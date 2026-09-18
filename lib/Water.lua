@@ -979,6 +979,7 @@ vec2 waveUV(vec2 tc, vec2 col) {
 // the Lua side fills in, and Water.shader compiles the pinned form first
 // and the bare one only if that is refused. Whichever prototype a runtime
 // brought, one of the two agrees with it.
+//@OUTDOOR_WATER
 vec4 effect(EFFECT_PREC vec4 color, Image tex, EFFECT_PREC vec2 tc,
             EFFECT_PREC vec2 sc) {
   // THE DEPTH TEST, done here because the buffer that would have done it is
@@ -1022,7 +1023,9 @@ vec4 effect(EFFECT_PREC vec4 color, Image tex, EFFECT_PREC vec2 tc,
   vec2 uv = sc / love_ScreenSize.xy;
   vec4 selfC = vp * vec4(vBent, 1.0);
   float selfZ = selfC.z / selfC.w * 0.5 + 0.5;
+#ifndef WATER_SKY_ONLY
   if (selfZ > Texel(depthTex, uv).r + 2e-4) discard;
+#endif
 
   // THE COLUMN THIS FRAGMENT IS LOOKING AT. Every water pixel is a bar of
   // its own standing a whole number of pixels tall, and the ray decides
@@ -1052,7 +1055,9 @@ vec4 effect(EFFECT_PREC vec4 color, Image tex, EFFECT_PREC vec2 tc,
   // place rather than from wherever inside it the fragment happened to land
   vec3 surf = vec3(col.x + 0.5, hit.y, col.y + 0.5);
 
-  vec4 p = Texel(tex, waveUV(tc, col));
+  vec4 p;
+  if (tc.x < -173.5 && tc.x > -174.5) p = outdoorWater(col,waveT);
+  else p = Texel(tex, waveUV(tc, col));
   if (p.a < 0.5) discard;
   // `face` is the column's own side shading, which is what makes a crest
   // read as a solid thing with a lit flank rather than as a bright patch
@@ -1104,10 +1109,12 @@ vec4 effect(EFFECT_PREC vec4 color, Image tex, EFFECT_PREC vec2 tc,
   if (skyOn > 0.5) {
     refl = bodyAt(r, skyAt(r, parity), parity);
   }
+#ifndef WATER_SKY_ONLY
   if (rays > 0.5) {
     vec4 hit = march(surf, r);
     refl = mix(refl, hit.rgb, hit.a);
   }
+#endif
 
   // Schlick, floored and softened (see FRESNEL_* in Water.lua): the angle
   // still decides, a grazing camera still gets a mirror, and a steep one
@@ -1173,14 +1180,16 @@ end
 
 Water._trainSource = trainSource       -- named for the suite
 
-local function source(grid, bare)
+local function source(grid, bare, skyOnly)
   local src = SHADER_SRC:gsub("//@CRATERS", (craterSource():gsub("%%", "%%%%")))
+  src = src:gsub("//@OUTDOOR_WATER",function()return V.require("Gen1OutdoorScenery").waterGLSL end)
   src = src:gsub("//@TRAINS", (trainSource():gsub("%%", "%%%%")))
   local head = ("#define RAY_STEPS %d\n#define RAY_REFINE %d\n"
                 .. "#define WAVE_STEPS %d\n#define WAVE_STRIDE %.1f\n")
     :format(Water.RAY_STEPS, Water.RAY_REFINE, Water.WAVE_STEPS,
             Water.WAVE_STRIDE)
   if grid then head = head .. "#define VOXEL_GRID 1\n" end
+  if skyOnly then head = head .. "#define WATER_SKY_ONLY 1\n" end
   -- effect()'s parameter precision -- see the signature for why it cannot
   -- simply be spelled there. Empty is a define all the same: the params
   -- then carry the stage default, which is what a prototype declared
@@ -1198,18 +1207,19 @@ Water._source = source                 -- named for the suite
 -- nil = untried, false = unavailable.
 local shaders = { [false] = nil, [true] = nil }
 
-function Water.shader(grid)
+function Water.shader(grid, skyOnly)
   grid = grid and true or false
-  if shaders[grid] == nil then
+  local key=skyOnly and (grid and 'sky-grid' or 'sky') or grid
+  if shaders[key] == nil then
     if not (love.graphics and love.graphics.newShader) then
-      shaders[grid] = false
+      shaders[key] = false
     else
-      local ok, sh = pcall(love.graphics.newShader, source(grid))
+      local ok, sh = pcall(love.graphics.newShader, source(grid, nil, skyOnly))
       if not ok then
         -- the pinned prototype was the wrong one for this runtime; the bare
         -- one is the only other shape there is, and a driver that refuses
         -- both was never going to draw this water anyway
-        local bareOk, bareSh = pcall(love.graphics.newShader, source(grid, true))
+        local bareOk, bareSh = pcall(love.graphics.newShader, source(grid, true, skyOnly))
         if bareOk then ok, sh = bareOk, bareSh end
       end
       if not ok and V and V.mod and V.mod.log then
@@ -1218,10 +1228,10 @@ function Water.shader(grid)
         V.mod.log:warn("water shader did not compile: %s -- lakes draw flat",
                        tostring(sh))
       end
-      shaders[grid] = (ok and sh) or false
+      shaders[key] = (ok and sh) or false
     end
   end
-  return shaders[grid] or nil
+  return shaders[key] or nil
 end
 
 -- ------- the pass
@@ -1266,8 +1276,9 @@ function Water.begin(ctx)
   if not (ctx and ctx.reflect and ctx.depth) then return false end
   local level = Water.level()
   if level <= 0 then return false end
-  local sh = ctx.grid and Water.shader(true) or nil
-  if not sh then sh = Water.shader(false) end
+  local hardwareDepth=level==1 and ctx.hardwareDepth==true
+  local sh = ctx.grid and Water.shader(true,hardwareDepth) or nil
+  if not sh then sh = Water.shader(false,hardwareDepth) end
   if not sh then return false end
 
   love.graphics.setShader(sh)

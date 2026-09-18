@@ -52,25 +52,11 @@ local AntiAlias = {}
 -- Phone panels routinely expose two to four million physical pixels even
 -- though the Game Boy playfield contains only 23k source pixels.  VASC's
 -- scene shader and depth buffer pay for every one of those panel pixels.  A
--- desktop GPU can afford that; a tile-based phone GPU can spend long enough
--- on the first frame that Gen1Recomp appears frozen behind its transition.
--- Render the 3-D pass into a bounded internal canvas and let resolve() scale
--- the finished image back to the exact framebuffer-sized canvas the engine
--- compositor expects.  The bound is aspect preserving and deliberately
--- independent of a saved AA choice: supersampling a phone bootstrap would
--- undo the safety policy before the first voxel frame exists.
+-- mobile GPU still needs an aspect-preserving budget. Use the selected 3D
+-- resolution on phones too; a hidden 960px cap made even NATIVE look soft.
+-- Mobile keeps supersampling disabled, independently of the resolution row.
 local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
   or CanvasPresentation.OS == "Android"
-local MOBILE_MAX_LONG_EDGE = 960
-local MOBILE_MAX_PIXELS = 640000
-
-local function mobileFactor(w, h)
-  if not MOBILE_RUNTIME then return 1 end
-  w, h = math.max(1, tonumber(w) or 1), math.max(1, tonumber(h) or 1)
-  return math.min(1,
-    MOBILE_MAX_LONG_EDGE / math.max(w, h),
-    math.sqrt(MOBILE_MAX_PIXELS / (w * h)))
-end
 
 -- the key under options.modOptions.VOXEL_ASCENDANT, shared by the row in
 -- OPTIONS and the mod manager's own settings page for this mod
@@ -88,6 +74,19 @@ AntiAlias.setting = ModSetting.new(AntiAlias.KEY, AntiAlias.LABEL,
 -- The scale the pass currently open was actually expanded by (see expand).
 -- 1 while there is no supersampling in force, which is also what every
 -- reader gets on a frame that never opened a pass at all.
+-- A Retina desktop can expose over seven million pixels. Keep the default
+-- 3-D workload at a predictable 1080p-class size, with native resolution an
+-- explicit quality choice. HUD/text are composited at display resolution.
+AntiAlias.resolution = ModSetting.new("sceneResolution", "3D RESOLUTION",
+  {"balanced", "native", "economy"}, {"1080P", "NATIVE", "720P"}, "balanced")
+local function desktopFactor(w,h)
+  local choice = AntiAlias.resolution:get()
+  if choice == "native" then return 1 end
+  local edge,short = choice == "economy" and 1280 or 1920,
+    choice == "economy" and 720 or 1080
+  return math.min(1,edge/math.max(1,w,h),short/math.max(1,math.min(w,h)))
+end
+
 local live = 1
 
 function AntiAlias.samples()
@@ -122,10 +121,8 @@ end
 -- multiplied up into canvas ones, and the honest multiplier is the one this
 -- returned rather than the one the row asked for.
 function AntiAlias.expand(w, h)
-  local s = MOBILE_RUNTIME and mobileFactor(w, h) or wanted()
-  -- getSystemLimits may itself force lazy driver initialization.  Phones do
-  -- not need that probe: their pass is bounded above and never supersampled.
-  local max = not MOBILE_RUNTIME and textureLimit() or nil
+  local s = desktopFactor(w,h)*(MOBILE_RUNTIME and 1 or wanted())
+  local max = textureLimit()
   if max and max > 0 then
     -- clamped rather than abandoned: a window too big for 4X can usually
     -- still carry some of it, and half a rung of smoothing is worth more

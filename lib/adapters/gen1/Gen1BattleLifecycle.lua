@@ -6,8 +6,8 @@
 -- providers can consume without wrapping BattleState themselves.
 --
 -- It owns no graphics, settings or save data.  Listener failures are isolated
--- and a native latch is one-way for the exact battle, so diagnostics can never
--- make an encounter jump back and forth between renderers.
+-- and automatic native fallback is one-way. Only explicit presentation input
+-- can retry it; diagnostics never change an encounter’s renderer.
 
 local V = ...
 
@@ -604,6 +604,10 @@ function Lifecycle.committed(battle, context)
       end
     end
     session.context = shallowCopy(context)
+    -- A new deployment/frame receipt must retain the established renderer
+    -- ownership lane; it cannot opt into that lane through frame metadata.
+    session.context.liveLegacyPresentation = previousContext
+      and previousContext.liveLegacyPresentation or nil
   end
   session.state = "active"
   session.reason = nil
@@ -615,6 +619,69 @@ function Lifecycle.committed(battle, context)
     session.transition = previousTransition
   end
   return committed, commitReason
+end
+
+-- Explicit user-requested restaging of front-view MAP, ARENA and DISCS.
+-- Ordinary claim/commit calls retain their immutable-provider contract.
+-- No battle or deployment token changes, and no engine start/switch/end event.
+function Lifecycle.changePresentation(battle, previousProvider, provider)
+  local reentryReason = rejectTransitionReentry()
+  if reentryReason then return nil, reentryReason end
+  if not exactOwner(battle) then return nil, "battle owner mismatch" end
+  if active.state ~= "active" then return nil, "battle is not settled" end
+  if active.provider ~= previousProvider then return nil, "presentation owner mismatch" end
+  if (previousProvider ~= "MAP" and previousProvider ~= "ARENA" and previousProvider ~= "DISCS")
+      or (provider ~= "MAP" and provider ~= "ARENA" and provider ~= "DISCS") then
+    return nil, "live presentation requires MAP, ARENA or DISCS"
+  end
+  if previousProvider == "DISCS" and not (active.context and active.context.liveLegacyPresentation) then
+    return nil, "router-owned DISCS cannot be restaged by the legacy renderer"
+  end
+  if provider == previousProvider then return receipt(active) end
+  local session = active
+  local oldMode, oldContext, oldTransition = session.requestedMode,
+    session.context, session.transition
+  session.provider, session.requestedMode = provider, provider
+  session.context = shallowCopy(oldContext) or {}
+  session.context.provider, session.context.requestedMode = provider, provider
+  session.context.entry = "user-presentation-change"
+  session.context.liveLegacyPresentation = true
+  local changed, reason, rollbackUnsafe = publish("presentation-changed", session)
+  if not changed and sameIdentity(active, session) and not rollbackUnsafe then
+    session.provider, session.requestedMode = previousProvider, oldMode
+    session.context, session.transition = oldContext, oldTransition
+  end
+  return changed, reason
+end
+
+-- Explicit input-only recovery. Claim/commit and automatic frame updates may
+-- never reopen a native latch. Retain the exact engine encounter/deployment.
+function Lifecycle.retryPresentation(battle, provider)
+  local reentryReason = rejectTransitionReentry()
+  if reentryReason then return nil, reentryReason end
+  if not exactOwner(battle) then return nil, "battle owner mismatch" end
+  if active.provider ~= "DEFAULT"
+      or (active.state ~= "native_latched" and active.state ~= "active") then
+    return nil, "battle is not native"
+  end
+  if provider ~= "MAP" and provider ~= "ARENA" and provider ~= "DISCS" then
+    return nil, "retry requires MAP, ARENA or DISCS"
+  end
+  local session = active
+  local oldState, oldReason, oldMode, oldContext, oldTransition =
+    session.state, session.reason, session.requestedMode, session.context, session.transition
+  session.state, session.reason = "active", nil
+  session.provider, session.requestedMode = provider, provider
+  session.context = shallowCopy(oldContext) or {}
+  session.context.provider, session.context.requestedMode = provider, provider
+  session.context.entry, session.context.liveLegacyPresentation = "user-presentation-retry", true
+  session.context.pokemonBack, session.context.trainerBack = false, false
+  local changed, reason, rollbackUnsafe = publish("presentation-retried", session)
+  if not changed and sameIdentity(active, session) and not rollbackUnsafe then
+    session.state, session.reason, session.provider = oldState, oldReason, "DEFAULT"
+    session.requestedMode, session.context, session.transition = oldMode, oldContext, oldTransition
+  end
+  return changed, reason
 end
 
 function Lifecycle.nativeLatched(battle, reason)

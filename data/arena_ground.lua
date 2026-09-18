@@ -2,6 +2,10 @@
 -- Everything outside these polygons is excluded, including water, walls, steps
 -- and scenery. Coordinates are normalized; digest covers decoded RGBA pixels.
 return {
+  ["assets/battle/arena_home-kanto.compact.png"] = {digest="234ae7306191b212ee397ec946dcea1938ebffdf2bda8a1e2c70f123725a8309", regions={{{.24,.53},{.80,.53},{.85,.83},{.23,.84}}}},
+  ["assets/battle/arena_home-traditional.compact.png"] = {digest="415c9bf3922b134468dac8c6c9479e31e654278dea4d88d740360f6c37462bdf", regions={{{.24,.53},{.80,.53},{.85,.83},{.23,.84}}}},
+  ["assets/battle/arena_home-coastal.compact.png"] = {digest="46b1004d46de6975556c4dcb28bbb0de1a534d01d10221ffd6331a097a7866ab", regions={{{.24,.53},{.80,.53},{.85,.83},{.23,.84}}}},
+  ["assets/battle/arena_home-cerulean-damaged.compact.png"] = {digest="be7b563c332fe51d2712f72fadd63d975cfe63e42a56eaa4d1dfc73bca203656", regions={{{.24,.53},{.80,.53},{.85,.83},{.23,.84}}}},
   ["assets/battle/arena_cape-route25.compact.png"] = { digest="18235601c6b674a78aef64496da512d9298183c8f41f3bad069bc764c075043d", regions={{{0.20, 0.56}, {0.65, 0.54}, {0.75, 0.75}, {0.25, 0.84}}} },
   ["assets/battle/arena_cave-cerulean-frlg.compact.png"] = { digest="9c3a5ce869bfc145fc813a0d2ca95b38a1e1464538a2e1fe95e76c328bcdef76", regions={{{0.30, 0.60}, {0.70, 0.57}, {0.77, 0.83}, {0.23, 0.84}}} },
   ["assets/battle/arena_cave-cerulean.compact.png"] = { digest="01141c4df84fc5f35bf478f9cb4391112f0fb95d4be4e41a720065333e3af8e7", regions={{{0.30, 0.50}, {0.72, 0.43}, {0.75, 0.78}, {0.23, 0.82}}} },
@@ -111,7 +115,7 @@ return {
   ["assets/battle/arena_league-bruno.compact.png"] = { digest="fa088a4272f6e0c611f0b05bdecdf3075a053c40985cb262bb4180466f7fe52e", regions={{{0.24, 0.58}, {0.78, 0.57}, {0.74, 0.70}, {0.59, 0.79}}} },
   ["assets/battle/arena_league-champion.compact.png"] = { digest="9a4e58155e242b69b3a23bfb96ff524e60169a78e180597286e3bdfff90fa429", regions={{{0.30, 0.56}, {0.78, 0.46}, {0.71, 0.66}, {0.46, 0.80}}} },
   ["assets/battle/arena_league-lance.compact.png"] = { digest="b8c72697b16ed4ca577a0b1b358d83110b2edfdb6f6b0fed033e13ff67fbf852", regions={{{0.25, 0.52}, {0.74, 0.49}, {0.74, 0.74}, {0.25, 0.74}}} },
-  ["assets/battle/arena_league-lorelei.compact.png"] = { digest="0c9f2a56acd64bcacd3dcac6bd4257a911f8a2479bbf40ef822f8e2d5f1d7cef", regions={{{0.28, 0.51}, {0.78, 0.49}, {0.71, 0.64}, {0.57, 0.80}}} },
+  ["assets/battle/arena_league-lorelei.compact.png"] = { digest="0c9f2a56acd64bcacd3dcac6bd4257a911f8a2479bbf40ef822f8e2d5f1d7cef", regions={{{0.19, 0.55}, {0.58, 0.46}, {0.905, 0.50}, {0.625, 0.83}}} },
   ["assets/battle/arena_mansion-cinnabar-frlg.compact.png"] = { digest="d39c428ba64c1a861aef07f39d49927537eefca97be52c880edb5447fdfdacd2", regions={{{0.28, 0.59}, {0.70, 0.58}, {0.72, 0.83}, {0.30, 0.85}}} },
   ["assets/battle/arena_mansion-cinnabar.compact.png"] = { digest="bcf0b0207d15dbfc74033112b9045198e89871c63deb82bbccaa8daf174282ec", regions={{{0.29, 0.67}, {0.73, 0.49}, {0.76, 0.77}, {0.38, 0.85}}} },
   ["assets/battle/arena_moon-approach-route3.compact.png"] = { digest="06922a9b8b41b41373a65e15dc8d949ea1a1c8737da336bd1ffbbed03ed06eb0", regions={{{0.25, 0.62}, {0.74, 0.58}, {0.76, 0.82}, {0.28, 0.84}}} },

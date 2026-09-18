@@ -910,21 +910,47 @@ local function alphaBounds(imageData, row, column, atlasColumns, layout, checkpo
     local _, _, _, alpha = imageData:getPixel(probeX, probeY)
     found = alpha and alpha > .02 or false
   end
-  for y = row * cellH, (row + 1) * cellH - 1 do
-    if checkpoint then checkpoint() end
-    if layout and found then break end
-    for x = column * cellW, (column + 1) * cellW - 1 do
-      local _, _, _, alpha = imageData:getPixel(x, y)
-      if alpha and alpha > .02 then
-        found = true
-        left, right = math.min(left, x), math.max(right, x + 1)
-        top, bottom = math.min(top, y), math.max(bottom, y + 1)
-        -- A verified layout replaces these bounds below. Only non-emptiness
-        -- matters here; continue full discovery for ordinary unsized cards.
-        if layout then break end
+  local x0, x1 = column * cellW, (column + 1) * cellW - 1
+  local y0, y1 = row * cellH, (row + 1) * cellH - 1
+  local function opaque(x,y)
+    local _,_,_,alpha=imageData:getPixel(x,y)
+    return alpha and alpha > .02
+  end
+  -- Search the four outside edges inward. The old row scan also examined
+  -- every pixel INSIDE the already found body, although none could enlarge
+  -- its bounds. Keep exact alpha thresholds, including isolated edge pixels.
+  if not found then
+    for y=y0,y1 do
+      if checkpoint then checkpoint() end
+      for x=x0,x1 do
+        if opaque(x,y) then top=y;left=x;right=x+1;found=true;break end
       end
+      if found then break end
     end
-    if layout and found then break end
+  end
+  if found and not layout then
+    for y=y1,top,-1 do
+      if checkpoint then checkpoint() end
+      local hit=false
+      for x=x0,x1 do
+        if opaque(x,y) then
+          bottom=y+1;left=math.min(left,x);right=math.max(right,x+1);hit=true;break
+        end
+      end
+      if hit then break end
+    end
+    for x=x0,left-1 do
+      if checkpoint then checkpoint() end
+      local hit=false
+      for y=top,bottom-1 do if opaque(x,y)then left=x;hit=true;break end end
+      if hit then break end
+    end
+    for x=x1,right,-1 do
+      if checkpoint then checkpoint() end
+      local hit=false
+      for y=top,bottom-1 do if opaque(x,y)then right=x+1;hit=true;break end end
+      if hit then break end
+    end
   end
   if not found then return nil end
   if layout then
@@ -970,7 +996,7 @@ local function alphaBounds(imageData, row, column, atlasColumns, layout, checkpo
 end
 
 local function atlasCardMesh(Voxel3D, bounds, visibleHeight, voxelFinish,
-    voxelGrid, voxelCubes, neutral)
+    voxelGrid, voxelCubes, neutral, continuousSurface)
   if not bounds then return nil end
   visibleHeight = tonumber(visibleHeight) or 16
   local pixelHeight = math.max(1, bounds.bottom - bounds.top)
@@ -1002,7 +1028,7 @@ local function atlasCardMesh(Voxel3D, bounds, visibleHeight, voxelFinish,
       or (bounds.gridRows or 14)
     local occupied = voxelCubes and (bounds.cubeOccupied or bounds.occupied or {})
       or (bounds.occupied or {})
-    local gap = voxelCubes and .006 or .07
+    local gap = continuousSurface and 0 or (voxelCubes and .006 or .07)
     -- The original grid keeps its shallow separated slices.  Cube mode is a
     -- separate opt-in: width, height and depth become approximately equal,
     -- turning every occupied silhouette cell into a real Minecraft-like
@@ -1068,13 +1094,15 @@ local function atlasCardMesh(Voxel3D, bounds, visibleHeight, voxelFinish,
           end
           quad({xa,yb,zFront,ua,vb,1}, {xb,yb,zFront,ub,vb,1},
                {xb,yt,zFront,ub,vt,1}, {xa,yt,zFront,ua,vt,1})
-          local black = .035
+          -- Natural human cards keep contiguous artwork across cell edges.
+          -- Retain the original separated/dark finish for classic rendering.
+          local black = continuousSurface and (neutral and 1 or .86) or .035
           if not voxelCubes then
             quad({xb,yb,zBack,ub,vb,black}, {xa,yb,zBack,ua,vb,black},
                  {xa,yt,zBack,ua,vt,black}, {xb,yt,zBack,ub,vt,black})
           end
           local function exposedStart(nx, ny)
-            local neighbour = voxelCubes and neighbourLayers(nx, ny) or 0
+            local neighbour = (voxelCubes or continuousSurface) and neighbourLayers(nx, ny) or 0
             return neighbour < layers and zBack + neighbour * cubeDepth or nil
           end
           local zs = exposedStart(gx - 1, gy)
@@ -1199,6 +1227,126 @@ local function followerMotionColumn(moving, living, dex, now, profile)
   return 0
 end
 
+-- Optional performances belong to the live world, never to a modal screen
+-- or a script that currently owns its actors. Unknown owners keep native poses.
+local function humanScene(game, generation)
+  local world = game and (generation == 2 and game.world or game.overworld)
+  world = world or game and (game.overworld or game.world)
+  local stack = game and game.stack
+  if not world or not world.map or not stack or type(stack.top) ~= "function" then return false end
+  local ok, top = pcall(stack.top, stack)
+  if not ok then return false end
+  -- Gen 1 puts the world on its state stack. Gen 2 draws the live play
+  -- world underneath an otherwise empty stack; nil alone is not a grant.
+  local live = top and top.isOverworld == true
+    or generation == 2 and top == nil and game.phase == "play"
+  if not live then return false end
+  local player = world.player
+  if world.inputLocked or player and (player.inputLocked or player.scriptedMoving)
+      or type(world.scriptMoves) == "table" and next(world.scriptMoves) ~= nil then return false end
+  local runner = world.runner
+  if runner and type(runner.isRunning) == "function" then
+    local queryOk, running = pcall(runner.isRunning, runner)
+    if not queryOk or running then return false end
+  end
+  return true, world, world.map
+end
+
+-- Human cards have neutral/A/B artwork, not an independent timed clip.
+-- Sample travelled ground distance once per render instant so native neutral
+-- ticks and additional shadow passes cannot restart or double the walk cycle.
+-- All state lives on our renderer record; native entities remain untouched.
+local function humanMotion(record, model, now)
+  local state = record.humanMotion
+  if not state then
+    state = { distance=0, column=0, idleAt=now }
+    record.humanMotion = state
+  end
+  if state.observedAt == now then return state.column, state.breath end
+  local x = type(model) == "table" and #model >= 16
+    and model[1] * 8 + model[4] or nil
+  local z = x and model[9] * 8 + model[12] or nil
+  local elapsed = state.observedAt and now - state.observedAt or 0
+  local distance = x and state.x and math.sqrt((x-state.x)^2 + (z-state.z)^2) or 0
+  -- A map warp, hidden actor, or clock reset starts a fresh presentation.
+  local reset = elapsed < 0 or elapsed > .25 or distance > 16
+  if reset then
+    state.distance, state.lastMovedAt, state.idleAt = 0, nil, now
+    state.armStride, state.armRestFrom = 0, nil
+    state.armPhase, state.armPhaseOffset = nil, nil
+    state.armResumeDistance = nil
+  elseif distance > .001 then
+    state.distance = (state.distance + distance) % 32
+    state.lastMovedAt, state.idleAt = now, now
+  end
+  local moving = state.lastMovedAt and now - state.lastMovedAt < .09
+  if moving then
+    local phase = state.distance / 32 * math.pi * 2
+    if state.armRestFrom and state.armStride and state.armStride ~= 0 then
+      -- Resume from the currently settling pose, preserving swing direction.
+      -- Feet have their own reset cadence; restarting their phase must not
+      -- snap arms that have not yet reached their resting position.
+      local resumed = math.asin(math.max(-1, math.min(1, state.armStride)))
+      if state.armPhase and math.cos(state.armPhase) < 0 then
+        resumed = math.pi - resumed
+      end
+      state.armPhaseOffset = (resumed - phase + math.pi) % (2*math.pi) - math.pi
+      state.armResumeDistance = 0
+    elseif state.armResumeDistance then
+      state.armResumeDistance = math.min(32, state.armResumeDistance + distance)
+    end
+    -- Rejoin the feet's cadence within one travelled cycle. Taking the short
+    -- phase route and easing over 32 units keeps the arm phase advancing.
+    local rejoin = (state.armResumeDistance or 32) / 32
+    local offset = (state.armPhaseOffset or 0) * (1-rejoin*rejoin*(3-2*rejoin))
+    state.armPhase = phase + offset
+    state.armStride = math.sin(state.armPhase)
+    state.armRestFrom = nil
+    -- Centre each authored foot excursion on the matching arm-swing peak.
+    -- Neutral belongs around the passing pose, on both sides of each zero.
+    local phase = math.floor((state.distance + 4) / 8) % 4
+    state.column = phase == 1 and 1 or phase == 3 and 2 or 0
+  else
+    -- Retain the final arm excursion while the feet return to neutral, then
+    -- settle over 180 ms. Absolute stop time keeps this independent of FPS.
+    state.armRestFrom = state.armRestFrom or state.armStride or 0
+    local rest = state.lastMovedAt and math.min(1,
+      math.max(0, (now-state.lastMovedAt-.09)/.18)) or 1
+    state.armStride = state.armRestFrom * (1-rest*rest*(3-2*rest))
+    if rest == 1 then
+      state.armPhase, state.armPhaseOffset, state.armResumeDistance = nil, nil, nil
+    end
+    state.column = 0
+    state.distance = 0
+  end
+  -- Ease in a shallow, foot-anchored breath after stopping. Distinct actor
+  -- seeds keep a room of NPCs from inhaling in lockstep.
+  local settle = math.min(1, math.max(0, (now-state.idleAt-.15)/.6))
+  local wave = (1 + math.sin(now * 1.8 + (record.flamePhase or 0)*math.pi*2)) / 2
+  state.breath = moving and 1 or 1 + .006 * settle * wave
+  state.x, state.z, state.observedAt = x, z, now
+  return state.column, state.breath
+end
+
+-- Keep the scale and horizontal root of the standing pose throughout a
+-- human's step. Tight-cropping each frame independently used to resize and
+-- recenter the entire person as an arm or shoe extended beyond its silhouette.
+-- Keep the source's lowest sole on the floor; never rewrite the classic bounds.
+local function humanCardBounds(bounds, neutral)
+  if not bounds or not neutral or bounds.layout then return bounds end
+  if not bounds.humanStableBounds then
+    local stable = {}
+    for key, value in pairs(bounds) do stable[key] = value end
+    stable.layout = {
+      anchorX=(neutral.left+neutral.right)/2-neutral.cellX,
+      anchorY=bounds.bottom-bounds.cellY,
+      referenceHeight=math.max(1,neutral.bottom-neutral.top),
+    }
+    bounds.humanStableBounds = stable
+  end
+  return bounds.humanStableBounds
+end
+
 local function verifiedCardLayout(layout, groundAnchorHeightFactor)
   if type(layout) ~= "table" then return nil end
   for _, key in ipairs({ "cellWidth", "cellHeight", "left", "top",
@@ -1272,6 +1420,7 @@ end
 -- scene fields; LOVE retains the caller's canvas, depth and blending state.
 local NEUTRAL_CARD_SHADER = [[
 varying float cardShade;
+varying LOVE_HIGHP_OR_MEDIUMP float waterHeight;
 #ifdef VERTEX
 uniform mat4 vp;
 uniform mat4 model;
@@ -1282,6 +1431,7 @@ attribute float VertexShade;
 vec4 position(mat4 transform_projection, vec4 vertex_position) {
   cardShade = VertexShade;
   vec4 w = model * vertex_position;
+  waterHeight = w.y;
   if (curve.z > 0.0) {
     vec2 cd = w.xz - curve.xy;
     w.y -= dot(cd, cd) * curve.z;
@@ -1292,7 +1442,9 @@ vec4 position(mat4 transform_projection, vec4 vertex_position) {
 #endif
 #ifdef PIXEL
 uniform float cardAlphaPass;
+uniform float actorWaterline;
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+  if (waterHeight < actorWaterline) discard;
   vec4 p = Texel(tex, tc);
   if (cardAlphaPass > 1.5) {
     if (p.a <= 0.001 || p.a >= 0.999) discard;
@@ -1340,23 +1492,49 @@ local function vascPatch(self)
   local originalResolve = SpriteRenderer.resolveImage
   local originalDraw = Voxel3D.draw
   local originalBeginScene = Voxel3D.beginScene
+  local originalPrewarmWorldCards = Voxel3D.prewarmWorldCards
+  local originalWorldCardsReady = Voxel3D.worldCardsReady
   local originalPreparePokemonFrame = Voxel3D.preparePokemonFrame
   local plannerOk, residencyPlanner = pcall(resolve, "HdResidencyPlan")
   if not plannerOk or type(residencyPlanner) ~= "table"
       or type(residencyPlanner.plan) ~= "function" then residencyPlanner = nil end
   local framePlan, wrappedPreparePokemonFrame
+  local clockOk, humanClock = pcall(require, "src.core.FixedStep")
+  if not clockOk then humanClock = nil end
+  local humanFrameTime, humanFrameMap, humanFramePlayer
   local originalFlatten = Voxel3D.flatten
   local originalPlayerWalker = scene.requireExternalKascWalker
   local wrappedPlayerWalker
   if self.pikachuRide and type(originalPlayerWalker) == "function" then
     wrappedPlayerWalker = function(...)
       local sprite, route = originalPlayerWalker(...)
+      -- ExternalKascWalker deliberately resolves KASC's registered source
+      -- instead of the live actor renderer. Once WalkingSprites has attached
+      -- an approved VASC atlas, use that exact live renderer for the normal
+      -- walk state. Otherwise Green/Blue look correct but bypass gait, breath
+      -- and eyelids because VoxelScene keeps drawing KASC's static renderer.
+      local game = self.activeGame
+      local world = game and (game.overworld or game.world)
+      local live = world and world.player and world.player.sprite
+      local liveDef = live and live.def
+      if route ~= "independent-state" and liveDef
+          and type(liveDef.ascendantAtlasImage) == "string"
+          and liveDef.ascendantAtlasImage ~= "" then
+        sprite = live
+      end
       self.renderPlayerSprite = sprite
       return sprite, route
     end
     scene.requireExternalKascWalker = wrappedPlayerWalker
   end
   local sceneShader, flattened, neutralShader
+  local humanRig, humanBlink, humanGrid, humanSeatedBreath, humanJohtoSeat
+  if self.humanJohtoSeatModule and type(self.humanJohtoSeatModule.new)=='function' then
+    local ok,value=pcall(self.humanJohtoSeatModule.new,{mod=self.mod,
+      generation=self.generation,voxel=Voxel3D,profiles=self.humanSeatProfiles})
+    humanJohtoSeat=ok and value or false
+    if not ok then self.humanJohtoSeatError=value end
+  end
   local styleModule = self.cardStyleModule
   local stylePass = styleModule and styleModule.new()
   local wrappedBeginScene, wrappedFlatten
@@ -1400,6 +1578,7 @@ local function vascPatch(self)
         Voxel3D.curveZ or 0, Voxel3D.curveK or 0 })
       neutralShader:send("pull", pull or 0)
       neutralShader:send("cardAlphaPass", 0)
+      neutralShader:send("actorWaterline", Voxel3D.actorWaterline or -30000)
     end)
     if not ok then self.neutralCardError = tostring(err) return nil end
     return neutralShader
@@ -1412,11 +1591,14 @@ local function vascPatch(self)
     local ok, texture = pcall(Assets.image, path)
     local dataOk, imageData = pcall(Assets.imageData, path)
     if ok and texture and dataOk and imageData then
-      local bounds = {}
-      for row = 0, 3 do
-        bounds[row] = {}
-        for column = 0, 2 do
-          bounds[row][column] = alphaBounds(imageData, row, column)
+      local bounds = self.cardBounds and self.cardBounds.forImage(imageData)
+      if not bounds then
+        bounds = {}
+        for row = 0, 3 do
+          bounds[row] = {}
+          for column = 0, 2 do
+            bounds[row][column] = alphaBounds(imageData, row, column)
+          end
         end
       end
       cardTextures[role] = { texture=texture, bounds=bounds }
@@ -1811,6 +1993,137 @@ local function vascPatch(self)
     Voxel3D.preparePokemonFrame=wrappedPreparePokemonFrame
   end
 
+  -- The posed list is prepared once before shadows and all eye/color passes.
+  -- Share its instant across human gait, breath and eyelids. Hosts which never
+  -- call this optional hook retain draw-time sampling.
+  local prepareResources = wrappedPreparePokemonFrame or originalPreparePokemonFrame
+  wrappedPreparePokemonFrame = function(world, posed)
+    humanFrameTime = love and love.timer and love.timer.getTime
+      and love.timer.getTime() or 0
+    humanFrameMap = world and world.map
+    humanFramePlayer = world and world.player
+    if self.humanActing then
+      self.humanActing:frame(self.activeGame, world,
+        self.presentationPolicy and self.presentationPolicy:gridEnabled("characters"))
+    end
+    if humanGrid then
+      local eligible, liveWorld, liveMap = humanScene(self.activeGame, self.generation)
+      local allowed = eligible and choice(self.mod, "card_animation_mode", "classic") == "natural"
+        and option(self.mod, "hd_walking_sprites", true)
+        and self.presentationPolicy and self.presentationPolicy:gridEnabled("characters")
+      local token = tostring(self.humanPresentationEpoch)..":"..tostring(liveMap)..":"..tostring(liveWorld and liveWorld.player)
+      local ok,err = pcall(humanGrid.frame,humanGrid,token,allowed)
+      if not ok then
+        self.humanGridError=err;pcall(humanGrid.clear,humanGrid);humanGrid=false
+      end
+    end
+    if self.humanPositionModule then
+      local eligible, liveWorld, liveMap = humanScene(self.activeGame, self.generation)
+      local clock = self.activeGame and self.activeGame.fixedStep or humanClock
+      local alpha = self.humanPositionModule.fraction(clock)
+      local enabled = eligible and liveMap == (world and world.map)
+        and liveWorld.player == (world and world.player)
+        and choice(self.mod, "card_animation_mode", "classic") == "natural"
+        and option(self.mod, "hd_walking_sprites", true)
+      local ok, err = pcall(self.humanPositionModule.apply, posed, {
+        enabled=enabled, alpha=alpha, generation=self.generation,
+        mapId=liveMap and liveMap.id,
+        ready=function(p)
+          local record=p.sprite and spriteRecords[p.sprite]
+          return record~=nil and record.def==p.sprite.def and not record.dex
+            and type(record.cardSource)=="table" and record.cardSource.texture~=nil
+        end,
+      })
+      if not ok then
+        self.humanPositionError=tostring(err)
+        self.humanPositionModule.apply(posed, {enabled=false})
+      end
+    end
+    if prepareResources then return prepareResources(world, posed) end
+  end
+  Voxel3D.preparePokemonFrame = wrappedPreparePokemonFrame
+
+
+  -- Both preloading and drawing use this exact cache. Never create a second
+  -- GPU copy, scan hypothetical actors or change a sprite's pose to warm it.
+  local function loadCardAtlas(atlasPath, textureFilter, anisotropy)
+    if atlasTextures[atlasPath] == nil then
+      local textureOk, atlasTexture = pcall(Assets.image, atlasPath)
+      local dataOk, atlasData = pcall(Assets.imageData, atlasPath)
+      if textureOk and atlasTexture and dataOk and atlasData then
+        -- Smooth the GO/HD render cards while retaining nearest-neighbour
+        -- sampling for PokeMMO's deliberately pixel-authored atlases.
+        if type(atlasTexture.setFilter) == "function" then
+          pcall(atlasTexture.setFilter, atlasTexture,
+            textureFilter, textureFilter, anisotropy)
+        end
+        local bounds = self.cardBounds and self.cardBounds.forImage(atlasData)
+        if not bounds then
+          bounds = {}
+          for row = 0, 3 do
+            bounds[row] = {}
+            for column = 0, 2 do
+              bounds[row][column] = alphaBounds(atlasData, row, column)
+            end
+          end
+        end
+        atlasTextures[atlasPath] = { texture=atlasTexture, bounds=bounds }
+      else
+        atlasTextures[atlasPath] = false
+      end
+    end
+    return atlasTextures[atlasPath] or nil
+  end
+  local warmedWorldSprites = setmetatable({}, {__mode="k"})
+  local function humanWarmKey(sprite)
+    local def = sprite and sprite.def
+    local path = def and def.ascendantAtlasImage
+    if type(path) ~= "string" or path == "" or def.ascendantPokemonDex
+        or def.pokemonDex or def.ascendantPokemonAnimationCards
+        or def.ascendantPokemonFlameCards then return nil end
+    return path .. "#" .. tostring(def.image) .. "#" .. tostring(sprite.image)
+      .. "#" .. tostring(sprite.objGroup)
+  end
+  local function worldCardsReady(world)
+    if not world or not option(self.mod, "hd_walking_sprites", true) then return true end
+    for _, entity in ipairs(world.entities or {}) do
+      local sprite = entity.sprite
+      local key = humanWarmKey(sprite)
+      if key and warmedWorldSprites[sprite] ~= key then return false end
+    end
+    return true
+  end
+  local function prewarmWorldCards(world)
+    if not world or not option(self.mod, "hd_walking_sprites", true) then return false end
+    -- Retire just one actual current-map resource per update. Atlas metadata
+    -- alone was insufficient: the native runtime strip/palette was still
+    -- generated by resolveImage in the first visible shadow pass.
+    for _, entity in ipairs(world.entities or {}) do
+      local sprite = entity.sprite
+      local key = humanWarmKey(sprite)
+      if key and warmedWorldSprites[sprite] ~= key then
+        local path = sprite.def.ascendantAtlasImage
+        if atlasTextures[path] == nil then
+          loadCardAtlas(path, "linear", 8)
+        else
+          -- Use the installed resolver and its canonical native/APO caches.
+          -- Never advance pose(), a movement timer, or a future-map actor.
+          if type(sprite.resolveImage) == "function" then
+            local ok, err = pcall(sprite.resolveImage, sprite)
+            if not ok then self.humanPrewarmError = tostring(err) end
+          end
+          -- Optional artwork failures must not trap the engine transition.
+          warmedWorldSprites[sprite] = key
+        end
+        return true
+      end
+    end
+    return false
+  end
+  Voxel3D.prewarmWorldCards = prewarmWorldCards
+  Voxel3D.worldCardsReady = worldCardsReady
+
+
   local function resolveImage(sprite)
     local image = originalResolve(sprite)
     local def = sprite and sprite.def or nil
@@ -1822,6 +2135,8 @@ local function vascPatch(self)
       and (tonumber(def.ascendantPokemonDex) or tonumber(def.pokemonDex)
         or tonumber(tostring(def.image or ""):match("follower_0*(%d+)")))
     if image and not pokemonDex and not option(self.mod, "hd_walking_sprites", true) then
+      local previous = spriteRecords[sprite]
+      if previous then previous.humanMotion = nil end
       imageDefs[image] = nil
       return image
     end
@@ -1848,6 +2163,16 @@ local function vascPatch(self)
         record = { def=sprite.def, flamePhase=phase % 1 }
         spriteRecords[sprite] = record
       end
+      -- A costume, action or identity rebind can reuse the native Sprite.
+      -- Never carry the former body's stride/idle clock into its replacement.
+      local humanSource = tostring(sprite.def.ascendantAtlasImage or "")
+        .. "#" .. tostring(sprite.def.ascendantRole or heroRole or "")
+        .. "#" .. tostring(sprite.def.ascendantCharacterAction or "")
+      if record.humanSource ~= humanSource
+          or choice(self.mod, "card_animation_mode", "classic") ~= "natural" then
+        record.humanMotion = nil
+      end
+      record.humanSource = humanSource
       record.def = sprite.def
       record.sprite = sprite
       record.isPlayer = sprite.seed == "player"
@@ -1879,29 +2204,13 @@ local function vascPatch(self)
         record.cardSource=fallbackTextures[ownedFallback.key] or nil
       elseif not record.flameSources and not record.animationSources
           and type(atlasPath) == "string" and atlasPath ~= "" then
-        if atlasTextures[atlasPath] == nil then
-          local textureOk, atlasTexture = pcall(Assets.image, atlasPath)
-          local dataOk, atlasData = pcall(Assets.imageData, atlasPath)
-          if textureOk and atlasTexture and dataOk and atlasData then
-            -- Smooth the GO/HD render cards while retaining nearest-neighbour
-            -- sampling for PokeMMO's deliberately pixel-authored atlases.
-            if type(atlasTexture.setFilter) == "function" then
-              pcall(atlasTexture.setFilter, atlasTexture,
-                textureFilter, textureFilter, anisotropy)
-            end
-            local bounds = {}
-            for row = 0, 3 do
-              bounds[row] = {}
-              for column = 0, 2 do
-                bounds[row][column] = alphaBounds(atlasData, row, column)
-              end
-            end
-            atlasTextures[atlasPath] = { texture=atlasTexture, bounds=bounds }
-          else
-            atlasTextures[atlasPath] = false
-          end
-        end
+        loadCardAtlas(atlasPath, textureFilter, anisotropy)
         record.cardSource = atlasTextures[atlasPath] or nil
+      end
+      if type(atlasPath) == "string" and atlasPath ~= "" and not record.cardSource
+          and not record.flameSources and not record.animationSources then
+        -- Cancel clocks even when no fallback card reaches the draw branch.
+        record.humanMotion = nil
       end
       record.dex = tonumber(sprite.def.ascendantPokemonDex)
         or tonumber(sprite.def.pokemonDex)
@@ -1948,6 +2257,49 @@ local function vascPatch(self)
       imageDefs[image] = nil
     end
     return image
+  end
+
+  -- Field overlays cannot use the normal Voxel3D mesh substitution. Bake a
+  -- small, cached six-pose carrier from the exact same HD atlas instead.
+  -- It is presentation-only and shares the atlas cache with ordinary walking.
+  local fieldBodies = setmetatable({}, {__mode="k"})
+  self.fieldActorRenderer = function(sprite)
+    if not sprite or not option(self.mod, "hd_walking_sprites", true) then return nil end
+    resolveImage(sprite)
+    local record = spriteRecords[sprite]
+    if not record or record.dex then return nil end
+    local source = record.cardSource or cardTextures[record.role]
+    if not source then return nil end
+    local held = fieldBodies[source]
+    if held then return held end
+    local g, cell = love.graphics, 128
+    local canvas = g.newCanvas(cell, cell * 6, {dpiscale=1})
+    canvas:setFilter("linear", "linear")
+    local old = g.getCanvas()
+    g.push("all")
+    local ok, err = pcall(function()
+      g.setCanvas(canvas); g.origin(); g.setScissor(); g.setShader()
+      g.clear(0,0,0,0); g.setColor(1,1,1,1); g.setBlendMode("alpha")
+      for frame=0,5 do
+        local row = ({[0]=0,[1]=2,[2]=1})[frame % 3]
+        local b = source.bounds[row][0]
+        local w,h = b.right-b.left,b.bottom-b.top
+        local scale = cell / h
+        local q = g.newQuad(b.left,b.top,w,h,b.imageWidth,b.imageHeight)
+        g.setScissor(0,frame*cell,cell,cell)
+        g.draw(source.texture,q,(cell-w*scale)/2,frame*cell,0,scale,scale)
+      end
+    end)
+    g.setCanvas(old); g.pop()
+    if not ok then canvas:release(); error(err) end
+    held = {image=canvas,frames={},fieldHD=true,fieldRole=record.role,fieldSource=record.def.ascendantAtlasImage,
+      def={id="VASC_FIELD_BODY_"..tostring(record.role),
+        image=sprite.def.image,frames=6,walker=true,trueColor=true,
+        frameWidth=cell,frameHeight=cell},
+      resolveImage=function(body) return body.image end}
+    for frame=0,5 do held.frames[frame]=g.newQuad(0,frame*cell,cell,cell,cell,cell*6) end
+    fieldBodies[source] = held
+    return held
   end
 
   local function replacement(def, frame, role, motionPhase, dex)
@@ -2071,6 +2423,61 @@ local function vascPatch(self)
           and option(self.mod, "living_follower_animation", true)
         local column = followerMotionColumn(frame >= 3 or spacingMoving,
           living, record.dex, now, record.motionProfile)
+        local humanBreath
+        local humanEligible, humanWorld, humanMap, dialogueBox
+        -- A preloaded hero card can remain available after its explicitly
+        -- assigned atlas fails. It is a fallback, not a validated animation
+        -- source: keep the standard presentation until that source recovers.
+        local missingHumanAtlas = not record.dex
+          and type(def.ascendantAtlasImage) == "string" and def.ascendantAtlasImage ~= ""
+          and not record.cardSource
+        if choice(self.mod, "card_animation_mode", "classic") == "natural"
+            and not record.dex and not def.ascendantCharacterAction and not missingHumanAtlas then
+          humanEligible, humanWorld, humanMap = humanScene(self.activeGame, self.generation)
+          if not humanEligible and self.humanActing and self.humanActing.idleContext then
+            humanEligible,humanWorld,humanMap,dialogueBox=self.humanActing:idleContext(self.activeGame,record)
+            if not humanEligible and self.humanActing.scriptContext then
+              humanEligible,humanWorld,humanMap=self.humanActing:scriptContext(self.activeGame,record)
+            end
+          elseif not humanEligible and self.humanDialogueIdle then
+            humanEligible,humanWorld,humanMap,dialogueBox=self.humanDialogueIdle:eligible(self.activeGame,record)
+          end
+        end
+        if record.humanDialogueBox~=dialogueBox then
+          record.humanMotion=nil;record.humanDialogueBox=dialogueBox
+        end
+        if humanEligible then
+          -- Keep only one current world/map on the renderer. Per-sprite
+          -- caches must not retain entire maps after their actors disappear.
+          if self.humanContextWorld ~= humanWorld or self.humanContextMap ~= humanMap
+              or self.humanContextMapId ~= humanMap.id then
+            self.humanContextWorld, self.humanContextMap = humanWorld, humanMap
+            self.humanContextMapId = humanMap.id
+            self.humanPresentationEpoch = self.humanPresentationEpoch + 1
+          end
+          if record.humanEpoch ~= self.humanPresentationEpoch then
+            record.humanMotion = nil
+          end
+          record.humanEpoch = self.humanPresentationEpoch
+          -- Gen2 prepares a render facade with the same live map/player.
+          local sameFrameWorld = humanFrameMap == humanMap
+            and humanFramePlayer ~= nil and humanFramePlayer == humanWorld.player
+          local motionNow = sameFrameWorld and humanFrameTime or now
+          column, humanBreath = humanMotion(record, model, motionNow)
+          if self.humanIdleModule then
+            local motion = record.humanMotion
+            self.humanIdleModule.blink(motion, motionNow,
+              not motion.lastMovedAt or motionNow-motion.lastMovedAt >= .7,
+              record.flamePhase)
+            if self.humanIdleModule.shift then
+              self.humanIdleModule.shift(motion, motionNow,
+                not dialogueBox and (not motion.lastMovedAt or motionNow-motion.lastMovedAt >= 2),
+                record.flamePhase)
+            end
+          end
+        else
+          record.humanMotion = nil
+        end
         local flameState
         local animationState
         local cardMoving = frame >= 3 or spacingMoving
@@ -2115,8 +2522,41 @@ local function vascPatch(self)
           elseif blinkTime < .233334 then blinkColumn = 1 end
         end
         local activeSource = blinkColumn ~= nil and record.blinkSource or cardSource
+        -- Gen2's live renderer does not invoke preparePokemonFrame on every
+        -- dialogue draw. Re-evaluate the exact interaction-owned acting
+        -- selection when that one actor is admitted; the module is bounded,
+        -- preloaded and fails back to the ordinary card on any error.
+        if self.generation==2 and humanEligible and humanWorld and self.humanActing then
+          local ok,err=pcall(self.humanActing.frame,self.humanActing,
+            self.activeGame,humanWorld,
+            self.presentationPolicy and self.presentationPolicy:gridEnabled("characters"))
+          if not ok then self.humanActingError=tostring(err);self.humanActing:reset() end
+        end
+        local actingSource = not record.dex and self.humanActing
+          and self.humanActing:source(record.sprite)
+        local actingBreath
+        if actingSource then
+          activeSource = actingSource
+          -- Preserve the shared idle clock as a subtle foot-anchored scale.
+          -- Free-form acting sheets cannot enter the 3x4 limb rig, but they
+          -- should still breathe while holding a conversation pose.
+          actingBreath, humanBreath = humanBreath, nil
+        end
         local activeColumn = blinkColumn ~= nil and blinkColumn or column
-        local visibleHeight = tonumber(def.ascendantWorldHeight)
+        local seatProfile,seatLook,seatSettled
+        if not record.dex and humanJohtoSeat then
+          local seatNow=humanFrameMap and humanFrameTime or now
+          local seatDialogue=dialogueBox
+          if not seatDialogue and self.humanActing and self.humanActing.conversationOwns
+              and self.activeGame and self.activeGame.stack then
+            local ok,top=pcall(self.activeGame.stack.top,self.activeGame.stack)
+            if ok and top and self.humanActing:conversationOwns(humanWorld or self.activeGame.overworld,
+                record.sprite,top) then seatDialogue=top end
+          end
+          seatProfile,seatLook,seatSettled=humanJohtoSeat:pose(self.activeGame,record,seatDialogue,seatNow)
+          if seatProfile then row,activeColumn=seatProfile.row,0 end
+        end
+        local visibleHeight = tonumber(actingSource and actingSource.worldHeight or def.ascendantWorldHeight)
         if visibleHeight and (visibleHeight ~= visibleHeight or visibleHeight <= 0
             or visibleHeight == math.huge) then visibleHeight = nil end
         if visibleHeight then
@@ -2139,6 +2579,9 @@ local function vascPatch(self)
           and self.presentationPolicy:gridEnabled(actorKind) or false
         local voxelCubes = cubeProfile(self.mod)
         local bounds = activeSource.bounds[row][activeColumn]
+        if humanBreath then
+          bounds = humanCardBounds(bounds, activeSource.bounds[row][0])
+        end
         local styleSpec, styleDescriptor
         if styleModule and not voxelGrid and not record.flameSources then
           local source = def.ascendantPokemonSpriteSource
@@ -2160,6 +2603,7 @@ local function vascPatch(self)
           neutral = true
         end
         local key = table.concat({ record.role, row, activeColumn,
+          humanBreath and "natural" or "classic",
           visibleHeight, tostring(voxelFinish), tostring(voxelGrid),
           tostring(neutral),
           styleDescriptor and styleDescriptor.mode or "original",
@@ -2169,7 +2613,7 @@ local function vascPatch(self)
         if cardMeshes[key] == nil then
           cardMeshes[key] = atlasCardMesh(Voxel3D,
             bounds, visibleHeight * styleHeightFactor, voxelFinish,
-            voxelGrid, voxelCubes, neutral)
+            voxelGrid, voxelCubes, neutral, humanBreath and true or false)
             or false
         end
         local card = cardMeshes[key] or nil
@@ -2194,7 +2638,7 @@ local function vascPatch(self)
           -- the floor, plus a shallow hover wave while moving or idle.  This
           -- changes only presentation: path, collision and owner coordinates
           -- remain on the canonical walked tile.
-          local breathScale, breathLift = 1, 0
+          local breathScale, breathLift = actingBreath or humanBreath or 1, 0
           local profile = tostring(record.motionProfile or "")
           local wave = (math.sin(now * 2.15 + (record.dex or 0) * .37) + 1) / 2
           if living and not record.animationSources and profile:find("airborne") then
@@ -2219,12 +2663,14 @@ local function vascPatch(self)
           -- cancel the engine's sheet mirror so it is not applied twice.
           local cardModel = translatedModel(unmirrorCardMatrix(model),
             spacingX + (rideVisual and rideVisual.dx or 0),
-            spacingZ + (rideVisual and rideVisual.dz or 0),
-            breathLift + (rideVisual and rideVisual.dy or 0))
+            spacingZ + (rideVisual and rideVisual.dz or 0) + (actingSource and actingSource.offsetZ or 0),
+            breathLift + (rideVisual and rideVisual.dy or 0) + (actingSource and actingSource.offsetY or 0)
+              + (seatProfile and seatProfile.offsetY or 0))
           local cardSun = translatedModel(unmirrorCardMatrix(sunModel),
             spacingX + (rideVisual and rideVisual.dx or 0),
-            spacingZ + (rideVisual and rideVisual.dz or 0),
-            breathLift + (rideVisual and rideVisual.dy or 0))
+            spacingZ + (rideVisual and rideVisual.dz or 0) + (actingSource and actingSource.offsetZ or 0),
+            breathLift + (rideVisual and rideVisual.dy or 0) + (actingSource and actingSource.offsetY or 0)
+              + (seatProfile and seatProfile.offsetY or 0))
           if breathScale ~= 1 then
             cardModel = matMul(cardModel, scale(1, breathScale, 1))
             -- The mobile render path can omit its optional shadow matrix.
@@ -2254,7 +2700,103 @@ local function vascPatch(self)
               decision="render-card",
             }, self.activeGame)
           end
-          return correctedDraw(card, activeSource.texture, cardModel, pull,
+          local cardTexture = activeSource.texture
+          if seatProfile and humanJohtoSeat then
+            local ok,m,t=pcall(humanJohtoSeat.prepare,humanJohtoSeat,
+              record,card,activeSource,seatProfile,visibleHeight,seatLook)
+            if ok and m then
+              card,cardTexture=m,t or cardTexture
+              local blinkRow=row
+              if record.humanMotion and not seatSettled then
+                record.humanMotion.blinkAmount=math.max(record.humanMotion.blinkAmount or 0,
+                  math.sin(math.pi*(seatLook or 0))^2)
+              end
+              if (seatLook or 0)>=.5 then blinkRow=0 end
+              if self.humanBlinkModule then
+                if humanBlink == nil then
+                  local blinkOk,value=pcall(self.humanBlinkModule.new,Assets,self.mod.path,self.humanBlinkProfiles)
+                  humanBlink=blinkOk and value or false
+                end
+                if humanBlink then
+                  local blinkTexture=humanBlink:prepare(record,activeSource,blinkRow,0)
+                  if blinkRow==0 then
+                    local front=blinkTexture or humanJohtoSeat:front(record)
+                    cardTexture=humanJohtoSeat:compose(record,front,seatProfile,
+                      record.humanMotion and record.humanMotion.blinkAmount or 0) or cardTexture
+                  else cardTexture=blinkTexture or cardTexture end
+                elseif blinkRow==0 then
+                  cardTexture=humanJohtoSeat:compose(record,humanJohtoSeat:front(record),seatProfile,0) or cardTexture
+                end
+              end
+            elseif not ok then
+              self.humanJohtoSeatError=m;humanJohtoSeat:clear();humanJohtoSeat=false
+            end
+          elseif actingSource and self.humanBlinkModule then
+            if humanBlink == nil then
+              local ok,value=pcall(self.humanBlinkModule.new,Assets,self.mod.path,self.humanBlinkProfiles)
+              humanBlink=ok and value or false
+            end
+            if humanBlink then
+              cardTexture=humanBlink:prepare(record,actingSource,row,activeColumn) or cardTexture
+            end
+          elseif humanBreath and (not voxelGrid or self.humanGridModule) and not styleSpec and self.humanRigModule then
+            if humanRig == nil then
+              local ok, value = pcall(self.humanRigModule.new, Voxel3D, self.humanRigProfiles)
+              humanRig = ok and value or false
+            end
+            if humanRig then
+              local rigBase = card
+              if voxelGrid then
+                local flatKey = key.."#human-grid-flat"
+                if not cardMeshes[flatKey] then
+                  cardMeshes[flatKey] = atlasCardMesh(Voxel3D, bounds, visibleHeight, false, false, nil, true)
+                end
+                rigBase = cardMeshes[flatKey]
+              end
+              local rigMesh, rigTexture = humanRig:prepare(record, rigBase, activeSource, row, activeColumn)
+              if rigMesh and voxelGrid then
+                if humanGrid == nil then
+                  local ok,value = pcall(self.humanGridModule.new, Voxel3D,
+                    {bounds=alphaBounds,cardMesh=atlasCardMesh,queue=newAnimationQueue})
+                  humanGrid = ok and value or false
+                end
+                if humanGrid then
+                  local token = tostring(self.humanPresentationEpoch)..":"..tostring(humanMap)..":"..tostring(humanWorld and humanWorld.player)
+                  local ok,m,t = pcall(humanGrid.prepare,humanGrid,token,record,rigMesh,rigTexture,
+                    activeSource,row,activeColumn,visibleHeight,voxelCubes,neutral)
+                  -- Keep the already animated flat rig while a grid shape
+                  -- is queued. Returning to the static atlas here changed
+                  -- arm poses on cold frames and again when the grid arrived.
+                  if ok then
+                    if m then rigMesh,rigTexture=m,t or rigTexture end
+                  else
+                    self.humanGridError=m;pcall(humanGrid.clear,humanGrid);humanGrid=false
+                  end
+                end
+              end
+              if rigMesh then
+                card, cardTexture = rigMesh, rigTexture
+                if self.humanBlinkModule then
+                  if humanBlink == nil then
+                    local ok,value=pcall(self.humanBlinkModule.new,Assets,self.mod.path,self.humanBlinkProfiles)
+                    humanBlink=ok and value or false
+                  end
+                  if humanBlink then
+                    cardTexture=humanBlink:prepare(record,activeSource,row,activeColumn) or cardTexture
+                  end
+                end
+              end
+            end
+          end
+          if actingSource and actingSource.seatedBreath and self.humanSeatedBreathModule then
+            if humanSeatedBreath==nil then humanSeatedBreath=self.humanSeatedBreathModule.new(Voxel3D)end
+            if humanSeatedBreath then
+              local ok,m=pcall(humanSeatedBreath.prepare,humanSeatedBreath,card,actingSource.seatedBreath)
+              if ok then card=m or card
+              else self.humanSeatedBreathError=m;humanSeatedBreath:clear();humanSeatedBreath=false end
+            end
+          end
+          return correctedDraw(card, cardTexture, cardModel, pull,
             cardSun, true, styleSpec)
         end
       end
@@ -2272,9 +2814,22 @@ local function vascPatch(self)
       and (not wrappedBeginScene or Voxel3D.beginScene == wrappedBeginScene)
       and (not wrappedFlatten or Voxel3D.flatten == wrappedFlatten)
       and (not wrappedPlayerWalker or scene.requireExternalKascWalker == wrappedPlayerWalker)
+      and Voxel3D.prewarmWorldCards == prewarmWorldCards
+      and Voxel3D.worldCardsReady == worldCardsReady
       and (not wrappedPreparePokemonFrame or Voxel3D.preparePokemonFrame == wrappedPreparePokemonFrame)
   end
   function state.restore()
+    if Voxel3D.worldCardsReady == worldCardsReady then
+      Voxel3D.worldCardsReady = originalWorldCardsReady
+    end
+    if Voxel3D.prewarmWorldCards == prewarmWorldCards then
+      Voxel3D.prewarmWorldCards = originalPrewarmWorldCards
+    end
+    if humanSeatedBreath then humanSeatedBreath:clear() end
+    if humanJohtoSeat then humanJohtoSeat:clear() end
+    if humanRig and humanRig.clear then humanRig:clear() end
+    if humanGrid then humanGrid:clear() end
+    if humanBlink then humanBlink:clear() end
     if wrappedPreparePokemonFrame and Voxel3D.preparePokemonFrame==wrappedPreparePokemonFrame then
       Voxel3D.preparePokemonFrame=originalPreparePokemonFrame
     end
@@ -2406,13 +2961,27 @@ end
 function VoxelCharacters.new(options)
   return setmetatable({
     mod = assert(options.mod), generation = assert(options.generation),
+    cardBounds = options.cardBounds,
     scaleProfiles = options.scaleProfiles,
     followerSpacing = options.followerSpacing,
     presentationPolicy = options.presentationPolicy,
     debugLog = options.debugLog,
     cardStyleModule = options.cardStyleModule,
+    humanBlinkModule = options.humanBlinkModule,
+    humanBlinkProfiles = options.humanBlinkProfiles,
+    humanIdleModule = options.humanIdleModule,
+    humanPositionModule = options.humanPositionModule,
+    humanActing = options.humanActing,
+    humanDialogueIdle = options.humanDialogueIdle,
+    humanSeatedBreathModule = options.humanSeatedBreathModule,
+    humanJohtoSeatModule = options.humanJohtoSeatModule,
+    humanSeatProfiles = options.humanSeatProfiles,
+    humanRigModule = options.humanRigModule,
+    humanGridModule = options.humanGridModule,
+    humanRigProfiles = options.humanRigProfiles,
     pikachuRide = options.pikachuRide,
     activeGame = nil,
+    humanPresentationEpoch = 0,
     standaloneInstalled = false, vascInstalled = false,
     standaloneError = nil, vascError = nil,
     animationObservations = {}, animationObservationOrder = {},
@@ -2435,6 +3004,7 @@ function VoxelCharacters:install()
         "map.entered", "map.reloaded" }) do
       self.mod.events:on(event, function(ev)
         if ev and ev.game then renderer.activeGame = ev.game end
+        renderer.humanPresentationEpoch = renderer.humanPresentationEpoch + 1
         renderer:_cancelRide(love and love.timer and love.timer.getTime and love.timer.getTime() or 0)
         if not renderer.vascOwnerCheck or not renderer.vascOwnerCheck() then
           local installed, err = vascPatch(renderer)
@@ -2442,8 +3012,9 @@ function VoxelCharacters:install()
         end
       end)
     end
-    for _, event in ipairs({"screen.pushed", "mod.options_changed"}) do
+    for _, event in ipairs({"screen.pushed", "screen.popped", "mod.options_changed"}) do
       self.mod.events:on(event, function()
+        renderer.humanPresentationEpoch = renderer.humanPresentationEpoch + 1
         renderer:_cancelRide(love and love.timer and love.timer.getTime and love.timer.getTime() or 0)
       end)
     end
@@ -2488,6 +3059,9 @@ function VoxelCharacters:public()
   return {
     schema = "ascendant.voxel-characters/v1",
     health = function() return renderer:health() end,
+    fieldActorRenderer = function(sprite)
+      return renderer.fieldActorRenderer and renderer.fieldActorRenderer(sprite)
+    end,
     animationObservation = function(id)
       local seen = renderer.animationObservations[id]
       if not seen then return nil end

@@ -1,0 +1,11 @@
+# Gen1 step-onset correction, 2026-09-11
+
+The native Gen1 player is first rendered at progress 1 after starting a step; Gen2 is observed at progress 0. Applying the same forward fraction to both caused a one-pixel addition at Gen1 onset. The production human_position projector now maps the Gen1 player interval [1, frames] to [0, 16]. It reaches the exact native landing position; simply delaying by one frame without rescaling would not. The visual speed across the remaining intervals is 16/(frames-1) pixels per fixed tick (16/15 for ordinary walking). Native movement speed, coordinates and collision are untouched. NPC and Gen2 projection formulas are unchanged.
+
+Verification: full human-motion runner Exit 0, including new onset/landing tests in all four directions and unchanged Gen2/NPC progress-zero behavior. The actual-input Gen1 run passed Red/Green/Blue, all directions and all three authored columns, camera alignment, Classic/Vanilla rollback and zero original proxy submissions in the audited Natural draws. 3,285 trace samples yielded 31 observed held-direction onsets and no backwards movement; maximum onset displacement 0.533938 pixels, maximum sampled landing displacement 0.481682 pixels. Prior measured maximum onset was 1.460500 pixels. These are separate desktop runs with differing frame times, not a controlled overall-FPS benchmark. They establish the targeted discontinuity correction, not universal stutter removal or finished visual animation quality.
+
+Source/log/CSV evidence is stored in the review bundle's gen1-onset-correction folder. The raw trace includes native progress, position, moving flag and exact renderer alpha. The analysis script preserves trace hashes and lists individual starts/landings. Missing stationary-to-moving transitions across fixture phase changes are intentionally not inferred.
+
+Remaining overall scope: all-character profile coverage, Johto seated bodies and head turns, visible guest blink and basket gait, continuous visual acceptance, and sporadic whole-frame pauses remain incomplete.
+
+The post-change native Gen2 run also passed (Exit 0): Gold/Kris/Silver, four directions and authored columns, camera checks, Classic/Vanilla rollback. Log: hero-onset-gen2-after-correction.log.

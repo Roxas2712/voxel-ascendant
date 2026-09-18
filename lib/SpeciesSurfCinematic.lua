@@ -56,7 +56,7 @@ function SpeciesSurfCinematic.install()
   -- therefore a four-times-denser texture on that exact card: depth,
   -- occlusion, shadow and reflection stay native while the authored 32/64px
   -- side sprites no longer have to be crushed into a 16px frame.
-  local COMPOSITE_CELL = 64
+  local COMPOSITE_CELL = 128
   local COMPOSITE_FRAMES = 6
   local COMPOSITE_HEIGHT = COMPOSITE_CELL * COMPOSITE_FRAMES
   -- Directional 4x4 atlas rows. The six-frame overworld carrier contains
@@ -232,7 +232,7 @@ function SpeciesSurfCinematic.install()
     local path = mod.assets:path(rel)
     local cached = imageCache[rel]
     if cached then return cached, path end
-    local ok, image = pcall(love.graphics.newImage, path)
+    local ok, image = pcall(function() return require("src.render.Assets").image(path) end)
     if not ok or not image then
       return nil
     end
@@ -507,7 +507,7 @@ function SpeciesSurfCinematic.install()
 
     if shot and shot.worldPassPaused then
       shot.worldPassPaused = nil
-      if shot.phase == "mount" or shot.phase == "recall" then
+      if shot.phase == "mount" then
         acquireLock(ow, shot)
       end
     end
@@ -558,7 +558,10 @@ function SpeciesSurfCinematic.install()
       -- Keep the Pokemon at the last water footprint while the native
       -- scripted step carries the trainer onto land.
       shot.recallX, shot.recallY = p.px, p.py
-      acquireLock(ow, shot)
+      -- The engine may still owe its scripted step out of the water. Recall
+      -- is cosmetic and must neither block that step nor freeze movement
+      -- while a new map's canvas is being built.
+      releaseLock(ow, shot)
     end
   end
 
@@ -598,6 +601,12 @@ function SpeciesSurfCinematic.install()
   local function buildComposite(ow, shot, ctx)
     local p, bundle = ow.player, shot.bundle
     local source = p and p.sprite
+    local okWalker, walker = pcall(V.require, "ExternalKascWalker")
+    if okWalker and walker and type(walker.resolveRider) == "function" then
+      source = walker.resolveRider(p, source) or source
+    end
+    local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+    if okAppearance then source = appearance.resolve(p, source) or source end
     if not (source and source.resolveImage and source.frames) then return false end
     if source.def and type(source.def.image) == "string" then
       -- SpriteBillboards needs a real Assets.image path only to build the UV
@@ -605,7 +614,10 @@ function SpeciesSurfCinematic.install()
       -- make resolveImage's denser 64x384 Canvas texture-compatible.
       bundle.renderer.def.image = source.def.image
     end
-    local okImage, playerImage = pcall(source.resolveImage, source)
+    local okImage, playerImage = pcall(function()
+      return source.def and source.def.trueColor and source.image
+        or source:resolveImage()
+    end)
     if not okImage or not playerImage then return false end
     local playerColors
     if ctx and type(ctx.spriteColors) == "function"
@@ -658,7 +670,8 @@ function SpeciesSurfCinematic.install()
       g.scale(COMPOSITE_CELL / 16, COMPOSITE_CELL / 16)
       local function drawPlayer(quad, x, y, scale)
         if playerShader and g.setShader then g.setShader(playerShader) end
-        drawFrame(g, playerImage, quad, x, y, scale, 1)
+        drawFrame(g, playerImage, quad, x, y,
+          scale * (source.fieldHD and 16 / source.def.frameWidth or 1), 1)
         if playerShader and g.setShader then g.setShader() end
       end
       local cinematicCell = bundle.cinematicCell or 16
@@ -1051,7 +1064,12 @@ function SpeciesSurfCinematic.install()
     for _, item in ipairs(out) do
       if item.action == "surf" then
         local ow = (ctx and ctx.overworld) or (game and game.overworld)
-        if ow then pendingByWorld[ow] = { mon = mon, menu = ctx and ctx.menu } end
+        if ow then
+          -- Current engines omit ctx.menu; the submenu hook runs while its
+          -- actual PartyMenu is still on top. Keep that identity so cancel
+          -- cannot leak a selection into a later quick SURF action.
+          pendingByWorld[ow] = { mon = mon, menu = (ctx and ctx.menu) or stackTop() }
+        end
         break
       end
     end

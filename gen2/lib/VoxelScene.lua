@@ -1838,8 +1838,6 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   local GlassMask = V.require("GlassMask")
   Voxel3D.glassMask = outdoor and GlassMask.texture(state.map.tileset) or nil
   Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
-  local g = VoxelScene.glintStep(glint, cx, cy)
-  Voxel3D.glassPhase, Voxel3D.glassGlint = g.phase, g.amp
 
   -- VASC's far panorama and semantic horizon are prepared before beginScene:
   -- their one-time texture/canvas work must never detach the active Gen2 world
@@ -1929,6 +1927,19 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   if type(Voxel3D.preparePokemonFrame) == "function" then
     Voxel3D.preparePokemonFrame(state, posed)
   end
+
+  -- Fractional human positions carry the player's camera displacement on
+  -- this frame's captured pose. Never write back to the native camera.
+  local humanShift = me and me.ascendantHumanPosition
+  if not eyes and type(humanShift) == "table" and humanShift.x == me.px and humanShift.y == me.py
+      and type(humanShift.cameraX) == "number" and type(humanShift.cameraY) == "number"
+      and humanShift.cameraX == humanShift.cameraX and humanShift.cameraY == humanShift.cameraY
+      and math.abs(humanShift.cameraX) <= 1 and math.abs(humanShift.cameraY) <= 1 then
+    cx, cy = cx + humanShift.cameraX, cy + humanShift.cameraY
+  end
+  local g = VoxelScene.glintStep(glint, cx, cy)
+  Voxel3D.glassPhase, Voxel3D.glassGlint = g.phase, g.amp
+
 
   -- The first-person rig, built (or blended) for this frame and handed to
   -- Voxel3D BEFORE either pass runs: the sun's box is fitted around this

@@ -57,6 +57,17 @@ local function loadExactImage(g, rel)
   local cached = imageCache[rel]
   if cached then return cached.image, cached.path end
   local path = imagePath(rel)
+  -- Downloaded cinematic sheets have no loose file at the legacy path.
+  -- Retain the exact-file decoder below for bundled/older installations.
+  local owner = V and V.mod
+  if owner and type(owner.spriteAssetVersion) == "function"
+      and owner:spriteAssetVersion(rel) then
+    local ok, image = pcall(function()
+      return require("src.render.Assets").image(path)
+    end)
+    if ok and image then return image, path end
+    return nil, path
+  end
   local file = io and io.open and io.open(path, "rb") or nil
   local image
   if file and love and love.filesystem
@@ -138,7 +149,13 @@ local function profileFor(world, mon, fieldKit)
   }
 end
 
+local normalBodies = setmetatable({}, {__mode="k"})
 local function normalTrainer(world)
+  local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
+  if okAppearance and world and world.player then
+    local body = appearance.resolve(world.player, world.player.sprite)
+    if body then return body end
+  end
   if not (world and world.player and world.sprites) then return nil end
   local okMoves, FieldMoves = pcall(require, "src.world.gen2.FieldMoves")
   local okRenderer, SpriteRenderer = pcall(require, "src.render.SpriteRenderer")
@@ -151,13 +168,17 @@ local function normalTrainer(world)
   end
   local name = type(FieldMoves.playerSprite) == "function"
     and FieldMoves.playerSprite(gender) or nil
-  local def = name and world.sprites[name] or nil
+  local def = okAppearance and appearance.nativeDef(world)
+    or (name and world.sprites[name] or nil)
   if not (def and type(def.image) == "string") then return nil end
+  local held = normalBodies[world]
+  if held and held.def == def then return held end
   local okNew, renderer = pcall(SpriteRenderer.new, def, "vasc-gen2-fly-cinematic")
   if not (okNew and renderer) then return nil end
   if type(world.applySpritePalette) == "function" then
     pcall(world.applySpritePalette, world, { sprite = renderer, spriteDef = def })
   end
+  normalBodies[world] = renderer
   return renderer
 end
 
@@ -165,12 +186,14 @@ local function resources(world, mon, fieldKit)
   local key = fieldKit and "JETPACK"
     or (tostring(mon and mon.species) .. ":" .. tostring(shiny(mon)))
   local held = resourceCache[world]
-  if held and held.key == key then return held end
   local trainer = normalTrainer(world)
+  if held and held.key == key and held.trainer == trainer then return held end
   if not (trainer and trainer.frames and type(trainer.resolveImage) == "function") then
     return nil, "trainer renderer unavailable"
   end
-  local okTrainer, trainerImage = pcall(trainer.resolveImage, trainer)
+  local okTrainer, trainerImage = pcall(function()
+    return trainer.def and trainer.def.trueColor and trainer.image or trainer:resolveImage()
+  end)
   if not (okTrainer and trainerImage) then return nil, "trainer image unavailable" end
   local out = { key = key, trainer = trainer, trainerImage = trainerImage }
   if not fieldKit then
@@ -202,7 +225,9 @@ local function drawTrainer(g, res, footX, footY, scale, facing, alpha)
   if facing == "right" then x, sx = footX + 8 * scale, -scale end
   setColor(g, 1, 1, 1, alpha or 1)
   g.draw(res.trainerImage, frame, math.floor(x + 0.5),
-    math.floor(footY - 20 * scale + 0.5), 0, sx, scale)
+    math.floor(footY - 20 * scale + 0.5), 0,
+    sx * (res.trainer.fieldHD and 16 / res.trainer.def.frameWidth or 1),
+    scale * (res.trainer.fieldHD and 16 / res.trainer.def.frameWidth or 1))
 end
 
 local ROW = { down = 0, left = 1, right = 2, up = 3 }
@@ -430,6 +455,7 @@ local function drawPokemonFlight(g, world, fa, record, res, profile,
 
     drawShadow(g, baseX, baseY + scale, 14, scale,
       summon * (1 - rising * .8))
+    if res.trainer.fieldHD and profile.mode == "mount" then playerBehind = false end
     if playerBehind then drawTrainer(g, res, riderX, riderY, scale, riderFacing, 1) end
     drawMon(g, res, monX, monY, target, t < 26 and "down" or "left",
       col, summon)
@@ -465,9 +491,10 @@ local function drawPokemonFlight(g, world, fa, record, res, profile,
     end
     local recall = smooth((t - 56) / 7)
     drawShadow(g, baseX, baseY + scale, 14, scale, descend * (1 - recall))
-    drawTrainer(g, res, riderX, riderY, scale, riderFacing, 1)
+    if not res.trainer.fieldHD then drawTrainer(g, res, riderX, riderY, scale, riderFacing, 1) end
     drawMon(g, res, monX, monY, target, t < 42 and "left" or "down",
       col, 1 - recall)
+    if res.trainer.fieldHD then drawTrainer(g, res, riderX, riderY, scale, riderFacing, 1) end
     if t >= 53 then
       local handX, handY = footX + 3 * scale, footY - 14 * scale
       local impactX, impactY = baseX - 9 * scale, baseY - 20 * scale

@@ -1,7 +1,7 @@
 -- VASC owner bridge for the reviewed Modern Pokedex 0.4.0 presentation.
 --
--- lib/ModernDex.lua remains byte-for-byte identical to the accepted standalone
--- renderer.  This host supplies only VASC-scoped settings, the already-owned
+-- lib/ModernDex.lua extends the accepted renderer with Oak's starter preview.
+-- This host supplies VASC-scoped settings, the already-owned
 -- Kanto map receipt and a native fail-open boundary around both screen ids.
 -- Engine save flags, species data, cries, forceOwned previews, Start-menu
 -- callbacks and stack ownership are never reimplemented here.
@@ -342,6 +342,7 @@ local function guardState(screenId, game, argument, state, ...)
     return true
   end
 
+  if state.__vascStarterPreview then return state end
   return mobilePresentation(state)
 end
 
@@ -423,7 +424,9 @@ end
 
 local function customState(ui, screenId, game, argument, ...)
   local nativeTail = packValues(...)
-  if ModernDexHost.styleSetting:get() == "game" then
+  local starter = screenId == "DexEntryMenu" and ui.isStarterPreview
+    and ui.isStarterPreview(game, argument)
+  if ModernDexHost.styleSetting:get() == "game" and not starter then
     return newNative(screenId, game, argument,
       unpackValues(nativeTail, 1, nativeTail.n))
   end
@@ -476,7 +479,8 @@ function ModernDexHost.install()
   })
 
   local receipt = {
-    apiVersion=1,
+    apiVersion=2,
+    maximumCatalogue=true,
     active=true,
     owner="VOXEL_ASCENDANT",
     bundled=true,
@@ -484,7 +488,7 @@ function ModernDexHost.install()
     sourceArchiveSha256=
       "31644f8f054f62d3821a1a71e96fca866a2f8b768545dba149bbee64644b14ef",
     sourceRendererSha256=
-      "54a8876aa9af58ae912a93ded8590241a7adfa8aa119cf92919b623180d7356d",
+      "660d74895b7b084cf2d3fa58a6b8a8b7b83275592c52e7a78e92033e88b625f3",
     screens={ "PokedexMenu", "DexEntryMenu", "VascDexArea" },
     mapOwner="VOXEL_ASCENDANT:kantoFlyMap",
     mode=function() return ModernDexHost.styleSetting:get() end,
@@ -495,6 +499,9 @@ function ModernDexHost.install()
   -- KASC 6.5.x's NATIONALDEX does exactly that.  Construct through the same
   -- guarded owner used by the engine screen and push only a complete state;
   -- callers retain their original callback as a fail-open path.
+  receipt.build = function(game, opts)
+    return customState(ui, "PokedexMenu", game, opts)
+  end
   receipt.open = function(game, opts)
     local stack = game and game.stack
     if not (stack and type(stack.push) == "function") then

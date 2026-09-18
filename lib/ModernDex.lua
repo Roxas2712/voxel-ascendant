@@ -44,7 +44,7 @@ local L = {
     back = "ZURUECK", listHint = "L/R ANSICHT   A DATEN",
     entryHint = "L/R POKéMON   A WEITER", caughtShort = "GEF.",
     seenShort = "GES.", areaUnknown = "GEBIET UNBEKANNT",
-    kanto = "KANTO", johto = "JOHTO", hoenn = "HOENN", sinnoh = "SINNOH",
+    kanto = "KANTO", johto = "JOHTO", hoenn = "HOENN", sinnoh = "SINNOH", national = "NATIONAL",
     regionHint = "START L/R REGION", noRegion = "KEINE REGIONALDATEN",
   },
   en = {
@@ -56,7 +56,7 @@ local L = {
     back = "BACK", listHint = "L/R VIEW   A DATA",
     entryHint = "L/R POKéMON   A NEXT", caughtShort = "OWN",
     seenShort = "SEEN", areaUnknown = "AREA UNKNOWN",
-    kanto = "KANTO", johto = "JOHTO", hoenn = "HOENN", sinnoh = "SINNOH",
+    kanto = "KANTO", johto = "JOHTO", hoenn = "HOENN", sinnoh = "SINNOH", national = "NATIONAL",
     regionHint = "START L/R REGION", noRegion = "NO REGIONAL DATA",
   },
 }
@@ -328,7 +328,28 @@ local function isOwned(game, species)
   return dex.owned and dex.owned[species]
 end
 
+local function maximumCatalogue(game)
+  if type(mod.find) ~= "function" then return nil end
+  local companion = mod.find("kanto_ascendant") or mod.find("trainer_rematch")
+  local maximum = companion and companion.exports and companion.exports.maximumDex67
+  if type(maximum) ~= "table" or type(maximum.discovered) ~= "function"
+      or type(maximum.entryDefinition) ~= "function" then return nil end
+  return maximum
+end
+
 local function dexCatalogue(game)
+  local maximum = maximumCatalogue(game)
+  if maximum then
+    -- National numbers are presentation data, never the private runtime slot.
+    -- Only discoveries enter this extension; keep forms by species identity.
+    local out = { maximumCatalogue = true }
+    for _, row in ipairs(maximum.discovered(game, {})) do
+      out[#out + 1] = { id=row.species, dex=row.number,
+        def=maximum.entryDefinition(row.species, row.definition),
+        seen=true, owned=not not isOwned(game, row.species) }
+    end
+    return out
+  end
   local byDex = {}
   for species, def in pairs(game.data.pokemon or {}) do
     if tonumber(def.dex) then byDex[tonumber(def.dex)] = { id = species, def = def } end
@@ -352,7 +373,14 @@ local REGIONS = {
   { key = "sinnoh", first = 387, last = 493 },
 }
 
+local function regionsFor(all)
+  if not all.maximumCatalogue then return REGIONS end
+  return { REGIONS[1], REGIONS[2], REGIONS[3], REGIONS[4],
+    { key="national", first=1, last=math.huge } }
+end
+
 local function regionIsUnlocked(all, region)
+  if region.key == "national" then return true end
   if region.key == "kanto" then return true end
   for _, row in ipairs(all) do
     if row.owned and row.dex >= region.first and row.dex <= region.last then
@@ -363,7 +391,13 @@ local function regionIsUnlocked(all, region)
 end
 
 local function rowsForRegion(all, regionIndex)
-  local region = REGIONS[((regionIndex - 1) % #REGIONS) + 1]
+  local regions = regionsFor(all)
+  local region = regions[((regionIndex - 1) % #regions) + 1]
+  if region.key == "national" then
+    local rows = {}
+    for _, row in ipairs(all) do if row.seen then rows[#rows + 1] = row end end
+    return rows
+  end
   local byDex, highestOwned = {}, nil
   for _, row in ipairs(all) do
     if row.dex >= region.first and row.dex <= region.last then
@@ -514,6 +548,9 @@ function ListScreen.new(game, opts)
     regionIndex = tonumber(opts.regionIndex) or 1, index = 1, scroll = 0,
     onCancel = opts.onCancel, __vascModernDex = true }, ListScreen)
   self.all = dexCatalogue(game)
+  if self.all.maximumCatalogue and not opts.regionIndex then
+    self.regionIndex = #regionsFor(self.all)
+  end
   self:applyRegion(self.regionIndex, opts.species)
   return self
 end
@@ -548,8 +585,9 @@ end
 function ListScreen:applyRegion(index, preserveSpecies)
   local current = self:current()
   preserveSpecies = preserveSpecies or (current and current.id)
-  self.regionIndex = ((index - 1) % #REGIONS) + 1
-  self.region = REGIONS[self.regionIndex]
+  local regions = regionsFor(self.all)
+  self.regionIndex = ((index - 1) % #regions) + 1
+  self.region = regions[self.regionIndex]
   self.regionRows = rowsForRegion(self.all, self.regionIndex)
   self.seenCount, self.ownedCount = counts(self.regionRows)
   self.index, self.scroll = 1, 0
@@ -603,7 +641,11 @@ end
 
 local function drawRegionTabs(self)
   local x, y = LEFT_X + 10, LEFT_Y + 7
-  for i, region in ipairs(REGIONS) do
+  local regions = regionsFor(self.all)
+  -- Keep the active tab visible without squeezing five labels into the rail.
+  local first = math.max(1, self.regionIndex - 3)
+  for i = first, math.min(#regions, first + 3) do
+    local region = regions[i]
     local unlocked = regionIsUnlocked(self.all, region)
     local label = unlocked and tr(self.lang, region.key) or "???"
     local width = math.max(55, Font.width(label) + 16)
@@ -720,6 +762,46 @@ local function resolveEntryArgs(value)
   return value, false, 1, nil, 1
 end
 
+-- Oak opens the same engine screen as a real Dex entry. Before the starter
+-- is accepted this is only an inspection, and must not expose Dex controls.
+function UI.isStarterPreview(game, value)
+  local species, forceOwned = resolveEntryArgs(value)
+  local flags = game and game.save and game.save.flags or {}
+  local map = game and game.overworld and game.overworld.map
+  return forceOwned and map and map.id == "OAKS_LAB"
+    and not flags.EVENT_GOT_POKEDEX and not flags.EVENT_GOT_STARTER
+    and (species == "BULBASAUR" or species == "CHARMANDER" or species == "SQUIRTLE")
+end
+
+local StarterPreview = { isOpaque = false }
+StarterPreview.__index = StarterPreview
+function StarterPreview.new(game, value)
+  return setmetatable({game=game, species=resolveEntryArgs(value),
+    __vascStarterPreview=true}, StarterPreview)
+end
+-- Transparent overlays keep the native world canvas size. A full Dex-sized
+-- UI surface would shrink the visible laboratory into its upper-left corner.
+function StarterPreview:uiSize() return 160, 144 end
+function StarterPreview:sgbPalettes()
+  return {{colors=false, x=42, y=30, w=76, h=84}}
+end
+function StarterPreview:update()
+  if self.closed then return end
+  local input = self.game.input
+  if input:wasPressed("a") or input:wasPressed("b") then
+    self.closed = true
+    play(self.game, "Press_AB")
+    self.game.stack:pop()
+  end
+end
+function StarterPreview:draw()
+  drawSprite(self.game, self.species, 42, 30, 76, 84, true)
+  if type(PaletteFX.markTrueColor) == 'function' then
+    PaletteFX.markTrueColor(42, 30, 76, 84)
+  end
+end
+UI.StarterPreview = StarterPreview
+
 local function wrappedDescription(game, def, owned, lang)
   local entry = def.dexEntry or {}
   local raw = owned and entry.text and game.data.text[entry.text]
@@ -754,6 +836,9 @@ local function wrappedDescription(game, def, owned, lang)
 end
 
 function EntryScreen.new(game, speciesOrOpts)
+  if UI.isStarterPreview(game, speciesOrOpts) then
+    return StarterPreview.new(game, speciesOrOpts)
+  end
   local species, forceOwned, modeIndex, requestedLanguage, regionIndex =
     resolveEntryArgs(speciesOrOpts)
   local all = dexCatalogue(game)
@@ -764,7 +849,7 @@ function EntryScreen.new(game, speciesOrOpts)
   for i, row in ipairs(rows) do if row.id == species then position = i break end end
   local self = setmetatable({ game = game, lang = requestedLanguage or language(), all = all,
     modeIndex = modeIndex, mode = mode, regionIndex = regionIndex,
-    region = REGIONS[((regionIndex - 1) % #REGIONS) + 1],
+    region = regionsFor(all)[((regionIndex - 1) % #regionsFor(all)) + 1],
     rows = rows, position = position,
     species = species, forceOwned = forceOwned, page = 1,
     __vascModernDexEntry = true }, EntryScreen)
@@ -780,6 +865,8 @@ end
 function EntryScreen:setSpecies(species, silent)
   local def = self.game.data.pokemon[species]
   if not def then return false end
+  local maximum = maximumCatalogue(self.game)
+  if maximum then def = maximum.entryDefinition(species, def) end
   self.species, self.def, self.page = species, def, 1
   self.owned = self.forceOwned or not not isOwned(self.game, species)
   self.seen = self.forceOwned or not not isSeen(self.game, species)

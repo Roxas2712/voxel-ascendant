@@ -33,6 +33,7 @@ local VoxelGrid = V.require("VoxelGrid")
 local WorldCurve = V.require("WorldCurve")
 local Sky = V.require("Sky")
 local DayNight = V.require("DayNight")
+local TowerAtmosphere = V.require("TowerAtmosphere")
 local GlassMask = V.require("GlassMask")
 local PixelCanvas = V.require("PixelCanvas")
 local CanvasPresentation = V.require("CanvasPresentation")
@@ -347,9 +348,11 @@ local SHADER = [[
   // Sent only for the synthetic enclosure wall draw; terrain, furniture and
   // actors always receive w=0 and therefore keep their complete geometry.
   uniform vec4 cutaway;
+  uniform float actorWaterline;
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     if (cutaway.w > 0.5 && dot(vWorld.xz, cutaway.xy) > cutaway.z) discard;
+    if (vWorld.y < actorWaterline) discard;
     vec4 p = Texel(tex, tc);
     // sprite sheets key GB OBJ color 0 to alpha 0; discarding rather than
     // blending keeps those texels out of the depth buffer, so a model never
@@ -539,6 +542,7 @@ local function mobileSafeShaderSource(source)
     "uniform float weatherAmount;",
     "uniform float weatherTime;",
     "uniform vec4 cutaway;",
+    "uniform float actorWaterline;",
     "if (cutaway.w > 0.5",
     "weatherGround > 0.5 && vWeatherTop > 0.5",
   }) do
@@ -562,7 +566,7 @@ end
 -- desktop instance, sun or weather varyings, so a mobile driver has nothing
 -- optional to link or lazily realize at first draw.  Its irreducible contract
 -- is the ROM atlas texel, baked face shade, day tint, alpha cut-out, player
--- ghost, camera pull, world curve and indoor cutaway.
+-- ghost, camera pull, world curve, indoor cutaway and atlas-masked windows.
 local function mobileCoreShaderSource(_)
   local core = [[
 varying float vShade;
@@ -599,12 +603,30 @@ varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
   uniform vec3 dayTint;
   uniform float prismTransmission; // arena stained-glass pass only
   uniform vec4 cutaway;
+  uniform float actorWaterline;
+
+  uniform Image glassMask;
+  uniform vec2 glassSize;
+  uniform float glassNight;
+  uniform float glassPhase;
+  uniform float glassGlint;
+  uniform float glassOn;
 
   vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     if (cutaway.w > 0.5 && dot(vWorld.xz, cutaway.xy) > cutaway.z) discard;
+    if (vWorld.y < actorWaterline) discard;
     vec4 p = Texel(tex, tc);
     if (p.a < 0.5) discard;
     vec3 rgb = p.rgb * vShade * dayTint;
+    float glass = Texel(glassMask, tc).a * glassOn;
+    if (glass > 0.0) {
+      float sweep = sin(tc.x * glassSize.x * 0.8 - glassPhase);
+      float glint = pow(max(sweep, 0.0), 20.0) * 0.55 * glassGlint;
+      vec3 pane = mix(rgb, vec3(0.93, 0.97, 1.0), glint * glass);
+      float shine = dot(p.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 lamp = vec3(1.0, 0.84, 0.5) * (0.5 + 0.55 * shine);
+      rgb = mix(pane, lamp, glassNight * glass);
+    }
     rgb = mix(rgb, ghostColor, ghost);
     if (prismTransmission > 0.0)
       return vec4(mix(vec3(1.0), p.rgb, prismTransmission), 1.0);
@@ -621,13 +643,15 @@ varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
     "uniform vec4 cutaway;",
     "vec4 p = Texel(tex, tc);",
     "vec3 rgb = p.rgb * vShade * dayTint;",
+    "uniform Image glassMask;",
+    "rgb = mix(pane, lamp, glassNight * glass);",
   }) do
     if not core:find(required, 1, true) then
       return nil, "mobile-core shader lost required receipt: " .. required
     end
   end
   for _, forbidden in ipairs({
-    "uniform Image sunMap;", "uniform Image glassMask;",
+    "uniform Image sunMap;",
     "uniform float weatherGround;", "uniform mat4 sunModel;",
     "uniform mat4 sunVP;", "attribute vec3 InstanceOffset;",
     "varying vec3 vSun;", "varying float vWeatherTop;",
@@ -767,6 +791,186 @@ local function derivativesOK()
   return ok and caps and caps.shaderderivatives == true
 end
 
+-- Ground-only material ids use an otherwise unused negative UV range. This
+-- keeps the native atlas, vertex layout, depth, shadows and mesh ownership
+-- unchanged. World-space courses continue across every 8px terrain seam.
+local CaveSurfaces=V.require('Gen1CaveSurfaces')
+local INTERIOR_FLOOR_GLSL = V.require('Gen1OutdoorScenery').waterGLSL .. [[
+  float floorLine(vec2 p, vec2 a, vec2 b) {
+    vec2 ab=b-a;
+    float t=clamp(dot(p-a,ab)/dot(ab,ab),0.0,1.0);
+    return 1.0-smoothstep(0.30,0.55,length(p-a-ab*t));
+  }
+  vec4 interiorFloor(float material, vec3 world) {
+    vec2 pos=world.xz;
+    float family = floor(-material - 128.0 + 0.5);
+    if (family == 46.0) return outdoorWater(pos,0.0);
+    // Muted native runner/entry-mat footprints, independent of ROM palette
+    // flashes. Small irregular fibres replace the high-contrast checker.
+    if (family >= 14.0 && family <= 17.0) {
+      float grain=fract(sin(dot(floor(pos*2.0),vec2(12.9898,78.233)))*43758.5453);
+      bool industrial=family>=16.0;
+      vec3 fabric=industrial ? vec3(0.19,0.25,0.25) : vec3(0.34,0.13,0.11);
+      if (family==15.0 || family==17.0) {
+        float across=mod(pos.x,8.0);
+        float braid=1.0-smoothstep(0.35,0.65,min(abs(across-2.0),abs(across-6.0)));
+        vec3 trim=industrial ? vec3(0.40,0.45,0.43) : vec3(0.53,0.40,0.23);
+        fabric=mix(fabric,trim,0.25+braid*0.65);
+      }
+      return vec4(fabric+(grain-0.5)*0.025,1.0);
+    }
+    // One continuous woven entry mat across the Bike Shop's eight tiles.
+    // This changes its surface only: the native exit remains the trigger.
+    if (family == 13.0) {
+      vec2 p=pos-vec2(32.0,112.0);
+      vec2 edge=min(p,vec2(32.0,16.0)-p);
+      float border=1.0-smoothstep(1.0,1.3,min(edge.x,edge.y));
+      float weave=sin(p.x*15.7)*sin(p.y*15.7)*0.012;
+      vec3 rug=mix(vec3(0.12,0.28,0.31),vec3(0.61,0.70,0.60),border)+weave;
+      float wheels=max(1.0-smoothstep(0.25,0.48,abs(length(p-vec2(10.0,9.0))-2.5)),
+        1.0-smoothstep(0.25,0.48,abs(length(p-vec2(23.0,9.0))-2.5)));
+      float frame=max(floorLine(p,vec2(10.0,9.0),vec2(14.0,5.0)),
+        floorLine(p,vec2(14.0,5.0),vec2(17.0,9.0)));
+      frame=max(frame,floorLine(p,vec2(10.0,9.0),vec2(17.0,9.0)));
+      frame=max(frame,floorLine(p,vec2(17.0,9.0),vec2(21.0,5.0)));
+      frame=max(frame,floorLine(p,vec2(14.0,5.0),vec2(21.0,5.0)));
+      frame=max(frame,floorLine(p,vec2(23.0,9.0),vec2(20.0,3.5)));
+      frame=max(frame,floorLine(p,vec2(20.0,3.5),vec2(23.0,3.5)));
+      frame=max(frame,floorLine(p,vec2(12.5,4.0),vec2(15.5,4.0)));
+      return vec4(mix(rug,vec3(0.84,0.82,0.63),max(wheels,frame)),1.0);
+    }
+    float court=0.0;
+    if (family == 11.0) { court=1.0; family=4.0; }
+    if (family == 12.0) { court=2.0; family=6.0; }
+    if (family >= 31.0 && family <= 47.0) {
+      vec2 p=floor(pos*2.0);
+      float grain=fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);
+      float patches=sin(pos.x*0.033+sin(pos.y*0.025))*0.025;
+      if (family == 47.0) {
+        // Natural outcrop: angular strata and sparse oblique fractures.
+        // No repeating horizontal mortar rows or staggered brick joints.
+        // World coordinates keep the finish continuous across 8px tiles.
+        float along=pos.x+pos.y;
+        float fold=abs(fract(along*0.043)-0.5)*0.72;
+        float bed=world.y*0.105+along*0.027+fold;
+        float layer=floor(bed);
+        float split=fract(bed);
+        float cleft=1.0-smoothstep(0.025,0.095,split);
+        float slant=fract(along*0.037-world.y*0.015+layer*0.271);
+        float crack=(1.0-smoothstep(0.015,0.048,slant))*step(0.48,fract(layer*0.618));
+        float facet=fract(layer*0.618)-0.5;
+        vec3 rock=vec3(0.48,0.50,0.51)+facet*0.075+(grain-0.5)*0.027;
+        rock*=1.0-cleft*0.15-crack*0.12;
+        rock+=smoothstep(0.86,0.99,split)*0.035;
+        return vec4(rock,1.0);
+      }
+      if (family == 45.0) {
+        float row=floor(pos.y/10.0);
+        vec2 paver=vec2(pos.x+mod(row,2.0)*9.0,pos.y);
+        vec2 seam=mod(paver,vec2(18.0,10.0));
+        float joint=1.0-smoothstep(0.10,0.26,min(seam.x,seam.y));
+        vec2 cell=floor(paver/vec2(18.0,10.0));
+        float variation=fract(sin(dot(cell,vec2(17.17,63.73)))*2719.3)-0.5;
+        vec3 slate=vec3(0.57,0.55,0.61)+variation*0.028+(grain-0.5)*0.025;
+        return vec4(slate*(1.0-joint*0.19),1.0);
+      }
+      if (family == 43.0) {
+        vec3 earth=vec3(0.47,0.39,0.26)+patches+(grain-0.5)*0.055;
+        float pebble=step(0.965,grain);
+        return vec4(mix(earth,vec3(0.59,0.54,0.40),pebble*0.45),1.0);
+      }
+      if (family == 44.0) {
+        float along=pos.x+pos.y;
+        vec2 course=mod(vec2(along+mod(floor(world.y/8.0),2.0)*8.0,world.y),vec2(16.0,8.0));
+        float joint=1.0-step(0.22,min(course.x,course.y));
+        float grain3=fract(sin(dot(floor(world*2.0),vec3(12.9898,43.113,78.233)))*43758.5453);
+        vec3 stone=vec3(0.68,0.70,0.72)+(grain3-0.5)*0.025;
+        return vec4(stone*(1.0-joint*0.22),1.0);
+      }
+      vec3 land=vec3(0.43,0.62,0.34);
+      if (family == 32.0) land=vec3(0.77,0.70,0.50);
+      if (family == 33.0) land=vec3(0.34,0.48,0.26);
+      if (family == 34.0) {
+        vec2 phase=mod(vec2(pos.x+mod(floor(pos.y/8.0),2.0)*8.0,pos.y),vec2(16.0,8.0));
+        float seam=1.0-step(0.28,min(phase.x,phase.y));
+        return vec4(vec3(0.62,0.65,0.67)*(1.0-seam*0.23)+(grain-0.5)*0.025,1.0);
+      }
+      if (family == 36.0) land=vec3(0.48,0.64,0.36);
+      if (family >= 40.0 && family <= 42.0) {
+        vec2 edge=mod(pos,8.0);
+        float line=family==40.0 ? 1.0-step(0.8,edge.x) :
+          family==41.0 ? 1.0-step(0.8,edge.y) : 1.0-step(0.8,min(edge.x,edge.y));
+        return vec4(mix(vec3(0.34,0.37,0.38),vec3(0.80,0.79,0.68),line)+(grain-0.5)*0.025,1.0);
+      }
+      if (family == 37.0) {
+        return vec4(vec3(0.34,0.37,0.38)+(grain-0.5)*0.04,1.0);
+      }
+      if (family == 39.0) {
+        float course=mod(world.y+sin((pos.x+pos.y)*0.13)*0.3,4.0);
+        float seam=1.0-step(0.22,course);
+        float grain3=fract(sin(dot(floor(world*2.0),vec3(12.9898,43.113,78.233)))*43758.5453);
+        float joint=1.0-step(0.16,mod(pos.x+pos.y+mod(floor(world.y/4.0),2.0)*5.0,10.0));
+        seam=max(seam,joint*0.65);
+        vec3 stone=vec3(0.52,0.54,0.48)+(grain3-0.5)*0.05;
+        return vec4(stone*(1.0-seam*0.22),1.0);
+      }
+      if (family == 38.0) {
+        float stripe=fract(sin(floor(pos.x)*5.37+floor(pos.y)*2.17)*81.9);
+        vec3 blade=mix(vec3(0.22,0.40,0.19),vec3(0.43,0.62,0.25),stripe);
+        return vec4(blade+clamp(mod(world.y,16.0)/16.0,0.0,1.0)*0.06,1.0);
+      }
+      if (family == 35.0) {
+        land=vec3(0.76,0.73,0.61);
+        vec2 stone=mod(vec2(pos.x+mod(floor(pos.y/10.0),2.0)*9.0,pos.y),vec2(18.0,10.0));
+        float joint=1.0-step(0.15,min(stone.x,stone.y));
+        return vec4(land*(1.0-joint*0.13)+(grain-0.5)*0.035,1.0);
+      }
+      float fleck=step(0.94,grain)*0.045;
+      return vec4(land+patches+(grain-0.5)*0.045+fleck,1.0);
+    }
+    vec3 base = vec3(0.80,0.78,0.71);
+    vec3 accent = vec3(0.40,0.53,0.47);
+    float wood = 0.0;
+    if (family == 2.0) { base=vec3(0.65,0.46,0.29); wood=1.0; }
+    if (family == 3.0) { base=vec3(0.77,0.65,0.47); wood=1.0; }
+    if (family == 4.0) { base=vec3(0.88,0.86,0.80); accent=vec3(0.58,0.38,0.33); }
+    if (family == 5.0) { base=vec3(0.80,0.85,0.82); accent=vec3(0.32,0.48,0.53); }
+    if (family == 6.0) { base=vec3(0.58,0.64,0.64); accent=vec3(0.35,0.43,0.43); }
+    if (family == 7.0) { base=vec3(0.74,0.70,0.60); accent=vec3(0.43,0.40,0.32); }
+    if (family == 8.0) { base=vec3(0.43,0.39,0.48); accent=vec3(0.65,0.56,0.38); }
+    if (family == 9.0) { base=vec3(0.48,0.37,0.27); wood=1.0; }
+    if (family == 10.0) { base=vec3(0.74,0.83,0.86); accent=vec3(0.43,0.60,0.63); }
+    if (wood > 0.5) {
+      float row=floor(pos.y/6.0);
+      vec2 cell=vec2(pos.x+mod(row,2.0)*16.0,pos.y);
+      vec2 phase=mod(cell,vec2(32.0,6.0));
+      float seam=1.0-step(0.20,min(phase.x,phase.y));
+      float grain=sin(pos.x*0.27+sin(pos.y*1.7)*0.35)*0.018;
+      float variation=mod(row+floor(cell.x/32.0)*3.0,5.0)*0.008;
+      return vec4(base*(1.0-seam*0.24)+grain+variation,1.0);
+    }
+    vec2 phase=mod(pos,16.0);
+    vec2 cell=floor(pos/16.0);
+    float seam=1.0-step(0.22,min(phase.x,phase.y));
+    float corner=(1.0-step(1.3,phase.x))*(1.0-step(1.3,phase.y));
+    float variation=mod(cell.x+cell.y,2.0)*0.018;
+    vec3 tile=mix(base+variation,base*0.76,seam);
+    vec3 result=mix(tile,accent,corner);
+    if (court > 0.5) {
+      // The original link-room ring surrounds the terminals at (80,72).
+      // Evaluate the whole outline in world space, including prop fills,
+      // so diagonals remain continuous across native terrain quads.
+      vec2 p=abs(pos-vec2(80.0,72.0));
+      float edge=max(max(p.x-48.0,p.y-32.0),(p.x+p.y-64.0)*0.70710678);
+      float ring=1.0-smoothstep(1.1,1.5,abs(edge));
+      float inner=1.0-smoothstep(0.22,0.45,abs(edge+3.0));
+      vec3 paint=court<1.5 ? vec3(0.22,0.56,0.53) : vec3(0.24,0.49,0.67);
+      result=mix(result,paint,ring);
+      result=mix(result,vec3(0.88,0.90,0.86),inner);
+    }
+    return vec4(result,1.0);
+  }
+]]
 local function shaderSource(variant, grid)
   local source, err = SHADER, nil
   if variant == "mobile-core" then
@@ -778,6 +982,15 @@ local function shaderSource(variant, grid)
   elseif variant ~= "full" then
     return nil, "unknown Voxel3D shader variant " .. tostring(variant)
   end
+  source=source:gsub("#ifdef PIXEL",function()
+    return "#ifdef PIXEL\nuniform Image roomMask;\nuniform vec3 roomMaskSize;\n"..INTERIOR_FLOOR_GLSL..CaveSurfaces.GLSL..TowerAtmosphere.GLSL..V.require("CaveBattleMist").GLSL
+  end,1)
+  source=source:gsub("vec4 p = Texel%(tex, tc%);",
+    "if(roomMaskSize.z>0.5){vec2 ru=vWorld.xz/roomMaskSize.xy;bool outsideRoomMap=ru.x<0.0||ru.y<0.0||ru.x>=1.0||ru.y>=1.0;if(outsideRoomMap){if(roomMaskSize.z<1.5)discard;}else if(Texel(roomMask,(floor(vWorld.xz/8.0)+vec2(0.5))/(roomMaskSize.xy/8.0)).r<0.5)discard;}\n    vec4 p = Texel(tex, tc);\n    if (tc.x < -200.5) p = caveSurface(tc.x, vWorld); else if (tc.x < -128.5) p = interiorFloor(tc.x, vWorld);")
+  source=source:gsub("Texel%(glassMask, tc%).a %* glassOn",
+    "Texel(glassMask, tc).a * glassOn * step(-128.5, tc.x)")
+  source=source:gsub("rgb = mix%(rgb, ghostColor, ghost%);",
+    "rgb = caveBattleFade(towerMist(rgb, vWorld), vWorld);\n    rgb = mix(rgb, ghostColor, ghost);")
   if grid then source = "#define VOXEL_GRID 1\n" .. source end
   return source
 end
@@ -850,7 +1063,7 @@ function Voxel3D.shader(grid)
         shaders[grid] = shader
         shaderVariants[grid] = "mobile-core"
         warnShader("Gen-1 Voxel3D mobile first-frame policy: using the "
-          .. "mobile-core 3D shader; optional shadows, weather, glass, "
+          .. "mobile-core 3D shader with window lighting; optional shadows, weather, "
           .. "reflections and voxel grid are disabled")
       else
         shaders[grid] = false
@@ -1672,6 +1885,9 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   })
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
+  pcall(sh.send, sh, "towerBackdrop", 0)
+  pcall(sh.send, sh, "towerMood", skyContext and skyContext.towerMood or {0,0})
+  pcall(sh.send, sh, "caveBattleMist", skyContext and skyContext.caveBattleMist or {0,0,0,0})
   if MOBILE_RUNTIME then
     -- The standalone phone program declares exactly these presentation
     -- uniforms. Do not probe absent desktop uniforms through pcall: some GLES
@@ -1746,11 +1962,11 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "weatherGrass", 0)
   pcall(sh.send, sh, "weatherAmount", Voxel3D.weatherAmount)
   pcall(sh.send, sh, "weatherTime", Sky.clock or 0)
+  end -- desktop-only sun/weather uniform batch
   -- the window glass: the tileset's mask (or the blank -- the sampler is
   -- declared either way, and unbound is a driver-dependent crash), how lit
   -- the panes are, and the movement-fed glint as the caller last set it
-  local mask = not MOBILE_RUNTIME
-               and (Voxel3D.glassMask or GlassMask.blank()) or nil
+  local mask = Voxel3D.glassMask or GlassMask.blank()
   if mask then
     pcall(sh.send, sh, "glassMask", mask)
     local ok, mw, mh = pcall(mask.getDimensions, mask)
@@ -1761,9 +1977,24 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
   -- on until a sprite pass says otherwise, reset per frame like `ghost`
   pcall(sh.send, sh, "glassOn", 1)
-  end -- desktop-only sun/weather/glass uniform batch
+  -- Bind the sampler on every variant even outside caves; unbound samplers
+  -- are not portable. Cave material UVs are emitted only after atlas upload.
+  local caveTexture=CaveSurfaces.texture(false) or GlassMask.blank()
+  if caveTexture then
+    pcall(sh.send,sh,"caveSurfaceAtlas",caveTexture)
+    local cw,ch=caveTexture:getDimensions()
+    pcall(sh.send,sh,"caveSurfaceSize",{cw,ch})
+  end
+  local roomBlank=GlassMask.blank()
+  local towerLight=skyContext and skyContext.towerLight
+  if roomBlank then pcall(sh.send,sh,'towerLight',towerLight and towerLight.texture or roomBlank)end
+  pcall(sh.send,sh,'towerLightSize',towerLight and towerLight.size or {0,0})
+  if roomBlank then pcall(sh.send,sh,'roomMask',roomBlank)end
+  pcall(sh.send,sh,'roomMaskSize',{1,1,0})
   -- No cut unless VoxelScene explicitly opens a FULL indoor shell below.
   pcall(sh.send, sh, "cutaway", { 0, 0, 0, 0 })
+  Voxel3D.actorWaterline = nil
+  pcall(sh.send, sh, "actorWaterline", -30000)
   -- the curved world bends about the camera's focus, so the horizon keeps
   -- a fixed distance ahead of the player rather than sitting on the map.
   -- A placed camera may decline it outright (Voxel3D.camera.curve = 0).
@@ -2247,7 +2478,6 @@ end
 -- on it, and at night that painted lamplight stripes down whoever was
 -- standing in the wrong part of their own sheet.
 function Voxel3D.glass(on)
-  if MOBILE_RUNTIME then return end
   if not (active and activeShader) then return end
   pcall(activeShader.send, activeShader, "glassOn", on and 1 or 0)
 end
@@ -2361,6 +2591,29 @@ end
 -- to `model` because for everything but a character the two are one matrix.
 -- A character is drawn leaning and cast upright, so it must hand over the
 -- upright transform or it reads its own shadow as falling on itself.
+-- Outer enclosure meshes extend beyond the native map's mask. Keep those
+-- neutral walls/caps, while still hiding other rooms inside its bounds.
+-- Only horizon draws opt in; terrain, furniture and actors retain mode 1.
+function Voxel3D.towerBackdrop(on)
+ if activeShader then pcall(activeShader.send,activeShader,"towerBackdrop",on and 1 or 0)end
+end
+
+function Voxel3D.roomVisibility(view, enclosure)
+ if not activeShader then return end
+ if view and view.image then
+  activeShader:send('roomMask',view.image)
+  activeShader:send('roomMaskSize',{view.w*8,view.h*8,enclosure and 2 or 1})
+ else activeShader:send('roomMaskSize',{1,1,0})end
+end
+
+-- Clip only the actor currently being drawn at the uncurved water surface.
+-- Optional authored-card shaders read the same value.
+function Voxel3D.waterline(height)
+  if Voxel3D.actorWaterline == height then return end
+  Voxel3D.actorWaterline = height
+  if activeShader then pcall(activeShader.send,activeShader,"actorWaterline",height or -30000) end
+end
+
 function Voxel3D.draw(mesh, texture, model, pull, sunModel)
   if not (active and mesh) then return end
   -- the variant beginScene actually bound, not whichever one is default:
@@ -2512,6 +2765,12 @@ function Voxel3D.endOverlay()
   active, activeShader, firstDrawPending = false, nil, false
 end
 
+-- Composite indoor air after geometry and actors, before the HUD.
+function Voxel3D.indoorMist(map,dark)
+  if not active then return false end
+  return V.require("IndoorMist").draw(map,dark,canvas,held and held.depth,Voxel3D.vp)
+end
+
 -- End the pass and hand back the rendered canvas.
 function Voxel3D.endScene()
   if not active then return nil end
@@ -2551,6 +2810,7 @@ function Voxel3D.invalidate()
   -- the VR sky's disc mesh belongs to this context like the canvases do
   if discMesh and discMesh.release then pcall(discMesh.release, discMesh) end
   discMesh = nil
+  V.require("IndoorMist").invalidate()
   ShadowMap.invalidate()
   -- the sky is part of this pass and holds a shader of its own
   Sky.invalidate()

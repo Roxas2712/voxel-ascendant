@@ -573,19 +573,13 @@ return {
       -- water x14, lit floor x5 where two flights meet), so the flight
       -- climbs NORTHWARD, one cell deep, 0 -> 6.
       --
-      -- It is NOT pinned `stair_e`/`stair_w`, and that is deliberate.
-      -- Those classes build a flight that marches along X -- 16px tall,
-      -- rising toward the named side -- so either of them here would
-      -- throw a 16px staircase sideways across a 6px north-south step,
-      -- blocking the passage it is supposed to open and climbing at
-      -- right angles to the drawn risers.  A wrong-way flight is worse
-      -- than a flat one.  `ledge` is the honest reading available: the
-      -- stair cell joins the shelf it belongs to, wears its four treads
-      -- on the TOP face (which is how they are drawn -- from above), and
-      -- puts its 6px riser face at the FOOT of the flight where the
-      -- player actually steps down onto the dark floor.  See the report:
-      -- a real sloped cave stair wants `stair_n`/`stair_s` in
-      -- Structures.stairCell, which is an engine change, not a pin.
+      -- Keep the source motif pinned as ledge for the original/OFF view.
+      -- Gen1Stairs now recognises the complete $15/$16 cell and its actual
+      -- north/south floor neighbours, then replaces it with stair_n geometry:
+      -- four treads over the real 6px difference. The five same-level pairs
+      -- stay on the shelf plane. Unlike ladder warps, these walkable flights
+      -- supply their centre height to the actor-support path. The shelf stays
+      -- at 6px while STAIRS is on, including terrainHeights FLAT.
       ledge = { 5, 41,             -- $05 lit floor, $29 its north shading
                 21, 22 },          -- $15/$16, the stair plate off it
       -- ---- 0: the floor plane ----
@@ -1861,18 +1855,10 @@ return {
       -- void), the back and rooftop doors (81-84, walkable and folded
       -- into their facade), the desk aprons (85/86), and the landing
       -- edge (5).
-      -- CANNOT be pinned, engine-side: the four staircases (12/13/28/29
-      -- the rising flight, 10/11/26/27 the sunken one) are in this
-      -- tileset's doorTiles, and Structures' door fold OVERWRITES the
-      -- resolved shape of any door cell whose north neighbour is upright
-      -- -- without checking `authored` -- so a stair_e / stair_down_w pin
-      -- is silently discarded.  The indoor flights therefore read as
-      -- doorways folded into the north wall band, which is at least what
-      -- they are (you walk into them from the room).  The roof's two
-      -- flights, which stand clear of any wall, come out as a shallow
-      -- 8px lip -- a stairwell mouth, near enough -- and pinning them
-      -- `wall` would be worse: it would plug the openings with a 16px
-      -- block in the middle of the roof.  See the report.
+      -- Stair cells are claimed by Gen1Stairs after complete-cell and
+      -- native-warp validation. They must not be globally pinned here:
+      -- these tile ids overlap the door treatment and rooftop variants.
+      -- With STAIRS off, the original profile remains available.
     },
 
     -- Silph Co's 11th floor (the president's office), Bill's house and

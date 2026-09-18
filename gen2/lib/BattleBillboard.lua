@@ -86,6 +86,23 @@ function BattleBillboard.yawToward(x, z, eye)
   return math.atan2(eye[1] - x, eye[3] - z)
 end
 
+-- Ordinary battle cards stay upright. Raised court cameras use a shared
+-- view-facing plane so their cards do not collapse under the steep lens.
+-- This rotation has no translation: the composed visible-foot anchor stays put.
+function BattleBillboard.orientation(x, y, z, eye, pitched, camera)
+  if not pitched then return Mat4.rotateY(BattleBillboard.yawToward(x,z,eye)) end
+  local origin={x,y,z}
+  if camera and camera.eye and camera.focus then
+    eye,origin=camera.eye,camera.focus
+  end
+  if not eye then return Mat4.identity() end
+  local dx,dy,dz=eye[1]-origin[1],eye[2]-origin[2],eye[3]-origin[3]
+  local horizontal=math.sqrt(dx*dx+dz*dz)
+  local yaw=horizontal>1e-9 and math.atan2(dx,dz) or 0
+  local pitch=math.atan2(dy,horizontal)
+  return Mat4.mul(Mat4.rotateY(yaw),Mat4.rotateX(-pitch))
+end
+
 -- Stand a `w` x `h` card with its feet centred on world (x, y, z).
 function BattleBillboard.matrix(x, y, z, w, h, yaw)
   return Mat4.mul(Mat4.mul(Mat4.translate(x, y, z), Mat4.rotateY(yaw)),

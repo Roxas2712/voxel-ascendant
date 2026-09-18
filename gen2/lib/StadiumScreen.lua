@@ -131,7 +131,8 @@ local function speciesName(dex)
       end
     end
   end
-  return dexNames[dex]
+  local name = dexNames[dex]
+  return name and (name:gsub("_", " ")) or nil
 end
 
 -- `adopt` means the caller has ALREADY started the build, or already decided

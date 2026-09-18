@@ -143,6 +143,8 @@ end
 function ModSetting:setIndex(i, game, silent)
   local n = #self.values
   i = ((i - 1) % n + n) % n + 1
+  local content=V.mod and V.mod.exports and V.mod.exports.ascendantContent
+  if not silent and game and content and content.allowSetting and not content:allowSetting(self.key,self.values[i],game) then return self:get()end
   self.index = i
   local value, id = self.values[i], modId()
   local opts = game and game.save and game.save.options
