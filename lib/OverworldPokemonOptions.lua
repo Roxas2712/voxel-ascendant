@@ -2,11 +2,11 @@
 -- its adapter; battle model keys are deliberately never written here.
 local M = { PREFIX="apo_" }
 local rows = {
-  {"card_animation_mode", "CARD ANIMATION", "KARTENANIMATION", "pokemon", "classic",
+  {"card_animation_mode", "CARD ANIMATION", "KARTENANIMATION", "pokemon", "natural",
     "Natural enables the new human gait and idle motion. Classic restores the previous animation for every card immediately. Vanilla artwork is controlled by HD PEOPLE.",
     "Natürlich aktiviert den neuen Gang und Ruhebewegungen. Klassisch stellt sofort die bisherige Animation aller Karten wieder her. Originalgrafiken wählt HD-MENSCHEN.",
     {{"CLASSIC", "classic"}, {"NATURAL", "natural"}}},
-  {"human_acting_pilot", "DIALOGUE POSES (TEST)", "DIALOGPOSEN (TEST)", "pokemon", false,
+  {"human_acting_pilot", "DIALOGUE POSES (TEST)", "DIALOGPOSEN (TEST)", "pokemon", true,
     "Acting test: Oak and Blue face their dialogue partner during the Pallet opening. Red's mother sits on her chair and turns her head in conversation. Requires NATURAL, HD PEOPLE and people grid OFF. Elm and the New Bark mother blink and breathe during directly initiated conversations. The opposite guest breathes during conversation. More actors are pending. Classic or HD PEOPLE OFF restores the previous view.",
     "Figuren-Test: Eich und Blau schauen im Alabastia-Startdialog zum Gesprächspartner. Rots Mutter sitzt auf ihrem Stuhl und dreht im Gespräch den Kopf. Benötigt NATUERLICH, HD-MENSCHEN und Figurenraster AUS. Lind und die Mutter in Neuborkia blinzeln und atmen im direkt gestarteten Gespräch. Die Besucherin gegenüber atmet im Gespräch. Weitere Figuren folgen. Klassisch oder HD-MENSCHEN AUS setzt die Darstellung zurück."},
   {"enabled", "OVERWORLD CARD", "OVERWORLD-CARD", "pokemon", true,

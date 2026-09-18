@@ -91,10 +91,62 @@ M.rows={
   {key="q",title="Zoom in",hint="Q",detail="Move the current camera closer."},
   {key="e",title="Zoom out",hint="E",detail="Move the current camera further away."},
 }
+local groupNames={wilds={"Wilds","Wilds"},followers={"Followers","Begleiter"},town={"Town Pokémon","Stadt-Pokémon"},effects={"Camera & world","Kamera & Welt"}}
+function M.context(g)
+ local p=M.current(g);local t=p and p.previous or top(g)
+ if t and t.player and t.enemy and t.phase then return "battle",t end
+ if t==g.overworld then return "world",t end
+ return "other",t
+end
+function M.visibleRows(g,group)
+ local context=M.context(g);local out={}
+ local allowed=context=="battle" and {['0']=true,['8']=true,['5']=true,['6']=true,f4=true,q=true,e=true}
+  or context=="world" and {['0']=true,v=true,f6=true,f4=true}or{f4=true}
+ if context=='battle'then
+  local ok,shot=pcall(function()local b=V.require('OverworldBattle');return b.shot and b.shot()end)
+  if not(ok and shot)then allowed['5']=nil;allowed.q=nil;allowed.e=nil end
+ end
+ for i,row in ipairs(M.rows)do
+  local effect=row.key=='5'or row.key=='6'or row.key=='7'or row.key=='9'or row.key=='q'or row.key=='e'
+  if (not group and allowed[row.key])or(group=='effects'and context=='world'and effect)then
+   local copy={};for k,v in pairs(row)do copy[k]=v end
+   copy.titleDe=germanRows[i].title;copy.detailDe=germanRows[i].detail;copy.hintDe=germanRows[i].hint
+   out[#out+1]=copy
+  end
+ end
+ if context=='world'then
+  local extra=V.require('VascQuickOptions').rows(g,V.require('AppearanceShortcuts').settings)
+  if group then
+   for _,row in ipairs(extra)do if row.group==group then out[#out+1]=row end end
+  else
+   for _,id in ipairs({'followers','wilds','town','effects'})do
+    local count=id=='effects'and 6 or 0
+    for _,row in ipairs(extra)do if row.group==id then count=count+1 end end
+    if count>0 then out[#out+1]={id=id,title=groupNames[id][1],titleDe=groupNames[id][2],submenu=id,hint='',detail='',status=function()return '›'end}end
+   end
+  end
+ end
+ if context=='battle'and allowed.q then
+  out[#out+1]={id='battle-distance',title='Camera distance',titleDe='Kameraabstand',hint='',detail='Starting zoom. Pinch to zoom; drag to look. Mouse wheel / right stick: camera.',detailDe='Startabstand. Zwei Finger: Zoom; ziehen: drehen. Mausrad / rechter Stick: Kamera.',
+   status=function()return tostring(V.require('BattleCam').distanceSetting:get())..'X'end,
+   change=function(game)V.require('BattleCam').distanceSetting:cycle(game);V.require('BattleCam').applyDistanceSetting(true)end}
+  out[#out+1]={id='camera-reset',title='Centre camera',titleDe='Kamera zentrieren',hint='',detail='Return to your selected starting distance and angle.',detailDe='Zum gewählten Startabstand und Blickwinkel zurückkehren.',status=function()return '↺'end,
+   change=function()V.require('BattleCam').recentre()end}
+ end
+ local order=context=='battle'and{['8']=1,['0']=2,['5']=3,['6']=4,['battle-distance']=5,q=6,e=7,['camera-reset']=8,f4=9}or{v=1,followers=2,wilds=3,town=4,['0']=5,f6=6,effects=7,f4=8}
+ if not group then table.sort(out,function(a,b)return(order[a.key or a.id]or 99)<(order[b.key or b.id]or 99)end)end
+ return out
+end
+function M.back(g)
+ local p=M.current(g)
+ if p and p.group then p.group=nil;p.selected=1;p.rows=M.visibleRows(g);M.paint=nil;return true end
+ return M.close(g)
+end
 -- Read the same live owners the shortcuts change; never maintain a second
 -- set of booleans in the panel. Multi-state effects show their selected mode.
 function M.status(g,index)
-  local row=M.rows[index];if not row then return "" end
+  local p=M.current(g);local row=p and p.rows[index]or M.rows[index];if not row then return "" end
+  if row.status then return row.status(M.language()=="de")end
   local de=M.language()=="de"
   local function setting(s)
     if not s then return de and "Nicht verfügbar"or"Unavailable"end
@@ -130,7 +182,7 @@ function M.status(g,index)
           if label then return label..(request.pending and(de and " · wartet"or" · pending")or"")end
         end
       end
-      return setting(owner.setting)
+      return setting(k=="5"and M.context(g)=="battle"and owner.battleSetting or owner.setting)
     end
     if k=="0"then
       local panel=M.current(g);local b=panel and panel.previous or top(g)
@@ -154,33 +206,40 @@ function M.close(g)
   g.stack:pop();M.paint=nil;return true
 end
 function M.activate(g,index)
-  local panel=M.current(g);local row=M.rows[index]
+  local panel=M.current(g);local row=panel and panel.rows[index]
   if not panel or not row then return false end
+  if row.submenu then panel.group=row.submenu;panel.selected=1;panel.rows=M.visibleRows(g,panel.group);M.paint=nil;return true end
+  local group=panel.group
   local previous=panel.previous
   M.close(g)
   if top(g)~=previous then return false end
   -- Uncover the actual context before invoking its normal availability gate.
-  g:keypressed(row.key)
-  if top(g)==previous then M.open(g,index)end
+  if row.change then row.change(g,1)
+  elseif row.key=='5'and M.context(g)=='battle'then V.require('VoxelGrid').battleSetting:cycle(g)
+  else g:keypressed(row.key)end
+  if top(g)==previous then M.open(g,index,group)end
   return true
 end
 function M.panelKey(g,k)
   local p=M.current(g);if not p then return false end
-  if k=="escape"or k==M.HELP_KEY then M.close(g)
-  elseif k=="up"then p.selected=(p.selected-2)%#M.rows+1
-  elseif k=="down"then p.selected=p.selected%#M.rows+1
+  if k=="escape"then M.back(g)
+  elseif k==M.HELP_KEY then M.close(g)
+  elseif k=="up"then p.selected=(p.selected-2)%#p.rows+1
+  elseif k=="down"then p.selected=p.selected%#p.rows+1
   elseif k=="left"or k=="pageup"then p.selected=math.max(1,p.selected-(p.perPage or 6))
-  elseif k=="right"or k=="pagedown"then p.selected=math.min(#M.rows,p.selected+(p.perPage or 6))
+  elseif k=="right"or k=="pagedown"then p.selected=math.min(#p.rows,p.selected+(p.perPage or 6))
   elseif k=="return"or k=="space"then M.activate(g,p.selected)
-  else for i,row in ipairs(M.rows)do if row.key==k then M.activate(g,i);break end end end
+  else for i,row in ipairs(p.rows)do if row.key and row.key==k then M.activate(g,i);break end end end
   M.paint=nil
   return true
 end
-local padKeys={dpup="up",dpdown="down",dpleft="left",dpright="right",a="return",b="escape",start="escape",back="escape"}
-function M.open(g,selected)
+local padKeys={dpup="up",dpdown="down",dpleft="left",dpright="right",a="return",b="escape",start="f3",back="escape",leftshoulder="pageup",rightshoulder="pagedown"}
+function M.open(g,selected,group)
   if M.current(g)then return true end
-  if not ready(g)then return false end
-  local p={_vascControls=true,previous=top(g),selected=selected or 1}
+  if not ready(g)or M.context(g)=="other"then return false end
+  local p={_vascControls=true,previous=top(g),selected=selected or 1,group=group}
+  p.rows=M.visibleRows(g,group);if #p.rows==0 then return false end
+  p.selected=math.min(p.selected,#p.rows)
   p.onKeyPressed=function(_,k)M.panelKey(g,k)end
   p.onGamepadPressed=function(_,b)M.panelKey(g,padKeys[b])end
   if g.touchControls and g.touchControls.reset then g.touchControls:reset()end
@@ -200,15 +259,16 @@ function M.layout(g)
     local mobile=M.mobile(g)
     return{launcher={x+12,y+82,mobile and 48 or 170,48},safe={x,y,w,h}}
   end
-  local width=math.min(610,w-16);local perPage=math.max(1,math.min(6,math.floor((h-156)/64)))
+  local width=math.max(220,math.min(610,w-16));local perPage=math.max(1,math.min(6,math.floor((h-156)/64)))
   p.perPage=perPage
-  local page=math.floor((p.selected-1)/perPage);local pages=math.ceil(#M.rows/perPage)
+  local page=math.floor((p.selected-1)/perPage);local pages=math.ceil(#p.rows/perPage)
   local height=perPage*64+144;local px=x+(w-width)/2;local py=y+math.max(4,(h-height)/2)
   local t={safe={x,y,w,h},panel={px,py,width,height},page=page,pages=pages,rows={},
     close={px+width-64,py+8,56,48},prev={px+12,py+height-56,76,48},next={px+width-88,py+height-56,76,48}}
+  if p.group then t.back={px+width/2-55,py+height-56,110,48}end
   for i=1,perPage do
     local index=page*perPage+i
-    if M.rows[index]then t.rows[#t.rows+1]={index=index,rect={px+12,py+72+(i-1)*64,width-24,58}}end
+    if p.rows[index]then t.rows[#t.rows+1]={index=index,rect={px+12,py+72+(i-1)*64,width-24,58}}end
   end
   return t
 end
@@ -216,8 +276,8 @@ function M.draw(g)
   M.paint=nil
   local p=M.current(g)
   local de=M.language()=="de"
-  local rows=de and germanRows or M.rows
-  if not p and not ready(g)then return end
+  local rows=p and p.rows or{}
+  if not p and(not ready(g)or M.context(g)=="other")then return end
   local mobile=M.mobile(g)
   local hintAlpha=mobile and 1 or M.hintAlpha(g)
   local t=M.layout(g);local graphics=love.graphics;local ww,hh=graphics.getDimensions()
@@ -259,13 +319,13 @@ function M.draw(g)
   else
     graphics.setColor(.015,.025,.035,.87);graphics.rectangle("fill",0,0,ww,hh)
     box(t.panel);local px,py=t.panel[1],t.panel[2]
-    label(de and "VASC · Steuerung"or"VASC · Controls",px+14,py+12)
+    label("VASC · "..(p.group and groupNames[p.group][de and 2 or 1]or(de and "Schnellmenü"or"Quick menu")),px+14,py+12)
     label(mobile and(de and "Zeile antippen zum Ändern · ×: schließen"or"Tap a row to change · ×: close")
       or(de and "↑ / ↓: wählen · Enter / A: ändern · Esc / B: zurück"or"↑ / ↓: select · Enter / A: change · Esc / B: back"),px+14,py+38,M.small)
     box(t.close);label("×",t.close[1]+21,t.close[2]+12)
     for _,entry in ipairs(t.rows)do
       local r,row=entry.rect,rows[entry.index];box(r,p.selected==entry.index)
-      label(row.title,r[1]+10,r[2]+4)
+      label(de and row.titleDe or row.title,r[1]+10,r[2]+4)
       local status=M.status(g,entry.index)
       local statusWidth=M.small:getWidth(status)
       -- Status has its own line, including on narrow portrait phones.
@@ -273,11 +333,14 @@ function M.draw(g)
       if not mobile and M.small:getWidth(row.hint)+statusWidth+32<=r[3]then
         label(row.hint,r[1]+r[3]-M.small:getWidth(row.hint)-10,r[2]+24,M.small)
       end
-      local detail=mobile and(de and "Antippen zum Ändern"or"Tap to change")or row.detail
+      local detail=mobile and(row.submenu and(de and "Antippen zum Öffnen"or"Tap to open")or(de and "Antippen zum Ändern"or"Tap to change"))or(de and row.detailDe or row.detail)or""
       if M.small:getWidth(detail)<=r[3]-20 then label(detail,r[1]+10,r[2]+40,M.small)end
     end
     box(t.prev);box(t.next);label("<",t.prev[1]+31,t.prev[2]+14);label(">",t.next[1]+31,t.next[2]+14)
-    label((t.page+1).." / "..t.pages,px+t.panel[3]/2-16,t.prev[2]+14)
+    if t.back then
+      box(t.back);label(de and "‹ Zurück"or"‹ Back",t.back[1]+18,t.back[2]+4)
+      label((t.page+1).." / "..t.pages,t.back[1]+39,t.back[2]+27,M.small)
+    else label((t.page+1).." / "..t.pages,px+t.panel[3]/2-16,t.prev[2]+14)end
   end
   graphics.pop();M.paint={screen=top(g),w=ww,h=hh,layout=t}
 end
@@ -293,7 +356,8 @@ function M.pointer(g,p)
     if hit(t.launcher,p.x,p.y)then M.toggle(g);return true end
     return false
   end
-  if hit(t.close,p.x,p.y)then M.close(g)
+  if t.back and hit(t.back,p.x,p.y)then M.back(g)
+  elseif hit(t.close,p.x,p.y)then M.close(g)
   elseif hit(t.prev,p.x,p.y)then M.panelKey(g,"left")
   elseif hit(t.next,p.x,p.y)then M.panelKey(g,"right")
   else for _,r in ipairs(t.rows)do if hit(r.rect,p.x,p.y)then M.activate(g,r.index);break end end end

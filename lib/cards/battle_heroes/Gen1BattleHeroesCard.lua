@@ -43,6 +43,7 @@ function C.descriptor()
      local proxy={path=V.mod.path.."/integrated/battle_heroes",exports={},log=V.mod.log,
       renderer=V.require("OverworldBattle"),
       standingTrainers=function()return not external() and settings.trainer_stays:get()==true end}
+     proxy.resolveAsset=function(path)return V.require("SharedCharacterAssets").resolve(V.mod.path,path)end
      function proxy:read(path) return V.mod:read("integrated/battle_heroes/"..path) end
      function proxy:find(id) return V.mod:find(id) end
      proxy.options={define=function()end,get=function(_,key)

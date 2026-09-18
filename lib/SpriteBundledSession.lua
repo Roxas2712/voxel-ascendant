@@ -74,6 +74,7 @@ function M.attach(session,mod,nativeInfo,owner)
  end
  local installed=catalog.installed
  function catalog:installed(id,s)
+  if self.maintenanceMissing and self.maintenanceMissing[id]then return false end
   if installed(self,id,s)then return true end
   local state=store:localStatus(id);return state and state.complete==true or false
  end

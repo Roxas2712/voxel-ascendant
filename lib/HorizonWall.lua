@@ -13,6 +13,7 @@
 -- cameras from seeing a paper edge.
 
 local V = ...
+local Backgrounds = V.require("CompactBackgroundAssets")
 
 local Voxel3D = V.require("Voxel3D")
 local ModSetting = V.require("ModSetting")
@@ -1436,9 +1437,9 @@ local function validateParsedEditorImages(parsed)
     -- change between marker revisions and therefore need a last-good preflight.
     if spec then
       local path = V.path .. "/" .. spec.path
-      local ok, image = pcall(g.newImage, path,
+      local ok, image = pcall(Backgrounds.newImage, path,
                               { mipmaps = false, linear = false })
-      if not (ok and image) then ok, image = pcall(g.newImage, path) end
+      if not (ok and image) then ok, image = pcall(Backgrounds.newImage, path) end
       if not (ok and image) then
         return false, "editor PNG could not be decoded: " .. spec.path
       end
@@ -6756,11 +6757,11 @@ local function editorPanoramaTexture(family)
   local path = V.path .. "/" .. spec.path
   local ok, image
   if spec.fitDevice then
-    image = V.require('InteriorTexture').load(g, love.image, path, spec)
+    image = V.require('InteriorTexture').load(g, love.image, path, spec, Backgrounds)
     ok = image ~= nil
   else
-    ok, image = pcall(g.newImage, path, { mipmaps = false, linear = false })
-    if not (ok and image) then ok, image = pcall(g.newImage, path) end
+    ok, image = pcall(Backgrounds.newImage, path, { mipmaps = false, linear = false })
+    if not (ok and image) then ok, image = pcall(Backgrounds.newImage, path) end
   end
   if not (ok and image) then textureFailures[family] = true return nil end
   assetStats.loads = assetStats.loads + 1
@@ -6791,9 +6792,9 @@ compactImage = function(g, name)
   if not (spec and path and g and type(g.newImage) == "function") then
     return nil
   end
-  local ok, image = pcall(g.newImage, path,
+  local ok, image = pcall(Backgrounds.newImage, path,
                           { mipmaps = false, linear = false })
-  if not (ok and image) then ok, image = pcall(g.newImage, path) end
+  if not (ok and image) then ok, image = pcall(Backgrounds.newImage, path) end
   if not (ok and image) then return nil end
   assetStats.loads = assetStats.loads + 1
   if image.setFilter then
@@ -6848,7 +6849,7 @@ local function aquariumFishTexture(g)
     local path=type(V.path)=='string' and V.path..string.format(
       '/integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/follower_%03d_none_normal_base.png',dex)
     local ok,img=false,nil
-    if path then ok,img=pcall(g.newImage,path)end
+    if path then ok,img=pcall(Backgrounds.newImage,path)end
     if ok and img then
       assetStats.loads=assetStats.loads+1
       local quads={}
@@ -6930,7 +6931,7 @@ local function gardenPrismTexture(g,W,H)
       if ok and type(value)=='string' then path=value end
     end
     local ok,img=false,nil
-    if path then ok,img=pcall(g.newImage,path) end
+    if path then ok,img=pcall(Backgrounds.newImage,path) end
     if ok and img then
       assetStats.loads=assetStats.loads+1
       local quad

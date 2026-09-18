@@ -127,6 +127,9 @@ local function runEntry(owner, rel)
   return chunk(owner)
 end
 
+local AnimationMigration = runEntry(mod, "lib/HumanAnimationMigration.lua")
+AnimationMigration.install(mod)
+
 local generation = gameGeneration()
 -- Both generation runtimes consume the same support-session owner. Bind the
 -- resolved value on the root handle before either entry boots Diagnostics so
@@ -222,6 +225,8 @@ end
 -- copies would regress Red/Blue/Yellow.  The facade preserves A21's original
 -- public relative names but resolves their bytes from this closed segment.
 local GEN2_A21_SHARED_UI = {
+  ["lib/CompactBackgroundAssets.lua"] = "lib/CompactBackgroundAssets.lua",
+  ["lib/CompactBackgroundManifest.lua"] = "lib/CompactBackgroundManifest.lua",
   ["lib/EditionAccent.lua"] = "lib/gen2_a21_shared/EditionAccent.lua",
   ["lib/ShortcutToast.lua"] = "lib/gen2_a21_shared/ShortcutToast.lua",
   ["lib/VascMenu.lua"] = "lib/gen2_a21_shared/VascMenu.lua",

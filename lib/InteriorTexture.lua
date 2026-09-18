@@ -2,7 +2,7 @@
 -- the source width. Resampling happens once during scene preparation, on CPU;
 -- no oversized source image ever reaches the GPU.
 local M = {}
-function M.load(g, imageAPI, path, spec)
+function M.load(g, imageAPI, path, spec, backgrounds)
   local limits = g.getSystemLimits and g.getSystemLimits() or {}
   local limit = tonumber(limits.texturesize) or math.huge
   local source, resized, image
@@ -12,7 +12,7 @@ function M.load(g, imageAPI, path, spec)
     local input = path
     if math.max(width,height) > limit then
       assert(imageAPI and imageAPI.newImageData,'Image decoding unavailable')
-      source = imageAPI.newImageData(path)
+      source = backgrounds and backgrounds.imageData(path) or imageAPI.newImageData(path)
       local sw, sh = source:getDimensions()
       assert(sw==width and sh==height,'Interior source dimensions changed')
       local scale = math.min(1024,limit)/math.max(sw,sh)
@@ -23,6 +23,9 @@ function M.load(g, imageAPI, path, spec)
           math.min(sh-1,math.floor((y+.5)*sh/height)))
       end)
       input = resized
+    end
+    if input==path and backgrounds and backgrounds.has(path) then
+      source=backgrounds.imageData(path);input=source
     end
     local uploaded, value = pcall(g.newImage,input,{mipmaps=false,linear=false})
     if not uploaded then uploaded, value = pcall(g.newImage,input) end

@@ -8,7 +8,7 @@ function M.new(mod,game,guided,de,session)
   local function notice(reason)if session.notice then session:notice(reason)end end
   local function busy()
     local job,err=session.removal:pending()
-    return job~=nil or err~=nil or (session.busy and session:busy())
+    return job~=nil or err~=nil or (session.maintenance and session.maintenance:pending()~=nil) or (session.busy and session:busy())
   end
   local function make(key,title,rows,choose,help)
     local builder=type(rows)=='function' and rows or nil
@@ -319,6 +319,15 @@ function M.new(mod,game,guided,de,session)
     end
     return {base,hd}
   end
+  local function maintenanceMenu()
+    local result={}
+    result[#result+1]={label=tr('CHECK / REPAIR SPRITES','SPRITES PRUEFEN / REPARIEREN'),action='repair',help=tr('Check downloaded packs and repair interrupted or damaged downloads.','Geladene Pakete pruefen und unterbrochene oder beschaedigte Downloads reparieren.')}
+    result[#result+1]={label=tr('REINSTALL DOWNLOADS','DOWNLOADS NEU INSTALLIEREN'),action='reinstall',help=tr('Clear the shared KASC/VASC sprite cache after restart and download previous packs again.','Gemeinsamen KASC/VASC-Spritecache nach Neustart leeren und bisherige Pakete neu laden.')}
+    result[#result+1]={label=tr('DELETE ALL DOWNLOADS','ALLE DOWNLOADS LOESCHEN'),action='deleteAll',help=tr('Delete downloaded sprites and interrupted download files. Keep saves and Stadium imports.','Heruntergeladene Sprites und Downloadreste loeschen. Spielstaende und Stadium-Importe behalten.')}
+    return push(make('sprite_maintenance',tr('SPRITE MAINTENANCE','SPRITES VERWALTEN'),result,function(row)
+      return session:confirmMaintenance(row.action=='deleteAll'and'delete'or row.action)
+    end,tr('Shared by KASC and VASC. Saves, bundled art and Stadium imports are kept.','Gemeinsam fuer KASC und VASC. Spielstaende, mitgelieferte Grafiken und Stadium-Importe bleiben.')))
+  end
   local function rows()
     local buckets=categoryGroups()
     local result={allRow()}
@@ -330,6 +339,7 @@ function M.new(mod,game,guided,de,session)
       end
     end
     for _,p in ipairs(session.model:imports())do result[#result+1]={label='STADIUM 2',right=p.statusLabel,import=p,help=tr('Import your Stadium 2 file or remove its generated models. Your source file is kept.','Stadium-2-Datei importieren oder die erzeugten Modelle löschen. Die Quelldatei bleibt erhalten.')}end
+    result[#result+1]={label=tr('SPRITE MAINTENANCE','SPRITES VERWALTEN'),action='maintenance',help=tr('Check, repair, reinstall or clear downloaded sprite packs.','Geladene Sprite-Pakete pruefen, reparieren, neu installieren oder leeren.')}
     result[#result+1]={label=tr('IMPORT FILE','DATEI IMPORTIEREN'),action='packageImport'}
     result[#result+1]={label=tr('DOWNLOAD STATUS','DOWNLOAD-STATUS'),action='status'}
     result[#result+1]={label=tr('STARTUP PROMPT','STARTABFRAGE'),right=session.promptDisabled and tr('OFF','AUS') or tr('ON','AN'),action='startupPrompt',help=tr('Show the graphics choice at startup while packs are missing. Select to turn this on or off.','Grafikauswahl beim Start zeigen, solange Pakete fehlen. Hier die Abfrage an- oder abschalten.')}
@@ -341,6 +351,7 @@ function M.new(mod,game,guided,de,session)
   end
   local menu=make("vasc_pokemon_hd_downloads",tr("SPRITE DOWNLOADS","SPRITE-DOWNLOADS"),rows,function(row)
     if row.action=='all'then return downloadSelection()end
+    if row.action=='maintenance'then return maintenanceMenu()end
     if row.group then return groupsMenu(row.group) end
     if row.import then return importMenu(row.import) end
     if row.action=="packageImport" then

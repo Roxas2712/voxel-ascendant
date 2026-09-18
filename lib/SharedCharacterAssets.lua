@@ -1,0 +1,56 @@
+-- Identical authored sheets shared by overworld and battle.
+local paths = {
+  ["assets/heroes/blue.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/blue_cards_4x3.png",
+  ["assets/heroes/gold.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/gold_cards_4x3.png",
+  ["assets/heroes/green.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/green_cards_4x3.png",
+  ["assets/heroes/kris.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/kris_cards_4x3.png",
+  ["assets/heroes/red.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/red_cards_4x3.png",
+  ["assets/heroes/silver.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/silver-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/agatha.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/agatha-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/beauty.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/beauty-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/biker.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/biker-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/bird-keeper.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/bird-keeper-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/blackbelt.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/blackbelt-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/blaine.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/blaine-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/brock.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/brock-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/bruno.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/bruno-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/bug-catcher.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/bug-catcher-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/burglar.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/burglar-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/channeler.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/channeler-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/cooltrainer-female.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/cooltrainer-female-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/cooltrainer-male.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/cooltrainer-male-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/cue-ball.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/cue-ball-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/engineer.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/engineer-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/erika.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/erika-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/fisher.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/fisher-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/gambler.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/gambler-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/gentleman.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/gentleman-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/giovanni.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/giovanni-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/hiker.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/hiker-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/juggler.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/juggler-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/koga.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/koga-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/lance.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/lance-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/lass.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/lass-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/lorelei.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/lorelei-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/lt-surge.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/lt-surge-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/misty.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/misty-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/pokemaniac.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/pokemaniac-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/professor-oak.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/professor-oak-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/psychic.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/psychic-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/rocker.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/rocker-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/sabrina.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/sabrina-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/sailor.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/sailor-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/scientist.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/scientist-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/super-nerd.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/super-nerd-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/swimmer.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/swimmer-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/tamer.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/tamer-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/team-rocket-grunt-male.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/team-rocket-grunt-male-kasc-hd-4x3-walk-sheet-v1.png",
+  ["assets/trainers/youngster.png"] = "integrated/ascendant_pokemon_overworld/assets/characters/npcs/youngster-kasc-hd-4x3-walk-sheet-v1.png",
+}
+local M = {}
+function M.resolve(root, path)
+  local shared = paths[path]
+  if shared then return root .. "/" .. shared end
+  return path:match("^assets/") and root .. "/integrated/battle_heroes/" .. path or path
+end
+return M

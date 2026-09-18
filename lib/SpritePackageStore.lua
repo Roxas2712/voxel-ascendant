@@ -41,8 +41,11 @@ function M.new(d)
   end
   local function chunk(h,n)
     local raw=read("sprite-content/blobs/"..h,M.CHUNK)
-    if not raw and d.legacyReadChunk then raw=d.legacyReadChunk(h,n) end
     if type(raw)=="string" and #raw==n and d.sha256(raw)==h then return raw end
+    if d.legacyReadChunk then
+      raw=d.legacyReadChunk(h,n)
+      if type(raw)=="string" and #raw==n and d.sha256(raw)==h then return raw end
+    end
   end
   local function fileKey(f)
     local key={f.sha256,tostring(f.bytes)}

@@ -197,7 +197,14 @@ return {
   -- than on the rim of beach the land search would otherwise find
   ["ROUTE_20"] = { x = 23, y = 7, shape = "wide", cam = "wide" },
   ["ROUTE_21"] = { x = 8, y = 46, shape = "wide" },
-  ["ROUTE_22"] = { x = 35, y = 7, shape = "wide", cam = "wide" },
+  -- The old east-edge court (35,7) put its wide camera into the boundary.
+  -- Both grass patches need a shallow east/west court above the ledges;
+  -- the rotated wide rig clears the hedge without leaving this route.
+  -- Keep ordinary local placements preferred and validate these normally.
+  ["ROUTE_22"] = { spots = {
+    { x = 23, y = 4, shape = "narrow_east", cam = "wide" },
+    { x = 32, y = 4, shape = "narrow_east", cam = "wide" },
+  } },
   ["ROUTE_23"] = { x = 4, y = 36, shape = "wide" },
   ["ROUTE_24"] = { x = 13, y = 15, shape = "wide" },
   ["ROUTE_25"] = { x = 32, y = 2, shape = "wide", cam = "wide" },

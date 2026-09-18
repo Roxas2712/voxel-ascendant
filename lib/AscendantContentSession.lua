@@ -141,6 +141,15 @@ function M.new(mod,options)
   self.removal=load('SpriteContentRemoval').new{cache=ca,inventory=inventory,encode=encode,decode=Json.decode,
     ownedRoots={'sprite-content/archive-blobs/','sprite-content/archive-pending/','stadium-generated/stadium/','stadium-generated/stadium2-gen1/','sprite-content/pending/','sprite-content/installed/','sprite-content/manifests/','sprite-content/blobs/','sprite-content/files/','hd-content/active/','hd-content/manifests/','hd-content/blobs/'},
     busy=function()return self:busy()end,safeBeforeMount=function()return self.safeBoot end}
+  self.maintenance=load('SpriteMaintenance').new{cache=ca,list=list,encode=encode,decode=Json.decode,sha256=sha,
+    safeBeforeMount=function()return self.safeBoot end,
+    busy=function()return self:busy() or self.removal:pending()~=nil end,
+    check=function(id)return self:maintenanceCheck(id)end,
+    startDownload=function(ids)return self:startMaintenanceDownload(ids)end,
+    downloadState=function()return self.installer.state,self.installer.error end,
+    cancel=function()if self.installer then self.installer:cancel()end end}
+  local maintenanceOK,maintenanceError=self.maintenance:beforeMount()
+  if not maintenanceOK then error('Sprite maintenance: '..tostring(maintenanceError))end
   local pendingDeletion=self.removal:pending()
   if pendingDeletion and pendingDeletion.id=='stadium2-local' then assert(ca:write('sprite-content/stadium-disabled','1'),'could not disable automatic rebuild')end
   local removed,why=self.removal:applyBeforeMount();if not removed then error('Content removal pending: '..tostring(why))end
@@ -191,10 +200,97 @@ function M.new(mod,options)
     now=love.timer.getTime,sha256=sha,diagnostics=self.diagnostics}
   self.installer=load('SpriteBundleInstaller').new{catalog=catalog,store=self.store,fetch=fetch,diagnostics=self.diagnostics,
     bundles=bundles,cache=ca,sha256=sha,now=love.timer.getTime,Importer=load('SpritePackageImport')}
+  -- A receipt restores fast at boot; explicit maintenance verifies its payload.
+  local originalInstalled=catalog.installed
+  function catalog:installed(id,store)
+    if self.maintenanceMissing and self.maintenanceMissing[id] then return false end
+    return originalInstalled(self,id,store)
+  end
+  function self:maintenanceIds()
+    local ids={}
+    for _,p in ipairs(catalog.data.packages)do
+      if p.published and (ca:info('sprite-content/installed/'..p.id)
+        or ca:info('sprite-content/pending/'..p.id) or ca:info('sprite-content/archive-pending/'..p.id)
+        or ca:info('hd-content/active/'..p.id..'.0') or ca:info('hd-content/active/'..p.id..'.1'))then ids[#ids+1]=p.id end
+    end
+    table.sort(ids);return ids
+  end
+  function self:maintenanceCheck(id)
+    local p=catalog.packages[id];local m,fi,ci
+    local legacy=p and p.adapter=='existing-HdContentStore'
+    local target=legacy and self.hdWrite or generic
+    return function()
+      if not p then return false end
+      if not self.store:receipt(id) then return false end
+      if not legacy and ca:read('sprite-content/installed/'..id)~=p.manifestSha256 then return false end
+      if legacy then
+        local valid=false
+        for slot=0,1 do
+          local raw=ca:read('hd-content/active/'..id..'.'..slot)
+          local seq,digest,checksum
+          if type(raw)=='string'and #raw<=256 then seq,digest,checksum=raw:match('^VASC%-HD%-1\n(%d+)\n([0-9a-f]+)\n([0-9a-f]+)$')end
+          if seq and digest==p.manifestSha256 and sha('VASC-HD-1\n'..seq..'\n'..digest..'\n')==checksum then valid=true end
+        end
+        if not valid then return false end
+      end
+      if not m then
+        local key=legacy and 'hd-content/manifests/'..p.manifestSha256 or 'sprite-content/manifests/'..p.manifestSha256..'.json'
+        local raw=ca:read(key)
+        if legacy then m=self.hdWrite:inspect(raw,p.manifestSha256)else m=generic:inspect(raw,p)end
+        if not m or m.id~=p.id or m.revision~=p.revision then return false end
+        fi,ci=1,1;return nil
+      end
+      local f=m.files[fi];if not f then return true end
+      local c=f.chunks[ci]
+      if c then
+        if not target:hasChunk(c.sha256,c.bytes)then return false end
+        ci=ci+1;return nil
+      end
+      if not legacy then
+        local ext=f.logicalPath:match('%.(%w+)$');local key='sprite-content/files/'..f.sha256..'.'..ext
+        local raw=ca:read(key)
+        if raw and sha(raw)~=f.sha256 then
+          if ca:remove(key)~=true or ca:info(key)~=nil then error('maintenance_delete_failed')end
+        end
+      end
+      fi=fi+1;ci=1;return nil
+    end
+  end
+  function self:startMaintenanceDownload(ids)
+    catalog.maintenanceMissing=self.maintenance.missing
+    local plan=catalog:plan(ids,self.store)
+    if not plan.canDownload then return false,'not_yet_available'end
+    self.downloadIds=ids;self.lastPackage=ids[1];self.activeOperation='maintenance'
+    return self.installer:start(plan,true)
+  end
+  function self:confirmMaintenance(mode)
+    if self:busy() or self.removal:pending()then return self:openStatus()end
+    if self.maintenance:pending()then
+      local yes,why=self.maintenance:resume();if not yes then return self:notice(why)end
+      return self:openStatus()
+    end
+    local ids=self:maintenanceIds()
+    local labels={repair={'CHECK / REPAIR SPRITES','SPRITES PRUEFEN / REPARIEREN'},reinstall={'REINSTALL DOWNLOADED SPRITES','DOWNLOAD-SPRITES NEU INSTALLIEREN'},delete={'DELETE ALL DOWNLOADED SPRITES','ALLE DOWNLOAD-SPRITES LOESCHEN'}}
+    local label=labels[mode];if not label then return end
+    local help=mode=='repair'and(self.de and 'Prueft vorhandene und unterbrochene Pakete. Nur beschaedigte Pakete werden erneut geladen. Spielstaende bleiben erhalten.'or'Checks existing and interrupted packs. Only broken packs are downloaded again. Saves are kept.')
+      or(self.de and 'Betrifft den gemeinsamen KASC/VASC-Downloadspeicher. Loeschen erst nach Speichern und Neustart. Spielstaende, mitgelieferte Grafiken und Stadium-Importe bleiben erhalten.'or'Affects the shared KASC/VASC download cache. Deletes only after saving and restarting. Saves, bundled graphics and Stadium imports are kept.')
+    if mode=='reinstall'then help=help..(self.de and ' Danach werden die bisherigen Pakete automatisch neu geladen.'or' Previously downloaded packs then download again automatically.')end
+    self:pushMenu('ascendant_sprite_maintenance_confirm',self.de and label[2]or label[1],{
+      {label=self.de and 'ABBRECHEN'or'CANCEL',action='cancel'},
+      {label=self.de and 'BESTAETIGEN'or'CONFIRM',action='confirm',right=tostring(#ids)..(self.de and ' Pakete'or' packs')}
+    },function(row)
+      if row.action=='cancel'then return self.game.stack:pop()end
+      local ok,why=self.maintenance:request(mode,ids,true)
+      if not ok then return self:notice(why)end
+      self.game.stack:pop();self.activeOperation='maintenance';self.maintenanceNotified=false
+      if why=='restart_required'then self.restart:installed()end
+      self:openStatus()
+    end,help)
+  end
   self.model=load('SpriteDownloadMenuModel').new(catalog,self.store,{language='de',importIds=importIds,hasPartial=function(id)return ca:info('sprite-content/pending/'..id)~=nil or ca:info('sprite-content/archive-pending/'..id)~=nil end})
   function self:busy()
     if self.stadiumState then local s=self.stadiumState();if s and s.building then return true end end
-    return self.pendingDownloadIds~=nil or self.installer and self.installer.state=='downloading' or self.importer and self.importer:busy() or false
+    return self.maintenance and (self.maintenance.state=='checking' or self.maintenance.state=='downloading') or self.pendingDownloadIds~=nil or self.installer and self.installer.state=='downloading' or self.importer and self.importer:busy() or false
   end
   function self:hasImport(id)
     if id~='stadium2-local' then return false end
@@ -228,6 +324,7 @@ function M.new(mod,options)
   end
   function self:planFor(ids)return catalog:plan(ids,self.store)end
   function self:confirmDownload(ids)
+    if self.maintenance:pending() then return self:openStatus()end
     if self.restart.phase~='idle'and self.restart.phase~='waiting'then return self:openStatus()end
     ids=load('SpriteDownloadSelection').expand(catalog,ids)
     if self.pendingDownloadIds or self.installer.state=='downloading' then return self:openStatus()end
@@ -295,6 +392,7 @@ function M.new(mod,options)
   end
   function self:openManual(id,de)return self.manual:show(self,id,de)end
   function self:importStaged(path,id)
+    if self.maintenance:pending() then return self:openStatus()end
     local function rejected(code)self.diagnostics:begin();self.diagnostics:finish('error',{code=code});return self:notice(code)end
     if self:busy() then return self:notice('busy_or_restart_required')end
     local checked,info=pcall(fs.getInfo,path,'file')
@@ -402,6 +500,12 @@ function M.new(mod,options)
       end
     end
     self.installer:update()
+    self.maintenance:update()
+    catalog.maintenanceMissing=self.maintenance.missing
+    if self.maintenance.state=='ready'and not self.maintenanceNotified then
+      self.maintenanceNotified=true;self.epoch=self.epoch+1
+      if self.maintenance.result=='healthy'then self:notice(self.de and 'Alle geprueften Sprite-Pakete sind vollstaendig und korrekt.'or'All checked sprite packs are complete and valid.')end
+    end
     if self.importer then
       self.importer:update()
       if self.importDiagnostic and not self.importer:busy()then
@@ -417,7 +521,7 @@ function M.new(mod,options)
     end
     for _,gate in pairs(self.rewardMods or {})do gate:update()end
     self.diagnostics:update()
-    self.restart:update(self.game,dt,self.installer.state=='ready'or self.importer and self.importer.state=='ready',self:busy())
+    self.restart:update(self.game,dt,self.maintenance.state=='restart_required'or self.installer.state=='ready'or self.importer and self.importer.state=='ready',self:busy())
     if self.installer.state~=last then last=self.installer.state;self.epoch=self.epoch+1 end
   end
   -- The old seen-once marker is not an explicit opt-out and must not silence this prompt.

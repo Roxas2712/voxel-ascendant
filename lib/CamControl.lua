@@ -215,7 +215,7 @@ function CamControl.install()
     function Game:wheelmoved(dx, dy)
       local target = CamControl.zoomTarget()
       if (target == "battle" or target == "boom") and dy and dy ~= 0 then
-        CamControl.zoomBy(dy > 0 and -1 or 1)
+        CamControl.zoomBy(-math.max(-8, math.min(8, dy)))
         return
       end
       return inner(self, dx, dy)

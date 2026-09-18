@@ -49,7 +49,7 @@ local V = ...
 local Mat4 = V.require("Mat4")
 local Voxel3D = V.require("Voxel3D")
 local DayNight = V.require("DayNight")
-local Assets = require("src.render.Assets")
+local Assets = V.require("CompactBackgroundAssets")
 
 local VoxelBattleStage = {}
 

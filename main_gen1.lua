@@ -1625,7 +1625,7 @@ do
       -- battle lens, the third-person boom, or the regular survey zoom.
       if (key == "q" or key == "e")
          and not (top and top.onKeyPressed) then
-        if CamControl.zoomBy(key == "q" and 1 or -1) then
+        if CamControl.zoomBy(key == "q" and -1 or 1) then
           ShortcutToast.notify("VOXEL CAMERA", key == "q" and "ZOOM IN" or "ZOOM OUT")
           return
         end

@@ -28,6 +28,11 @@ function M.new(game,session,Text)
   G.setColor(1,1,1,1);F.draw(fit(s,296),x,y);G.setShader(previous)
  end
  local function snapshot()
+  local m=session.maintenance
+  if m and(m.state=='checking'or m.state=='paused'or m.state=='error'or m.state=='restart_required'or m.state=='ready'and session.activeOperation=='maintenance')then
+   return {state=m.state=='ready'and'ready'or m.state=='error'and'error'or m.state=='paused'and'cancelled'or'downloading',stage='checking',checkingInventory=true,maintenance=true,
+    totalBytes=m.job and #m.job.ids or 0,doneBytes=m.checked,total=m.job and #m.job.ids or 0,completed=m.checked,speed=0,elapsed=0,attempt=0,error=m.error}
+  end
   if session.pendingDownloadIds then
    local checked,total=session:inventoryProgress(session.pendingDownloadIds)
    return {state='downloading',stage='checking',checkingInventory=true,totalBytes=total,doneBytes=checked,
@@ -53,11 +58,13 @@ function M.new(game,session,Text)
   end
   if p.current then session.lastPackage=p.current.id end
   local items={}
-  if p.state=='downloading'then
+  if session.maintenance and session.maintenance.state=='restart_required'then
+   items={{label=tr('BACK - RESTART REQUIRED','ZURUECK - NEUSTART ERFORDERLICH'),action='back'}}
+  elseif p.state=='downloading'then
    items={{label=p.checkingInventory and tr('CANCEL','ABBRECHEN')or tr('PAUSE DOWNLOAD','DOWNLOAD PAUSIEREN'),action='cancel'},
     {label=tr('BACK - DOWNLOAD CONTINUES','ZURUECK - DOWNLOAD LAEUFT WEITER'),action='back'}}
   else
-   if p.state~='ready'and session.downloadIds then items[#items+1]={label=tr('RESUME MISSING DOWNLOADS','FEHLENDE DOWNLOADS FORTSETZEN'),action='retry'}end
+   if p.state~='ready'and(session.downloadIds or session.maintenance and session.maintenance:pending())then items[#items+1]={label=tr('RESUME MISSING DOWNLOADS','FEHLENDE DOWNLOADS FORTSETZEN'),action='retry'}end
    if p.state~='ready' and p.state~='idle'then
     items[#items+1]={label=tr('IMPORT DOWNLOADED FILE','GELADENE DATEI IMPORTIEREN'),action='import'}
     items[#items+1]={label=tr('OPEN ALTERNATIVE DOWNLOAD LINKS','ALTERNATIVE DOWNLOAD-LINKS'),action='manual'}
@@ -78,8 +85,8 @@ function M.new(game,session,Text)
   elseif input:wasPressed('a')then
    local a=self.items[self.index].action
    if a=='back'then game.stack:pop()
-   elseif a=='cancel'then session.pendingDownloadIds=nil;session.installer:cancel();if session.importer then session.importer:cancel()end;self.index=1;self:refresh()
-   elseif a=='retry'then session:confirmDownload(session.downloadIds)
+   elseif a=='cancel'then if session.maintenance and session.maintenance:pending()then session.maintenance:pause()end;session.pendingDownloadIds=nil;session.installer:cancel();if session.importer then session.importer:cancel()end;self.index=1;self:refresh()
+   elseif a=='retry'then if session.maintenance and session.maintenance:pending()then session.maintenance:resume()else session:confirmDownload(session.downloadIds)end
    elseif a=='import'then session:openPackageImport(session.lastPackage)
    elseif a=='manual'and session.lastPackage then session:openManual(session.lastPackage,session.de)end
   end
@@ -89,7 +96,7 @@ function M.new(game,session,Text)
    local r=session.restart
    G.push('all');G.setShader();G.setColor(.035,.08,.15,1);G.rectangle('fill',0,0,320,288)
    G.setColor(.16,.5,.7,1);G.rectangle('line',4,4,312,280)
-   text(tr('SPRITES INSTALLED','SPRITES INSTALLIERT'),12,18,{1,.76,.24,1})
+   text(session.maintenance and session.maintenance:pending()and tr('SPRITE MAINTENANCE','SPRITE-WARTUNG')or tr('SPRITES INSTALLED','SPRITES INSTALLIERT'),12,18,{1,.76,.24,1})
    text(tr('RESTART REQUIRED','NEUSTART ERFORDERLICH'),12,45)
    local phase=r.phase
    local message=phase=='save_error'and tr('SAVE FAILED - GAME STAYS OPEN','SPEICHERN FEHLGESCHLAGEN')
@@ -99,7 +106,7 @@ function M.new(game,session,Text)
     or tr('RESTART IN ','NEUSTART IN ')..math.ceil(r.remaining)..' s'
    text(message,12,83,{1,.76,.24,1})
    text(r.inGame and tr('Your progress is saved first.','Dein Fortschritt wird gespeichert.')or tr('No active game to save.','Kein laufendes Spiel zu speichern.'),12,113)
-   text(tr('New sprites load after restarting.','Neue Sprites laden nach Neustart.'),12,141)
+   text(session.maintenance and session.maintenance:pending()and tr('Cleanup runs after restarting.','Bereinigung startet nach Neustart.')or tr('New sprites load after restarting.','Neue Sprites laden nach Neustart.'),12,141)
    if phase=='restarted'then
     text(tr('If the app closes, reopen it.','Falls die App schliesst: neu oeffnen.'),12,175)
    elseif self.items[1]then

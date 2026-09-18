@@ -661,7 +661,9 @@ function BattleScene.presentationFitDistance(arena, textures, map)
   local actorScale = stage and type(stage.presentationScale) == "function"
                      and stage.presentationScale(arena) or 1
   local context = battleLayoutContext(arena, map)
-  local fit = 1
+  local minimum = arena and arena.map and not arena.discs
+    and BattleCam.ZOOM_MIN or 1
+  local fit = minimum
   for _, side in ipairs({ "player", "enemy" }) do
     local tex = textures[side]
     if tex then
@@ -679,7 +681,7 @@ function BattleScene.presentationFitDistance(arena, textures, map)
       end
     end
   end
-  return math.max(1, math.min(tonumber(BattleCam.ZOOM_MAX) or 3, fit))
+  return math.max(minimum, math.min(tonumber(BattleCam.ZOOM_MAX) or 3, fit))
 end
 
 local function monMatrix(tex, x, groundY, z, mirror, yaw, actorScale,

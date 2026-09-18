@@ -223,8 +223,11 @@ function M.new(deps)
     local prior=self.packages[m.id]
     -- Recover prior journal before selecting an overwrite slot, including after restart.
     if not prior then self:restore(m.id); prior=self.packages[m.id] end
-    if prior and prior.digest==digest then return true end
-    if prior and m.revision<=prior.manifest.revision then return nil,"revision_not_newer" end
+    if prior and prior.digest==digest then
+      -- Reinstalling verified bytes must also repair a damaged on-disk receipt.
+      local disk=loadSlot(m.id,prior.slot,true)
+      if disk and disk.digest==digest then return true end
+    elseif prior and m.revision<=prior.manifest.revision then return nil,"revision_not_newer" end
     for path,f in pairs(paths) do
       local old=self.index[path]
       if old and old.owner~=m.id then return nil,"path_conflict" end
