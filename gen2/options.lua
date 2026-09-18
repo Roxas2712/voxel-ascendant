@@ -1,5 +1,7 @@
 -- Options for Voxel Ascendant's integrated Johto runtime.
 -- Includes the embedded Wilds of Kanto roaming-spawn controls so this ZIP is standalone.
+local platform = love and love.system and love.system.getOS and love.system.getOS()
+local controlsTransparency = (platform == "iOS" or platform == "Android") and 40 or 20
 return {
   {
     key = "voxel3d",
@@ -345,12 +347,12 @@ return {
   { key="battle_controls_y", type="choice", label="BUTTON LIFT", default=0,
     choices={{"0%", 0}, {"5%", 5}, {"10%", 10}, {"15%", 15}, {"20%", 20}, {"25%", 25}, {"30%", 30}, {"35%", 35}, {"40%", 40}, {"45%", 45}, {"50%", 50}, {"55%", 55}, {"60%", 60}},
     description="Raise battle controls and automatically complete original artwork. GLASS remains selected. Default: 0%." },
-  { key="battle_controls_transparency", type="choice", label="BUTTON TRANSPARENCY", default=0,
+  { key="battle_controls_transparency", type="choice", label="BUTTON TRANSPARENCY", default=controlsTransparency,
     choices={{"0%", 0}, {"10%", 10}, {"20%", 20}, {"30%", 30}, {"40%", 40}, {"50%", 50}, {"60%", 60}, {"70%", 70}, {"80%", 80}, {"90%", 90}},
     description="Transparency of battle controls including Mega, attacks and Back. 0% keeps the original appearance; higher values reveal more of the scene." },
   { key="battle_controls_shape", type="choice", label="BUTTON SHAPE", default="auto",
     choices={{"AUTO", "auto"}, {"ORIGINAL", "original"}, {"COMPLETE ORAS", "round"}, {"GLASS", "glass"}},
-    description="AUTO keeps original art at defaults and completes it when adjusted. COMPLETE ORAS always shows full artwork; GLASS selects transparent alternative buttons." },
+    description="AUTO completes artwork whenever the controls sit above the screen edge or are adjusted. COMPLETE ORAS always shows full artwork; GLASS selects transparent alternative buttons." },
   {
     key = "battleHudStyle",
     type = "choice",

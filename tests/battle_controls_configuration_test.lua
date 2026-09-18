@@ -36,7 +36,7 @@ for _, viewport in ipairs({{390,844},{844,390},{1024,768},{2048,1536}}) do
     end
   end
 end
-values={battle_controls_y=25,battle_controls_shape='original'};assert(not F.roundControls())
+values={battle_controls_y=25,battle_controls_shape='original'};assert(F.roundControls(),'raised ORIGINAL must complete')
 values={battle_controls_shape='round'};assert(F.roundControls())
 values={battle_controls_shape='glass',battle_controls_y=25};assert(not F.roundControls(),'glass is explicit alternative')
 values={};assert(not F.roundControls(),'reset restores original')
@@ -91,16 +91,16 @@ extract('battle_hud_oras.lua','function FloatingHud.controlsOpacity','local func
  {FloatingHud=F,optionChoice=read})
 extract('gen2/lib/BattleControllerUI.lua','function M.controlsOpacity','function M.drawFull',
  {M=M,optionValue=function(_,...)return read(...)end})
-for _,case in ipairs({{nil,1},{0,1},{40,.6},{70,.3},{90,.1},{100,.1},{-20,1},{'40',.6},{'bad',1},{0/0,1}})do
+for _,case in ipairs({{nil,.8},{0,1},{40,.6},{70,.3},{90,.1},{100,.1},{-20,1},{'40',.6},{'bad',.8},{0/0,.8}})do
  values={battle_controls_transparency=case[1]}
  assert(math.abs(F.controlsOpacity()-case[2])<1e-8,'Gen1 opacity')
  assert(math.abs(M.controlsOpacity({})-case[2])<1e-8,'Gen2 opacity')
 end
-values={}
+values={battle_controls_transparency=0}
 local receipt={1,2,3,4}
 assert(M.drawControlsWithOpacity({},800,600,function()return receipt end)==receipt,
  'default must bypass the extra render pass and preserve the input rectangle')
-assert(defaults.battle_controls_transparency==0,'default is unchanged')
+assert(defaults.battle_controls_transparency==20,'subtle default transparency')
 print('PASS transparency defaults, limits, invalid values and generation parity')
 
 local drawnAlpha
@@ -152,3 +152,79 @@ for _,path in ipairs({'lib/VascMenu.lua','lib/gen2_a21_shared/VascMenu.lua'})do
  assert(rows[1][1].current==0 and rows[2][1].current==0 and rows[3][1].current==25 and rows[4][1].current==35)
 end
 print('PASS textbox translation, viewport bounds, exact defaults and independent resets in both generations')
+
+-- Reproduce the reported zero-lift phone dock using the live touch-zone layout.
+local viewport={1280,589}
+local touch=true
+local inset=0
+local clamp=function(v,a,b)return math.max(a,math.min(b,v))end
+F.safeInsets=function()return 0,0,0,inset end
+F.panelLogicalSize=function()return 320,156 end
+extract('battle_hud_oras.lua','function FloatingHud.configureControls','function FloatingHud.drawMenuPlane',{
+ FloatingHud=F,optionChoice=read,clamp=clamp,uiScale=function()return 1 end,
+ g={getDimensions=function()return unpack(viewport)end},
+ Bundle={TouchControls={visible=function()return touch end,layout=function()
+  local w,h=unpack(viewport)
+  return {start={cx=w*.53,cy=h*.87,w=h*.1},select={cx=w*.47,cy=h*.87,w=h*.1}}
+ end}},
+})
+extract('gen2/lib/BattleControllerUI.lua','function M.roundControls','function M.drawGlassControl',
+ {M=M,optionValue=function(_,...)return read(...)end})
+for _,size in ipairs({{1280,589},{390,844},{844,390}})do
+ viewport=size;touch=true;inset=0;values={}
+ local shot={pw=size[1],ph=size[2]}
+ local rect=F.screenDockRect(shot,'command')
+ assert(rect[2]+rect[4]<size[2]-1 and F.roundControls(),'phone dock must complete at zero manual lift')
+ values={battle_controls_shape='original'};assert(F.roundControls(),'original may not be clipped in mid-air')
+ values={battle_controls_shape='glass'};assert(not F.roundControls(),'touch must preserve GLASS')
+ values={};touch=false;F.screenDockRect(shot,'command')
+ assert(not F.roundControls(),'desktop bottom dock must retire mobile geometry')
+ inset=20;F.screenDockRect(shot,'command');assert(F.roundControls(),'home/safe inset exposes lower button edge')
+end
+for _,shape in ipairs({'auto','original','glass'})do
+ values={battle_controls_shape=shape}
+ assert(M.roundControls({_vascCommandDetached=true})==(shape~='glass'),'Gen2 detached parity')
+ assert(not M.roundControls({_vascCommandDetached=false}),'Gen2 anchored defaults')
+end
+print('PASS actual phone dock, zero lift, safe insets, rotation, desktop return and GLASS preservation')
+
+local geom={}
+local dock={0,400,800,150}
+local occupied={{200,440,100,110},{400,440,100,110}}
+local enabled=true
+extract('battle_hud_oras.lua','function FloatingHud.flowGeometry','local function drawFloatingSceneUI',{
+ FloatingHud=geom,
+ HudRuntime={commandRectFor=function()return dock,2,400,75 end,
+ fightRectFor=function()return dock end,messageRectFor=function()return dock end},
+ floatingCommandsEnabled=function()return enabled end,hudStyle=function()return 'oras' end,
+ battleMessageActive=function()return false end,
+})
+geom.orasCommandBounds=function(b,r,k,w,h)
+ assert(r==dock and k==2 and w==400 and h==75);return occupied
+end
+local r,id,bounds=geom.flowGeometry({phase='menu'},{})
+assert(r==dock and id=='command' and bounds==occupied,'camera and paint must reserve occupied art, not the transparent dock')
+r,id,bounds=geom.flowGeometry({phase='moveSelect'},{})
+assert(r==dock and id=='fight' and bounds==nil)
+assert(geom.flowGeometry({phase='menu',introBalls=true},{})==nil)
+enabled=false;assert(geom.flowGeometry({phase='menu'},{})==nil)
+print('PASS shared HUD paint/camera/commit geometry with intro and ownership gating')
+
+-- Both generation schemas supply 40% on phones, 20% on desktop, while an
+-- explicitly saved transparency remains authoritative.
+for _,platform in ipairs({'iOS','Android','OS X','Windows'})do
+ love={system={getOS=function()return platform end}}
+ local expected=(platform=='iOS' or platform=='Android')and 40 or 20
+ local schema=assert(loadfile('gen2/options.lua'))()
+ for _,row in ipairs(schema)do
+  if row.key=='battle_controls_transparency'then assert(row.default==expected)end
+ end
+ local v={mod={options={get=function()end}}}
+ v.require=function(name)
+  if name=='ModSetting'then return assert(loadfile('lib/ModSetting.lua'))(v)end
+ end
+ local settings=assert(loadfile('lib/OrasBattleHudSettings.lua'))(v)
+ assert(settings.battle_controls_transparency:get()==expected)
+end
+love=nil
+print('PASS mobile 40% / desktop 20% defaults in Gen1 and Gen2')

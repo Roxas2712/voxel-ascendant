@@ -1786,7 +1786,9 @@ end
 
 local function commandDockRect(ww, wh, layout, screen)
   local rect, scale, w, h = gen1ScreenDockRect(ww, wh, 156)
-  return M.configureControls(ww, wh, rect, scale, w, h, screen)
+  rect, scale, w, h = M.configureControls(ww, wh, rect, scale, w, h, screen)
+  if screen then screen._vascCommandDetached = rect[2] + rect[4] < wh - .5 end
+  return rect, scale, w, h
 end
 
 M.commandDockRect = commandDockRect
@@ -2657,6 +2659,8 @@ end
 
 function M.roundControls(screen)
   local shape = optionValue(screen, "battle_controls_shape", "auto")
+  if shape == "glass" then return false end
+  if screen and screen._vascCommandDetached then return true end
   if shape == "original" and (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) > 0 then
     return true
   end
@@ -2699,6 +2703,8 @@ local ORAS_ACTION_ASSETS = {
 -- menuIndex remains the sole selection/input authority; this function only
 -- lays the shared FIGHT / BAG / POKEMON / RUN art over the voxel scene.
 local function drawNativeCommandGrid(screen, ww, wh)
+  local layout = layoutMetrics(ww, wh)
+  local dock, dockScale, logicalW, logicalH = commandDockRect(ww, wh, layout, screen)
   local entries = {
     { index=1, key="fight" }, { index=3, key="bag" },
     { index=2, key="pokemon" }, { index=4, key="run" },
@@ -2723,8 +2729,7 @@ local function drawNativeCommandGrid(screen, ww, wh)
   end
 
   local G = love.graphics
-  local layout = layoutMetrics(ww, wh)
-  local dock, dockScale, logicalW, logicalH = commandDockRect(ww, wh, layout, screen)
+
   local x, y, w, h = 0, 0, logicalW, logicalH
   -- Paint in the same logical plane as Kanto, then scale the completed surface
   -- once. This preserves the authored proportions and exact bottom seat.
@@ -3716,13 +3721,15 @@ end
 -- Crystal's sharp side pictures are captured independently by OverworldBattle
 -- and placed as correctly sized world billboards by VoxelScene.
 function M.controlsOpacity(screen)
-  local value = tonumber(optionValue(screen, "battle_controls_transparency", 0)) or 0
-  if value ~= value then value = 0 end
+  local platform = love and love.system and love.system.getOS and love.system.getOS()
+  local fallback = (platform == "iOS" or platform == "Android") and 40 or 20
+  local value = tonumber(optionValue(screen, "battle_controls_transparency", fallback)) or fallback
+  if value ~= value then value = fallback end
   return 1 - math.max(0, math.min(90, value)) / 100
 end
 
 -- Fade the completed surface once so overlapping artwork, text and glow
--- retain their internal appearance. At the default opacity no extra pass runs.
+-- retain their internal appearance. At full opacity no extra pass runs.
 function M.drawControlsWithOpacity(screen, ww, wh, draw)
   local opacity = M.controlsOpacity(screen)
   if opacity == 1 then return draw() end

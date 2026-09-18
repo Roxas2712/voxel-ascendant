@@ -9,6 +9,8 @@ local V = ...
 local ModSetting = V.require("ModSetting")
 
 local Settings = {}
+local platform = love and love.system and love.system.getOS and love.system.getOS()
+local controlsTransparency = (platform == "iOS" or platform == "Android") and 40 or 20
 local OverworldBattle = nil
 do
   local ok, value = pcall(V.require, "OverworldBattle")
@@ -122,7 +124,7 @@ Settings.battle_controls_x = ModSetting.new("battle_controls_x", "BUTTON X",
 Settings.battle_controls_y = ModSetting.new("battle_controls_y", "BUTTON LIFT",
   {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60}, {"0%", "5%", "10%", "15%", "20%", "25%", "30%", "35%", "40%", "45%", "50%", "55%", "60%"}, 0)
 Settings.battle_controls_transparency = ModSetting.new("battle_controls_transparency", "BUTTON TRANSPARENCY",
-  {0,10,20,30,40,50,60,70,80,90}, {"0%","10%","20%","30%","40%","50%","60%","70%","80%","90%"}, 0)
+  {0,10,20,30,40,50,60,70,80,90}, {"0%","10%","20%","30%","40%","50%","60%","70%","80%","90%"}, controlsTransparency)
 Settings.battle_controls_shape = ModSetting.new("battle_controls_shape", "BUTTON SHAPE",
   {"auto", "original", "round", "glass"}, {"AUTO", "ORIGINAL", "COMPLETE ORAS", "GLASS"}, "auto")
 

@@ -383,12 +383,12 @@ if not INTEGRATED_KASC and not INTEGRATED_VASC then mod.options:define({
   { key="battle_controls_y", type="choice", label="BUTTON LIFT", default=0,
     choices={{"0%", 0}, {"5%", 5}, {"10%", 10}, {"15%", 15}, {"20%", 20}, {"25%", 25}, {"30%", 30}, {"35%", 35}, {"40%", 40}, {"45%", 45}, {"50%", 50}, {"55%", 55}, {"60%", 60}},
     description="Raise battle controls above the touch pad as a percentage of viewport height. Default: 0%." },
-  { key="battle_controls_transparency", type="choice", label="BUTTON TRANSPARENCY", default=0,
+  { key="battle_controls_transparency", type="choice", label="BUTTON TRANSPARENCY", default=(PLATFORM_OS == "iOS" or PLATFORM_OS == "Android") and 40 or 20,
     choices={{"0%", 0}, {"10%", 10}, {"20%", 20}, {"30%", 30}, {"40%", 40}, {"50%", 50}, {"60%", 60}, {"70%", 70}, {"80%", 80}, {"90%", 90}},
     description="Transparency of battle controls including Mega, attacks and Back. 0% keeps the original appearance; higher values reveal more of the scene." },
   { key="battle_controls_shape", type="choice", label="BUTTON SHAPE", default="auto",
     choices={{"AUTO", "auto"}, {"ORIGINAL", "original"}, {"COMPLETE ORAS", "round"}, {"GLASS", "glass"}},
-    description="AUTO keeps original art at defaults and completes it when adjusted. COMPLETE ORAS always shows full artwork; GLASS selects transparent alternative buttons." },
+    description="AUTO completes artwork whenever the controls sit above the screen edge or are adjusted. COMPLETE ORAS always shows full artwork; GLASS selects transparent alternative buttons." },
 
   {
     key = "hud_language",
@@ -4374,8 +4374,10 @@ end
 
 function FloatingHud.roundControls()
   local shape = optionChoice("battle_controls_shape", "auto")
-  -- Old saves and selecting ORIGINAL after moving the dock must not restore
-  -- the cropped bottom edge in mid-air. GLASS remains its own complete style.
+  -- Layout may lift the dock for touch controls or a safe-area inset even
+  -- when the saved lift is zero. Use its final geometry, including on resize.
+  if shape == "glass" then return false end
+  if FloatingHud.commandDetached then return true end
   if shape == "original" and (tonumber(optionChoice("battle_controls_y", 0)) or 0) > 0 then
     return true
   end
@@ -5682,8 +5684,10 @@ local function rotatedPoint(x, y, angle)
 end
 
 function FloatingHud.controlsOpacity()
-  local value = tonumber(optionChoice("battle_controls_transparency", 0)) or 0
-  if value ~= value then value = 0 end
+  local platform = love and love.system and love.system.getOS and love.system.getOS()
+  local fallback = (platform == "iOS" or platform == "Android") and 40 or 20
+  local value = tonumber(optionChoice("battle_controls_transparency", fallback)) or fallback
+  if value ~= value then value = fallback end
   return 1 - math.max(0, math.min(90, value)) / 100
 end
 
@@ -5915,6 +5919,9 @@ function FloatingHud.screenDockRect(shot, kind)
     rect[1]=clamp(rect[1],dockLeft,math.max(dockLeft,dockLeft+dockWidth-rect[3]))
     rect[2]=math.max(0,math.min(rect[2],dockBottom-rect[4]))
   end
+  if kind == "command" then
+    FloatingHud.commandDetached = rect[2] + rect[4] < shot.ph - .5
+  end
   return rect,k,lw,lh
 end
 
@@ -5929,6 +5936,7 @@ function FloatingHud.drawMenuPlane(canvas, cx, cy, width, height, side)
 end
 
 function HudRuntime.commandRectFor(shot)
+  FloatingHud.commandDetached = false
   if not (shot and shot.player) then return nil end
   if hudStyle() ~= "float" then
     return FloatingHud.screenDockRect(shot, "command")
@@ -5955,6 +5963,7 @@ function HudRuntime.commandRectFor(shot)
   -- player position. Let it continue down with the mon instead of pinning it
   -- against the viewport and colliding with the player's status plate.
   y = math.max(margin, y)
+  FloatingHud.commandDetached = y + h < shot.ph - .5
   return { x, y, w, h }, drawScale, logicalW, logicalH
 end
 
@@ -6607,10 +6616,30 @@ local function drawSafariBallCount(battle, shot)
   return true
 end
 
--- Draw every piece of floating battle UI that belongs in the 3D world canvas.
--- Return two independent ownership flags: status plates and bottom flow UI.
--- This separation lets unfinished phases (party/items) keep using the native
--- renderer until their own floating replacement exists.
+-- Painting, camera safety and the regional commit must reserve identical
+-- occupied pixels. Using the entire transparent command dock only in paint
+-- can move status cards outside the regions the compositor will copy.
+function FloatingHud.flowGeometry(battle, shot)
+  local flowRect, flowId, commandBounds
+  if floatingCommandsEnabled(battle) and not battle.introBalls then
+    if battle.phase == "menu" then
+      local k, w, h
+      flowRect, k, w, h = HudRuntime.commandRectFor(shot)
+      flowId = "command"
+      if flowRect and hudStyle() == "oras" and not battle.safari then
+        commandBounds = FloatingHud.orasCommandBounds(battle, flowRect, k, w, h)
+      end
+    elseif battle.phase == "moveSelect" and not battle.safari then
+      flowRect, flowId = HudRuntime.fightRectFor(shot), "fight"
+    elseif battle.phase == "messages" or battleMessageActive(battle) then
+      flowRect, flowId = HudRuntime.messageRectFor(shot), "message"
+    end
+  end
+
+  return flowRect, flowId, commandBounds
+end
+
+-- Draw all world-canvas HUD pieces with independent status/bottom ownership.
 local function drawFloatingSceneUI(battle, shot, includeTextGlass, deferCommit)
   if battle and battle.game then activeRuntimeGame = battle.game end
   if battle then FloatingHud.observeMegaFormTransitions(battle) end
@@ -6632,18 +6661,8 @@ local function drawFloatingSceneUI(battle, shot, includeTextGlass, deferCommit)
   local statusProposal = nil
   local bottomKind = nil
 
-  local statusReserved = {}
-  if wantsCommands and not battle.introBalls then
-    local rect
-    if battle.phase == "menu" then
-      rect = HudRuntime.commandRectFor(shot)
-    elseif battle.phase == "moveSelect" and not battle.safari then
-      rect = HudRuntime.fightRectFor(shot)
-    elseif battle.phase == "messages" or battleMessageActive(battle) then
-      rect = HudRuntime.messageRectFor(shot)
-    end
-    if rect then statusReserved[#statusReserved + 1] = rect end
-  end
+  local flowRect, _, commandBounds = FloatingHud.flowGeometry(battle, shot)
+  local statusReserved = commandBounds or (flowRect and { flowRect } or {})
   -- Safari's counter is status furniture too. Feed its exact public band into
   -- the same proposal the renderer later commits; otherwise a portrait CORNERS
   -- card can be accepted underneath the visible ball count.
@@ -8695,21 +8714,7 @@ function FloatingHud.cameraBounds(battle, shot)
     end
   end
 
-  local flowRect, flowId, commandBounds
-  if floatingCommandsEnabled(battle) and not battle.introBalls then
-    if battle.phase == "menu" then
-      local k, w, h
-      flowRect, k, w, h = HudRuntime.commandRectFor(shot)
-      flowId = "command"
-      if flowRect and hudStyle() == "oras" and not battle.safari then
-        commandBounds = FloatingHud.orasCommandBounds(battle, flowRect, k, w, h)
-      end
-    elseif battle.phase == "moveSelect" and not battle.safari then
-      flowRect, flowId = HudRuntime.fightRectFor(shot), "fight"
-    elseif battle.phase == "messages" or battleMessageActive(battle) then
-      flowRect, flowId = HudRuntime.messageRectFor(shot), "message"
-    end
-  end
+  local flowRect, flowId, commandBounds = FloatingHud.flowGeometry(battle, shot)
 
   -- Calculate this once before proposing status geometry. The identical rect
   -- is both a latch obstacle and the public camera reservation below.

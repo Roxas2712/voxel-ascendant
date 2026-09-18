@@ -409,6 +409,31 @@ function FirstPerson.moveVector()
   local ok, Game = pcall(require, "src.core.Game")
   local input = ok and Game.input or nil
 
+  -- TouchControls owns contact lifetime, including resets on menu entry,
+  -- focus loss and layout changes. A cached deflection is not a live hold.
+  -- Skin pads publish held GB directions instead of dpadTouch; both paths
+  -- feed camera space and are rotated exactly once by moveWorld().
+  local okTouch, controls = pcall(require, "src.core.TouchControls")
+  if okTouch and controls then
+    if touchMove and controls.dpadTouch == touchMove.id
+        and controls.touches and controls.touches[touchMove.id] then
+      local mag = math.sqrt(touchMove.x * touchMove.x + touchMove.y * touchMove.y)
+      if mag > FirstPerson.MOVE_DEAD then
+        local t = math.min(1, mag)
+        return touchMove.x / mag * t, -touchMove.y / mag * t
+      end
+      return 0, 0
+    end
+    touchMove = nil
+    local held = controls.held or {}
+    local function down(k) return (tonumber(held[k]) or 0) > 0 end
+    local mx = (down("right") and 1 or 0) - (down("left") and 1 or 0)
+    local mz = (down("up") and 1 or 0) - (down("down") and 1 or 0)
+    local mag = math.sqrt(mx * mx + mz * mz)
+    if mag > 0 then return mx / mag, mz / mag end
+  end
+
+  -- A live touch takes precedence over an old/controller stick deflection.
   local ax = input and input.stickAxis or nil
   if ax then
     local mag = math.sqrt(ax.x * ax.x + ax.y * ax.y)
@@ -416,15 +441,6 @@ function FirstPerson.moveVector()
       local t = math.min(1, (mag - FirstPerson.MOVE_DEAD)
                             / (1 - FirstPerson.MOVE_DEAD))
       return ax.x / mag * t, -ax.y / mag * t
-    end
-  end
-
-  if touchMove then
-    local mag = math.sqrt(touchMove.x * touchMove.x
-                          + touchMove.y * touchMove.y)
-    if mag > FirstPerson.MOVE_DEAD then
-      local t = math.min(1, mag)
-      return touchMove.x / mag * t, -touchMove.y / mag * t
     end
   end
 
@@ -507,7 +523,11 @@ function FirstPerson.update(dt)
   -- Focus loss disarms it; focus regain alone does not steal the system
   -- pointer back from Greenshot or another tool. One deliberate click in the
   -- game re-arms it (in the pointer hook below) without also pressing A.
-  local wantCapture = engagedNow and captureArmed
+  local osName = love.system and love.system.getOS and love.system.getOS()
+  local host = require("src.core.Game")
+  local touchActive = host.touchControls and host.touchControls.active
+  local wantCapture = FirstPerson.driving() and captureArmed
+    and osName ~= "iOS" and osName ~= "Android" and not touchActive
   if wantCapture and love.window and love.window.hasFocus then
     local okF, focus = pcall(love.window.hasFocus)
     wantCapture = okF and focus or false
@@ -827,7 +847,8 @@ function FirstPerson.install()
       local L = TouchControls:layout()
       local dz = L.dpad
       local half = dz.w * 0.65
-      return { x = math.max(-1, math.min(1, (x - dz.cx) / half)),
+      return { id = TouchControls.dpadTouch,
+               x = math.max(-1, math.min(1, (x - dz.cx) / half)),
                y = math.max(-1, math.min(1, (y - dz.cy) / half)) }
     end)
     return ok and v or nil

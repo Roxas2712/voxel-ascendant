@@ -68,6 +68,7 @@ love.system.getOS=function()return'Android'end
 for _,size in ipairs({{390,844,12},{844,390,20},{320,568,0},{1280,800,0}})do
  w,h,inset=size[1],size[2],size[3]
  game:draw();local r=M.paint.layout.launcher
+ assert(r[3]==48 and r[4]==48,'compact marker must keep a generous touch target')
  game:touchpressed('finger',r[1]+5,r[2]+5);assert(M.current(game));game:touchreleased('finger',0,0)
  assert(touches==0,'launcher leaked to virtual pad')
  local panel=M.current(game)
@@ -117,11 +118,11 @@ for _,context in ipairs({world,battle})do
   for index,row in ipairs(M.rows)do
    M.current(game).selected=index;printed={};M.draw(game)
    assert(has(de and'VASC · Steuerung'or'VASC · Controls'),'wrong heading')
-   assert(has(de and'F3 / R1 + Start · A: ändern · B: zurück'or'F3 / R1 + Start · A: change · B: back'))
+   assert(has(M.mobile(game)and(de and'Zeile antippen zum Ändern · ×: schließen'or'Tap a row to change · ×: close')or(de and'↑ / ↓: wählen · Enter / A: ändern · Esc / B: zurück'or'↑ / ↓: select · Enter / A: change · Esc / B: back')))
    local title=de and deTitles[index]or row.title
-   if row.key=='f4' then title=title..(overlay.enabled:get()and(de and' · AN'or' · ON')or(de and' · AUS'or' · OFF'))end
+   if row.key=='f4' then assert(has(overlay.enabled:get()and(de and'AN'or'ON')or(de and'AUS'or'OFF')))end
    assert(has(title),'wrong row language: '..index..'/'..mode)
-   if not de then assert(has(row.detail)and has(row.hint),'English detail/hint missing')end
+   if not de then assert(M.mobile(game)and has('Tap to change')or(has(row.detail)and has(row.hint)),'English interaction help missing')end
   end
  end
  M.close(game)
@@ -133,8 +134,8 @@ for _,context in ipairs({world,battle})do
   for _,lang in ipairs({'de','en'})do
    handle.exports.bootLanguage=lang;M.hintAlpha=function()return 1 end
    printed={};M.draw(game)
-   assert(has(mobile and(lang=='de'and'VASC · Hilfe'or'VASC · Help')or(lang=='de'and'F3 · VASC-Hilfe'or'F3 · VASC Help')))
-   if mobile then assert(has(lang=='de'and'Diese Ecke antippen'or'Tap this corner'))end
+   assert(has(mobile and'V'or(lang=='de'and'F3 · VASC-Hilfe'or'F3 · VASC Help')))
+   if mobile then assert(not has('Tap this corner')and not has('Diese Ecke antippen'))end
    local notification;V.require=function(id)assert(id=='ShortcutToast');return{notify=function(a,b)notification={a,b}end}end
    M.fps(game);assert(notification[1]==(lang=='de'and'[F4] FPS / FRAMEZEIT'or'[F4] FPS / FRAME TIME'))
    assert(notification[2]==(overlay.enabled:get()and(lang=='de'and'AN'or'ON')or(lang=='de'and'AUS'or'OFF')))
@@ -143,3 +144,19 @@ for _,context in ipairs({world,battle})do
  if context==battle then stack:pop()end
 end
 print('PASS help language: world/battle, all rows, live Universal DE/EN, absent/invalid finder, mobile/desktop hints and FPS notifications')
+
+-- Touch activates the same live setting as keyboard/controller and updates
+-- the status without closing the panel or clicking the world underneath.
+V.mod.find=nil;love.system.getOS=function()return'iOS'end
+w,h,inset=390,844,12
+assert(M.open(game,4));M.draw(game)
+local before=overlay.enabled:get();local row
+for _,r in ipairs(M.paint.layout.rows)do if r.index==4 then row=r end end
+assert(row)
+game:touchpressed('toggle',row.rect[1]+20,row.rect[2]+20)
+game:touchreleased('toggle',0,0)
+assert(overlay.enabled:get()~=before and M.current(game))
+assert(M.status(game,4)==(overlay.enabled:get()and'ON'or'OFF'))
+assert(touches==0,'menu contact leaked')
+M.close(game)
+print('PASS iOS direct touch: actual setting toggled, live status, panel stays open, no gameplay touch leak')

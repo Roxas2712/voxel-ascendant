@@ -91,6 +91,63 @@ M.rows={
   {key="q",title="Zoom in",hint="Q",detail="Move the current camera closer."},
   {key="e",title="Zoom out",hint="E",detail="Move the current camera further away."},
 }
+-- Read the same live owners the shortcuts change; never maintain a second
+-- set of booleans in the panel. Multi-state effects show their selected mode.
+function M.status(g,index)
+  local row=M.rows[index];if not row then return "" end
+  local de=M.language()=="de"
+  local function setting(s)
+    if not s then return de and "Nicht verfügbar"or"Unavailable"end
+    if s.row then return s:row().value()end
+    local value=s:get()
+    if type(value)=="boolean"then return value and(de and "AN"or"ON")or(de and "AUS"or"OFF")end
+    return tostring(value)
+  end
+  local ok,value=pcall(function()
+    local k=row.key
+    if k=="f4"then return setting((V.PerformanceOverlay or V.require("PerformanceOverlay")).enabled)end
+    if k=="f6"or k=="f7"then
+      local a=V.require("AppearanceShortcuts").settings
+      if k=="f6"then return a.apo_hd_walking_sprites and(a.apo_hd_walking_sprites:get()and"HD"or"2D / ORIGINAL")end
+      if not a.apo_hd_pokemon_followers then return end
+      return a.apo_hd_pokemon_followers:get()and setting(a.apo_follower_sprite_source)or"2D / ORIGINAL"
+    end
+    if k=="v"or k=="6"then
+      local pipelines=require("src.render.Pipelines")
+      local module=V.require(k=="v"and"VoxelState"or"TiltShift")
+      return (module.ANGLE_LABELS or module.LABELS)[pipelines.level(k=="v"and"voxel"or"tiltshift")+1]
+    end
+    local modules={["5"]="VoxelGrid",["7"]="WorldCurve",["8"]="OverworldBattle",["9"]="Water"}
+    if modules[k]then
+      local owner=V.require(modules[k])
+      if k=="8"then
+        local panel=M.current(g);local b=panel and panel.previous or top(g)
+        local request=owner.presentationRequests and owner.presentationRequests[b]
+        if request then
+          local mode=request.mode or(request.plan and request.plan.mode)
+          local label=mode==true and "MAP"or mode==owner.ARENA and "ARENA"
+            or mode==owner.FLAT_B and "DISCS"or mode=="terarrium"and"TERRARIUM"
+          if label then return label..(request.pending and(de and " · wartet"or" · pending")or"")end
+        end
+      end
+      return setting(owner.setting)
+    end
+    if k=="0"then
+      local panel=M.current(g);local b=panel and panel.previous or top(g)
+      if b and b.player and b.enemy and b.phase then
+        local choice=V.require("BattleSpriteControl").choice(b)
+        return choice=="current"and"AUTO"or choice:upper()
+      end
+      return de and "Auswahl öffnen"or"Open selection"
+    end
+    if k=="q"then return "+"end
+    if k=="e"then return "−"end
+  end)
+  value=ok and value or nil
+  if value=="OFF"then return de and"AUS"or"OFF"end
+  if value=="ON"then return de and"AN"or"ON"end
+  return value or(de and"Nicht verfügbar"or"Unavailable")
+end
 function M.current(g)return top(g)and top(g)._vascControls and top(g)or nil end
 function M.close(g)
   if not M.current(g)then return false end
@@ -140,7 +197,8 @@ function M.layout(g)
   if not p then
     -- The first 72 pixels belong to shortcut receipts and diagnostics. Keep
     -- a stable separate lane below them, including at narrow window widths.
-    return{launcher={x+12,y+82,170,48},safe={x,y,w,h}}
+    local mobile=M.mobile(g)
+    return{launcher={x+12,y+82,mobile and 48 or 170,48},safe={x,y,w,h}}
   end
   local width=math.min(610,w-16);local perPage=math.max(1,math.min(6,math.floor((h-156)/64)))
   p.perPage=perPage
@@ -160,7 +218,8 @@ function M.draw(g)
   local de=M.language()=="de"
   local rows=de and germanRows or M.rows
   if not p and not ready(g)then return end
-  local hintAlpha=M.hintAlpha(g)
+  local mobile=M.mobile(g)
+  local hintAlpha=mobile and 1 or M.hintAlpha(g)
   local t=M.layout(g);local graphics=love.graphics;local ww,hh=graphics.getDimensions()
   if not p and hintAlpha==0 then
     M.paint={screen=top(g),w=ww,h=hh,layout=t};return
@@ -174,32 +233,48 @@ function M.draw(g)
   end
   local function label(s,x,y,font)graphics.setFont(font or M.font);graphics.setColor(.94,.97,.98,1);graphics.print(s,x,y)end
   if not p then
-    -- No permanent HUD control. The same touch target remains reachable after
-    -- the short context-change hint fades, without another gesture on A/B.
-    if hintAlpha>0 then
+    -- Mobile has no F3/R1 shortcut: keep its touch launcher discoverable.
+    -- Desktop retains the short arrival hint.
+    if mobile then
+      local r=t.launcher
+      local cx,cy=r[1]+r[3]/2,r[2]+r[4]/2
+      -- A small persistent marker, with a forgiving 48px touch target.
+      graphics.setColor(0,0,0,.16);graphics.circle("fill",cx,cy+1,16)
+      graphics.setColor(1,1,1,.24);graphics.circle("fill",cx,cy,15)
+      graphics.setLineWidth(1)
+      graphics.setColor(1,1,1,.62);graphics.circle("line",cx,cy,15)
+      graphics.setFont(M.font)
+      local tx=cx-M.font:getWidth("V")/2
+      local ty=cy-(M.font.getHeight and M.font:getHeight()or 14)/2
+      graphics.setColor(0,0,0,.35);graphics.print("V",tx+1,ty+1)
+      graphics.setColor(1,1,1,.95);graphics.print("V",tx,ty)
+    elseif hintAlpha>0 then
       local r=t.launcher
       graphics.setColor(.025,.07,.09,.38*hintAlpha);graphics.rectangle("fill",r[1],r[2],r[3],r[4],7,7)
       graphics.setColor(.85,.95,.97,.75*hintAlpha);graphics.setFont(M.font)
-      graphics.print(M.mobile(g)and(de and "VASC · Hilfe"or"VASC · Help")
-        or(de and "F3 · VASC-Hilfe"or"F3 · VASC Help"),r[1]+10,r[2]+6)
+      graphics.print(de and "F3 · VASC-Hilfe"or"F3 · VASC Help",r[1]+10,r[2]+6)
       graphics.setFont(M.small)
-      graphics.print(M.mobile(g)and(de and "Diese Ecke antippen"or"Tap this corner")
-        or"Controller: R1 + Start",r[1]+10,r[2]+27)
+      graphics.print("Controller: R1 + Start",r[1]+10,r[2]+27)
     end
   else
     graphics.setColor(.015,.025,.035,.87);graphics.rectangle("fill",0,0,ww,hh)
     box(t.panel);local px,py=t.panel[1],t.panel[2]
     label(de and "VASC · Steuerung"or"VASC · Controls",px+14,py+12)
-    label(de and "F3 / R1 + Start · A: ändern · B: zurück"
-      or"F3 / R1 + Start · A: change · B: back",px+14,py+38,M.small)
+    label(mobile and(de and "Zeile antippen zum Ändern · ×: schließen"or"Tap a row to change · ×: close")
+      or(de and "↑ / ↓: wählen · Enter / A: ändern · Esc / B: zurück"or"↑ / ↓: select · Enter / A: change · Esc / B: back"),px+14,py+38,M.small)
     box(t.close);label("×",t.close[1]+21,t.close[2]+12)
     for _,entry in ipairs(t.rows)do
       local r,row=entry.rect,rows[entry.index];box(r,p.selected==entry.index)
-      local title=row.title
-      if row.key=="f4"then title=title..((V.PerformanceOverlay or V.require("PerformanceOverlay")).enabled:get()and(de and " · AN"or" · ON")or(de and " · AUS"or" · OFF"))end
-      label(title,r[1]+10,r[2]+4)
-      label(row.hint,r[1]+10,r[2]+23,M.small)
-      if M.small:getWidth(row.detail)<=r[3]-20 then label(row.detail,r[1]+10,r[2]+40,M.small)end
+      label(row.title,r[1]+10,r[2]+4)
+      local status=M.status(g,entry.index)
+      local statusWidth=M.small:getWidth(status)
+      -- Status has its own line, including on narrow portrait phones.
+      label(status,r[1]+10,r[2]+24,M.small)
+      if not mobile and M.small:getWidth(row.hint)+statusWidth+32<=r[3]then
+        label(row.hint,r[1]+r[3]-M.small:getWidth(row.hint)-10,r[2]+24,M.small)
+      end
+      local detail=mobile and(de and "Antippen zum Ändern"or"Tap to change")or row.detail
+      if M.small:getWidth(detail)<=r[3]-20 then label(detail,r[1]+10,r[2]+40,M.small)end
     end
     box(t.prev);box(t.next);label("<",t.prev[1]+31,t.prev[2]+14);label(">",t.next[1]+31,t.next[2]+14)
     label((t.page+1).." / "..t.pages,px+t.panel[3]/2-16,t.prev[2]+14)
