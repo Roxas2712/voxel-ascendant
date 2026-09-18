@@ -8,7 +8,8 @@ function A.new(mod,chars)
  local sheets={}
  return function(role,row,column)
   local spec=chars.get(role)
-  local path=spec.path:match('^assets/') and mod.path..'/'..spec.path or spec.path
+  local path=mod.resolveAsset and mod.resolveAsset(spec.path)
+    or (spec.path:match('^assets/') and mod.path..'/'..spec.path or spec.path)
   local sheet=sheets[path]
   if not sheet then
    local bytes=love.filesystem.newFileData(path)

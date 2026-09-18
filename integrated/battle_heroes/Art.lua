@@ -7,7 +7,8 @@ return function(mod,data)
  local A={}
  local journeys
  local function image(path)
-  if not images[path] then images[path]=G.newImage(path:match('^assets/') and mod.path..'/'..path or path) end
+  if not images[path] then images[path]=G.newImage(mod.resolveAsset and mod.resolveAsset(path)
+    or (path:match('^assets/') and mod.path..'/'..path or path)) end
   return images[path]
  end
  local chars=load('CharSprite.lua')

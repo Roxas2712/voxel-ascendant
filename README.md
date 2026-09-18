@@ -1,13 +1,25 @@
-# Voxel Ascendant 3.0.27 – Mobile layout & support hotfix
+# Voxel Ascendant 3.0.28 — Smaller download, sprite maintenance & MAP camera
 
-- Mobile SELECT now defaults to the upper left and START to the upper right, leaving more space for the battle menu below. The dots menu moves below START. Custom touch positions and skins are preserved.
-- The battle HUD no longer reserves bottom space for START/SELECT when they are above it. Full lifted buttons, Glass styling and the existing transparency settings remain available.
-- Support log sending works around the missing dedicated POST bridge in iOS engine 0.2.61 by using its existing background HTTP request transport. Only a successful HTTP status confirms a sent report; there are no automatic retries.
-- SEND SUPPORT LOG now sends with one selection after entering the support code, without an extra help popup or confirmation click. Reports remain manual, bounded and redacted; no save file is attached.
+Changes since 3.0.27:
 
-Validation: native touch comparison through battle menu, move selection and rotation; the tested move-selection scene now stays in 3D. Native background upload was received and verified on the support server; iOS bridge/status handling and both generations' control regressions pass. Physical iPhone verification is still pending. This does not claim to fix every camera fallback or the separately reported HD-sprite problem.
+- **Much smaller download:** about 260 MiB instead of 465 MiB. Large background artwork uses high-quality compression at its original resolution, with lossless transparency where needed. Sprite and interface artwork is unchanged by this compression.
+- **Sprite maintenance:** check/repair, reinstall and remove downloaded sprite packs from the integrated menu. Interrupted maintenance can recover after restarting. Saves, bundled artwork and Stadium imports are protected.
+- **Clearer Gen 1 quick menu:** grouped controls for Wilds, followers, town Pokémon and their available graphic sources. The battle menu only offers relevant battle controls. Touch navigation and controller page switching are supported.
+- **Character animations:** a one-time settings migration restores the natural HD character animation preset, including supported sitting/blinking animations. Choices made after that migration remain respected.
+- **Route 22 MAP battles:** corrected the battle positions in both grass areas, avoiding the previously reproduced unnecessary arena fallback.
+- **Closer, more flexible Gen 1 MAP camera:** new/unset distance starts at 1X; saved choices and 3X remain available. Manual rotation, tilt and zoom retain the last safe position instead of snapping back to the start of a gesture. World geometry, actor visibility and HUD clearance still limit movement.
+- **Camera controls:** corrected Q/E zoom direction, improved mouse-wheel handling, and added camera distance and centring to the quick menu. Touch drag/pinch and controller controls share the same camera safeguards.
+- **Battle Pokémon sizing:** normalizes supported companion sprite density before applying Pokédex/form height, preventing high-resolution cards from becoming oversized. Older supported KASC cards receive a compatibility correction. Exact new source-density/form metadata requires the matching KASC 6.7.14 line (tested with 6.7.14-rc.3); this VASC release does not update KASC automatically.
 
-Update VASC in the launcher and restart the game. No engine reinstall is needed for this mod-side log workaround on 0.2.61.
+## Updating
+
+Update VASC and fully restart the game. Keep downloaded/imported content and user files; do not delete the existing mod folder first. No new save or blanket sprite/model re-import is required. For manual desktop updates, the optional **Preserve-Installed-Sprites** installer backs up the existing installation and preserves optional downloads. The ZIP is the normal mod package.
+
+## Validation
+
+Archive CRC, all 656 Lua files and package file hashes checked. Native Gen 1 tests on macOS covered Route 22's 40 grass-cell placements, MAP move selection, portrait/landscape layouts and simulated touch/controller plus desktop inputs. Pokémon-size tests covered 1,351 species/form height entries, actual sprite-provider rendering and representative 2D/MAP/ARENA/DISCS battles, including 1X/3X MAP checks with Voltenso/Manectric and Rayquaza.
+
+Physical iPhone/Android/Windows verification is still pending. Gen 2 camera behavior is unchanged. This release does not include a change for the recently reported portrait letterbox shading.
 
 ---
 

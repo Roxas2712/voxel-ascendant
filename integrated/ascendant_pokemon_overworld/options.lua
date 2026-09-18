@@ -1,13 +1,13 @@
 return {
   {
     key = "card_animation_mode", type = "choice", label = "KARTENANIMATION",
-    default = "classic",
+    default = "natural",
     choices = {{"KLASSISCH", "classic"}, {"NATUERLICH", "natural"}},
     description = "NATUERLICH aktiviert neue menschliche Lauf- und Ruhebewegungen. KLASSISCH stellt sofort die bisherige Kartenanimation wieder her. Originalgrafiken bleiben ueber HD-MENSCHEN erreichbar.",
   },
   {
     key = "human_acting_pilot", type = "toggle", label = "DIALOGPOSEN (TEST)",
-    default = false,
+    default = true,
     description = "Figuren-Test: Eich und Blau schauen im Alabastia-Startdialog zum Gespraechspartner. Rots Mutter sitzt auf ihrem Stuhl und dreht im Gespraech den Kopf. Benoetigt NATUERLICH und HD-MENSCHEN; Figurenraster AUS. Lind und die Mutter in Neuborkia blinzeln und atmen im direkt gestarteten Gespraech. Die Besucherin gegenueber atmet im Gespraech. Weitere Figuren folgen. KLASSISCH oder HD-MENSCHEN AUS setzt die Darstellung zurueck.",
   },
   {

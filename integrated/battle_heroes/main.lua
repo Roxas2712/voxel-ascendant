@@ -301,7 +301,8 @@ return function(mod)
  mod.exports.charsprite=CharSprite
  CharSprite.assetPath=function(id)
   local path=CharSprite.get(id).path
-  return path:match('^assets/') and mod.path..'/'..path or path
+  return mod.resolveAsset and mod.resolveAsset(path)
+    or (path:match('^assets/') and mod.path..'/'..path or path)
  end
  mod.exports.status=function(b)
   local s=states[b]
