@@ -42,6 +42,7 @@ local VoxelScene = V.require("VoxelScene")
 local BattleCam = V.require("BattleCam")
 local BattleBillboard = V.require("BattleBillboard")
 local BattlePics = V.require("BattlePics")
+local BattleSpriteSize = V.require("BattleSpriteSize")
 local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local AntiAlias = V.require("AntiAlias")
@@ -494,9 +495,9 @@ end
 -- species still fit indoors, and authored scene scale continues to own the
 -- overall room/arena composition. Trainers have their own human-scale art and
 -- therefore stay exactly at the scene scale.
-BattleScene.SPECIES_HEIGHT_REFERENCE = 36
+BattleScene.SPECIES_HEIGHT_REFERENCE = 1 / 0.0254
 BattleScene.SPECIES_SCALE_MIN = 0.72
-BattleScene.SPECIES_SCALE_MAX = 1.80
+BattleScene.SPECIES_SCALE_MAX = 1.56
 -- Intimate painted rooms already enlarge every actor around the authored
 -- feet. Preserve their reviewed composition while still letting Onix read as
 -- larger than Charizard outdoors: the product of room and species scale may
@@ -590,14 +591,7 @@ end
 
 function BattleScene.speciesScale(tex)
   if not tex or BattleScene.isTrainerTexture(tex) then return 1 end
-  local height = tonumber(tex.heightIn)
-  if not (height and height == height and height > 0
-          and height < math.huge) then
-    return 1
-  end
-  local scale = math.sqrt(height / BattleScene.SPECIES_HEIGHT_REFERENCE)
-  return math.max(BattleScene.SPECIES_SCALE_MIN,
-                  math.min(BattleScene.SPECIES_SCALE_MAX, scale))
+  return BattleSpriteSize.speciesScale(tex.heightIn)
 end
 
 function BattleScene.presentationMetrics(tex, actorScale, profileObject)
@@ -610,9 +604,17 @@ function BattleScene.presentationMetrics(tex, actorScale, profileObject)
                         room * BattleScene.speciesScale(tex))
   end
   local density, densityPolicy = BattleScene.textureDensityScale(tex, combined)
+  local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
+  if not BattleScene.isTrainerTexture(tex) then
+    local extent, policy = BattleSpriteSize.referenceExtent(tex, x0, y0, x1, y1)
+    if extent then
+      -- Fifty presentation pixels at one metre, based on visible artwork.
+      -- Fixed full-animation metadata removes padding without pose pumping.
+      density, densityPolicy = 50 / extent, policy
+    end
+  end
   local k = (BattleBillboard.FULL_W / BattleBillboard.FULL_PIC)
     * combined * density
-  local x0, y0, x1, y1 = BattleScene.textureInkBounds(tex)
   local anchorX = BattleScene.textureAnchorX(tex)
   local baseline = BattleScene.textureBaseline(tex)
   local foot = type(profileObject) == "table" and profileObject.footAnchor

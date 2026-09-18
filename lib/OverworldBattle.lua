@@ -5009,6 +5009,28 @@ function OverworldBattle.worldPlayerSprite(battle)
   return sprite
 end
 
+-- The companion publishes image extents, not mutable animation state.
+function OverworldBattle.sourceSpriteExtent(image)
+  if not image then return nil end
+  local owner = V.mod
+  if owner and type(owner.find) == "function" then
+    local ok, handle = pcall(owner.find, "kanto_ascendant")
+    if not ok or not handle then ok, handle = pcall(owner.find, owner, "kanto_ascendant") end
+    local metrics = ok and type(handle)=="table" and handle.exports
+      and handle.exports.battleSpriteMetrics67
+    if type(metrics)=="table" and metrics.apiVersion==1
+        and type(metrics.forImage)=="function" then
+      local got, extent = pcall(metrics.forImage, image)
+      if got and type(extent)=="number" and extent>0 and extent<8192 then
+        return extent, true
+      end
+    end
+  end
+  local x0,y0,x1,y1 = BattlePics.inkBounds(image,image)
+  if x0 then return math.max(x1-x0+1,y1-y0+1), false end
+  return nil
+end
+
 -- Render one side's pics layer into its canvas and report where the pic's
 -- feet ended up, in canvas coordinates.
 local function baseSideTexture(battle, side)
@@ -5096,7 +5118,10 @@ local function baseSideTexture(battle, side)
     inkIdentity = selectedSprite or renderedPlayerSprite
       or battle[side] and battle[side].sprite or nil
   end
+  local reference, complete
+  if not trainerArt then reference, complete = OverworldBattle.sourceSpriteExtent(inkIdentity) end
   return { canvas = canvas, ax = ax, ay = ay, trainer = trainer,
+           vascReferenceExtent=reference, vascReferenceComplete=complete,
            trainerArt = trainerArt, heightIn = heightIn,
            vascVisualSpecies = side == "player" and battle.player
              and (battle._vascWorldVisualBattler == battle.player
