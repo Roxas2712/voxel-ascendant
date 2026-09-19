@@ -2109,6 +2109,13 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
   end
 
   local mx, mz = tx * 8, ty * 8
+  -- Retain only compact pane/bounds metadata after construction geometry is
+  -- released. No voxel faces survive solely for lighting.
+  S.lightBuildingStamps = S.lightBuildingStamps or {}
+  local rects=V.require('GlassMask').rects(map.tileset)
+  local lightShape=V.require('NativeWindowLights').shape(quads,rects,
+    map.tileset.imageWidth or 128,map.tileset.imageHeight or 128)
+  S.lightBuildingStamps[#S.lightBuildingStamps+1] = {lightShape=lightShape,mx=mx,mz=mz}
   local entrance=Buildings.rearEntrance(map,tx,ty,t)
   if entrance then
     local aw,ah=map.tileset.imageWidth or 128,map.tileset.imageHeight or 48

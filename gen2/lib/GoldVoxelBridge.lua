@@ -87,7 +87,7 @@ local Bridge = {
 
 -- Minimal Dramatic-Shape module namespace.  Deliberately does not execute the
 -- Gen-1 pipeline/input installer from the original Dramaless package.
-local V = { mod = mod, path = mod.path }
+local V = { mod = mod, path = mod.path, lightingGeneration = 2 }
 -- Renderer-owned sibling modules (most importantly OverworldBattle) use this
 -- reference to attach the exact free-roam state to RC diagnostics. It avoids a
 -- second GoldVoxelBridge instance and cannot drift from the live renderer.

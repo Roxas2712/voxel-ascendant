@@ -40,7 +40,7 @@ local SECTION_KEYS = {
     "shortcutToast", "openWorld", "gen2WorldMap", "grid", "curve", "water",
   },
   weather = {
-    "sky", "clouds", "skyEvents", "weather", "weatherTweak", "scenery", "daytime",
+    "sky", "clouds", "skyEvents", "weather", "weatherTweak", "scenery", "daytime", "localLights",
   },
   battle = {
     "battle3dWorld", "battleSmartCamera", "battleGrid",

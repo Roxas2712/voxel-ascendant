@@ -841,9 +841,11 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
   -- (castShadows draws this mesh through ShadowMap.snug) -- is where each
   -- vertex asks whether the light reached it; see ShadowMap.snug for why
   -- the lookup must match the stored transform to the letter
+  Voxel3D.actorLighting(true)
   Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
                billboardPull(),
                ShadowMap.snug(Voxel3D.casterMatrix(px, py, y, mirror)))
+  Voxel3D.actorLighting(false)
   return true
 end
 
@@ -1835,6 +1837,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   local groundAmount = WeatherTweak.groundAmount(
     state.map, windowMap and weatherMode or skyWeatherMode, nativeGround)
   Voxel3D.tint = DayNight.tint(outdoor or DayNight.isCanopy(state.map))
+  local lights=V.require('LocalLights')
+  local lightOK,lightErr=pcall(lights.prepare,state,outdoor,{cx,16,cy},false,skyWeatherMode)
+  if not lightOK then lights.fail(lightErr)end
   -- and the window glass: the tileset's own panes (found in its art --
   -- GlassMask), lit after dark. Outdoors only, like everything the clock
   -- touches, which also keeps any pane-shaped art in an interior tileset
@@ -2315,6 +2320,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
 
   if not eyes then
     local skyContext = {
+      dynamicLighting = true,
       weather = skyWeatherMode,
       groundWeather = groundWeather,
       groundAmount = groundAmount,
@@ -2441,7 +2447,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
     if eye.adopt then FirstPerson.adoptVReye(eye.camera) end
     if not Voxel3D.beginScene(eye.w, eye.h, cx, cy, vw, vh,
                               skyFor(state.map, skyWeatherMode), eye.slot,
-                              { weather = skyWeatherMode,
+                              { dynamicLighting = true, weather = skyWeatherMode,
                                 groundWeather = groundWeather,
                                 groundAmount = groundAmount,
                                 mapId = state.map and state.map.id,

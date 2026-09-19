@@ -83,6 +83,8 @@ local DEFINITIONS = {
       "gen2/lib/Gen2VermilionCans.lua",
       "gen2/lib/Gen2ViridianHedges.lua",
       "gen2/lib/JohtoHorizonTransition.lua",
+      "gen2/lib/LocalLights.lua", "gen2/lib/ActorLighting.lua",
+      "lib/LocalLights.lua", "lib/NativeWindowLights.lua", "lib/LightVisibility.lua",
       "gen2/lib/JohtoWorldBackdrop.lua",
       "gen2/lib/JohtoWorldSignature.lua",
       "gen2/data/johto_world_cache.lua",

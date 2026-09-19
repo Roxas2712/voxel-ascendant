@@ -621,7 +621,37 @@ function Voxel3D.weatherPanorama(amount, kind)
     math.max(0, math.min(1, amount)))
 end
 
-function Voxel3D.shader(grid)
+local litShaders={}
+local function lightingSource(source)
+  local L=V.require('LocalLights')
+  source=source:gsub('#ifdef PIXEL',function()
+    return '#ifdef PIXEL\nuniform vec3 eye;\nuniform float localActorOn;\n'..L.glsl()
+  end,1)
+  local normal=L.mobile and 'vec3 localNormal=vec3(0,1,0);' or [[
+    vec3 localNormal=cross(dFdx(vWorld),dFdy(vWorld));
+    localNormal/=max(length(localNormal),.0001);
+    localNormal*=dot(localNormal,eye-vWorld)<0.0?-1.0:1.0;]]
+  source=source:gsub('vec3 rgb = p.rgb %* vShade',normal..[[
+    vec3 rgb = p.rgb * localSurfaceShade(vShade,localActorOn>.5?vec3(0,1,0):localNormal,vWorld)]],1)
+  source=source:gsub('rgb = mix%(rgb, ghostColor, ghost%);',[[
+    rgb += p.rgb * (localActorOn>.5?localActorIrradiance(vWorld,localNormal):localIrradiance(vWorld,localNormal));
+    rgb = mix(rgb, ghostColor, ghost);]],1)
+  return source
+end
+function Voxel3D.shader(grid, lighting)
+  grid=grid and true or false
+  local L=V.require('LocalLights')
+  if lighting and L.available() and (not grid or derivativesOK()) then
+    if litShaders[grid]==false then litShaders[grid]=nil end
+    if litShaders[grid]==nil then
+      local src=lightingSource(SHADER)
+      if grid then src='#define VOXEL_GRID 1\n'..src end
+      local ok,sh=pcall(love.graphics.newShader,src)
+      litShaders[grid]=ok and sh or false
+      if not ok then L.fail(sh)end
+    end
+    if litShaders[grid] then return litShaders[grid]end
+  end
   grid = grid and true or false
   if shaders[grid] == nil then
     if grid and not derivativesOK() then
@@ -636,9 +666,11 @@ function Voxel3D.shader(grid)
 end
 
 -- Read-only production-source seam for real-driver pixel regression tests.
-function Voxel3D._shaderSource(_, grid)
-  return grid and ("#define VOXEL_GRID 1\n" .. SHADER) or SHADER
+function Voxel3D._shaderSource(_, grid, lighting)
+  local source=lighting and lightingSource(SHADER) or SHADER
+  return grid and ("#define VOXEL_GRID 1\n" .. source) or source
 end
+V.require('ActorLighting').install(Voxel3D)
 
 -- Whether the 3D path can run at all. False on a headless test run (no
 -- love.graphics), without shader support, or where a depth canvas cannot be
@@ -1111,10 +1143,13 @@ end
 function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext, orbitGroundY)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
+  local L=V.require('LocalLights')
+  local lighting=skyContext and skyContext.dynamicLighting==true and L.enabled()
+  Voxel3D.localLightsActive=lighting and true or false
   local grid = VoxelGrid.enabled()
-  local sh = grid and Voxel3D.shader(true) or nil
+  local sh = grid and Voxel3D.shader(true,lighting) or nil
   if not sh then
-    grid, sh = false, Voxel3D.shader()
+    grid, sh = false, Voxel3D.shader(false,lighting)
   end
   if not sh then return false end
   local name = slot or "world"
@@ -1298,6 +1333,10 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext, orbitGr
   -- against (so scale == 1 for anything standing at the view centre)
   local m = Voxel3D.vp
   Voxel3D.focusW = m[13] * cx + m[14] * 0 + m[15] * cy + m[16]
+  local ok,err=pcall(L.send,sh,lighting)
+  if not ok then L.fail(err);L.send(sh,false)end
+  Voxel3D.localLightsActive=lighting and L.active() or false
+  if sh:hasUniform('localActorOn')then sh:send('localActorOn',0)end
   activeShader = sh
   active = true
   return true
@@ -1307,6 +1346,12 @@ end
 -- background unconditionally, so characters render with the depth test
 -- forced to pass (still writing depth: the grass mesh drawn after them
 -- tests against it to overdraw feet). "test" restores normal occlusion.
+function Voxel3D.actorLighting(on)
+  if activeShader and activeShader:hasUniform('localActorOn')then
+    activeShader:send('localActorOn',on and 1 or 0)
+  end
+end
+
 function Voxel3D.depth(mode)
   if not active then return end
   pcall(love.graphics.setDepthMode, mode == "always" and "always" or "lequal",
@@ -2122,6 +2167,9 @@ end
 
 -- Drop the GPU objects (window resize, hot reload).
 function Voxel3D.invalidate()
+  V.require('LocalLights').invalidate()
+  Voxel3D.localLightsActive=false
+  for key,sh in pairs(litShaders)do if sh then sh:release()end;litShaders[key]=nil end
   for name, slotHeld in pairs(slots) do
     releaseSlot(slotHeld)
     slots[name] = nil

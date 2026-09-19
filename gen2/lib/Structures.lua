@@ -248,6 +248,13 @@ local function constructionReady(S)
     and type(S.figures) == "table"
 end
 
+-- Lighting must never start a synchronous map build during drawing.
+function Structures.lightingForMap(map)
+  local c=cacheRecord(map)
+  local S=c.fullRing==Structures.analysisRing(false) and c.full or c.body
+  return S
+end
+
 function Structures.forMap(map, bodyOnly)
   local ring = Structures.analysisRing(bodyOnly)
   local c = cacheRecord(map)

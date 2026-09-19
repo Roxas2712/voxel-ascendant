@@ -4,7 +4,10 @@ local V = ...
 local M = { MAX_LIGHTS = 8, MAX_BATTLE_LIGHTS = 4, MAX_BLOCKERS = 8, MAX_PORTALS = 4 }
 local platform = V.require('CanvasPresentation').OS
 M.mobile = platform == 'iOS' or platform == 'Android'
-M.supported = not (V.mod and V.mod._vascHostGeneration and V.mod._vascHostGeneration~=1)
+-- Gen2 opts into the neutral GPU core through its own source adapter.
+-- Merely loading the Gen1 factory from another host still stays unsupported.
+M.supported = not (V.mod and V.mod._vascHostGeneration
+  and V.mod._vascHostGeneration ~= (V.lightingGeneration or 1))
 M.ownerActive = true -- the Gen1 host closes this until its Card activates
 if M.mobile then M.MAX_LIGHTS=4;M.MAX_BATTLE_LIGHTS=2;M.MAX_BLOCKERS=4;M.MAX_PORTALS=2 end
 function M.available() return M.supported and M.ownerActive and not M.failure end

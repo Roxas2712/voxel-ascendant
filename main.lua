@@ -285,7 +285,14 @@ local GEN2_SHARED_CARD_CORE = {
   ["lib/cards/battle_router/BattleRouterOwnerControl.lua"] = true,
 }
 
+local GEN2_SHARED_LIGHTING = {
+  ["lib/lighting/LocalLightsCore.lua"] = "lib/LocalLights.lua",
+  ["lib/NativeWindowLights.lua"] = "lib/NativeWindowLights.lua",
+  ["lib/LightVisibility.lua"] = "lib/LightVisibility.lua",
+}
+
 local function privatePath(rel)
+  if GEN2_SHARED_LIGHTING[rel] then return GEN2_SHARED_LIGHTING[rel] end
   local a21Shared = GEN2_A21_SHARED_UI[rel]
   if a21Shared then return a21Shared end
   if GEN2_SHARED_CARD_CORE[rel] then return rel end

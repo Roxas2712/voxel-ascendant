@@ -635,6 +635,13 @@ return {
     description = "VASC's streamed-edge scenery, cave/room enclosures and distant panorama. Postgame maps use their authored profiles; Johto uses the safe generic class/tileset fallback until dedicated Johto panorama art is added.",
   },
   {
+    key = "localLights",
+    type = "toggle",
+    label = "DYNAMIC LIGHTING",
+    default = true,
+    description = "Sun, moon and native window light in the 3D world and map battles, with or without HD sprites. OFF restores the previous shading. Phones use fewer light sources. Does not change fog, weather or classic 2D.",
+  },
+  {
     key = "shadows",
     type = "toggle",
     label = "OBJECT SHADOWS",

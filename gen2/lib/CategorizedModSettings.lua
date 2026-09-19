@@ -43,7 +43,7 @@ local CATEGORIES = {
       grid=true, curve=true, water=true,
       renderScale=true, shadowQuality=true,
       deviceProfile=true, sky=true, clouds=true, skyEvents=true,
-      weather=true, scenery=true, shadows=true, daytime=true,
+      weather=true, scenery=true, shadows=true, daytime=true, localLights=true,
     },
   },
   {

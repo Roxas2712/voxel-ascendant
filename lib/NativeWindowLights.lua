@@ -25,8 +25,16 @@ function M.shape(template,rects,w,h)
    else u=q.u or 0;v=q.v or 0;break end
   end
   u,v=u*w,v*h
+  local u0,v0,u1,v1=u,v,u,v
+  if V.lightingGeneration==2 and q.uv then
+   for _,uv in ipairs(q.uv)do
+    u0=math.min(u0,uv[1]*w);u1=math.max(u1,uv[1]*w)
+    v0=math.min(v0,uv[2]*h);v1=math.max(v1,uv[2]*h)
+   end
+  end
   for _,r in ipairs(rects)do
-   if u>=r.x and u<r.x+r.w and v>=r.y and v<r.y+r.h then glass=true;break end
+   if (u>=r.x and u<r.x+r.w and v>=r.y and v<r.y+r.h)
+      or (V.lightingGeneration==2 and u1>r.x and u0<r.x+r.w and v1>r.y and v0<r.y+r.h) then glass=true;break end
   end
   if glass then
    local x1,y1,z1=point(q,1);local x2,y2,z2=point(q,2);local x3,y3,z3=point(q,3)
@@ -62,16 +70,19 @@ end
 function M.append(state,sources,blockers,glow,focus)
  local function mapSources(map,ox,oz)
   if not(map and map.tileset)then return end
-  local S=V.require('Structures').forMap(map)
+  local structures=V.require('Structures')
+  local S=V.lightingGeneration==2 and structures.lightingForMap(map) or nil
+  if V.lightingGeneration~=2 then S=structures.forMap(map) end
+  if not S then return end
   local rects=V.require('GlassMask').rects(map.tileset)
   if #rects==0 then return end
-  local field=V.require('LedgeElevation').map(map)
+  local field=V.lightingGeneration~=2 and V.require('LedgeElevation').map(map)
   local w,h=map.tileset.imageWidth or 128,map.tileset.imageHeight or 128
-  for _,st in ipairs(S.buildingStamps or{})do
+  for _,st in ipairs(S.buildingStamps or S.lightBuildingStamps or{})do
    local template=st.quads
-   if template and #template>0 then
-    local shape=M.shape(template,rects,w,h)
-    local x,y,z=st.mx+ox,base(st,field),st.mz+oz
+   if st.lightShape or (template and #template>0) then
+    local shape=st.lightShape or M.shape(template,rects,w,h)
+    local x,y,z=st.mx+ox,field and base(st,field) or (st.my or 0),st.mz+oz
     local owner={lo={shape.lo[1]+x,shape.lo[2]+y,shape.lo[3]+z},hi={shape.hi[1]+x,shape.hi[2]+y,shape.hi[3]+z}}
     blockers[#blockers+1]=owner
     for _,p in ipairs(shape.panes)do

@@ -128,6 +128,7 @@ local groups={
     {'curve','World curvature','Weltkrümmung'}, {'water','Water','Wasser'},
     {'scenery','Panoramas','Panoramen'}, {'sky','Sky','Himmel'},
     {'clouds','Clouds','Wolken'}, {'weather','Weather','Wetter'},
+    {'localLights','Dynamic lighting','Dynamisches Licht'},
     {'daytime','Time of day','Tageszeit'}, {'shadows','Shadows','Schatten'},
     {'deviceProfile','Performance profile','Leistungsprofil'},
     {'sceneResolution','3D resolution','3D-Auflösung'},
@@ -175,6 +176,7 @@ function M.rows(g,group,controls)
     end
     local shot=V.require('OverworldBattle').shot()
     if shot then
+      if shot.liveWorld then addOption({'localLights','Dynamic lighting','Dynamisches Licht'})end
       addOption({'sceneResolution','3D resolution','3D-Auflösung'})
       addOption({'pokemonModelSkin','Pokémon artwork','Pokémon-Grafik'})
       addOption({'battleGrid','Battle grid','Kampf-Raster'})
