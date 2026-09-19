@@ -15,6 +15,7 @@ M.setting = V.require('ModSetting').new('localLights', 'DYNAMIC LIGHTING',
 M.setting:setGate(function(value) return not value or M.supported end)
 
 local shapes = setmetatable({}, {__mode='k'})
+local nativeWindows
 local frame = {lights={}, blockers={}}
 local function clamp(x, a, b) return math.max(a, math.min(b, x)) end
 local function distance(x,y,z, p)
@@ -206,6 +207,11 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
       end
     end
   end)
+  if outdoor and not props and state.map.tileset then
+    nativeWindows=nativeWindows or V.require('NativeWindowLights')
+    nativeWindows.append(state,sources,buildings,
+      V.require('DayNight').windowLight(),focus)
+  end
   frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
   if cave and not tower and not dark and #frame.lights>0 then
     local tint=frame.tint or {1,1,1}
@@ -478,6 +484,7 @@ end
 -- A renderer reset retires all GPU textures owned by this lighting pass.
 -- Forget uniform receipts as well, so surviving card shaders get fresh ones.
 function M.invalidate()
+  if nativeWindows then nativeWindows.invalidate() end
   V.require('LightVisibility').invalidate()
   for _,wall in pairs(wallFields)do wall.texture:release()end
   wallFields=setmetatable({},{__mode='k'})
