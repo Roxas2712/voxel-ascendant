@@ -6555,4 +6555,28 @@ do
   table.insert(list,1,crystal)
 end
 
+-- Goldenrod's Route 35 gate only has its facade on the native map.
+-- The source drawing is clipped at the city's northern boundary.
+-- Complete the drawing from the same brick-house roof as its neighbours,
+-- while claiming only the four visible rows. Otherwise the generic volume
+-- path folds its window into a raised block and leaves the rest roofless.
+do
+  local source
+  for _,t in ipairs(profile.buildings.TilesetJohto)do
+    if t.id=='johto_block_brick'then source=t;break end
+  end
+  assert(source,'missing native Johto brick house')
+  local clipped={}
+  for k,v in pairs(source)do clipped[k]=v end
+  clipped.id='goldenrod_north_gate'
+  clipped.nativePlacement={mapId='GOLDENROD_CITY',width=20,height=18,tx=36,ty=0}
+  clipped.topRows={};clipped.tiles={}
+  for i,row in ipairs(source.tiles)do
+    local rows=i<=4 and clipped.topRows or clipped.tiles
+    local copy={};for j,tile in ipairs(row)do copy[j]=tile end
+    rows[#rows+1]=copy
+  end
+  table.insert(profile.buildings.TilesetJohtoModern,1,clipped)
+end
+
 return profile
