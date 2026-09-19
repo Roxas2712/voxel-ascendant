@@ -222,7 +222,7 @@ function Gen2PublicExports.apply(exports)
     battleCameraOption = "battleSmartCamera",
     gridControls = { overworld = "grid", battle = "battleGrid" },
     renderControls = {
-      "curve", "water", "aa", "renderScale", "shadowQuality",
+      "curve", "water", "aa", "sceneResolution", "renderScale", "shadowQuality",
     },
     stadium2Models = true,
     visibleWildPokemon = true,

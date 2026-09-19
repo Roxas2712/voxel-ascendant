@@ -72,7 +72,7 @@ local SECTION_KEYS = {
     "enable_wander", "enable_aggressive", "enable_hidden",
   },
   performance = {
-    "deviceProfile", "renderScale", "shadowQuality", "shadows", "aa",
+    "deviceProfile", "sceneResolution", "renderScale", "shadowQuality", "shadows", "aa",
   },
   user = {},
   advanced = {

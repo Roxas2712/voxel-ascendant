@@ -122,9 +122,17 @@ return {
     description = "Supersamples the 3D pass. Higher values improve edges at a substantial GPU cost.",
   },
   {
+    key = "sceneResolution",
+    type = "choice",
+    label = "3D RESOLUTION",
+    default = "balanced",
+    choices = { { "1080P", "balanced" }, { "NATIVE", "native" }, { "720P", "economy" } },
+    description = "World and battle resolution: 1080P balances clarity and GPU cost; NATIVE uses the full view size; 720P reduces load. HUD stays sharp.",
+  },
+  {
     key = "renderScale",
     type = "choice",
-    label = "RES",
+    label = "SCENERY DETAIL",
     default = 2,
     choices = {
       { "1/2", 2 },
@@ -132,7 +140,7 @@ return {
       { "1/3", 3 },
       { "1/4", 4 },
     },
-    description = "Internal 3D render resolution. FULL is sharpest; fractional modes reduce GPU cost on phones and slower systems.",
+    description = "Scenery detail budget for stars, fog and clouds. Use 3D RESOLUTION to change world and battle sharpness.",
   },
   {
     key = "shadowQuality",

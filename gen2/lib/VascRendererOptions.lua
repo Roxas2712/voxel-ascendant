@@ -55,6 +55,8 @@ local function configureProfile()
       max = "native", handheld = "native", eco = "native" },
     { setting = aa and aa.setting,
       max = 2, handheld = 0, eco = 0 },
+    { setting = aa and aa.resolution,
+      max = "native", handheld = "balanced", eco = "economy" },
     { setting = quality and quality.setting,
       max = 1, handheld = 2, eco = 3 },
     { setting = quality and quality.shadowSetting,
@@ -105,6 +107,9 @@ local function syncKey(key, value)
   elseif key == "aa" then
     local aa = module("AntiAlias")
     changed = syncSetting(aa and aa.setting, value)
+  elseif key == "sceneResolution" then
+    local aa = module("AntiAlias")
+    changed = syncSetting(aa and aa.resolution, value)
   elseif key == "renderScale" then
     local quality = module("Quality")
     changed = syncSetting(quality and quality.setting, value)
@@ -152,7 +157,7 @@ local function syncKey(key, value)
 end
 
 local KEYS = {
-  "grid", "battleGrid", "curve", "water", "aa", "renderScale",
+  "grid", "battleGrid", "curve", "water", "aa", "sceneResolution", "renderScale",
   "pokemonModelSkin",
   "shadowQuality", "sky", "clouds", "skyEvents", "weather", "scenery",
   "shadows", "daytime", "deviceProfile",
@@ -160,7 +165,7 @@ local KEYS = {
 local PROFILE_CHILD = {
   sky=true, clouds=true, skyEvents=true, weather=true, scenery=true,
   shadows=true, shadowQuality=true, water=true, daytime=true, aa=true,
-  renderScale=true,
+  renderScale=true, sceneResolution=true,
 }
 
 local function read(key)

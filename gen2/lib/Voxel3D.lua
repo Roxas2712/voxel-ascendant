@@ -109,7 +109,7 @@ local SHADER = [[
   varying float vShade;
   varying float vWeatherTop;
   varying vec3 vSun;          // this fragment's place in the sun's view
-  varying vec3 vWorld;        // uncurved world position; battle visibility uses it
+  varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;        // uncurved world position; battle visibility uses it
 #ifdef VOXEL_GRID
   // model space, one unit per voxel -- see VoxelGrid. Precision matters
   // here in a way it does not for a colour: the seam is the FRACTIONAL
@@ -192,16 +192,16 @@ local SHADER = [[
   // opaque. This is intentionally stronger than the old dither dissolve: a few
   // surviving depth-writing fragments were still enough to hide a Pokemon.
   uniform float battleOccOn;
-  uniform vec3 battleOccEye;
-  uniform vec2 battleOccA;
-  uniform vec2 battleOccB;
-  uniform vec2 battleOccMid;
-  uniform float battleOccGround;
+  uniform LOVE_HIGHP_OR_MEDIUMP vec3 battleOccEye;
+  uniform LOVE_HIGHP_OR_MEDIUMP vec2 battleOccA;
+  uniform LOVE_HIGHP_OR_MEDIUMP vec2 battleOccB;
+  uniform LOVE_HIGHP_OR_MEDIUMP vec2 battleOccMid;
+  uniform LOVE_HIGHP_OR_MEDIUMP float battleOccGround;
   uniform float battleOccRadius;
   uniform float battleOccBubble;
   // Current VASC interior presentation: discard only the camera-facing half
   // of a closed-room horizon wall, leaving the floor and rear walls intact.
-  uniform vec4 cutaway;
+  uniform LOVE_HIGHP_OR_MEDIUMP vec4 cutaway;
 
   // the two-channel pack ShadowMap writes: high byte, then low
   float sunDepth(vec2 uv) {
@@ -285,10 +285,10 @@ local SHADER = [[
   uniform float weatherPanorama;
   uniform float weatherPanoramaKind;
 
-  float segmentDistance2D(vec2 p, vec2 a, vec2 b) {
-    vec2 ab = b - a;
-    float den = max(dot(ab, ab), 0.0001);
-    float t = clamp(dot(p - a, ab) / den, 0.0, 1.0);
+  LOVE_HIGHP_OR_MEDIUMP float segmentDistance2D(LOVE_HIGHP_OR_MEDIUMP vec2 p, LOVE_HIGHP_OR_MEDIUMP vec2 a, LOVE_HIGHP_OR_MEDIUMP vec2 b) {
+    LOVE_HIGHP_OR_MEDIUMP vec2 ab = b - a;
+    LOVE_HIGHP_OR_MEDIUMP float den = max(dot(ab, ab), 0.0001);
+    LOVE_HIGHP_OR_MEDIUMP float t = clamp(dot(p - a, ab) / den, 0.0, 1.0);
     return length(p - (a + ab * t));
   }
 
@@ -309,12 +309,12 @@ local SHADER = [[
     if (cutaway.w > 0.5 && dot(vWorld.xz, cutaway.xy) > cutaway.z) discard;
 
     if (battleOccOn > 0.5 && vWorld.y > battleOccGround + 8.5) {
-      vec2 wp = vWorld.xz;
-      vec2 ep = battleOccEye.xz;
-      float sight = min(segmentDistance2D(wp, ep, battleOccA),
+      LOVE_HIGHP_OR_MEDIUMP vec2 wp = vWorld.xz;
+      LOVE_HIGHP_OR_MEDIUMP vec2 ep = battleOccEye.xz;
+      LOVE_HIGHP_OR_MEDIUMP float sight = min(segmentDistance2D(wp, ep, battleOccA),
                         segmentDistance2D(wp, ep, battleOccB));
       float corridor = 1.0 - smoothstep(8.0, max(10.0, battleOccRadius), sight);
-      float bubbleDist = length(wp - battleOccMid);
+      LOVE_HIGHP_OR_MEDIUMP float bubbleDist = length(wp - battleOccMid);
       float bubble = 1.0 - smoothstep(battleOccBubble * 0.42,
                                      max(1.0, battleOccBubble), bubbleDist);
       // A hard visibility cutout is correct here because this shader is enabled
@@ -657,6 +657,13 @@ local instancing = nil
 
 function Voxel3D.canInstance()
   if instancing ~= nil then return instancing end
+  -- Same safe path as Gen1: mobile capability flags do not guarantee stable
+  -- per-instance attributes. Expand identical tree geometry instead of using
+  -- a driver path that can lose placements between draws.
+  if MOBILE_RUNTIME then
+    instancing = false
+    return false
+  end
   local g = love and love.graphics
   if not (g and type(g.getSupported) == "function"
           and type(g.drawInstanced) == "function") then

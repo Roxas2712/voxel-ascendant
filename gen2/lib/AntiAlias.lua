@@ -49,23 +49,20 @@ local CanvasPresentation = V.require("CanvasPresentation")
 
 local AntiAlias = {}
 
--- A phone framebuffer is much larger than the emulated playfield.  Rendering
--- the voxel scene and its depth attachment at every physical panel pixel made
--- initial world/panorama construction scale with display resolution and could
--- exhaust the mobile GPU before an on-map battle committed.  Keep the final
--- compositor full-screen, but bound only the internal 3-D pass.  Desktop uses
--- the historical AA ladder unchanged.
+-- Match Gen1's selectable, aspect-preserving scene budget. The old fixed
+-- 960px mobile limit blurred MAP battles even when the user requested FULL.
+-- Phone supersampling stays disabled; native resolution is an explicit choice.
 local MOBILE_RUNTIME = CanvasPresentation.OS == "iOS"
   or CanvasPresentation.OS == "Android"
-local MOBILE_MAX_LONG_EDGE = 960
-local MOBILE_MAX_PIXELS = 640000
-
-local function mobileFactor(w, h)
-  if not MOBILE_RUNTIME then return 1 end
-  w, h = math.max(1, tonumber(w) or 1), math.max(1, tonumber(h) or 1)
-  return math.min(1,
-    MOBILE_MAX_LONG_EDGE / math.max(w, h),
-    math.sqrt(MOBILE_MAX_PIXELS / (w * h)))
+AntiAlias.resolution = ModSetting.new("sceneResolution", "3D RESOLUTION",
+  { "balanced", "native", "economy" }, { "1080P", "NATIVE", "720P" }, "balanced")
+local function resolutionFactor(w, h)
+  local choice = AntiAlias.resolution:get()
+  if choice == "native" then return 1 end
+  local edge = choice == "economy" and 1280 or 1920
+  local short = choice == "economy" and 720 or 1080
+  return math.min(1, edge / math.max(1, w, h),
+    short / math.max(1, math.min(w, h)))
 end
 
 -- v0.2.69: Android/iOS render the whole Game2 frame into an outer canvas
@@ -146,8 +143,8 @@ end
 -- multiplied up into canvas ones, and the honest multiplier is the one this
 -- returned rather than the one the row asked for.
 function AntiAlias.expand(w, h)
-  local s = MOBILE_RUNTIME and mobileFactor(w, h) or wanted()
-  local max = not MOBILE_RUNTIME and textureLimit() or nil
+  local s = resolutionFactor(w, h) * (MOBILE_RUNTIME and 1 or wanted())
+  local max = textureLimit()
   if max and max > 0 then
     -- clamped rather than abandoned: a window too big for 4X can usually
     -- still carry some of it, and half a rung of smoothing is worth more
@@ -182,7 +179,7 @@ local targets = {}
 local function targetFor(slot, w, h)
   local t = targets[slot]
   if not (t and t.w == w and t.h == h) then
-    local ok, c = pcall(love.graphics.newCanvas, w, h)
+    local ok, c = pcall(love.graphics.newCanvas, w, h, { dpiscale = 1 })
     if not (ok and c) then return nil end
     -- nearest, like the canvas it stands in for: this one is composited a
     -- canvas pixel to a display pixel, and the smoothing has already happened
@@ -303,8 +300,8 @@ end
 function AntiAlias.mobilePolicy()
   return {
     active = MOBILE_RUNTIME,
-    maxLongEdge = MOBILE_MAX_LONG_EDGE,
-    maxPixels = MOBILE_MAX_PIXELS,
+    resolution = AntiAlias.resolution:get(),
+    supersampling = not MOBILE_RUNTIME,
   }
 end
 

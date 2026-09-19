@@ -130,6 +130,7 @@ local groups={
     {'clouds','Clouds','Wolken'}, {'weather','Weather','Wetter'},
     {'daytime','Time of day','Tageszeit'}, {'shadows','Shadows','Schatten'},
     {'deviceProfile','Performance profile','Leistungsprofil'},
+    {'sceneResolution','3D resolution','3D-Auflösung'},
     {'openWorld','Open world','Offene Welt'},
   },
 }
@@ -174,6 +175,7 @@ function M.rows(g,group,controls)
     end
     local shot=V.require('OverworldBattle').shot()
     if shot then
+      addOption({'sceneResolution','3D resolution','3D-Auflösung'})
       addOption({'pokemonModelSkin','Pokémon artwork','Pokémon-Grafik'})
       addOption({'battleGrid','Battle grid','Kampf-Raster'})
       add({id='closer',title='Zoom in',titleDe='Näher heran',hint='Q',detail='',status=function()return '+'end,change=function()V.require('CamControl').zoomBy(-1)end})

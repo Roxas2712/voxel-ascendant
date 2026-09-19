@@ -1691,6 +1691,7 @@ function OverworldBattle.update(dt, mode)
   -- The mons' textures are rendered HERE, with no canvas bound, for the same
   -- reason the scene is: the pics layer binds its own targets, and doing that
   -- inside somebody else's frame means putting the frame back afterwards.
+  OverworldBattle.advanceGoldFrontAnimations(session.battle, session.frameDt)
   local okTex, textures = pcall(OverworldBattle.textures, session.battle)
   if not okTex then error(textures, 0) end
   -- stashed for the VR eye pass, which stands these same pics on the map
@@ -2598,6 +2599,87 @@ local function capturedInkBox(screen, side, canvas, identity)
   return rect
 end
 
+-- Isolated front animation states, shared through the same public provider
+-- seam as Gen1. Never select a front on Gold's live mon: its native rear and
+-- Crystal entrance runner must remain intact for DEFAULT/fallback rendering.
+local goldFrontAnimations = setmetatable({}, { __mode="k" })
+local function goldCompanionFront(screen, side, mon)
+  if mon._ascMegaForm or mon.ascMegaForm then return nil end
+  local cache = goldFrontAnimations[screen]
+  if not cache then cache={}; goldFrontAnimations[screen]=cache end
+  local selected = session and session.arena and session.arena.presentationMode
+  local mode = (selected=="DISCS" or selected=="DISK") and "DISK"
+    or selected=="ARENA" and "ARENA" or "MAP"
+  local stamp = tostring(mon.species)..":"..tostring(mon.form)..":"
+    ..tostring(mon.shiny)..":"..tostring(mon.dvs)..":"..tostring(mode)
+  local entry = cache[side]
+  if entry and entry.mon == mon and entry.stamp == stamp then return entry.image and entry or nil end
+  if entry and entry.canvas then entry.canvas:release() end
+  entry={mon=mon,stamp=stamp};cache[side]=entry
+  if not (V.mod and type(V.mod.find)=="function") then return nil end
+  for _,id in ipairs({"kanto_ascendant","trainer_rematch"})do
+    local ok,handle=pcall(V.mod.find,id)
+    if not ok or not handle then ok,handle=pcall(V.mod.find,V.mod,id) end
+    local api=ok and handle and handle.exports and handle.exports.crystalAnimation
+    if type(api)=="table" and type(api.voxelPresentationAnimation)=="function"
+        and type(api.advancePresentation)=="function" then
+      local copy={};for k,v in pairs(mon)do copy[k]=v end
+      local data=screen.game and screen.game.data or screen.data
+      local yes,state=pcall(api.voxelPresentationAnimation,copy.species,copy,
+        mode,{data=data,kind="battle",source="vasc_gen2_battle"})
+      if yes and type(state)=="table" and state.side=="front" and state.image then
+        entry.api,entry.state,entry.image=api,state,state.image
+        return entry
+      end
+    end
+  end
+  return nil
+end
+
+function OverworldBattle.advanceGoldFrontAnimations(screen,dt)
+  local cache=screen and goldFrontAnimations[screen]
+  for _,entry in pairs(cache or {})do
+    if entry.api then
+      local ok,image=pcall(entry.api.advancePresentation,entry.state,dt,screen.game)
+      if ok and image then entry.image=image
+      else entry.api=nil end -- preserve the last complete frame on provider failure
+    end
+  end
+end
+
+local function goldCompanionCapture(screen,side,mon,captureScreen)
+  local entry=goldCompanionFront(screen,side,mon)
+  if not entry then return captureScreen end
+  local image=entry.image
+  local w,h=image:getDimensions()
+  -- Native Gold placement assumes a 7x7 tile box. Normalize larger authored
+  -- frames inside a private carrier, without changing the mon or pic cache.
+  if w>56 or h>56 then
+    if not entry.canvas then entry.canvas=love.graphics.newCanvas(56,56,{dpiscale=1}) end
+    if entry.sampled~=image then
+      local ok,err=withGraphicsBoundary("Gen2 companion frame fit",function()
+        local G=love.graphics;G.setCanvas(entry.canvas);G.origin();G.setShader();G.setScissor()
+        G.clear(0,0,0,0);G.setBlendMode("alpha");G.setColor(1,1,1,1)
+        local scale=56/math.max(w,h);G.draw(image,(56-w*scale)/2,56-h*scale,0,scale,scale)
+      end)
+      if not ok then error(err,0) end
+      entry.sampled=image
+    end
+    image=entry.canvas
+  end
+  local proxy={}
+  proxy.pic=function(self,asked,back)
+    if asked==mon and not back then return image,entry.state.trueColor~=false,entry.state.path end
+    return captureScreen:pic(asked,back)
+  end
+  proxy.picScale=function(self,path,asked,back)
+    if asked==mon and not back then return 1 end
+    return captureScreen:picScale(path,asked,back)
+  end
+  proxy.frontAnimFrame=function()return nil end
+  return setmetatable(proxy,{__index=captureScreen})
+end
+
 -- Gen2 equivalent of the mature Gen1 side-texture contract. The full carrier
 -- stays 160x144 so Gold's own placement/animation code remains authoritative;
 -- only the roughly 56px authored pic contains ink. BattleScene consequently
@@ -2710,6 +2792,9 @@ local function goldSideTexture(screen, side)
     end
     setmetatable(proxy, { __index=screen })
     captureScreen = proxy
+  end
+  if not trainerCapture then
+    captureScreen=goldCompanionCapture(screen,side,mon,captureScreen)
   end
   local G = love.graphics
   local previous = type(G.getCanvas) == "function" and G.getCanvas() or nil
