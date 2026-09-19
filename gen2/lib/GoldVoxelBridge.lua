@@ -1587,10 +1587,12 @@ local function attachRenderer(world, map)
   end
 
   local image, pixels, colored, colorErr, colorKey = atlas, nil, false, nil, nil
+  local geometry,geometryKey
   if GoldColorAtlas and type(GoldColorAtlas.forMap) == "function" then
-    local okColor, a, b, c, d, e = pcall(GoldColorAtlas.forMap, world, map, atlas)
+    local okColor, a, b, c, d, e, f, g = pcall(GoldColorAtlas.forMap, world, map, atlas)
     if okColor then
       image, pixels, colored, colorErr, colorKey = a or atlas, b, c == true, d, e
+      geometry,geometryKey=f,g
     else
       colorErr = tostring(a)
     end
@@ -1599,6 +1601,8 @@ local function attachRenderer(world, map)
   map.renderer.image = image or atlas
   map.renderer.gbcAtlas = colored == true
   map.renderer._stadiumAtlasData = colored and pixels or nil
+  map.renderer._stadiumGeometryData = colored and geometry or nil
+  map.renderer._stadiumGeometryKey = colored and geometryKey or nil
   map.renderer._stadiumColorKey = colored and colorKey or nil
   map.renderer._stadiumGen2Color = colored == true
   if not colored and colorErr then

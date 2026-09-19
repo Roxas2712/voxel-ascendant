@@ -1936,6 +1936,7 @@ end
 -- S.objectQuads and the tiles are claimed so the volume path never boxes a
 -- building this module has already modelled.
 function Buildings.build(S, map, data, perRow)
+  data=map.renderer and map.renderer._stadiumGeometryData or data
   if not data then return end
   local tileset = map.tileset
   local s = profile()
@@ -1988,6 +1989,7 @@ function Buildings.build(S, map, data, perRow)
               local plainRear = S.outdoor == true
               local key = tileset.id .. ":" .. index
                 .. (plainRear and ":rear" or ":copy")
+                .. ':roof:' .. tostring(map.renderer and map.renderer._stadiumGeometryKey or '')
               if not models[key] then
                 if t.claimOnly then
                   -- claim the cells, stamp nothing: the drawing here is

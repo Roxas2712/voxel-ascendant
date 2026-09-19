@@ -20,6 +20,7 @@ local GoldColorAtlas = {}
 
 local cache = {}
 local dataCache = {}
+local sourceCache = {}
 local mapByKey = {}
 local lastError = nil
 
@@ -156,6 +157,31 @@ local function atlasPath(tileset)
   return tileset and (tileset.image or tileset.path)
 end
 
+-- Match World:atlasFor's native regional roof overlay. The original ImageData
+-- belongs to Assets; always copy before replacing its nine roof tiles.
+function GoldColorAtlas.withRoof(src, roof, perRow, newImageData)
+  local w,h=src:getDimensions()
+  local rw,rh=roof:getDimensions()
+  assert(perRow>=1 and perRow*8<=w and math.floor(0x12/perRow)*8+8<=h
+    and rw>=72 and rh>=8,'invalid native roof dimensions')
+  local out=(newImageData or love.image.newImageData)(w,h)
+  out:paste(src,0,0,0,0,w,h)
+  for t=0,8 do
+    local tile=0x0a+t
+    out:paste(roof,(tile%perRow)*8,math.floor(tile/perRow)*8,t*8,0,8,8)
+  end
+  return out
+end
+
+local function roofFor(world,map)
+  local def=map.def or {}
+  if def.tileset~='TILESET_JOHTO' and def.tileset~='TILESET_JOHTO_MODERN' then return nil end
+  local roofs=world.roofs
+  local name=roofs and roofs.mapGroupRoofs and roofs.mapGroupRoofs[def.group]
+  local spec=name and roofs.roofs and roofs.roofs[name]
+  return spec and spec.image
+end
+
 local function cacheKey(map, tileset, daytime, flashUsed)
   return table.concat({
     tostring(atlasPath(tileset) or tileset and tileset.id or "?"),
@@ -186,9 +212,12 @@ function GoldColorAtlas.forMap(world, map, rawAtlas)
   end
 
   local key = cacheKey(map, map.tileset, daytime, flashUsedFor(world))
+  local roofPath=roofFor(world,map)
+  key=key..'#roof:'..tostring(roofPath or '')
   mapByKey[key] = tostring(map.id or map.def and map.def.id or "?")
   if cache[key] ~= nil then
-    if cache[key] then return cache[key], dataCache[key], true, nil, key end
+    if cache[key] then return cache[key], dataCache[key], true, nil, key,
+      sourceCache[key],roofPath end
     return rawAtlas, nil, false, lastError, key
   end
 
@@ -199,8 +228,17 @@ function GoldColorAtlas.forMap(world, map, rawAtlas)
     return rawAtlas, nil, false, lastError, key
   end
 
+  local geometry
   local ok, image, pixels = pcall(function()
     local src = Assets.imageData(path)
+    if roofPath then
+      local roofOk,value=pcall(function()
+        return GoldColorAtlas.withRoof(src,Assets.imageData(roofPath),map.tileset.tilesPerRow or 16)
+      end)
+      -- The native engine falls back to the base sheet if an optional roof
+      -- override cannot be read. Retain the same coloured fallback here.
+      if roofOk then geometry=value;src=geometry end
+    end
     local out, err = GoldColorAtlas.recolorImageData(
       src, map.tileset.tilePalettes, set, love.image.newImageData)
     if not out then error(err or "Gold atlas recolor failed") end
@@ -210,6 +248,7 @@ function GoldColorAtlas.forMap(world, map, rawAtlas)
   end)
 
   if not ok or not image then
+    release(geometry)
     lastError = tostring(ok and "Gold atlas image creation failed" or image)
     cache[key] = false
     dataCache[key] = false
@@ -218,7 +257,8 @@ function GoldColorAtlas.forMap(world, map, rawAtlas)
 
   cache[key] = image
   dataCache[key] = pixels
-  return image, pixels, true, nil, key
+  sourceCache[key] = geometry
+  return image, pixels, true, nil, key, geometry, roofPath
 end
 
 function GoldColorAtlas.lastError()
@@ -234,8 +274,10 @@ function GoldColorAtlas.setLive(live)
     if not live[mapId] then
       release(cache[key])
       release(dataCache[key])
+      release(sourceCache[key])
       cache[key] = nil
       dataCache[key] = nil
+      sourceCache[key] = nil
       mapByKey[key] = nil
     end
   end
@@ -244,8 +286,10 @@ end
 function GoldColorAtlas.invalidate()
   for _, image in pairs(cache) do release(image) end
   for _, data in pairs(dataCache) do release(data) end
+  for _, data in pairs(sourceCache) do release(data) end
   cache = {}
   dataCache = {}
+  sourceCache = {}
   mapByKey = {}
   lastError = nil
 end
