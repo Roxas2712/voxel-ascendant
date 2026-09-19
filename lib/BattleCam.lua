@@ -1669,6 +1669,29 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
       BattleCam.screenSafetyFallbackUsed = true
       return portable, portablePitch
     end
+    -- Opening the fight dock can invalidate the last wide shot while the
+    -- director's new close rig puts the trainer almost inside the lens.
+    -- Reframe the proven physical seat against the NEW live HUD before
+    -- trying to rescue that close rig. Never reuse another battle's seat
+    -- or reinterpret a pending/unknown provider receipt as safe.
+    local previous = lastScreenSafe
+    if arena.map and not arena.discs and not arena.arenaStyle
+        and not context.manual and not retreatTravelBlocked
+        and sameScreenOwner(previous, arena, activeBattle) then
+      local priorSafe, priorReason = screenSafeCamera(
+        activeBattle, arena, groundY, previous.camera, {
+          phase="rendered-prior-seat", actual=true,
+        })
+      if priorSafe == true then
+        return returnRevalidatedScreenCamera(
+          arena, previous.camera, previous.pitch,
+          "prior-seat:" .. tostring(priorReason or "rendered-safe"), true)
+      elseif priorSafe == false then
+        local recovered, recoveredPitch = renderedActorFrameRescue(
+          arena, groundY, previous.camera, previous.pitch, priorReason, context)
+        if recovered then return recovered, recoveredPitch end
+      end
+    end
     -- A gesture starts from the corrected seat. Reframing the old close rig
     -- here discards that seat and makes a rejected drag jump to a wide lens.
     -- Keep the correction and let the ordinary last-safe rollback stop it.

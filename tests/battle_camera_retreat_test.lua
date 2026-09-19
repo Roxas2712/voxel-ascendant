@@ -122,3 +122,37 @@ assert(kept==held and kept.fov==math.rad(60),'blocked move restored old wide rig
 gate.screenSafeCamera=function()return false,'actor-outside'end
 assert(hold(arena,12,camera,.5,false)==nil,'held a newly unsafe old seat')
 print('PASS_BATTLE_CAMERA_BLOCKED_RETREAT_PRESERVES_PROVEN_LENS')
+-- A taller fight dock must be solved from the prior physical seat, rather
+-- than repeatedly widening a new director rig which hugs the trainer.
+gate.BattleCam.mapRescueLens=nil
+gate.lastScreenSafe={arena=arena,battle=battle,camera=held,pitch=.5}
+local recovered={eye={unpack(held.eye)},focus={0,-8,0},fov=held.fov}
+local priorVerdict=false
+local priorAttempts=0
+gate.screenSafeCamera=function(_,_,_,c)
+ if c==held then return priorVerdict,'playerHero-under-fight' end
+ return false,'playerHero-outside-safe-frame'
+end
+gate.renderedActorFrameRescue=function(a,g,c,p,reason)
+ if c~=held then return nil end
+ priorAttempts=priorAttempts+1
+ assert(a==arena and g==12 and p==.5 and reason=='playerHero-under-fight')
+ return recovered,.55
+end
+assert(hold(arena,12,camera,.5,false)==recovered and priorAttempts==1)
+priorVerdict=true
+gate.returnRevalidatedScreenCamera=function(a,c,p,reason)
+ assert(a==arena and c==held and p==.5 and reason=='prior-seat:playerHero-under-fight')
+ return c,p
+end
+assert(hold(arena,12,camera,.5,false)==held and priorAttempts==1)
+for _,excluded in ipairs({'pending','foreign-owner','manual','discs','arena'})do
+ priorVerdict=false;if excluded=='pending'then priorVerdict=nil end
+ gate.lastScreenSafe.battle=excluded=='foreign-owner' and {} or battle
+ gate.BattleCam.directorManualUntil=excluded=='manual' and 10 or 0
+ arena.discs=excluded=='discs' or nil;arena.arenaStyle=excluded=='arena' or nil
+ local before=priorAttempts
+ assert(hold(arena,12,camera,.5,false)==nil,'unverified seat admitted: '..excluded)
+ assert(priorAttempts==before,'prior-seat recovery escaped scope: '..excluded)
+end
+print('PASS_BATTLE_PRIOR_SEAT_NEW_DOCK_AND_OWNER_GUARDS')
