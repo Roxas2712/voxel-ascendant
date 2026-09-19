@@ -459,9 +459,9 @@ function WalkingSprites:_npcVisual(mapId,entity,kascActive)
   local role=atlas and roleFromPath(atlas)
     or identityRole(self:_identity(entity),self.generation,kascActive)
   -- The shared BIKER cartridge sprite also represents Cue Balls. Resolve
-  -- the catalogued identity first; only Cycling Road uses the riding pose.
-  local map=normalize(mapId)
-  if self.generation==1 and (map=="ROUTE16" or map=="ROUTE17" or map=="ROUTE18")
+  -- the catalogued identity first. Riders keep their bicycles on every
+  -- route in both generations; a Cue Ball using a swimmer sprite does not.
+  if normalize(self:_identity(entity))=="SPRITEBIKER"
       and (role=="biker" or role=="cue-ball") then
     local cycling="assets/characters/actions/"..role.."/bicycle_4x3.png"
     if self.runtimeByAtlas[cycling] then return cycling,role,"bicycle" end

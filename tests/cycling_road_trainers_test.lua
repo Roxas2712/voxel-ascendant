@@ -8,7 +8,8 @@ function mod:read(path)
 end
 local catalog=Catalog.public(mod)
 package.loaded['src.render.SpriteRenderer']={new=function(def,seed)return{def=def,seed=seed}end}
-local total,riders,offroad=0,0,0
+local total,riders,other=0,0,0
+local byGeneration={0,0}
 for generation=1,2 do
  local binder=Binder.new{mod=mod,generation=generation,npcCatalog=catalog,
   compat={characterSources=function()return{}end}}
@@ -16,10 +17,9 @@ for generation=1,2 do
   local native={def={id=row.sprite,image='native'}}
   local entity={def={sprite=row.sprite,x=row.x,y=row.y},sprite=native}
   local atlas,role,action=binder:_npcVisual(row.map,entity,false)
-  local road=row.map=='Route16' or row.map=='Route17' or row.map=='Route18'
-  if generation==1 and road and (row.visualAuthority=='OPP_BIKER' or row.visualAuthority=='OPP_CUE_BALL')then
-   local expected=row.visualAuthority=='OPP_BIKER' and 'biker' or 'cue-ball'
-   assert(role==expected and action=='bicycle','wrong Cycling Road identity')
+  if row.sprite=='SPRITE_BIKER'then
+   local expected=row.visualAuthority=='OPP_CUE_BALL' and 'cue-ball' or 'biker'
+   assert(role==expected and action=='bicycle','wrong rider identity: '..row.map)
    assert(atlas=='assets/characters/actions/'..expected..'/bicycle_4x3.png')
    assert(binder:_bind(entity,atlas,role,nil,action))
    assert(entity.sprite.def.ascendantCharacterAction=='bicycle')
@@ -30,14 +30,15 @@ for generation=1,2 do
    assert(fallback~=atlas and fallbackAction==nil,'unregistered asset selected')
    binder.runtimeByAtlas[atlas]=strip
    riders=riders+1
+   byGeneration[generation]=byGeneration[generation]+1
   else
-   assert(action==nil,'riding pose escaped intended map/generation scope')
-   if role=='biker' or role=='cue-ball'then offroad=offroad+1 end
+   assert(action==nil,'riding pose applied to non-rider: '..row.map..'/'..row.sprite)
+   other=other+1
   end
   total=total+1
  end
 end
-assert(riders==16 and offroad>5)
+assert(byGeneration[1]==23 and byGeneration[2]==7)
 -- Decode the actual delivery files and verify every directional cell and
 -- native fallback frame is nonempty and has a transparent background.
 for _,role in ipairs({'biker','cue-ball'})do
@@ -58,4 +59,4 @@ for _,role in ipairs({'biker','cue-ball'})do
   data:release()
  end
 end
-print('PASS_CYCLING_ROAD',total,'catalogue entries',riders,'riders',offroad,'other bikers unchanged')
+print('PASS_ALL_BIKERS',total,'catalogue entries',riders,'riders',other,'non-riders unchanged')
