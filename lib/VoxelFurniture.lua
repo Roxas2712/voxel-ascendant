@@ -182,6 +182,7 @@ V.require('Gen1LooseRocks')(P,F)
 V.require('Gen1VoxelSigns').register(P,F)
 V.require('Gen1FurnitureCompletion')(P,F,V.require('Gen1FurniturePatterns'))
 V.require('Gen1Rooftops').register(P,F)
+V.require('Gen1RoofTerrace').register(P,F)
 V.require('TowerAtmosphere').register(P)
 V.require('CaveTorches').register(P)
 local found=setmetatable({},{__mode='k'})
@@ -191,15 +192,15 @@ function F.invalidateAll()found=setmetatable({},{__mode='k'})end
 function F.invalidate(map)
   found[map]=nil
 end
-function F.find(map)
+local function find(map,buildingsOnly)
   -- ChunkMesher/Structures retain terrain by map id across native Map objects.
   -- Reuse its exact replacement descriptors too: fresh unclaimed descriptors
   -- would hide every house although the cached terrain already cut them out.
-  local published=publishedForMap and publishedForMap(map)
+  local published=not buildingsOnly and publishedForMap and publishedForMap(map)
   if published and published.voxelFurnitureProps then
     found[map]=published.voxelFurnitureProps
   end
-  if found[map] then return found[map] end
+  if not buildingsOnly and found[map] then return found[map] end
   local result,used={},{}
   if not map or not map.def or map.def.generation==2 then return result end
   local tw,th=map.def.width*4,map.def.height*4
@@ -208,7 +209,8 @@ function F.find(map)
   -- Pattern priority and row-major match order remain exactly the same.
   local candidates,active={},{}
   for _,p in ipairs(F.patterns)do
-    if p.sets[map.def.tileset] and (not p.maps or p.maps[map.id]) then
+    if (not buildingsOnly or p.kind=='kanto_building' or p.kind=='pallet_red_house' or p.kind=='pallet_blue_house' or p.kind=='pallet_oak_lab')
+        and p.sets[map.def.tileset] and (not p.maps or p.maps[map.id]) then
       active[#active+1]=p
       candidates[p.tiles[1][1]]=candidates[p.tiles[1][1]] or {}
     end
@@ -241,6 +243,7 @@ function F.find(map)
         end
       end
   end
+  if buildingsOnly then return result end
   for _,p in ipairs(V.require('Gen1MountainExteriors').find(P,map,function(x,y)return used[key(x,y)]end))do
     result[#result+1]=p
   end
@@ -250,6 +253,10 @@ function F.find(map)
   for _,p in ipairs(V.require('Gen1SafariGates').find(P,map))do result[#result+1]=p end
   found[map]=result;return result
 end
+function F.find(map)return find(map,false)end
+-- Background-only discovery never publishes terrain claims or constructs
+-- every foreground mountain/torch model in distant, unloaded maps.
+function F.findBuildings(map)return find(map,true)end
 local function floorTile(map,x,y)
   if map.def.tileset=='CEMETERY' then return 1 end
   if map.def.tileset=='INTERIOR' then return 31 end
@@ -314,7 +321,9 @@ function F.claim(S,map,peekTerrain)
       for dy=0,p.h-1 do for dx=0,p.w-1 do
         local k=key(p.tx+dx,p.ty+dy)
         S.voxelFurnitureClaims[k]=true
-        S.skip[k]=true;S.ground[k]=p.groundTile or floorTile(map,p.tx+dx,p.ty+dy)
+        S.skip[k]=true
+        if model and model.replacesGround then S.ground[k]=model.groundAt(dx*8,dy*8)
+        else S.ground[k]=p.groundTile or floorTile(map,p.tx+dx,p.ty+dy)end
         S.shapeAt[k]={class='building',h=0,art='building',flat=false,authored=true}
         -- A bridge rail replaces a native bank tree, but its open footprint
         -- must contain the adjoining river, not a raised floor painted blue.

@@ -25,6 +25,8 @@ local tiles={DOJO={17},GYM={17,9,10,25,26},HOUSE={1},REDS_HOUSE_1={1},
 local allowed={}
 for ts,list in pairs(tiles)do allowed[ts]={};for _,tile in ipairs(list)do allowed[ts][tile]=true end end
 function M.profile(map)
+  if map and (map.id=='CELADON_MART_ROOF'or map.id=='CELADON_MANSION_ROOF')
+   and V.require('VoxelItems').setting:get() and V.require('Gen1RoofTerrace').matches(map)then return 6 end
   if not M.setting:get() then return nil end
   local d=map and map.def
   local gym=d and gymFloors[map.id]

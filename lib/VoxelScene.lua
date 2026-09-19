@@ -2946,7 +2946,9 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
       else
         setCutaway()
       end
-      if rim.class=='voxel_horizon'then
+      if rim.class=='rooftop_baked'then
+        V.require('RooftopCache').draw(rim,Mat4.translate(rim.ox,0,rim.oy))
+      elseif rim.class=='voxel_horizon'then
         outdoorHorizon.draw(rim,Mat4.translate(rim.ox,0,rim.oy),horizonVisible)
       elseif rim.class=='room_breach_exterior' or rim.class=='room_breach_roof' then
         V.require('Gen1BreachExterior').draw(Voxel3D,rim,

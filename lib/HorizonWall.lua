@@ -7556,6 +7556,7 @@ end
 
 local function releaseMeshes(entries)
   for _, e in ipairs(entries or {}) do
+    if e.ownsTexture and e.texture then pcall(e.texture.release,e.texture);e.texture=nil end
     if e.animationMeshes then
       for _, mesh in ipairs(e.animationMeshes) do
         if mesh and mesh.release then pcall(mesh.release, mesh) end
@@ -7715,7 +7716,7 @@ local function newBuildJob(key, maps, worldMaps)
                 resumes = 0 }
   job.co = coroutine.create(function()
     if #maps==1 and V.require('Gen1Rooftops').matches(maps[1].map) then
-      job.meshes=V.require('RooftopPanorama').build(maps[1]);return
+      job.meshes=V.require('RooftopPanorama').build(maps[1],function()coroutine.yield('rooftop-world')end,worldMaps);return
     end
     local outdoor=V.require('OutdoorHorizon')
     local voxelExterior = outdoor.active(maps[1].map,HorizonWall)

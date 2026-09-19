@@ -94,6 +94,7 @@ end
 function Weather.isOutdoor(map)
   if not (map and map.def) then return false end
   return defIsOutdoor(map.def) or SCENIC_OUTDOORS[mapId(map)] == true
+    or V.require("Gen1Rooftops").matches(map)
 end
 
 local function finite(value, fallback)

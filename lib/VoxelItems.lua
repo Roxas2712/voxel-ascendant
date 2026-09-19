@@ -144,6 +144,22 @@ function P.geometry(kind)
   local ballType=kind:match('^ball_(.+)$')
   local ball=kind=='ball' or ballType~=nil
   local authored=P.models[kind]
+  -- Architectural frames include sub-voxel metal profiles. Retain their
+  -- authored boxes exactly instead of dropping thin pieces on the item grid.
+  if authored and authored.directBoxes then
+    local vertices,indices={},{}
+    for _,b in ipairs(authored.boxes)do
+      for face,corners in ipairs(G.FACE_CORNERS)do
+        local base=#vertices
+        for _,p in ipairs(corners)do
+          vertices[#vertices+1]={b[1]+p[1]*b[4],b[2]+p[2]*b[5],b[3]+p[3]*b[6],
+            (b[7]-.5)/#palette,.5,G.FACE_SHADE[face]}
+        end
+        for _,i in ipairs({1,2,3,1,3,4})do indices[#indices+1]=base+i end
+      end
+    end
+    return vertices,indices
+  end
   local step = authored and (authored.step or 1) or ball and 1 or 0.5
   local function key(x,y,z) return x..','..y..','..z end
   -- Integer lattices can use exact numeric addresses instead of allocating
@@ -280,7 +296,7 @@ function P.resolveKind(kind)
   if not cache[kind] then
     local authored=P.models[kind];local signature
     if authored then
-      local rows={tostring(authored.step or 1)}
+      local rows={(authored.directBoxes and 'direct-boxes-v1:'or '')..tostring(authored.step or 1)}
       for _,b in ipairs(authored.boxes)do rows[#rows+1]=table.concat(b,',')end
       signature=table.concat(rows,';')
       if sharedGeometry[signature]then
