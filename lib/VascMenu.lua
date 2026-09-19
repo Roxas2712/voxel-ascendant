@@ -84,6 +84,8 @@ local SETTING_HELP_DE = {
   lavenderTowerStyle = "Verwitterter, düsterer Steinturm oder die ursprüngliche Holzvariante. Beide sind gleich hoch; Eingänge und Spielwelt bleiben unverändert.",
   palletBuildings = "Regionale Voxelgebäude in Kanto, moderne Pokémon-Center und die Liga. Grundflächen und Eingänge bleiben. AUS und 2D zeigen die alten Gebäude.",
   palletSurrounds = "Voxelbäume, Felsen und Pfähle. Wege bleiben erhalten. AUS und 2D zeigen die alte Umgebung.",
+  battleLights = "Sonnen-, Mond- und Umgebungslicht für Feld und Pokémon in Gen-1-MAP und ARENA. Unabhängig vom Licht beim Herumlaufen abschaltbar. Andere Kampfmodi bleiben unverändert.",
+  localLights = "Sonne, Mond, Fensterstrahlen, Raumlampen und flackernde Fackeln beleuchten Räume, Wald, Figuren und Wasser. Für Gen1 auf PC und Handy; mobil mit begrenzter Zahl an Lichtquellen. AUS stellt die bisherige Beleuchtung wieder her.",
   palletWindowLights = "Beleuchtete Fenster an den neuen Gebäuden bei Dämmerung und Nacht. Separat abschaltbar.",
   waterActors = "Schwimmer und Wasser-Pokémon tauchen in 3D ins Wasser ein und wippen leicht. AUS zeigt sie wie bisher. Bewegung, Surfer und 2D bleiben unverändert.",
   caveTorches = "Wenige Wandfackeln nahe echten Höhleneingängen und Leitern. Wege bleiben frei; Blitz bleibt in dunklen Höhlen nötig. AUS entfernt Fackeln und Lichtschein.",
@@ -244,7 +246,7 @@ local SECTION_DEFS = {
   pallet={title="KANTO SCENERY",help={
     en="Kanto buildings, outdoor ground, regional trees, rocks and window lighting can be switched independently.",
     de="Kanto-Gebäude, Außenboden, regionale Bäume, Steine und Fensterlicht lassen sich einzeln schalten."},
-    keys={palletBuildings=true,lavenderTowerStyle=true,palletSurrounds=true,palletWindowLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
+    keys={palletBuildings=true,lavenderTowerStyle=true,palletSurrounds=true,palletWindowLights=true,localLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
   terarrium={title="TERRARIUM",help={
     en="Built-in Terrarium battle stage. Select with 8 in battle; customize camera, shell, background and dome here.",
     de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
@@ -293,7 +295,7 @@ local SECTION_DEFS = {
         .. "für jede Figuren- und Fallback-HUD-Rolle.",
     },
     keys = {
-      battles=true, arenaArt=true, diskArt=true, battleGrid=true,
+      battles=true, arenaArt=true, diskArt=true, battleGrid=true, battleLights=true,
       battleHudStyle=true,
       hud_language=true, hud_scale=true,
       battle_textbox_x=true, battle_textbox_y=true,
@@ -631,7 +633,7 @@ local SETTING_LABEL_DE = {
   weatherMusic="WETTERMUSIK", weatherTweak="WETTER-EFFEKTE",
   scenery="KULISSE", outdoorHorizon="AUSSENHORIZONT", desktopNeighborRing="PC-KARTENRING", preload="VORLADEN", grid="VOXEL-GITTER",
   terrainHeights="GELÄNDEHÖHEN", battleGrid="KAMPF-GITTER",
-  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",lavenderTowerStyle="POKÉMON-TURM",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",
+  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",lavenderTowerStyle="POKÉMON-TURM",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",localLights="DYNAMISCHES LICHT",battleLights="KAMPFLICHT",
   voxelItems="Voxel Items", currentRoom="NUR AKTUELLER RAUM", interiorFloors="INNENRAUMBÖDEN", shadows="SCHATTEN", curve="WELTKRÜMMUNG", water="WASSER", waterActors="SCHWIMMEN", voxelStairs="TREPPEN", towerAtmosphere="TURM-ATMOSPHÄRE", caveTorches="WANDFACKELN",
   battles="3D-KÄMPFE", arenaArt="ARENA-GRAFIK",
   diskArt="DISK-GRAFIK", qol_ui_skin="MENÜ-DESIGN",

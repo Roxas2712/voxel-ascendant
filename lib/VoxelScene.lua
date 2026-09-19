@@ -674,9 +674,11 @@ local function drawEntity(sprite, px, py, facing, phase, flip, gh, colors,
   -- (castShadows draws this mesh through ShadowMap.snug) -- is where each
   -- vertex asks whether the light reached it; see ShadowMap.snug for why
   -- the lookup must match the stored transform to the letter
+  Voxel3D.actorLighting(true)
   Voxel3D.draw(mesh, tex, billboardMatrix(px, py, y, mirror),
                billboardPull(),
                ShadowMap.snug(Voxel3D.casterMatrix(px, py, y, mirror)))
+  Voxel3D.actorLighting(false)
   return true
 end
 
@@ -2648,7 +2650,10 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- adds no horizon, glass or weather dependency before the first canvas.
   local outdoor = (not MOBILE_RUNTIME or mobileScenery)
                   and HorizonWall.hasSky(state.map)
-  DayNight.applyRig(outdoor)
+  local dynamic=V.require("LocalLights").enabled()
+  local indoorLight=dynamic and not outdoor and V.require('InteriorLights').layout(state.map)
+  DayNight.applyRig(outdoor or (dynamic and DayNight.isCanopy(state.map))
+    or (indoorLight and #indoorLight.portals>0))
   Voxel3D.tint = V.require("TowerAtmosphere").tint(state.map,
     DayNight.tint(outdoor or DayNight.isCanopy(state.map)))
   Voxel3D.tint = V.require("IndoorMist").tint(state.map,Voxel3D.tint)
@@ -3006,6 +3011,8 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- lake would otherwise wear one as a black smear. Water covers them,
   -- which is the same answer the shadow map's own pass gives (see
   -- ShadowMap.sprites) -- people do not shadow water either way.
+  local lighting=V.require('LocalLights').current()
+  V.require('InteriorLights').draw(lighting.interior,lighting.lights,Voxel3D.eye,Voxel3D.focus,state.map)
   local waterDraws = {}
   local function maritime(map)
     return type(Water.maritime) == "function" and Water.maritime(map) == true
@@ -3103,6 +3110,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
                  ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
   end
 
+  V.require("LightAtmosphere").draw(state)
   Voxel3D.indoorMist(state.map,state.dark)
   end   -- drawScene
 
@@ -3113,10 +3121,15 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- Ping-pong between M10's existing world slot and one P1 slot. The frame
   -- being painted is therefore never the object held as lastSafeCanvas.
   local sceneSlot = mobileScenery and mobileSceneryNextSlot or nil
+  V.require("LocalLights").prepare(drawState, outdoor,
+    Voxel3D.focus or {cx,0,cy}, state.dark, skyWeatherMode)
+  V.require("LightAtmosphere").transition(V.require("LocalLights").current(),state,
+    V.require("LocalLights").active(),Sky.clock or 0)
   local sceneArgs = {
+    localLights = true,
     caveBattleMist = not state.dark and V.require("CaveBattleMist").forView(state.map,roomView) or nil,
     towerMood = V.require("TowerAtmosphere").uniforms(state.map),
-    towerLight = V.require("TowerAtmosphere").lights(state.map,state.dark),
+    towerLight = not V.require("LocalLights").enabled() and V.require("TowerAtmosphere").lights(state.map,state.dark) or nil,
     weather = skyWeatherMode,
     mapId = state.map and state.map.id or nil,
     groundWeather = groundWeather,

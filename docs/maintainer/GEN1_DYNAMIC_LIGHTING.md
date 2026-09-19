@@ -1,0 +1,22 @@
+# Gen1 Dynamic Lighting Card
+
+Integrated from `codex/vasc-gen1-local-lighting-20260919`, commit `8b4ff216` (preview 5), into the current VASC development branch. Public 3.0.32 is not changed by this integration.
+
+Card: `vasc.gen1.dynamic-lighting`, version 1.0.0, capability `ascendant.gen1.dynamic-lighting/v1`. The independent registry activates only with generation 1. The dispatcher generation also gates the lighting service. No battle hooks, map mutation, save writes or gameplay RNG are owned by the Card. Existing option persistence remains with ModSetting.
+
+`mod.exports.dynamicLighting.status()` exposes live ownership, profile, switches, budgets and an optional renderer error. `setActive(false)` retires lighting and releases its visibility atlas, shaders, masks and particles; reactivation restores the service. World and battle switches are independent: Buildings → Dynamic Lighting; Battle → Battle Lighting. Both default ON. Touch and controller use the existing menu selection flow.
+
+| Budget | Desktop | iOS / Android |
+|---|---:|---:|
+| World sources | 8 | 4 |
+| MAP battle sources | 4 | 2 |
+| Window projections | 4 | 2 |
+| Occluding building boxes | 8 | 4 |
+| Visibility atlas | 384 × 256 RGBA | 192 × 256 RGBA |
+| Decorative particles | 48 | 24 |
+
+Includes sun/moon and canopy light, interior windows and lamps, torch/candle light, sparse cave crystals, fireflies and sparks, sprite/card lighting and water glints on supported water paths. MAP uses only retained combat furniture; ARENA lights its actors and platforms. DISCS and Terrarium remain neutral. Native FLASH restrictions persist.
+
+Mobile core uses a derivative-free approximate surface normal. It retains the existing inexpensive internal depth path; the desktop volumetric depth pass and additional HD-card shadow map are not enabled on phones. The inherited mobile water/reflection settings remain authoritative. Mobile shader rejection retries the original core shader, while HD-card rejection retries the original sprite shader; failure disables the optional lighting service for the session, with diagnostics available through the Card status. No repeated compilation per frame. A failed visibility render restores the graphics state before falling back.
+
+Validation: nine focused suites cover actual Card-registry activation/deactivation, Gen2 rejection, GPU lighting/occlusion, indoor apertures, battle scope, particles/crystals, mobile budget math, shader rejection and canvas restoration. Native Gen1 scenes and all world/water shader variants are checked on macOS. Native runs with mobile lighting budgets preserve the real host OS; these are not physical iPhone/Android GPU tests. Those devices still require a smoke test for driver compatibility and sustained frame times.

@@ -1565,7 +1565,11 @@ local function vascPatch(self)
 
   local function cardShader(graphics, model, pull)
     if neutralShader == nil then
-      local ok, value = pcall(graphics.newShader, NEUTRAL_CARD_SHADER)
+      local ok, value = pcall(graphics.newShader, Voxel3D.lightCardSource and Voxel3D.lightCardSource(NEUTRAL_CARD_SHADER) or NEUTRAL_CARD_SHADER)
+      if not ok and Voxel3D.lightCardSource then
+        if Voxel3D.cardLightFailed then Voxel3D.cardLightFailed(value) end
+        ok,value=pcall(graphics.newShader,NEUTRAL_CARD_SHADER)
+      end
       neutralShader = ok and value or false
       if not ok then self.neutralCardError = tostring(value) end
     end
@@ -1579,6 +1583,7 @@ local function vascPatch(self)
       neutralShader:send("pull", pull or 0)
       neutralShader:send("cardAlphaPass", 0)
       neutralShader:send("actorWaterline", Voxel3D.actorWaterline or -30000)
+      if Voxel3D.sendCardLighting then Voxel3D.sendCardLighting(neutralShader) end
     end)
     if not ok then self.neutralCardError = tostring(err) return nil end
     return neutralShader
@@ -2363,6 +2368,7 @@ local function vascPatch(self)
           if styleSpec and not shader then self.cardStyleError = stylePass and stylePass.error end
           shader = shader or cardShader(graphics, drawModel, drawPull)
           if shader then
+            if Voxel3D.sendCardLighting then Voxel3D.sendCardLighting(shader,drawSunModel or drawModel) end
             previousShader = sceneShader
             oldR, oldG, oldB, oldA = graphics.getColor()
             graphics.setShader(shader)

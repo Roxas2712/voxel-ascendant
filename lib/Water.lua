@@ -1196,6 +1196,13 @@ local function source(grid, bare, skyOnly)
   -- without qualifiers wants.
   head = head .. (bare and "#define EFFECT_PREC\n"
                         or "#define EFFECT_PREC mediump\n")
+  local lights=V.require("LocalLights")
+  if lights.supported then
+    src=src:gsub("#ifdef PIXEL",function() return "#ifdef PIXEL\n"..lights.glsl() end,1)
+    src=src:gsub("vec3 base = p.rgb %* vShade %* face", "vec3 base = p.rgb * localSurfaceShade(vShade*face,vec3(0.0,1.0,0.0),surf)",1)
+    src=src:gsub("vec3 rgb = mix%(base, refl, clamp%(f, 0.0, 1.0%)%);",
+      "vec3 rgb = mix(base, refl, clamp(f, 0.0, 1.0));\n  rgb += localWaterLight(surf, reflect(view,n));",1)
+  end
   return head .. src
 end
 
@@ -1314,6 +1321,7 @@ function Water.begin(ctx)
   local texel = 1 / ShadowMap.res
   send("sunTexel", { texel, texel })
   send("dayTint", Voxel3D.tint or { 1, 1, 1 })
+  V.require("LocalLights").send(sh, Voxel3D.localLightsActive)
 
   send("rays", level >= 2 and 1 or 0)
   -- the horizon lean, and the direction it leans toward (see Water.lean)

@@ -83,6 +83,7 @@ function M.register(P)
  grave.glassKind='memorial_candle_flame'
  grave.glassVisible=function(map)return M.active(map)end
  grave.windowLight=M.candleLight
+ grave.lightSource={position={12,10,3},normal={0,0,0},radius=24,power=1.45,color={1,.40,.12},kind='candle'}
 end
 M.GLSL=[[
 uniform vec2 towerMood;

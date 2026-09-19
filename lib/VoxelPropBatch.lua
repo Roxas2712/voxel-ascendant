@@ -74,12 +74,12 @@ function B.draw(state,each,draw,pass)
     if p then group[1]=p end
     order[#order+1]=group;return group
   end
-  local function add(mesh,tex,mat,shade,extra,windowGlow)
+  local function add(mesh,tex,mat,shade,extra,windowGlow,windowColor)
     entryCount=entryCount+1
     local p=s.entries[entryCount]
     if not p then p={};s.entries[entryCount]=p end
     if windowGlow~=nil then
-      p.window=p.window or {batchWindow=true};p.window.glow=windowGlow;extra=p.window
+      p.window=p.window or {batchWindow=true};p.window.glow=windowGlow;p.window.glowColor=windowColor;extra=p.window
     end
     p[1],p[2],p[3],p[4],p[5]=mesh,tex,mat,shade,extra
     if (extra and not extra.batchWindow)or not translated(mat)then newGroup(p);return end
@@ -88,7 +88,8 @@ function B.draw(state,each,draw,pass)
     -- A template normally uses one palette and shade. Never merge a caller
     -- that explicitly overrides either property.
     if #group>0 and (group[1][2]~=tex or group[1][4]~=shade
-      or ((group[1][5]and group[1][5].glow)~=(extra and extra.glow)))then newGroup(p)
+      or ((group[1][5]and group[1][5].glow)~=(extra and extra.glow))
+      or ((group[1][5]and group[1][5].glowColor)~=(extra and extra.glowColor)))then newGroup(p)
     else group[#group+1]=p end
   end
   each(state,function(mesh,tex,mat,shade,extra)
@@ -97,7 +98,7 @@ function B.draw(state,each,draw,pass)
     -- their lit panes. Emission differences remain separate groups.
     if extra and extra.mesh and extra.tex then
       add(mesh,tex,mat,shade,nil)
-      add(extra.mesh,extra.tex,mat,shade,nil,extra.glow or 0)
+      add(extra.mesh,extra.tex,mat,shade,nil,extra.glow or 0,extra.glowColor)
     else add(mesh,tex,mat,shade,extra)end
   end)
   -- Eye and sun see different instance sets. Sharing their streaming buffer

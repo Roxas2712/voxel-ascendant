@@ -425,14 +425,18 @@ function F.activeHealer(state)
   end
   return best,ha
 end
-function F.each(state,draw)
+function F.each(state,draw,lightsOnly)
   if state.sightFurniture then
-    for _,p in ipairs(state.sightFurniture)do draw(p.mesh,p.tex,p.mat,p.shade,p.extra)end
+    for _,p in ipairs(state.sightFurniture)do
+      if not lightsOnly or (p.extra and p.extra.lightModel) then draw(p.mesh,p.tex,p.mat,p.shade,p.extra)end
+    end
     return
   end
   local elevation, heights
   for _,p in ipairs(F.find(state.map))do
-    if F.enabled(p) and p.claimed then
+    local candidate=lightsOnly and P.models[p.kind]
+    if (not lightsOnly or (candidate and (candidate.glassKind or candidate.lightSource)))
+      and F.enabled(p) and p.claimed then
       local decoration=p.terrainDecoration and p.decorPlacement
       local kind=decoration and decoration.kind or p.kind
       local model=P.models[p.kind];local cut=state.landmarkCutaway and model and model.cutawayKind
@@ -445,6 +449,7 @@ function F.each(state,draw)
           if cut then p.cutawayExtra=p.cutawayExtra or {};extra=p.cutawayExtra
           else p.drawExtra=p.drawExtra or {};extra=p.drawExtra end
           extra.mesh,extra.tex,extra.glow=glass,glassTex,model.windowLight and model.windowLight()or 0
+          extra.lightModel=model;extra.glowColor=model.glowColor
         end
       end
       if mesh then
@@ -465,6 +470,8 @@ function F.each(state,draw)
       end
     end
   end
+  -- Boats and healing-ball animations do not supply light emitters.
+  if lightsOnly then return end
   V.require('Gen1Harbor').each(state,draw)
   local p,ha=F.activeHealer(state)
   if p and P.setting:get() then
@@ -543,8 +550,8 @@ end
 -- geometry even when their map is only a neighbor. Keep each() map-local for
 -- battle snapshots, which already enumerate and translate their own maps.
 local shiftedMatrices=setmetatable({},{__mode='k'})
-function F.eachWorld(state,draw)
-  F.each(state,draw)
+function F.eachWorld(state,draw,lightsOnly)
+  F.each(state,draw,lightsOnly)
   if state.sightFurniture then return end -- already a complete world snapshot
   local seen={[state.map]=true}
   for _,nb in ipairs(state.neighbors or {})do
@@ -562,7 +569,7 @@ function F.eachWorld(state,draw)
           shifted=saved.mat
         else shifted=M.mul(M.translate(ox,0,oz),mat)end
         draw(mesh,tex,shifted,shade,extra)
-      end)
+      end,lightsOnly)
     end
   end
 end
@@ -581,7 +588,7 @@ end
 function F.drawProp(mesh,tex,mat,shade,extra)
   local light=shade or 1;love.graphics.setColor(light,light,light,1)
   if extra and extra.batchWindow then
-    if extra.glow>0 then G.flatten({1,.78,.38},extra.glow)end
+    if extra.glow>0 then G.flatten(extra.glowColor or {1,.78,.38},extra.glow)end
     local drawn=G.draw(mesh,tex,mat,0)
     if extra.glow>0 then G.flatten(nil)end
     return drawn
@@ -589,7 +596,7 @@ function F.drawProp(mesh,tex,mat,shade,extra)
   local drawn=G.draw(mesh,tex,mat,0)
   if drawn==false then return false end
   if extra then
-    if extra.glow>0 then G.flatten({1,.78,.38},extra.glow)end
+    if extra.glow>0 then G.flatten(extra.glowColor or {1,.78,.38},extra.glow)end
     G.draw(extra.mesh,extra.tex,mat,0)
     if extra.glow>0 then G.flatten(nil)end
   end

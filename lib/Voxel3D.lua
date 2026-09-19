@@ -982,7 +982,7 @@ local INTERIOR_FLOOR_GLSL = V.require('Gen1OutdoorScenery').waterGLSL .. [[
     return vec4(result,1.0);
   }
 ]]
-local function shaderSource(variant, grid)
+local function shaderSource(variant, grid, lighting)
   local source, err = SHADER, nil
   if variant == "mobile-core" then
     source, err = mobileCoreShaderSource(SHADER)
@@ -1005,6 +1005,19 @@ local function shaderSource(variant, grid)
     "Texel(glassMask, tc).a * glassOn * step(-128.5, tc.x)")
   source=source:gsub("rgb = mix%(rgb, ghostColor, ghost%);",
     "rgb = caveBattleFade(towerMist(rgb, vWorld), vWorld);\n    rgb = mix(rgb, ghostColor, ghost);")
+  local localLights = V.require("LocalLights")
+  if localLights.supported and lighting ~= false then
+    source=source:gsub("#ifdef PIXEL",function()
+      return "#ifdef PIXEL\nuniform vec3 eye;\nuniform float localActorOn;\n"..localLights.glsl()
+    end,1)
+    local normal=localLights.mobile and 'vec3 localNormal=vec3(0,1,0);' or [[
+    vec3 localNormal=cross(dFdx(vWorld),dFdy(vWorld));
+    localNormal/=max(length(localNormal),.0001);
+    localNormal*=dot(localNormal,eye-vWorld)<0.0 ? -1.0 : 1.0;]]
+    source=source:gsub("vec3 rgb = p.rgb %* vShade", normal..[[
+    vec3 rgb = p.rgb * localSurfaceShade(vShade,localActorOn>.5 ? vec3(0,1,0) : localNormal,vWorld)]],1)
+    source=source:gsub("rgb = caveBattleFade", "rgb += p.rgb * (localActorOn>.5 ? localActorIrradiance(vWorld,localNormal) : localIrradiance(vWorld,localNormal));\n    rgb = caveBattleFade",1)
+  end
   if grid then source = "#define VOXEL_GRID 1\n" .. source end
   return source
 end
@@ -1020,8 +1033,8 @@ local function warnShader(message)
   end
 end
 
-local function compileShader(variant, grid)
-  local source, sourceErr = shaderSource(variant, grid)
+local function compileShader(variant, grid, lighting)
+  local source, sourceErr = shaderSource(variant, grid, lighting)
   if not source then return nil, tostring(sourceErr) end
   local traceVariant = tostring(variant) .. ":grid=" .. tostring(grid == true)
   mobileDiagnostic("checkpoint", "shader-compile-start:" .. traceVariant, {
@@ -1069,6 +1082,10 @@ function Voxel3D.shader(grid)
       -- Phones compile only the bounded world-core program; desktop keeps the
       -- full -> mobile-safe rejection path below.
       local shader, mobileError = compileShader("mobile-core", false)
+      if not shader then
+        V.require('LocalLights').fail(mobileError or 'mobile light shader unavailable')
+        shader=compileShader("mobile-core",false,false)
+      end
       shaderErrors[grid] = {
         full = "skipped-on-mobile",
         mobileCore = mobileError and tostring(mobileError) or nil,
@@ -1144,6 +1161,63 @@ end
 -- Private QA receipts. They expose no assets and do not affect runtime
 -- selection; deterministic gates use them to prove which program compiled
 -- and that the mobile source still contains every weather/cutaway contract.
+-- HD cards have a separate shader to preserve authored colors. Supply the
+-- same world lighting to it without changing alpha, outline or animation.
+function Voxel3D.lightCardSource(source)
+  local lights=V.require("LocalLights")
+  if not lights.supported then return source end
+  source="varying LOVE_HIGHP_OR_MEDIUMP vec3 localCardWorld;\nvarying LOVE_HIGHP_OR_MEDIUMP vec3 localCardSun;\n"..source
+  source=source:gsub("#ifdef VERTEX", "#ifdef VERTEX\nuniform mat4 localCardCaster;\nuniform mat4 localCardSunVP;",1)
+  source=source:gsub("waterHeight = w.y;", "waterHeight = w.y; localCardWorld=w.xyz; localCardSun=(localCardSunVP*localCardCaster*vertex_position).xyz;",1)
+  source=source:gsub("#ifdef PIXEL",function()
+    return "#ifdef PIXEL\n"..lights.glsl()..[[
+    uniform Image localCardShadowMap;
+    uniform vec3 localCardShadowParams;
+    float localCardDepth(vec2 uv) {
+      vec4 c=Texel(localCardShadowMap,uv);return c.r+c.g/255.0;
+    }
+    float localCardShadow() {
+      vec3 p=localCardSun;
+      if(localCardShadowParams.x<=0.0 || p.x<0.0 || p.x>1.0 || p.y<0.0 || p.y>1.0 || p.z>1.0) return 1.0;
+      float z=p.z-localCardShadowParams.y;
+      float t=localCardShadowParams.z*.5;
+      float lit=step(z,localCardDepth(p.xy+vec2(-t,-t)))
+        +step(z,localCardDepth(p.xy+vec2(t,-t)))
+        +step(z,localCardDepth(p.xy+vec2(-t,t)))
+        +step(z,localCardDepth(p.xy+vec2(t,t)));
+      vec2 edge=min(p.xy,1.0-p.xy);
+      return 1.0-localCardShadowParams.x*smoothstep(0.0,.06,min(edge.x,edge.y))*(1.0-lit*.25);
+    }
+    vec3 localCardColor(vec3 rgb) {
+      // Cards are two-sided artwork, not a flat physical sheet facing away
+      // from every backlight. Wrapped diffuse keeps faces readable.
+      vec3 n=vec3(0.0,1.0,0.0);
+      return rgb*(localSceneTint*localSurfaceShade(1.0,n,localCardWorld)*localCardShadow()
+        +localActorIrradiance(localCardWorld,n));
+    }
+    ]]
+  end,1)
+  source=source:gsub("p.rgb %* cardShade", "localCardColor(p.rgb * cardShade)")
+  source=source:gsub("softToon%(p.rgb%) %* cardShade", "localCardColor(softToon(p.rgb) * cardShade)")
+  return source
+end
+function Voxel3D.cardLightFailed(reason)
+  V.require('LocalLights').fail(reason)
+end
+function Voxel3D.sendCardLighting(shader, caster)
+  local lights=V.require("LocalLights")
+  if not lights.supported or not shader:hasUniform("localCardCaster") then return end
+  local updated=lights.send(shader,Voxel3D.localLightsActive)
+  shader:send("localCardCaster","row",caster or IDENTITY)
+  if updated then
+    local sun=not lights.mobile and Voxel3D.localLightsActive and lights.active() and lights.current().sky
+      and Shadows.enabled() and ShadowMap.active()
+    shader:send("localCardSunVP","row",sun and ShadowMap.uvVP or IDENTITY)
+    shader:send("localCardShadowMap",lights.mobile and GlassMask.blank() or ShadowMap.texture())
+    shader:send("localCardShadowParams",{sun and Voxel3D.SHADOW_ALPHA or 0,ShadowMap.bias,1/ShadowMap.res})
+  end
+end
+
 function Voxel3D.shaderVariant(grid)
   return shaderVariants[grid and true or false]
 end
@@ -1156,8 +1230,21 @@ function Voxel3D.shaderCompileErrors(grid)
   return copy
 end
 
-function Voxel3D._shaderSource(variant, grid)
-  return shaderSource(variant or "full", grid and true or false)
+function Voxel3D._shaderSource(variant, grid, lighting)
+  return shaderSource(variant or "full", grid and true or false, lighting)
+end
+
+-- OFF and excluded battle stages use a program without the light loops at
+-- all. Cache both grid variants; switching settings never recompiles them.
+local unlitShaders={}
+function Voxel3D.unlitShader(grid)
+  grid=not MOBILE_RUNTIME and grid and true or false
+  if unlitShaders[grid]==nil then
+    local sh=compileShader(MOBILE_RUNTIME and "mobile-core" or "full",grid,false)
+    if not sh and not MOBILE_RUNTIME then sh=compileShader("mobile-safe",grid,false) end
+    unlitShaders[grid]=sh or false
+  end
+  return unlitShaders[grid] or nil
 end
 
 -- Whether the 3D path can run at all. False on a headless test run (no
@@ -1724,10 +1811,13 @@ end
 function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
+  local sceneLighting=skyContext and skyContext.localLights==true
+    and V.require("LocalLights").active() or false
+  local program=sceneLighting and Voxel3D.shader or Voxel3D.unlitShader
   local grid = VoxelGrid.enabled()
-  local sh = grid and Voxel3D.shader(true) or nil
+  local sh = grid and program(true) or nil
   if not sh then
-    grid, sh = false, Voxel3D.shader()
+    grid, sh = false, program(false)
   end
   if not sh then
     mobileDiagnostic("capability", "D07", "scene-shader", false,
@@ -1899,6 +1989,9 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   })
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
+  Voxel3D.localLightsActive = sceneLighting
+  V.require("LocalLights").send(sh, Voxel3D.localLightsActive)
+  if not MOBILE_RUNTIME then pcall(sh.send,sh,"localActorOn",0) end
   pcall(sh.send, sh, "towerBackdrop", 0)
   pcall(sh.send, sh, "towerMood", skyContext and skyContext.towerMood or {0,0})
   pcall(sh.send, sh, "caveBattleMist", skyContext and skyContext.caveBattleMist or {0,0,0,0})
@@ -2629,6 +2722,13 @@ function Voxel3D.waterline(height)
   if activeShader then pcall(activeShader.send,activeShader,"actorWaterline",height or -30000) end
 end
 
+-- Wrapped diffuse is restricted to actors; geometry keeps its face normals.
+function Voxel3D.actorLighting(on)
+  if activeShader and Voxel3D.localLightsActive and not MOBILE_RUNTIME then
+    pcall(activeShader.send,activeShader,"localActorOn",on and 1 or 0)
+  end
+end
+
 function Voxel3D.draw(mesh, texture, model, pull, sunModel)
   if not (active and mesh) then return end
   -- the variant beginScene actually bound, not whichever one is default:
@@ -2832,6 +2932,8 @@ function Voxel3D.invalidate()
   if discMesh and discMesh.release then pcall(discMesh.release, discMesh) end
   discMesh = nil
   V.require("IndoorMist").invalidate()
+  V.require("LocalLights").invalidate()
+  V.require("LightAtmosphere").invalidate()
   ShadowMap.invalidate()
   -- the sky is part of this pass and holds a shader of its own
   Sky.invalidate()

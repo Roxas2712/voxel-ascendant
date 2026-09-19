@@ -985,6 +985,8 @@ local SETTINGS = {
     "Voxel trees, rocks and posts. Paths stay clear. OFF and 2D show the original scenery.", full=true },
   { V.require("Gen1PalletVillage").lights,
     "Warm window lights at dusk and night. Lights the new buildings and sign lamps. OFF keeps them unlit.", full=true },
+  { V.require("LocalLights").setting,
+    "Moving sun and moon light, indoor window beams, evening room lamps, forest canopy light and flickering cave torches illuminate terrain, people, Pokemon and water. Gen1 on desktop and phones. Phones use a smaller source budget. OFF restores the original lighting.", full=true },
   { Shadows.setting,
     "Turn object-anchored world and character shadows ON or OFF in voxel "
     .. "scenes and 3D battles. Turn "
@@ -1006,6 +1008,10 @@ local SETTINGS = {
     .. "location- and anchor-aware field; DISCS uses two neutral platforms. "
     .. "Press 8 during a front-view MAP/ARENA battle to change its background. "
     .. "The change waits for the main battle menu.",
+    full = true },
+  { V.require("BattleLights").setting,
+    "Dynamic sun, moon and environment light on Gen 1 MAP and ARENA stages "
+    .. "and Pokemon. Independent of free-roam DYNAMIC LIGHTING. Other battle modes are unchanged.",
     full = true },
   { V.PokemonModelProvider.setting,
     "Choose the Pokemon actor used only in staged MAP, ARENA or DISCS "
@@ -2318,6 +2324,8 @@ mod.exports.weatherMusic = {
         or "unavailable") }
   end,
 }
+-- Independent render-only Card; battle and save owners remain separate.
+V.require("cards/lighting/Gen1DynamicLightingCard").installHost(mod,Diagnostics)
 VascMenu.install(mod, {
   settings=SETTINGS,
   factoryResetPrepare=function(game)

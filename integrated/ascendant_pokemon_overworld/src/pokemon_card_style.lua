@@ -151,7 +151,11 @@ function M.new()
     if type(graphics) ~= "table" or type(graphics.newShader) ~= "function"
         or type(scene) ~= "table" then return nil end
     if self.shader == nil then
-      local ok, value = pcall(graphics.newShader, M.shaderSource)
+      local ok, value = pcall(graphics.newShader, scene.lightCardSource and scene.lightCardSource(M.shaderSource) or M.shaderSource)
+      if not ok and scene.lightCardSource then
+        if scene.cardLightFailed then scene.cardLightFailed(value) end
+        ok,value=pcall(graphics.newShader,M.shaderSource)
+      end
       self.shader = ok and value or false
       if not ok then self.error = tostring(value) end
     end
@@ -168,6 +172,7 @@ function M.new()
       self.shader:send("cardToon", descriptor.toon)
       self.shader:send("cardAlphaPass", 0)
       self.shader:send("actorWaterline", scene.actorWaterline or -30000)
+      if scene.sendCardLighting then scene.sendCardLighting(self.shader) end
     end)
     if not ok then self.error = tostring(err) return nil end
     return self.shader, descriptor

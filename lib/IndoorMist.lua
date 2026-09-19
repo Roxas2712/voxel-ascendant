@@ -3,8 +3,10 @@
 local V=...
 local M={}
 local shader,noise,buffer,bw,bh
+local litShader
 local slices,sliceShader,sliceMap,sliceBase
 local tower={color={.48,.46,.54},density=.018,height=42}
+local haunted={color={.23,.24,.34},density=.012,height=28}
 local cave={color={.43,.47,.50},density=.015,height=38}
 local town={color={.43,.44,.49},density=.009,height=48}
 local forest={color={.43,.49,.44},density=.009,height=44}
@@ -28,10 +30,13 @@ end
 function M.profile(map,dark)
  local d=map and map.def
  if not d or d.generation==2 or dark then return nil end
+ local L=V.require('LocalLights')
+ local indoor=L.active() and L.current().map==map and L.current().interior
+ if indoor then return {color={.37,.39,.43},density=.0015,height=indoor.profile.shellHeight} end
  if V.require('Weather').isLavender(map)then return town end
  if isForest(map)then return forest end
  if V.require('TowerAtmosphere').active(map)then
-  return tower
+  return L.active() and haunted or tower
  elseif d.tileset=='CAVERN'then
   return cave
  end
@@ -101,9 +106,28 @@ local function prepareNoise()
   noise=g.newImage(data);data:release();noise:setFilter('linear','linear');noise:setWrap('repeat','repeat')
  end
 end
-local function prepare(w,h)
+-- Six samples at quarter resolution give soft atmospheric shafts an
+-- eighth of the previous ray/light workload. Surface and actor lighting
+-- keep full resolution and their complete occlusion tests.
+function M.litSource()
+  local ray=M.GLSL:gsub('/12.0','/6.0'):gsub('i<12;','i<6;')
+  return V.require('LocalLights').glsl()..ray
+end
+local function prepare(w,h,luminous)
  local g=love.graphics
  if not shader then shader=g.newShader(M.GLSL)end
+ if luminous and not litShader then
+  local source=M.litSource()
+  source=source:gsub('float optical=0.0;', 'float optical=0.0; vec3 scattered=vec3(0.0);')
+  source=source:gsub('optical%+=stepSize', [[
+  vec3 incoming=localIrradiance(p,vec3(0,1,0));
+  if(localSkyState.y>.5) incoming+=vec3(.95,.92,.72)*max(0.0,localSurfaceShade(0.0,vec3(0,1,0),p)-.38)*.28;
+  scattered+=incoming*stepSize*.009*layer*(.35+cloud*.65);
+  optical+=stepSize]])
+  source=source:gsub('return vec4%(mistColor,1.0%-exp%(%-optical%)%);',
+    'float alpha=1.0-exp(-optical); return vec4(mistColor*alpha+scattered,alpha);')
+  litShader=g.newShader(source)
+ end
  prepareNoise()
  if bw~=w or bh~=h then
   if buffer then buffer:release()end
@@ -167,28 +191,33 @@ function M.draw(map,dark,canvas,depth,vp)
  if not p then return false end
  if not depth then return M.drawLayers(map,p,vp)end
  local inv=M.inverse(vp);if not inv then return false end
- local w,h=canvas:getDimensions();local fw,fh=math.ceil(w/2),math.ceil(h/2)
- prepare(fw,fh)
+ local lights=V.require('LocalLights')
+ local luminous=lights.active()
+ local w,h=canvas:getDimensions();local divisor=luminous and 4 or 2
+ local fw,fh=math.ceil(w/divisor),math.ceil(h/divisor)
+ prepare(fw,fh,luminous)
  local g=love.graphics
+ local program=luminous and litShader or shader
  g.push('all');g.origin();g.setScissor();g.setDepthMode();g.setMeshCullMode('none')
  -- The readable depth must be detached before it becomes a sampler.
- g.setCanvas(buffer);g.clear(0,0,0,0);g.setShader(shader);g.setColor(1,1,1,1)
- shader:send('sceneDepth',depth);shader:send('mistNoise',noise)
- shader:send('inverseVP','row',inv);shader:send('mistResolution',{fw,fh})
+ g.setCanvas(buffer);g.clear(0,0,0,0);g.setShader(program);g.setColor(1,1,1,1)
+ program:send('sceneDepth',depth);program:send('mistNoise',noise)
+ program:send('inverseVP','row',inv);program:send('mistResolution',{fw,fh})
  local base=M.base(map)
- shader:send('mistMin',{-32,base,-32})
- shader:send('mistMax',{map.def.width*32+32,base+p.height,map.def.height*32+32})
- shader:send('mistColor',p.color);shader:send('mistDensity',p.density)
- shader:send('mistTime',V.require('Sky').clock or 0)
+ program:send('mistMin',{-32,base,-32})
+ program:send('mistMax',{map.def.width*32+32,base+p.height,map.def.height*32+32})
+ program:send('mistColor',p.color);program:send('mistDensity',p.density)
+ program:send('mistTime',V.require('Sky').clock or 0)
+ if luminous then lights.send(program,true) end
  g.setBlendMode('replace');g.rectangle('fill',0,0,fw,fh)
- g.setCanvas(canvas);g.setShader();g.setBlendMode('alpha','alphamultiply')
+ g.setCanvas(canvas);g.setShader();g.setBlendMode('alpha',luminous and 'premultiplied' or 'alphamultiply')
  g.draw(buffer,0,0,0,w/fw,h/fh);g.pop()
- M.last={map=map.id,width=fw,height=fh,samples=12,draws=2,mode='volume'}
+ M.last={map=map.id,width=fw,height=fh,samples=luminous and 6 or 12,draws=2,mode='volume'}
  return true
 end
 function M.invalidate()
- for _,resource in pairs({shader,noise,buffer,slices,sliceShader})do if resource then resource:release()end end
- shader,noise,buffer,bw,bh=nil,nil,nil,nil,nil
+ for _,resource in pairs({shader,litShader,noise,buffer,slices,sliceShader})do if resource then resource:release()end end
+ shader,litShader,noise,buffer,bw,bh=nil,nil,nil,nil,nil,nil
  slices,sliceShader,sliceMap,sliceBase=nil,nil,nil,nil
 end
 return M

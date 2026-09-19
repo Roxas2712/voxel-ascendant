@@ -1739,11 +1739,15 @@ function BattleScene.render(state, arena, textures, token)
   -- indoor one, and the same tint multiplies the staged shot -- with the
   -- same window glass on whatever buildings stand in the background
   local outdoor = Weather.isOutdoor(host)
-  DayNight.applyRig(outdoor)
+  local BattleLights=V.require("BattleLights")
+  local battleLighting=BattleLights.enabled(battleLayoutContext(arena,host).mode,host,arena)
+  local neutralStage=host.def.generation~=2 and BattleLights.neutralStage(arena)
+  V.require("LocalLights").clear(not battleLighting)
+  DayNight.applyRig(not neutralStage and (outdoor or (battleLighting and DayNight.isCanopy(host))),battleLighting)
   -- a canopy floor (Viridian Forest) fights under the hour's tint too,
   -- with the rig and the void exactly as they were
   Voxel3D.tint = V.require("TowerAtmosphere").tint(host,DayNight.tint(outdoor or DayNight.isCanopy(host)))
-  Voxel3D.tint = V.require("IndoorMist").tint(host,Voxel3D.tint)
+  Voxel3D.tint = neutralStage and {1,1,1} or V.require("IndoorMist").tint(host,Voxel3D.tint)
   local GlassMask = V.require("GlassMask")
   Voxel3D.glassMask = outdoor and GlassMask.texture(host.tileset) or nil
   Voxel3D.glassNight = outdoor and DayNight.windowLight() or 0
@@ -1866,6 +1870,8 @@ function BattleScene.render(state, arena, textures, token)
   if not discs then
     terrain,mapProps=V.require('BattleMapClearance').apply(arena,terrain,mapProps,host,cards,Voxel3D.eye)
   end
+  BattleLights.prepare(state,host,arena,outdoor,groundY,mapProps,battleLighting,
+    BattleScene.weatherMode(host))
   castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh, atlasFor,
               cards, token, host, neighbors, water, nbWater, groundY, horizon,
               screenBackdrop, portableBackdrop, mapProps)
@@ -1921,7 +1927,7 @@ function BattleScene.render(state, arena, textures, token)
   -- out and the moon presses more softly, exactly as it does outside
   local sunWas = Voxel3D.SHADOW_ALPHA
   Voxel3D.SHADOW_ALPHA = BattleScene.SHADOW_ALPHA
-                         * DayNight.shadowScale(outdoor)
+                         * DayNight.shadowScale(outdoor and not neutralStage)
   -- The battle has its own BTL GRID row. Apply it through the temporary
   -- override so the free-roam V-GRID choice is never rewritten.
   local gridWas = VoxelGrid.override
@@ -1930,6 +1936,7 @@ function BattleScene.render(state, arena, textures, token)
   local declineReason = nil
   local renderedCards = {}
   local ok, err = pcall(function()
+    local battleLighting=V.require("LocalLights").current().battle == true
     -- its own canvas slot: this renders at the window's pixel size and the
     -- free-roam pass does too, but the two are alive at different moments
     -- and a shared slot would reallocate on every battle entry and exit
@@ -1943,6 +1950,7 @@ function BattleScene.render(state, arena, textures, token)
     -- folded canvas afterwards, stay the chunky GB art they are.
     local rw, rh = AntiAlias.expand(pw, ph)
     if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, sky, "battle", {
+      localLights = battleLighting,
       weather = weatherMode,
       groundWeather = groundWeather,
       groundAmount = groundAmount,
@@ -1951,7 +1959,7 @@ function BattleScene.render(state, arena, textures, token)
       battleView = true,
       caveBattleMist = caveMist,
       towerMood = V.require("TowerAtmosphere").uniforms(host),
-      towerLight = V.require("TowerAtmosphere").lights(host,state.dark),
+      towerLight = not battleLighting and V.require("TowerAtmosphere").lights(host,state.dark) or nil,
     }) then
       declineReason = "begin-scene-declined"
       return
@@ -2047,6 +2055,10 @@ function BattleScene.render(state, arena, textures, token)
     end
     Voxel3D.seams(false)
     V.require("BattleMapProps").draw(mapProps)
+    if battleLighting then
+      local lighting=V.require("LocalLights").current()
+      V.require("InteriorLights").draw(lighting.interior,lighting.lights,Voxel3D.eye,Voxel3D.focus,host)
+    end
     Voxel3D.glass(true)
     -- and the water over it -- PLAIN, always: the flat animated tiles, never
     -- the reflective pass, whatever the WATER row says. The reflection is
@@ -2121,6 +2133,7 @@ function BattleScene.render(state, arena, textures, token)
     -- and no glass either: the cards wear the battle screen, not the
     -- tileset atlas, so the mask's coordinates mean nothing on them
     Voxel3D.glass(false)
+    Voxel3D.actorLighting(true)
     renderedCards = monCards(arena, groundY, textures, host,
                              Voxel3D.vp, Voxel3D.eye)
     withoutCardShadowReception(function()
@@ -2153,6 +2166,7 @@ function BattleScene.render(state, arena, textures, token)
         pcall(stadium.report, drawErr or drawn)
       end
     end
+    Voxel3D.actorLighting(false)
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the
@@ -2183,7 +2197,10 @@ function BattleScene.render(state, arena, textures, token)
     if arena.terarrium and arena.terarriumService.overlay then
       arena.terarriumService.overlay(arena,groundY)
     end
-    if not discs then Voxel3D.indoorMist(host,state.dark) end
+    if not discs then
+      V.require("LightAtmosphere").draw(state)
+      Voxel3D.indoorMist(host,state.dark)
+    end
     local rendered = Voxel3D.endScene()
     rendered = BattleScene.applyWeather(rendered, rw, rh, host,
                                         Voxel3D.cell, weatherMode)

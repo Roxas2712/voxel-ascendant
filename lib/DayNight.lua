@@ -388,11 +388,15 @@ end
 -- sun pass and its frustum, Voxel3D.SHADOW_* for the decal fallback and the
 -- sunDark uniform), so no draw path changes to follow the sun; they follow
 -- the rig, and the rig follows the clock.
-function DayNight.applyRig(outdoor)
+function DayNight.applyRig(outdoor, dynamic)
   local ShadowMap = V.require("ShadowMap")
   local Voxel3D = V.require("Voxel3D")
   local t = outdoor and DayNight.rigTime() or DayNight.T.day
-  local kx, kz, moon = DayNight.shearAt(t)
+  local lights=V.require('LocalLights')
+  local kx, kz, moon
+  if dynamic == nil then dynamic=lights.enabled() end
+  if dynamic and outdoor then kx,kz,moon=lights.shearAt(t)
+  else kx,kz,moon=DayNight.shearAt(t) end
   ShadowMap.KX, ShadowMap.KZ = kx, kz
   Voxel3D.SHADOW_KX, Voxel3D.SHADOW_KZ = kx, kz
   local base = moon and DayNight.ALPHA_MOON or DayNight.ALPHA_SUN
