@@ -67,6 +67,17 @@ end
 function M.material(map,profile,tile,x,y)
  if not profile then return nil end
  local ts=map.def.tileset
+ if ts=='FOREST' and safariMaps[map.id] and x and y then
+  -- The paired ground flecks use the native palette, leaving bright green
+  -- strips in otherwise procedural earth. Recognize the complete pair;
+  -- reused tile IDs and encounter grass retain their own presentation.
+  if (tile==57 and map:tileAt(x+1,y)==95)
+    or (tile==95 and map:tileAt(x-1,y)==57)then return -171 end
+  -- Direction marks are floor art for real warps. The open timber portal
+  -- now identifies the exit, while its floor joins the surrounding path.
+  if tile>=80 and tile<=83 and map.warpAtCell
+    and map:warpAtCell(math.floor(x/2),math.floor(y/2))then return -171 end
+ end
  -- Seafoam's native sand/path checker is one beach. Its approach planks
  -- become stone landings; the native collision and cave warps stay intact.
  if ts=='OVERWORLD' and map.id=='ROUTE_20' then

@@ -247,6 +247,7 @@ function F.find(map)
   for _,p in ipairs(V.require('CaveTorches').find(map,function(x,y)return used[key(x,y)]end))do
     result[#result+1]=p
   end
+  for _,p in ipairs(V.require('Gen1SafariGates').find(P,map))do result[#result+1]=p end
   found[map]=result;return result
 end
 local function floorTile(map,x,y)
