@@ -67,7 +67,14 @@ function D.add(a,b,g,C,doors,w,d,front,theme,tx,ty,house,museum)
   end
   -- The back is visible in free camera and from adjoining maps too.
   for x=8,w-15,20 do if not doorNear('north',x+5,8)then
-   b(x-1,12,0,12,13,2,timber);g(x,13,0,10,11,1,theme==6 and (C.dustyGlass or 10)or 7)
+   -- A solid backing at z=0 shares its front plane with the separate glass
+   -- mesh. Their different triangulation/curve then fights for depth at
+   -- both day and night. Build an open frame and four disjoint panes.
+   b(x-1,12,0,12,1,2,timber);b(x-1,24,0,12,1,2,timber)
+   b(x-1,13,0,1,11,2,timber);b(x+10,13,0,1,11,2,timber)
+   for _,xx in ipairs({x,x+6})do for _,yy in ipairs({13,19})do
+    g(xx,yy,0,4,5,1,theme==6 and (C.dustyGlass or 10)or 7)
+   end end
    b(x+4,13,0,2,11,1,timber);b(x,18,0,10,1,1,timber)
   end end
   -- Regional timber bands and offset attic windows break repeated boxes.
@@ -77,7 +84,9 @@ function D.add(a,b,g,C,doors,w,d,front,theme,tx,ty,house,museum)
   end
   if w>=40 and a.roofShape=='gable' then
    local x=math.floor(w/2)-4
-   b(x-1,28,front+1,10,8,2,timber);g(x,29,front+2,8,6,1,7)
+   b(x-1,28,front+1,10,1,2,timber);b(x-1,35,front+1,10,1,2,timber)
+   b(x-1,29,front+1,1,6,2,timber);b(x+8,29,front+1,1,6,2,timber)
+   g(x,29,front+2,8,6,1,7)
   end
  end
  if museum then

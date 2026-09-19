@@ -52,11 +52,15 @@ end
 local function checkerPaving(map,x,y)
  if not x or not y or not map.def.blocks or type(map.tileAt)~='function' then return false end
  local bx,by=math.floor(x/4),math.floor(y/4)
- if map.def.blocks[by*map.def.width+bx+1]~=123 then return false end
+ local block=map.def.blocks[by*map.def.width+bx+1]
+ local first,second
+ if block==122 then first,second=44,48
+ elseif block==123 then first,second=48,57
+ else return false end
  -- Mods may reuse the block number. Only the complete native alternation
  -- is a paving motif; mixed shore, garden and custom blocks stay untouched.
  for dy=0,3 do for dx=0,3 do
-  if map:tileAt(bx*4+dx,by*4+dy)~=((dx+dy)%2==0 and 48 or 57)then return false end
+  if map:tileAt(bx*4+dx,by*4+dy)~=((dx+dy)%2==0 and first or second)then return false end
  end end
  return true
 end
@@ -73,9 +77,10 @@ function M.material(map,profile,tile,x,y)
  -- Grass blades keep their native silhouette in the separate grass pass.
  if ts=='OVERWORLD'and map.id=='CINNABAR_ISLAND'and (tile==48 or tile==57)then return -160
  elseif ts=='OVERWORLD'and map.id=='LAVENDER_TOWN'and (tile==48 or tile==57)then return -173
- -- Native block $7B alternates path/grass pixels as a decorative paving
- -- pattern. Keep that complete motif a continuous path in the 3D material.
- elseif ts=='OVERWORLD' and (tile==48 or tile==57) and checkerPaving(map,x,y)then return -163
+ -- Native blocks $7A/$7B alternate path/grass pixels as decorative paving.
+ -- Match both complete motifs; $7A is used in Fuchsia and on Route 12.
+ elseif ts=='OVERWORLD' and (tile==44 or tile==48 or tile==57) and checkerPaving(map,x,y)then
+  return map.id=='CINNABAR_ISLAND'and -160 or map.id=='LAVENDER_TOWN'and -173 or -163
  elseif ts=='OVERWORLD' and tile==35 then return M.isRoad(map,x,y)and -165 or -159
  elseif ts=='OVERWORLD' and tile==16 then return -168
  elseif ts=='OVERWORLD' and tile==32 then return -169
@@ -83,6 +88,9 @@ function M.material(map,profile,tile,x,y)
  -- Native block $55 is entirely walkable paving ($5B), used for plazas
  -- and route paths. Keep it flat and match the existing grey stone pavers.
  elseif ts=='OVERWORLD' and tile==91 then return -162
+ -- Native pier planks also contain strong alternating pixels. Use actual
+ -- wood on these walking surfaces; Seafoam's stone landing is handled above.
+ elseif ts=='OVERWORLD' and tile==60 then return -130
  elseif ts=='OVERWORLD' and (tile==0 or tile==17 or tile==48) then
   return (map.id=='ROUTE_16' or map.id=='ROUTE_17' or map.id=='ROUTE_18')and -165 or -163
  elseif ts=='OVERWORLD' and tile==57 then return -164
@@ -120,7 +128,7 @@ end
 function M.bankMaterial(map,profile,class,tile,neighborClass)
  if not profile or not map or not map.def or map.def.generation==2
   or neighborClass~='water' or (class~='ground'and class~='grass')then return nil end
- if tile==60 then return map.id=='ROUTE_20' and -167 or nil end
+ if tile==60 and map.def.tileset=='OVERWORLD'then return map.id=='ROUTE_20' and -167 or -130 end
  -- Existing signed coastal lips carry their old shore-water art rather
  -- than the adjacent dry ground tile. They are still bank geometry.
  if map.def.tileset=='OVERWORLD'and (tile==49 or tile==50 or tile==51 or tile==84)then return -167 end
