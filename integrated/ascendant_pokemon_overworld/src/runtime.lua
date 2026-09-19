@@ -234,7 +234,7 @@ function Runtime:configure(game, world, mon)
     localDef.ascendantScaleClass = walksheet.scaleClass
     localDef.ascendantWorldHeight = self.scaleProfiles
       and (self.scaleProfiles.worldHeightForRecord
-        and self.scaleProfiles.worldHeightForRecord(walksheet)
+        and self.scaleProfiles.worldHeightForRecord(walksheet, "follower")
         or self.scaleProfiles.worldHeightForClass(walksheet.scaleClass)) or nil
     localDef.ascendantRuntimeContentWidth = walksheet.runtimeContentWidth
     localDef.ascendantRuntimeContentHeight = walksheet.runtimeContentHeight
@@ -441,7 +441,7 @@ function Runtime:_installDelegated(ownerId, ownerApi)
       def.ascendantScaleClass = record.scaleClass
       def.ascendantWorldHeight = runtime.scaleProfiles
         and (runtime.scaleProfiles.worldHeightForRecord
-          and runtime.scaleProfiles.worldHeightForRecord(record)
+          and runtime.scaleProfiles.worldHeightForRecord(record, "follower")
           or runtime.scaleProfiles.worldHeightForClass(record.scaleClass)) or nil
       def.ascendantRuntimeContentWidth = record.runtimeContentWidth
       def.ascendantRuntimeContentHeight = record.runtimeContentHeight

@@ -110,6 +110,7 @@ local SHADER = [[
   uniform mat4 sunVP;         // world -> the shadow map's unit cube
   uniform vec3 eye;
   uniform float pull;
+  // VASC_CAVE_WALL_VERTEX
   uniform vec3 curve;         // xy = the focus in world XZ, z = k; 0 = off
   attribute float VertexShade;
   // ChunkMesher attaches this as a per-instance attribute only for repeated
@@ -128,7 +129,7 @@ local SHADER = [[
     float encodedShade = abs(VertexShade);
     vWeatherTop = step(1.5, encodedShade);
     vShade = encodedShade - vWeatherTop * 2.0;
-    vec4 placed = vertex_position;
+    vec4 placed = caveWallPosition(vertex_position, VertexTexCoord.xy);
     placed.xyz += InstanceOffset;
 #ifdef VOXEL_GRID
     // MODEL space, deliberately: every mesh here is built a unit per
@@ -578,13 +579,14 @@ varying LOVE_HIGHP_OR_MEDIUMP vec3 vWorld;
   uniform vec3 eye;
   uniform float pull;
   uniform vec3 curve;
+  // VASC_CAVE_WALL_VERTEX
   attribute float VertexShade;
 
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
     float encodedShade = abs(VertexShade);
     float weatherTop = step(1.5, encodedShade);
     vShade = encodedShade - weatherTop * 2.0;
-    vec4 w = model * vertex_position;
+    vec4 w = model * caveWallPosition(vertex_position, VertexTexCoord.xy);
     vWorld = w.xyz;
     if (curve.z > 0.0) {
       vec2 cd = w.xz - curve.xy;
@@ -982,6 +984,9 @@ local function shaderSource(variant, grid)
   elseif variant ~= "full" then
     return nil, "unknown Voxel3D shader variant " .. tostring(variant)
   end
+  source=source:gsub("// VASC_CAVE_WALL_VERTEX",function()
+    return V.require('Gen1CaveWalls').GLSL
+  end,1)
   source=source:gsub("#ifdef PIXEL",function()
     return "#ifdef PIXEL\nuniform Image roomMask;\nuniform vec3 roomMaskSize;\n"..INTERIOR_FLOOR_GLSL..CaveSurfaces.GLSL..TowerAtmosphere.GLSL..V.require("CaveBattleMist").GLSL
   end,1)
@@ -1993,6 +1998,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send,sh,'roomMaskSize',{1,1,0})
   -- No cut unless VoxelScene explicitly opens a FULL indoor shell below.
   pcall(sh.send, sh, "cutaway", { 0, 0, 0, 0 })
+  pcall(sh.send, sh, "caveWallsTall", 0)
   Voxel3D.actorWaterline = nil
   pcall(sh.send, sh, "actorWaterline", -30000)
   -- the curved world bends about the camera's focus, so the horizon keeps
@@ -2672,6 +2678,12 @@ end
 -- Gate native accumulation to terrain draws. Character cards, flowers,
 -- horizon curtains and authored decals may also use upward-facing geometry;
 -- leaving the uniform globally enabled would frost or flood those as well.
+function Voxel3D.caveWalls(amount)
+  if active and activeShader then
+    return pcall(activeShader.send,activeShader,'caveWallsTall',amount or 0)
+  end
+end
+
 function Voxel3D.weatherGround(on)
   if MOBILE_RUNTIME then return false end
   if not (active and activeShader) then return false end

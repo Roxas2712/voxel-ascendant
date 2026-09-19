@@ -451,6 +451,12 @@ function Adapter:started(payload, context)
   local logic = rawget(payload, "battle") or rawget(payload, "logic")
   if logic == nil then return nil, "battle.started omitted Gen2 logic owner" end
   local screen = rawget(payload, "screen")
+  -- Engine 0.2.61 emits twice: logic at Battle.new, then the concrete screen
+  -- in BattleState.new. Both describe one encounter, not a replacement logic.
+  if self:_isBattleScreen(logic) then
+    screen=logic
+    logic=rawget(screen,"battle")
+  end
   if screen ~= nil and (not self:_isBattleScreen(screen)
       or not same(rawget(screen, "battle"), logic)) then
     return nil, "battle.started supplied a foreign Gen2 screen"
@@ -614,6 +620,10 @@ function Adapter:logicEnded(payload, reason)
   payload = type(payload) == "table" and payload or {}
   local current = self.active
   local logic = rawget(payload, "battle") or rawget(payload, "logic")
+  if self:_isBattleScreen(logic) then
+    if not exactScreen(current,logic) then return self:_ignored("battle.ended is stale") end
+    logic=rawget(logic,"battle")
+  end
   if current == nil or not exactLogic(current, logic) then
     return self:_ignored("battle.ended is stale")
   end

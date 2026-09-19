@@ -35,7 +35,21 @@ return function(P,F)
   b(x,14,29,3,8,3,C.navy);g(x+1,15,31,1,6,1,11)
   b(x,22,28,3,1,4,4)
  end
+ -- The entrance follows the selected exterior; the native wooden doors stay.
+ local sm={};for k,v in pairs(m)do sm[k]=v end;sm.boxes={};sm.glassKind='kanto_tower_entrance_stone_glass'
+ P.models.kanto_tower_entrance_stone=sm
+ for _,box in ipairs(m.boxes)do
+  local a={};for i,v in ipairs(box)do a[i]=v end
+  if a[1]<14 or a[1]>=34 or a[2]>=25 then
+   if a[7]==timber then a[7]=C.hauntedStone elseif a[7]==beam then a[7]=C.hauntedMortar end
+  end
+  sm.boxes[#sm.boxes+1]=a
+ end
+ local sg={};for k,v in pairs(glass)do sg[k]=v end;sg.boxes={}
+ for _,box in ipairs(glass.boxes)do local a={};for i,v in ipairs(box)do a[i]=v end;a[7]=C.hauntedGlass;sg.boxes[#sg.boxes+1]=a end
+ P.models.kanto_tower_entrance_stone_glass=sg
  F.patterns[#F.patterns+1]={kind='kanto_tower_entrance',sets={OVERWORLD=true},
+  variant=function()return V.require('Gen1LavenderTower').setting:get()=='stone'and 'kanto_tower_entrance_stone'or 'kanto_tower_entrance'end,
   maps={LAVENDER_TOWN=true},x=26,y=8,voxelOnly=true,groundTile=44,
   tiles={{17,17,17,17,17,17},{17,17,17,17,17,17},
    {55,55,72,73,55,55},{55,55,88,89,55,55}},

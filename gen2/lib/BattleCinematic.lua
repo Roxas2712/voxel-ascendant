@@ -444,7 +444,7 @@ end
 function BattleCinematic.scaleZoom(factor)
   if not BattleCinematic.ownsCamera() or type(factor) ~= "number"
       or factor ~= factor or factor <= 0 or factor == math.huge then return false end
-  BattleCinematic.zoom = clamp(BattleCinematic.zoom * factor, .65, 2.4)
+  BattleCinematic.zoom = clamp(BattleCinematic.zoom * factor, .45, 3.0)
   return true
 end
 
@@ -453,6 +453,7 @@ function BattleCinematic.stepZoom(notches)
 end
 
 function BattleCinematic.manualLook(dyaw, dpitch)
+  clearFallback() -- Explicit steering may retry a previously obstructed seat.
   BattleCinematic.angle = wrap((BattleCinematic.angle or FirstPerson.yaw or 0) - (tonumber(dyaw) or 0))
   BattleCinematic.manualPitch = math.max(-0.55, math.min(0.55,
     BattleCinematic.manualPitch + (tonumber(dpitch) or 0)))
@@ -477,15 +478,7 @@ local function frameImpl(dt)
     return nil
   end
   local ctx = OverworldBattle.cameraContext()
-  if not settingOn(ctx) then
-    -- A player may change the *next* battle's option while this battle keeps
-    -- its latched camera. Once the owner disappears, that live OFF value used
-    -- to bypass the normal no-context reset and leak the old angle/focus into
-    -- a later SMART battle. Disabled means no camera state is observable, so
-    -- retire it completely here.
-    BattleCinematic.reset()
-    return nil
-  end
+  local automatic=settingOn(ctx)
   if not ctx or not ctx.arena then
     -- Gold can briefly hide its camera context while another screen redraws.
     -- Preserve only the token-bound MAP fallback across that seam; the
@@ -577,7 +570,7 @@ local function frameImpl(dt)
     BattleCinematic.angle = wrap(math.atan2(-dx, -dz) + 0.65)
   end
 
-  local manual = BattleCinematic.manualHold > 0
+  local manual = not automatic or BattleCinematic.manualHold > 0
   if manual then
     BattleCinematic.manualHold = math.max(0, BattleCinematic.manualHold - dt)
   else

@@ -2051,6 +2051,13 @@ local function vascPatch(self)
       local textureOk, atlasTexture = pcall(Assets.image, atlasPath)
       local dataOk, atlasData = pcall(Assets.imageData, atlasPath)
       if textureOk and atlasTexture and dataOk and atlasData then
+        local rim=self.humanRigModule and self.humanRigModule.rim
+        local cleaned
+        if rim and rim.prepare then
+          local ok,value=pcall(rim.prepare,atlasTexture,atlasPath)
+          if ok then cleaned=value else self.humanRimError=tostring(value)end
+        end
+        atlasTexture=cleaned or atlasTexture
         -- Smooth the GO/HD render cards while retaining nearest-neighbour
         -- sampling for PokeMMO's deliberately pixel-authored atlases.
         if type(atlasTexture.setFilter) == "function" then
@@ -2067,7 +2074,7 @@ local function vascPatch(self)
             end
           end
         end
-        atlasTextures[atlasPath] = { texture=atlasTexture, bounds=bounds }
+        atlasTextures[atlasPath] = { texture=atlasTexture, bounds=bounds, ownedTexture=cleaned~=nil }
       else
         atlasTextures[atlasPath] = false
       end
@@ -2830,6 +2837,11 @@ local function vascPatch(self)
     if humanRig and humanRig.clear then humanRig:clear() end
     if humanGrid then humanGrid:clear() end
     if humanBlink then humanBlink:clear() end
+    for _,source in pairs(atlasTextures)do
+      if source and source.ownedTexture then
+        source.texture:release();source.ownedTexture=nil
+      end
+    end
     if wrappedPreparePokemonFrame and Voxel3D.preparePokemonFrame==wrappedPreparePokemonFrame then
       Voxel3D.preparePokemonFrame=originalPreparePokemonFrame
     end

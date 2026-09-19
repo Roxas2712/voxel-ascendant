@@ -15,7 +15,7 @@ local rows = {
   {"hd_walking_sprites", "HD PEOPLE", "HD-MENSCHEN", "pokemon", true,
     "F6 switches HD people / original 2D immediately. Use bundled HD player/NPC artwork. Requires OVERWORLD CARD enabled at game start; after enabling that master switch, reload the game. Pokemon downloads and model sources do not control HD people. Character selection stays with the game, KASC or JASC."},
   {"pokemon_model_source", "OVERWORLD MODELS", "OVERWORLD-MODELLE", "pokemon", "auto",
-    "Overworld only: Stadium 2 models, Full HD render sprites, then original sprites. Explicit MMO context choices take precedence. Battle models are unchanged.", nil,
+    "Overworld only: Stadium 2 models, Full HD render sprites, then original sprites. Shiny Pokemon use their available Full HD/MMO colours because Stadium provides normal models only. Explicit MMO choices take precedence.", nil,
     {{"AUTO: MODELS > FULL HD", "auto"}, {"STADIUM 2 > SPRITES", "stadium_only"}, {"FULL HD > MODELS", "go_first"}, {"FULL HD SPRITES", "go_only"}, {"SPRITES ONLY", "sprite_only"}}},
   {"hd_pokemon_followers", "HD FOLLOWERS", "HD-BEGLEITER", "wilds", true, "Replace follower artwork only; the existing provider keeps selection and movement."},
   {"follower_sprite_source", "FOLLOWER SOURCE", "BEGLEITER-QUELLE", "pokemon", "hd", "F7 cycles available follower sources including original 2D. Follow model priority, prefer Stadium 2, or force Full HD/MMO sprites for followers. Missing assets keep a safe source. Stadium requires the existing overworld model switch and a usable imported model."},
@@ -45,7 +45,7 @@ local sourceChoices = {{"FOLLOW MODEL PRIORITY", "hd"}, {"STADIUM 2 > FULL HD", 
 -- remain identical in both languages and both generations.
 local descriptionsDe = {
   hd_walking_sprites="F6 wechselt sofort zwischen HD-Menschen und Original-2D. Mitgelieferte HD-Grafiken für Spieler und Menschen nutzen. OVERWORLD-CARD muss beim Spielstart AN sein; nach Aktivierung dieses Hauptschalters das Spiel neu laden. Pokémon-Downloads und Modellquellen steuern HD-Menschen nicht. Die Charakterauswahl bleibt beim Spiel, KASC oder JASC.",
-  pokemon_model_source="Nur Oberwelt: Stadium-2-Modelle, Full-HD-Sprites, dann Originalgrafiken. Ausdrückliche MMO-Auswahl hat Vorrang. Kampfmodelle bleiben unverändert.",
+  pokemon_model_source="Nur Oberwelt: Stadium-2-Modelle, Full-HD-Sprites, dann Originalgrafiken. Shiny-Pokémon nutzen vorhandene Full-HD-/MMO-Farben, da Stadium nur normale Modelle liefert. Ausdrückliche MMO-Auswahl hat Vorrang.",
   hd_pokemon_followers="Nur Begleitergrafiken ersetzen. Auswahl und Bewegung bleiben beim bisherigen Anbieter.",
   follower_sprite_source="F7 wechselt verfügbare Begleiterquellen einschließlich Original-2D. Modellreihenfolge nutzen, Stadium 2 bevorzugen oder Full-HD-/MMO-Sprites wählen. Fehlende Grafiken nutzen Ersatz. Stadium benötigt aktivierte Oberweltmodelle und einen nutzbaren Modellimport.",
   hd_pokemon_grass="Grafiken vorhandener Gras- und Höhlen-Pokémon ersetzen. Begegnungen und Erzeugung bleiben unverändert.",

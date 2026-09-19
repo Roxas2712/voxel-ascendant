@@ -517,7 +517,7 @@ function PokemonWalksheets:resolve(game, mon)
   local wantedPalette = self.catalog.isShiny(mon) and "shiny" or "normal"
   local genders = { wantedGender, "none", "male", "female" }
   local palettes = wantedPalette == "shiny"
-    and { "shiny", "normal" } or { "normal" }
+    and (self.mod._vascIntegrated and { "shiny" } or { "shiny", "normal" }) or { "normal" }
   local checked = {}
   for _, form in ipairs(hdFormKeys(game,mon,dex)) do
     if not checked[form] then
@@ -591,7 +591,7 @@ function PokemonWalksheets:resolvePokeMMO(game, mon)
   local wantedPalette = self.catalog.isShiny(mon) and "shiny" or "normal"
   local genders = { wantedGender, "none", "male", "female" }
   local palettes = wantedPalette == "shiny"
-    and { "shiny", "normal" } or { "normal" }
+    and (self.mod._vascIntegrated and { "shiny" } or { "shiny", "normal" }) or { "normal" }
   local checked = {}
   for _, form in ipairs(formKeys(mon)) do
     local variants = forms[form]
@@ -706,8 +706,8 @@ function PokemonWalksheets:goRenderCardProvider()
     animated=true,
     available=function(dex, context)
       context = type(context) == "table" and context or {}
-      local source = type(context.entity) == "table" and context.entity
-        or type(context.mon) == "table" and context.mon or {}
+      local source = type(context.mon) == "table" and context.mon
+        or type(context.entity) == "table" and context.entity or {}
       local mon = {}
       for key, value in pairs(source) do mon[key] = value end
       if tonumber(dex) then mon.nationalDex = tonumber(dex) end
@@ -724,7 +724,7 @@ function PokemonWalksheets:def(game, mon, id, context)
   local absoluteRuntime = self.mod.path .. "/" .. record.runtime
   local worldHeight = self.scaleProfiles
     and (self.scaleProfiles.worldHeightForRecord
-      and self.scaleProfiles.worldHeightForRecord(record)
+      and self.scaleProfiles.worldHeightForRecord(record, context)
       or self.scaleProfiles.worldHeightForClass(record.scaleClass)) or nil
   local def = {
     id=id or ("SPRITE_ASCENDANT_POKEMON_%03d"):format(record.dex),

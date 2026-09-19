@@ -88,6 +88,7 @@ end
 local function scaleClass(role)
   local child = {
     red=true, green=true, blue=true, gold=true, kris=true, silver=true,
+    misty=true,
     ["little-boy"]=true, ["little-girl"]=true, youngster=true, lass=true,
     girl=true, ["brunette-girl"]=true,
     ["jr-trainer-female"]=true, ["jr-trainer-male"]=true,
@@ -457,6 +458,14 @@ function WalkingSprites:_npcVisual(mapId,entity,kascActive)
   local atlas=self:_atlasFor(mapId,entity,row)
   local role=atlas and roleFromPath(atlas)
     or identityRole(self:_identity(entity),self.generation,kascActive)
+  -- The shared BIKER cartridge sprite also represents Cue Balls. Resolve
+  -- the catalogued identity first; only Cycling Road uses the riding pose.
+  local map=normalize(mapId)
+  if self.generation==1 and (map=="ROUTE16" or map=="ROUTE17" or map=="ROUTE18")
+      and (role=="biker" or role=="cue-ball") then
+    local cycling="assets/characters/actions/"..role.."/bicycle_4x3.png"
+    if self.runtimeByAtlas[cycling] then return cycling,role,"bicycle" end
+  end
   return atlas or self.atlasByRole[role],role
 end
 
@@ -576,8 +585,8 @@ function WalkingSprites:apply(game, refreshAuthority)
       for _, entity in pairs(bucket) do
         if type(entity) == "table" and not seen[entity] then
           seen[entity] = true
-          local atlas,role=self:_npcVisual(mapId,entity,kascActive)
-          if self:_bind(entity, atlas, role) then count = count + 1 end
+          local atlas,role,action=self:_npcVisual(mapId,entity,kascActive)
+          if self:_bind(entity, atlas, role, nil, action) then count = count + 1 end
         end
       end
     end
@@ -603,8 +612,8 @@ function WalkingSprites:_observeShownObjects()
       if world and ctx.overworld == world and world.map and world.map.id == mapId then
         for _, entity in pairs(world.npcs or {}) do
           if entity ~= world.player and entity.def and entity.def.name == objName then
-            local atlas,role=binder:_npcVisual(mapId,entity,binder:_kasc()~=nil)
-            if binder:_bind(entity,atlas,role) then
+            local atlas,role,action=binder:_npcVisual(mapId,entity,binder:_kasc()~=nil)
+            if binder:_bind(entity,atlas,role,nil,action) then
               binder.applied = binder.applied + 1
             end
             break

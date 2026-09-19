@@ -236,6 +236,56 @@ local function failInstall(runtime, reason, teardownReason)
   return false, M.lastError
 end
 
+-- This is a presentation transaction, never a synthetic battle.started event.
+-- Retire the old Card owner and mint a new presentation receipt for the same
+-- native logic/screen. HP, party, move cursor and battle queue stay untouched.
+function M.changePresentation(screen,rollback)
+  local runtime=M.runtime
+  if not M.active or not runtime then return false, "battle Cards unavailable" end
+  if not screen or (screen.phase~="menu" and screen.phase~="moves") then
+    return false, "wait for command or move selection"
+  end
+  local lifecycle=runtime.lifecycle
+  local current=lifecycle:current(screen)
+  if not current or current.screen~=screen or current.state=="end_pending" then
+    return false, "not the active battle presentation"
+  end
+  local battle=V.require("OverworldBattle")
+  local game=currentGame(V.mod)
+  local world=game and game.world
+  local snapshot=world and world._stadiumEncounterSnapshot
+  local function stage()
+    local plan=battle.capturePresentationPlan()
+    local owner=lifecycle:current(screen)
+    if owner then
+      local ok,reason=lifecycle:watchdogAbort(owner.owner,"presentation-mode-changed")
+      assert(ok,reason)
+    end
+    -- Also release a renderer allocated before a failed Card start.
+    battle.finish(screen)
+    if world then world._stadiumEncounterSnapshot=snapshot end
+    local prepared,detail=battle.preparePresentationChange(screen)
+    assert(prepared,detail)
+    local rendered=battle.ensure(screen)
+    assert(plan.mode==false or plan.mode=="DEFAULT" or rendered,"requested stage unavailable")
+    local receipt,err=lifecycle:started({battle=screen.battle,screen=screen},{
+      requestedMode=plan.mode,provider=plan.mode,entry="quick-menu-presentation"})
+    assert(receipt,err)
+  end
+  local ok,reason=pcall(stage)
+  if not ok and rollback then
+    local recovered,err=pcall(function()rollback();stage()end)
+    if not recovered then
+      reason=tostring(reason).."; restore failed: "..tostring(err)
+      local owner=lifecycle:current(screen)
+      if owner then lifecycle:watchdogAbort(owner.owner,"presentation-restore-failed")end
+      battle.finish(screen)
+    end
+  end
+  notifyStatus()
+  return ok,ok and nil or reason
+end
+
 function M.install(options)
   if M.installed then return M.active, M.lastError end
   options = type(options) == "table" and options or {}

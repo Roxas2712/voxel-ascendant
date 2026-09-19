@@ -46,6 +46,7 @@ local BattleScene = V.require("BattleScene")
 local BattleDOF = V.require("BattleDOF")
 local BattleHud = V.require("BattleHud")
 local BattlePics = V.require("BattlePics")
+local BattleSpriteMetrics = V.require("Gen2BattleSpriteMetrics")
 local okTrainerArt, Gen2TrainerArt = pcall(V.require, "Gen2TrainerArt")
 if not okTrainerArt or type(Gen2TrainerArt) ~= "table" then
   Gen2TrainerArt = {}
@@ -335,7 +336,7 @@ local function normalizeGoldBattleMode(value)
   if value == OverworldBattle.ARENA or value == "stadium" then
     return OverworldBattle.ARENA
   end
-  if value == OverworldBattle.DISCS or value == OverworldBattle.FLAT_B
+  if value == "terarrium" or value == OverworldBattle.DISCS or value == OverworldBattle.FLAT_B
       or value == "stadiumB" then
     return OverworldBattle.DISCS
   end
@@ -382,6 +383,7 @@ local function capturePresentationPlan()
   return {
     schema="voxel-ascendant/gen2-battle-presentation-plan/v2",
     mode=mode,
+    terarrium=V.mod.options:get("battle3dWorld")=="terarrium",
     smartCamera=smartCameraNow(),
     standardHud=standardBattleHudNow(),
     modelsEnabled=modelsEnabledNow(),
@@ -1158,7 +1160,9 @@ function OverworldBattle.stageFor(state, plan)
     if requested == nil then requested = selectedGoldBattleMode() end
     local mode = normalizeGoldBattleMode(requested)
     local arena = nil
-    if mode == OverworldBattle.MAP then
+    if plan and plan.terarrium then
+      arena=V.require("Gen2Terrarium").arena(state and state.map)
+    elseif mode == OverworldBattle.MAP then
       arena = exactGoldArena(state)
       -- MAP is the live/frozen voxel map itself.  A location painting belongs
       -- exclusively to ARENA: attaching it here made BattleScene treat the
@@ -1385,6 +1389,18 @@ end
 
 -- The arena this battle is staged on, or nil. Read by the shot driver so a
 -- screenshot can be labelled with the ground it was taken on.
+-- Explicit user-requested presentation switch. Automatic recovery must still
+-- respect the native latch; only the exact idle battle may clear it here.
+function OverworldBattle.preparePresentationChange(screen)
+  if not isGoldBattleScreen(screen) or not screen.battle
+      or (screen.phase ~= "menu" and screen.phase ~= "moves") then
+    return false, "battle presentation can change only during command selection"
+  end
+  if session then return false, "previous presentation still owns the renderer" end
+  screen[PRESENTATION_KEY] = nil
+  return true
+end
+
 function OverworldBattle.arena()
   return session and session.arena or nil
 end
@@ -1488,6 +1504,7 @@ function OverworldBattle.finish(expectedOwner)
   if g and g.world then g.world._stadiumEncounterSnapshot = nil end
   if session.state then session.state._stadiumLiveBattle = nil end
   restoreCast()
+  if session.arena and session.arena.terarrium then V.require("Gen2Terrarium").release() end
   session = nil
   Voxel3D.camera = nil
   BattleCam.still = false
@@ -1591,8 +1608,9 @@ function OverworldBattle.update(dt, mode)
     -- battle-start contract here: OFF holds the canonical authored shot;
     -- changing the setting mid-battle cannot make the camera jump.
     local smart = session.plan and session.plan.smartCamera == true
-    BattleCam.steerable = smart
+    BattleCam.steerable = true
     BattleCam.still = not smart
+    V.require("CamControl").tick(dt)
     BattleCam.update(dt)
   elseif goldMode == OverworldBattle.MAP
       and session.arena and session.arena.mapReframe then
@@ -1694,6 +1712,7 @@ function OverworldBattle.update(dt, mode)
   end
   session.token = (session.token or 0) + 1
   local ok, shot, renderReason, renderStatus
+  if session.arena.terarrium then session.arena.terarriumService.activity(session.battle) end
   local deployment = gold and deploymentReceipt(session.battle) or nil
   local pendingActors = textures == nil
   if gold and goldMode == OverworldBattle.MAP
@@ -2734,6 +2753,7 @@ local function goldSideTexture(screen, side)
   -- bottom-aligned in the cartridge box; treating every one as 56px tall put
   -- its projected "head" a long way above the visible ink. This mirrors the
   -- native drawPic placement without a per-frame GPU readback.
+  local sourceExtent, sourceKey
   pcall(function()
     local image, _, path = captureScreen:pic(mon, renderBack)
     if not (image and type(image.getDimensions) == "function") then return end
@@ -2749,6 +2769,8 @@ local function goldSideTexture(screen, side)
     local scale = type(captureScreen.picScale) == "function"
       and tonumber(captureScreen:picScale(path, mon, renderBack)) or 1
     scale = scale or 1
+    local sourceScale=scale
+    sourceKey=tostring(path or image)..(renderBack and "|back" or "|front")
     local anim = type(captureScreen.animPicState) == "function"
       and captureScreen:animPicState(renderBack and "player" or "enemy") or nil
     local resized = anim and anim.size
@@ -2759,8 +2781,11 @@ local function goldSideTexture(screen, side)
       px = px + math.floor(pw * (1 - scale) / 2)
       py = py + math.floor(ph * (1 - scale))
     end
-    local ix, iy, iw, ih = type(BattlePics.inkRect) == "function"
-      and BattlePics.inkRect(image) or nil
+    local ix, iy, iw, ih
+    if type(BattlePics.inkRect) == "function" then
+      ix, iy, iw, ih = BattlePics.inkRect(image)
+    end
+    sourceExtent=math.max(iw or pw,ih or ph)*sourceScale
     if ix then
       visualBox = { px + ix * scale, py + iy * scale,
                     math.max(1, iw * scale), math.max(1, ih * scale) }
@@ -2771,7 +2796,7 @@ local function goldSideTexture(screen, side)
   local sampled = not trainerCapture
     and capturedInkBox(screen, side, canvas, mon)
   if sampled then visualBox = sampled end
-  return {
+  local texture={
     canvas=canvas, ax=ax, ay=ay,
     trainer=trainerCapture,
     trainerArt=trainerCapture,
@@ -2786,6 +2811,11 @@ local function goldSideTexture(screen, side)
     vascSpriteView=renderBack and "back" or "front",
     source="gen2-native-side-capture",
   }
+  local data=(screen.game and screen.game.data)or screen.data
+  return BattleSpriteMetrics.apply(texture,data and data.pokemon
+    and data.pokemon[mon.species],sourceExtent,sourceKey,
+    data and data.gen2Pokedex and data.gen2Pokedex.entries
+      and data.gen2Pokedex.entries[mon.species])
 end
 
 -- Whether this side has anything to draw at all. Mirrors drawPicsLayer's own

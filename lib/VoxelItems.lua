@@ -42,7 +42,9 @@ for _,entry in ipairs({{'walnut',99,70,54},{'oak',177,137,88},{'navy',40,62,85},
     {'dryLeaves',104,96,62},
     {'looseRock1',95,94,88},{'looseRock2',126,124,112},{'looseRock3',157,152,133},
     {'looseRock4',94,83,70},{'looseRock5',128,111,88},{'looseRock6',159,140,111},
-    {'martBlue',43,105,184}})do
+    {'martBlue',43,105,184},
+    {'hauntedStone',96,99,111},{'hauntedMortar',49,51,63},
+    {'hauntedWeathered',128,130,133},{'hauntedSlate',55,58,74},{'hauntedGlass',112,133,119},{'silphGlass',113,178,199}})do
   palette[#palette+1]={entry[2],entry[3],entry[4]};P.decorColors[entry[1]]=#palette
 end
 P.palette = palette

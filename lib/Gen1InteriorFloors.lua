@@ -6,6 +6,10 @@ local M={}
 M.setting=V.require('ModSetting').new('interiorFloors','INDOOR FLOORS',
   {true,false},{'ON','OFF'})
 local rooms=V.require('Gen1InteriorPanoramas')
+-- Native Gen-1 arena floors: violet stone, dojo boards and laboratory tile.
+-- Reuse the established materials; puzzle graphics keep their original atlas.
+local gymFloors={SAFFRON_GYM={8,'FACILITY',10,9},
+  FUCHSIA_GYM={2,'GYM',5,9},CINNABAR_GYM={6,'FACILITY',10,9}}
 local families={lab=1,home=2,traditional_home=2,coastal_home=3,daycare=2,
   hotel=2,diner=3,center=4,mart=5,workshop=6,museum=7,casino=8,
   corporate=6,rocket=6,elevator=6,power_plant=6,gate=7,ruined_mansion=9,
@@ -22,6 +26,13 @@ local allowed={}
 for ts,list in pairs(tiles)do allowed[ts]={};for _,tile in ipairs(list)do allowed[ts][tile]=true end end
 function M.profile(map)
   if not M.setting:get() then return nil end
+  local d=map and map.def
+  local gym=d and gymFloors[map.id]
+  if gym and d.generation~=2
+      and d.tileset==gym[2] and d.width==gym[3] and d.height==gym[4]
+      and next(d.connections or {})==nil then
+    return gym[1]
+  end
   local p=rooms.profileFor(map)
   if not p then return nil end
   if map.id=='TRADE_CENTER' then return 11 end

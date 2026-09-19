@@ -464,6 +464,7 @@ local gen2BattleCardsInstalled, gen2BattleCardsErr =
   safeInstall("Gen-2 Ascendant battle Card host", Gen2BattleCardHost, {
     mod=mod,
   })
+BaseV.Gen2BattleCardHost = Gen2BattleCardHost
 local gen2BattleCardStatus = Gen2BattleCardHost
   and type(Gen2BattleCardHost.status) == "function"
   and Gen2BattleCardHost.status() or nil
@@ -1942,3 +1943,10 @@ local Gen2PublicExports = loadLocal("lib/Gen2PublicExports.lua", {
   HudTheme = AscendantHudTheme,
 })
 Gen2PublicExports.apply(mod.exports)
+
+-- Use the shared quick-menu presentation with Gen2-native context/options.
+-- Game2 free roam has an empty stack, so it must not use Gen1's world-state gate.
+BaseV.controlsHost = BaseV.require("Gen2QuickMenu")
+BaseV.Controls = BaseV.require("VascControls")
+BaseV.controlsHost.install(BaseV.Controls)
+mod.exports.quickMenu = BaseV.Controls

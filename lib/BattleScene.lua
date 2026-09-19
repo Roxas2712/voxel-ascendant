@@ -1066,6 +1066,7 @@ end
 -- its owner stood still. Authored full-frame backdrops cannot receive that
 -- silhouette through ShadowMap, so they also retain one conservative contact
 -- footprint derived from the visible ink width.
+local hudCardPoses=setmetatable({}, {__mode="k"})
 local function monCards(arena, groundY, textures, map, vp, eye, probe)
   local out = {}
   if not textures then return out end
@@ -1103,6 +1104,25 @@ local function monCards(arena, groundY, textures, map, vp, eye, probe)
         cardX, cardZ, eye or Voxel3D.eye)
       local metrics = BattleScene.presentationMetrics(
         tex, actorScale, profileObject)
+      local owner=tex.vascRenderBattler
+      local hudPose=owner and hudCardPoses[owner]
+      if owner and (not hudPose or hudPose.mon~=tex.vascRenderMon
+          or hudPose.key~=tex.vascRenderModelKey) then
+        -- Freeze local artwork coordinates, not screen pixels. Camera and
+        -- arena scale still project normally; animation alpha bounds do not.
+        local k=metrics.scale
+        hudPose={mon=tex.vascRenderMon,key=tex.vascRenderModelKey,
+          scale=metrics.combinedScale,
+          corners={{(metrics.inkX0-metrics.anchorX)*k,(metrics.baseline-metrics.inkY0)*k},
+            {(metrics.inkX1+1-metrics.anchorX)*k,(metrics.baseline-metrics.inkY0)*k},
+            {(metrics.inkX0-metrics.anchorX)*k,(metrics.baseline-metrics.inkY1-1)*k},
+            {(metrics.inkX1+1-metrics.anchorX)*k,(metrics.baseline-metrics.inkY1-1)*k}}}
+        hudCardPoses[owner]=hudPose
+      end
+      local hudScale=hudPose and metrics.combinedScale/hudPose.scale or 1
+      local hudModel=hudPose and Mat4.mul(Mat4.mul(
+        Mat4.translate(cardX,cardY,cardZ),Mat4.rotateY(visibleYaw)),
+        Mat4.scale(mirror and -hudScale or hudScale,hudScale,1))
       local inkWidth = tonumber(metrics.worldInkWidth) or BattleScene.CELL
       layout.actorInkWidth[side]=inkWidth
       layout.actorInkHeight[side]=tonumber(metrics.worldInkHeight)
@@ -1111,6 +1131,7 @@ local function monCards(arena, groundY, textures, map, vp, eye, probe)
         math.min(4.2, contactRadiusX * .58))
       out[#out + 1] = { side=side, tex = tex.canvas, source=tex,
                         metrics=metrics,
+                        hudCorners=hudPose and hudPose.corners, hudModel=hudModel,
                         -- Authored backdrops move each reviewed foot mark in
                         -- Y independently.  Keep the projected contact plane
                         -- on that exact mark; flattening both silhouettes to
@@ -1184,12 +1205,25 @@ local function actorVisualForCard(card, vp, pw, ph, renderToken)
     bottom = bottom and math.max(bottom, y) or y
   end
   if not (right > left and bottom > top) then return nil end
+  local hudHull,hudHead
+  if card.hudModel and card.hudCorners then
+    local fixed=Mat4.mul(vp,card.hudModel)
+    local l,t,r,b
+    for _,point in ipairs(card.hudCorners)do
+      local x,y=projectedModelPoint(fixed,point[1],point[2],pw,ph)
+      if not x then l=nil;break end
+      l=l and math.min(l,x) or x;r=r and math.max(r,x) or x
+      t=t and math.min(t,y) or y;b=b and math.max(b,y) or y
+    end
+    if l and r>l and b>t then hudHull={l,t,r-l,b-t};hudHead={x=(l+r)*.5,y=t}end
+  end
   return {
     schema="voxel-ascendant/actor-render/v1",
     side=card.side, renderToken=renderToken,
     placementSafe=card.placementSafe,
     hull={ left, top, right - left, bottom - top },
     head={ x=(left + right) * .5, y=top },
+    hudHead=hudHead, hudHull=hudHull,
     foot={ x=(left + right) * .5, y=bottom },
     battler=source.vascRenderBattler,
     mon=source.vascRenderMon,
@@ -1789,7 +1823,7 @@ function BattleScene.render(state, arena, textures, token)
   local actorFit = BattleScene.presentationFitDistance(arena, textures, host)
   BattleCam.setPresentationFit(actorFit)
   if type(BattleCam.noteViewport) == "function" then
-    BattleCam.noteViewport(pw, ph)
+    BattleCam.noteViewport(pw, ph, BattleScene.GB_H*s)
   end
   local cam, pitch = BattleCam.rig(arena, groundY)
   -- The final provider-neutral safety gate may deliberately decline this

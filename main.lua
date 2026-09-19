@@ -271,6 +271,9 @@ local GEN2_A21_SHARED_UI = {
 -- Router.  This is an explicit file allowlist rather than a directory escape:
 -- Gen-2 gameplay, adapters and renderer modules remain rooted below gen2/.
 local GEN2_SHARED_CARD_CORE = {
+  ["lib/VascControls.lua"] = true,
+  ["lib/PerformanceOverlay.lua"] = true,
+  ["lib/BattleSpriteSize.lua"] = true,
   ["lib/FieldKitPresentation.lua"] = true,
   ["lib/HdContentMenu.lua"] = true,
   ["lib/core/AscendantContracts.lua"] = true,

@@ -2393,12 +2393,15 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
   if not ShadowMap.available() then return end
   local sig = shadowSignature(terrain, nbMesh, posed, cx, cy, vw, vh,
                               policy, horizon)
+  local caveWalls=V.require('Gen1CaveWalls').amount(state.map,Voxel.level)
+  sig=sig..':caveWalls:'..caveWalls
   if state.sightSignature then sig=sig..state.sightSignature end
   if state.healAnim then
     sig=sig..":heal:"..tostring(state.healAnim.lit)..":"..tostring(state.healAnim.visible)
   end
   if not ShadowMap.stale(sig) then return end
   if not ShadowMap.begin(cx, cy, vw, vh,V.require('VoxelFurniture').shadowHeight(state)) then return end
+  ShadowMap.caveWalls(caveWalls)
   if type(ShadowMap.objectOnly) == "function" then
     ShadowMap.objectOnly(policy.casters == "objects")
   end
@@ -2864,9 +2867,10 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     VoxelScene.fieldCameraPose(state,me), cx, cy, renderVw, renderVh)
   if fpRig then cx, cy = fpCx, fpCy end
 
-  -- Overworld occluders stay intact. Battle-only SightClearance must not
-  -- remove buildings/trees here: the depth-tested player silhouette below
-  -- shows where the walker is behind the complete world.
+  -- Ordinary overworld occluders stay intact; battle-only SightClearance
+  -- must not remove buildings/trees here. The Silph landmark owns a narrow
+  -- orbit-only low view in VoxelFurniture; other occlusion uses the player's
+  -- depth-tested silhouette below.
 
   local shCx, shCy = FirstPerson.shadowCenter(cx, cy, renderVh)
   castShadows(drawState, terrain, drawMesh, posed, shCx, shCy,
@@ -2895,6 +2899,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     end
   end
 
+  Voxel3D.caveWalls(V.require('Gen1CaveWalls').amount(state.map,Voxel.level))
   local terrainDrawn = Voxel3D.draw(terrain, atlasFor(state.map), nil)
   if MOBILE_RUNTIME and mobileScenery and terrainDrawn == false then
     error("mobile-terrain-draw-failed", 0)
@@ -2903,6 +2908,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     Voxel3D.draw(drawMesh[i], atlasFor(nb.map),
                  Mat4.translate(nb.ox, 0, nb.oy))
   end
+  Voxel3D.caveWalls(0)
   if type(Voxel3D.weatherGround) == "function" then
     Voxel3D.weatherGround(false)
   end

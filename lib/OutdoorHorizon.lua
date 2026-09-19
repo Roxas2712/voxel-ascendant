@@ -12,7 +12,7 @@ local colors={{48,86,57},{64,104,64},{88,125,71},{82,65,47},
  {191,174,126},{94,135,143},{137,117,82},
  {112,87,64},{67,50,41},{133,108,79},{75,67,57},{205,182,130},{146,153,145},{177,137,88},
  {44,60,54},{64,78,67},{84,91,75},{83,73,82},{128,116,97},
- {37,77,63},{67,118,80},{117,144,82},{170,82,67},{213,198,157},{58,77,99}}
+ {37,77,63},{67,118,80},{117,144,82},{170,82,67},{213,198,157},{58,77,99},{96,99,111},{49,51,63},{128,130,133},{55,58,74},{112,133,119},{203,213,210},{251,247,224},{40,62,85},{159,180,181},{113,178,199}}
 local texture,registered
 local function palette()
  if not registered then
@@ -29,9 +29,27 @@ function H.active(map,horizon)
  local canopy=horizon.classFor and horizon.classFor(map)=='canopy'
  return (horizon.hasSky(map)or canopy) and H.setting:get()~='bitmap'
 end
+function H.silphLandmark(maps,worldMaps,emit)
+ local T=V.require('Gen1SilphCo')
+ if not worldMaps or not T.matches(worldMaps.SAFFRON_CITY)then return end
+ for _,e in ipairs(maps)do if e.map.id=='SAFFRON_CITY'then return end end
+ local root=maps[1];if not root then return end
+ local placement=V.require('WorldPlacement')
+ local sp=placement.position('SAFFRON_CITY',worldMaps)
+ local rp=placement.position(root.map.id,worldMaps)
+ if not(sp and rp and sp.anchor==rp.anchor)then return end
+ local px,pz=sp.x+T.tx*8+(root.ox or 0)-rp.x,sp.y+T.ty*8+(root.oy or 0)-rp.y
+ local colors={wall=36,trim=37,navy=38,silver=39,glass=40,stone=18}
+ -- The buried footing prevents a remote tower from floating above an
+ -- unloaded map. It vanishes with the landmark when Saffron becomes resident.
+ emit(px+4,-512,pz+4,120,512,184,18,false)
+ T.geometry(function(x,y,z,w,h,d,c,lit)emit(px+x,y,pz+z,w,h,d,colors[c],lit)end)
+end
 function H.landmarks(maps,worldMaps,emit)
  if not V.require('Gen1PalletVillage').buildings:get() or not V.require('VoxelItems').setting:get()then return end
  if not worldMaps then local game=require('src.core.Game');worldMaps=game.data and game.data.maps end
+ H.silphLandmark(maps,worldMaps,emit)
+ local stone=V.require('Gen1LavenderTower').setting:get()=='stone'
  local lavender=worldMaps and worldMaps.LAVENDER_TOWN
  local route=worldMaps and worldMaps.ROUTE_10
  if not(lavender and route and lavender.width==10 and lavender.height==9 and route.width==10 and route.height==36)then return end
@@ -50,9 +68,9 @@ function H.landmarks(maps,worldMaps,emit)
   -- timber/window geometry for its missing half, not half of a coarse LOD.
   local P=V.require('VoxelItems');local C=P.decorColors
   local top=not present.ROUTE_10
-  local kind='landmark_lavender_'..(top and 'top'or 'front')
+  local kind='landmark_lavender_'..(top and 'top'or 'front')..(stone and '_stone'or '_wood')
   if not P.models[kind]then V.require('Gen1LavenderTower').create(P,kind,top and 'pokemon_tower_top'or 'pokemon_tower',V.require('Gen1PalletVillage').windowLight)end
-  local indices={[C.oldTimber]=13,[C.oldBeam]=14,[C.oldBoard]=15,[C.oldShingle]=16,[C.paperWindow]=17,[C.stone]=18,[C.oak]=19}
+  local indices={[C.oldTimber]=13,[C.oldBeam]=14,[C.oldBoard]=15,[C.oldShingle]=16,[C.paperWindow]=17,[C.stone]=18,[C.oak]=19,[C.hauntedStone]=31,[C.hauntedMortar]=32,[C.hauntedWeathered]=33,[C.hauntedSlate]=34,[C.hauntedGlass]=35}
   local m=P.models[kind]
   for _,name in ipairs({kind,m.glassKind})do for _,box in ipairs(P.models[name].boxes)do
    emit(px+box[1],box[2],pz+(top and 0 or 96)+box[3],box[4],box[5],box[6],indices[box[7]]or 8,name==m.glassKind)
@@ -80,11 +98,11 @@ function H.landmarks(maps,worldMaps,emit)
  b(4,0,4,88,4,152,18)
  for level=0,6 do
   local inset,y=6+level*4,4+level*36
-  b(inset,y,inset,96-inset*2,28,160-inset*2,13)
-  b(inset-4,y+28,inset-4,104-inset*2,2,168-inset*2,14)
-  for r=0,3 do local i=inset-4+r*2;b(i,y+30+r*2,i,96-i*2,2,160-i*2,16)end
+  b(inset,y,inset,96-inset*2,28,160-inset*2,stone and 31 or 13)
+  b(inset-4,y+28,inset-4,104-inset*2,2,168-inset*2,stone and 32 or 14)
+  for r=0,3 do local i=inset-4+r*2;b(i,y+30+r*2,i,96-i*2,2,160-i*2,stone and 34 or 16)end
  end
- b(44,260,74,8,4,12,14);b(46,264,78,4,8,4,19)
+ b(44,260,74,8,4,12,stone and 32 or 14);b(46,264,78,4,8,4,stone and 32 or 19)
 end
 -- Regional silhouettes use a shared palette/mesh, not separately loaded props.
 -- Woodland dominates rural edges; buildings appear as occasional clearings.
@@ -392,6 +410,7 @@ function H.build(maps,horizon,yieldStep,worldMaps)
   end
  end
  if not worldMaps then local game=require('src.core.Game');worldMaps=game.data and game.data.maps end
+ H.silphLandmark(maps,worldMaps,emit)
  H.geometry(maps,horizon,emit,yieldStep,worldMaps)
  V.require('Gen1ForestLandmarks').geometry(maps,horizon,emit,yieldStep)
  H.landmarks(maps,worldMaps,emit)

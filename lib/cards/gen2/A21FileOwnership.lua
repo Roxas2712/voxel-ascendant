@@ -1,6 +1,9 @@
 -- Complete, declarative ownership ledger for the byte-exact A21 Gen-2 tree.
 -- Source bytes remain untouched; this table only assigns each imported file
 -- to exactly one change surface so later fixes cannot overlap silently.
+-- Keep additions outside the imported A21 baseline in Gen2SegmentCards.files.
+-- FieldActorAppearance is one such addition; counting it here makes the
+-- baseline invariant fail and prevents the entire Gen-2 mod from activating.
 
 local M = {}
 
@@ -70,7 +73,6 @@ local OWNER = {
   ["gen2/lib/GoldCameraControls.lua"] = "vasc.gen2.voxel-world",
   ["gen2/lib/GoldColorAtlas.lua"] = "vasc.gen2.voxel-world",
   ["gen2/lib/GoldComposeBridge.lua"] = "vasc.gen2.voxel-world",
-  ["gen2/lib/FieldActorAppearance.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldFieldMovePresentation.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldFlyCinematic.lua"] = "vasc.gen2.field-wilds",
   ["gen2/lib/GoldPartyFollower.lua"] = "vasc.gen2.field-wilds",

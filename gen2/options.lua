@@ -3,6 +3,18 @@
 local platform = love and love.system and love.system.getOS and love.system.getOS()
 local controlsTransparency = (platform == "iOS" or platform == "Android") and 40 or 20
 return {
+  {key="terarriumBehindRed",type="toggle",label="TERRARIUM: BEHIND TRAINER",default=false,description="View the Terrarium from behind the player instead of its side."},
+  {key="terarriumIdleAnimation",type="toggle",label="TERRARIUM: IDLE MOTION",default=true,description="Gently rock the Terrarium while waiting in the command menu."},
+  {key="terarriumIdleSound",type="toggle",label="TERRARIUM: IDLE SOUND",default=true,description="Play a quiet sound during idle motion."},
+  {key="terarriumBallStyle",type="choice",label="TERRARIUM: BALL DESIGN",default="auto",choices={{"AUTO","auto"},{"POKE BALL","poke"},{"GREAT BALL","great"},{"ULTRA BALL","ultra"},{"MASTER BALL","master"},{"SAFARI BALL","safari"},{"RED APRICORN","apri_red"},{"BLUE APRICORN","apri_blue"},{"YELLOW APRICORN","apri_yellow"},{"GREEN APRICORN","apri_green"},{"PINK APRICORN","apri_pink"},{"BLACK APRICORN","apri_black"},{"WHITE APRICORN","apri_white"}},description="Choose the Terrarium shell."},
+  {key="terarriumBackground",type="choice",label="TERRARIUM: BACKGROUND",default="auto",choices={{"AUTO","auto"},{"NIGHT","night"},{"FOREST","forest"},{"STONE","stone"},{"GALLERY","gallery"}},description="Choose the setting around the Terrarium."},
+  {key="terarriumDome",type="choice",label="TERRARIUM: GLASS DOME",default="off",choices={{"OFF","off"},{"CLEAR","clear"},{"BLUE","blue"},{"PINK","rose"},{"GOLD","gold"}},description="Optional glass dome above the Terrarium."},
+  {key="liveDisplay",type="toggle",label="LIVE DISPLAY",default=false,description="Show FPS, frame time and memory statistics."},
+  {key="liveClock",type="toggle",label="CLOCK",default=true,description="Local device clock in the optional live display."},
+  {key="liveFps",type="toggle",label="FPS + FRAME TIME",default=true,description="Frame rate and frame time in the optional live display."},
+  {key="liveCpu",type="toggle",label="CPU FRAME TIME",default=true,description="CPU frame time in the optional live display."},
+  {key="liveGpu",type="toggle",label="GPU TEXTURE MEMORY",default=true,description="Texture memory in the optional live display."},
+
   {
     key = "voxel3d",
     type = "toggle",
@@ -161,7 +173,7 @@ return {
       { "1ST PERSON", "first" },
       { "3RD PERSON", "third" },
     },
-    description = "The complete VASC voxel-view ladder: FULL preset, literal 15/35/50/75-degree orbit views, first person and third person. Old DIORAMA saves migrate to FULL. Android keeps a quick FULL / 3RD / 1ST slider; desktop V or F6 walks the complete ladder. First/third person support mouse-look and controller right-stick look.",
+    description = "The complete VASC voxel-view ladder: FULL preset, literal 15/35/50/75-degree orbit views, first person and third person. Old DIORAMA saves migrate to FULL. The V quick menu supports touch and R1 + START; desktop V or F6 walks the complete ladder. First/third person support mouse-look and controller right-stick look.",
   },
   {
     key = "worldZoomRange",
@@ -511,16 +523,17 @@ return {
       { "MAP", true },
       { "ARENA", "arena" },
       { "DISCS", "discs" },
+      { "TERRARIUM", "terarrium" },
       { "GAME DEFAULT", false },
     },
-    description = "MAP keeps the exact voxel encounter view. ARENA uses a reviewed/authored map stage. DISCS uses the portable Stadium platforms. GAME DEFAULT restores Gold, Silver or Crystal's complete native battle scene. The choice is fixed for one battle and may be changed safely for the next one.",
+    description = "MAP keeps the exact voxel encounter view. ARENA uses a reviewed/authored map stage. DISCS uses the portable Stadium platforms. GAME DEFAULT restores Gold, Silver or Crystal's complete native battle scene. The quick menu can switch this during command or move selection without restarting the battle.",
   },
   {
     key = "battleSmartCamera",
     type = "toggle",
     label = "STADIUM BATTLE CAMERA",
     default = true,
-    description = "ON (default): staged MAP, ARENA and DISCS battles use their cinematic camera contract. OFF holds the authored battle-start view. The value is fixed for one battle, so changing it cannot jump the camera until the next encounter.",
+    description = "ON (default): staged MAP, ARENA and DISCS battles use their cinematic camera contract. OFF holds the authored battle-start view. The quick menu applies this during command or move selection.",
   },
   {
     key = "deviceProfile",

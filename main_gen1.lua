@@ -979,6 +979,8 @@ local SETTINGS = {
     "Voxel rocks, low hedges and wooden posts outside Pallet Town. Independent of trees and ground.",full=true },
   { V.require("Gen1PalletVillage").buildings,
     "Regional voxel buildings throughout Kanto, modern Centers and the League. Original footprints and entrances. OFF and 2D show the original buildings.", full=true },
+  { V.require("Gen1LavenderTower").setting,
+    "Lavender Pokemon Tower: weathered stone by default, or the original old timber. Both keep the same height, footprint and entrances.", full=true },
   { V.require("Gen1PalletVillage").surrounds,
     "Voxel trees, rocks and posts. Paths stay clear. OFF and 2D show the original scenery.", full=true },
   { V.require("Gen1PalletVillage").lights,
@@ -1175,8 +1177,8 @@ local SETTINGS = {
     when = vascOrasHudControls,
     full = true },
   { OrasBattleHudSettings.anchorSetting,
-    "Anchor status cards outside or above their projected Pokemon, or use "
-    .. "screen corners. Collision avoidance always keeps the sprite clear.",
+    "Outside (default) and Above follow the camera using a fixed Pokemon pose, "
+    .. "without following flapping or bobbing. Screen corners remain optional. Collision checks stay active.",
     when = vascOrasHudControls,
     full = true },
   { OrasBattleHudSettings.playerXSetting,
@@ -1348,6 +1350,11 @@ end)
 V.require("Gen1OutdoorScenery").bind(function()
   ChunkMesher.invalidate()
   V.require("ShadowMap").invalidate()
+end)
+
+V.require("Gen1LavenderTower").bind(function()
+  V.require("VoxelFurniture").invalidateAll()
+  VoxelScene.invalidateTerrainHeights()
 end)
 
 V.require("Gen1PalletVillage").bind(function()

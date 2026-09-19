@@ -619,6 +619,9 @@ end
 function StadiumMon:upload()
   if not (self.rig and self.model) then return false end
   self.rig:skin(self.yaw or 0)
+  if self.state == "idle" and self.rig.captureHudPose then
+    self.rig:captureHudPose()
+  end
   -- no clock of its own: the texture animation rides the frame pose() just
   -- resolved, which is what keeps a blink inside its standby loop and a
   -- fainted Pokemon's eyes shut once it has stopped moving

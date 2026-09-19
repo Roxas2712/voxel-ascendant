@@ -181,11 +181,13 @@ V.require('Gen1OutdoorScenery').register(P,F)
 V.require('Gen1LooseRocks')(P,F)
 V.require('Gen1VoxelSigns').register(P,F)
 V.require('Gen1FurnitureCompletion')(P,F,V.require('Gen1FurniturePatterns'))
+V.require('Gen1Rooftops').register(P,F)
 V.require('TowerAtmosphere').register(P)
 V.require('CaveTorches').register(P)
 local found=setmetatable({},{__mode='k'})
 local publishedForMap
 local function key(x,y)return (y+64)*4096+x+64 end
+function F.invalidateAll()found=setmetatable({},{__mode='k'})end
 function F.invalidate(map)
   found[map]=nil
 end
@@ -284,6 +286,11 @@ function F.claim(S,map,peekTerrain)
     local model=P.models[p.kind]
     p.claimed=F.enabled(p) and P.resolveKind(p.kind)~=nil
       and (not (model and model.glassKind) or P.resolveKind(model.glassKind)~=nil)
+    if p.claimed and model and model.cutawayKind then
+      local low=P.models[model.cutawayKind]
+      p.claimed=P.resolveKind(model.cutawayKind)~=nil
+        and (not low.glassKind or P.resolveKind(low.glassKind)~=nil)
+    end
     if p.claimed and p.replacesPortal then
       for i=#(S.portalStamps or {}),1,-1 do
         local portal=S.portalStamps[i]
@@ -417,12 +424,16 @@ function F.each(state,draw)
   for _,p in ipairs(F.find(state.map))do
     if F.enabled(p) and p.claimed then
       local decoration=p.terrainDecoration and p.decorPlacement
-      local mesh,tex=P.resolveKind(decoration and decoration.kind or p.kind)
-      local model=P.models[p.kind];local extra
+      local kind=decoration and decoration.kind or p.kind
+      local model=P.models[p.kind];local cut=state.landmarkCutaway and model and model.cutawayKind
+      if cut then kind=cut;model=P.models[kind]end
+      local mesh,tex=P.resolveKind(kind)
+      local extra
       if model and model.glassKind and (not model.glassVisible or model.glassVisible(state.map)) then
         local glass,glassTex=P.resolveKind(model.glassKind)
         if glass then
-          p.drawExtra=p.drawExtra or {};extra=p.drawExtra
+          if cut then p.cutawayExtra=p.cutawayExtra or {};extra=p.cutawayExtra
+          else p.drawExtra=p.drawExtra or {};extra=p.drawExtra end
           extra.mesh,extra.tex,extra.glow=glass,glassTex,model.windowLight and model.windowLight()or 0
         end
       end
@@ -575,6 +586,12 @@ function F.drawProp(mesh,tex,mat,shade,extra)
   return drawn
 end
 function F.draw(state)
+  if not state.sightFurniture and state.map and state.map.id=='SAFFRON_CITY'
+      and V.require('Gen1SilphCo').occludes(state.map,
+      V.require('VoxelState').level,G.eye,G.focus)then
+    local view={};for k,v in pairs(state)do view[k]=v end
+    view.landmarkCutaway=true;state=view
+  end
   local visible=V.require('PropVisibility').forView(G.vp,G.curveK,G.curveX,G.curveZ)
   local function each(view,draw)
     F.eachWorld(view,function(mesh,tex,mat,shade,extra)

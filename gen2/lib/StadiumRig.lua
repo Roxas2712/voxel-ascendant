@@ -213,6 +213,7 @@ function StadiumRig:release()
   end
   self.parts = {}
   self.projectionSampleParts = nil
+  self.hudPose = nil
 end
 
 -- ------- sampling one track
@@ -790,6 +791,24 @@ end
 -- changes, and never retain a caller's mutable matrix. The viewport only
 -- scales the resulting rectangle (trainer clearance asks for a 2x2 view).
 local projectCurrentRows = StadiumRig.projectedBounds
+-- Keep one uploaded idle silhouette for HUD placement. Live skinning still
+-- owns collisions and the rendered model; only the attachment ignores poses.
+function StadiumRig:captureHudPose()
+  if self.hudPose then return end
+  local parts={}
+  for _,part in ipairs(self.projectionSampleParts or self.parts or {})do
+    local rows={}
+    for i,row in ipairs(part.rows or {})do rows[i]={row[1],row[2],row[3]} end
+    parts[#parts+1]={rows=rows,prim=part.prim}
+  end
+  if #parts>0 then self.hudPose={parts=parts,projectionPose=1} end
+end
+
+function StadiumRig:projectedHudBounds(mvp,pw,ph)
+  if not self.hudPose then return nil end
+  return StadiumRig.projectedBounds(self.hudPose,mvp,pw,ph)
+end
+
 function StadiumRig:projectedBounds(mvp, pw, ph)
   if not self.projectionPose or type(mvp) ~= "table" then
     return projectCurrentRows(self, mvp, pw, ph)

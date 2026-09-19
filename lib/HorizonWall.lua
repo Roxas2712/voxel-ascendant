@@ -592,6 +592,14 @@ HorizonWall.PROFILES = {
     class = "metropolis", wall = "metropolis", foreground = "town",
     fillerRows = 0,
   },
+  -- Native roofs use indoor tilesets for their railings and furniture, but
+  -- their presentation is open air. Keep engine weather/encounter rules intact.
+  CELADON_MART_ROOF = {
+    class = "metropolis", wall = "metropolis", fillerRows = 0, sky = true, rooftop = true,
+  },
+  CELADON_MANSION_ROOF = {
+    class = "metropolis", wall = "metropolis", fillerRows = 0, sky = true, rooftop = true,
+  },
   VIRIDIAN_FOREST = {
     class = "canopy", wall = "forest", filler = "miniTrees", fillerRows = 3,
   },
@@ -1895,7 +1903,7 @@ function HorizonWall.classFor(map)
   if not isOutdoor(def) and nativeInteriorProfile(map) then
     return "interior"
   end
-  local profile = HorizonWall.PROFILES[id]
+  local profile = HorizonWall.profileFor(map)
   -- A closed canopy deliberately owns a separate texture class. Ordinary
   -- outdoor tree edges may show Kanto's distant ridges through their upper
   -- gaps; painting the same ridge behind Viridian Forest would put bright
@@ -1990,7 +1998,9 @@ end
 
 function HorizonWall.profileFor(map)
   local def = map and map.def or {}
-  return HorizonWall.PROFILES[tostring(map and map.id or def.id or "")]
+  local profile = HorizonWall.PROFILES[tostring(map and map.id or def.id or "")]
+  if profile and profile.rooftop and not V.require("Gen1Rooftops").matches(map) then return nil end
+  return profile
 end
 
 -- Editor room shells are an additive renderer contract, not a semantic class
@@ -2062,6 +2072,9 @@ function HorizonWall.panelProfile(map, edge, localAlong, sampleSpan)
   local t = math.max(0, math.min(0.999999,
     ((localAlong or 0) + (sampleSpan or HorizonWall.CELL) * 0.5)
     / length))
+  if profile and profile.rooftop and V.require("Gen1Rooftops").matches(map) then
+    return "metropolis", 0, {distance=224,height=96,verticalOffset=-100,ground="none"}
+  end
   local rules = HorizonWall.EDGE_PROFILES[id]
   local kind, placement
   if rules then kind, placement = resolveEdgeRule(rules[edge], t) end
@@ -2089,6 +2102,7 @@ end
 function HorizonWall.allowsFarBackdrop(state)
   if V.require('OutdoorHorizon').setting:get()~='bitmap'then return false end
   local function mapAllows(map)
+    if V.require("Gen1Rooftops").matches(map) then return false end
     local def = map and map.def or {}
     local id = tostring(map and map.id or def.id or "")
     if id == "ROUTE_12" or id == "ROUTE_13" or id == "ROUTE_14" then return false end
@@ -6847,7 +6861,7 @@ local function aquariumFishTexture(g)
   -- Pack only reviewed side-facing MMO frames; source rows 1/3 are left/right.
   for species,dex in ipairs({116,118,129})do
     local path=type(V.path)=='string' and V.path..string.format(
-      '/integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/follower_%03d_none_normal_base.png',dex)
+      '/assets/scenery/aquarium-%03d.png',dex)
     local ok,img=false,nil
     if path then ok,img=pcall(Backgrounds.newImage,path)end
     if ok and img then
@@ -7626,6 +7640,7 @@ local function stateKey(state, maps, canonical)
   local parts = { tostring(TileRenderer.voidFill or "trees"),
                   HorizonWall.enabled() and "full" or "off",
                   V.require('OutdoorHorizon').setting:get(),
+                  V.require('Gen1LavenderTower').setting:get(),
                   tostring(V.require('Gen1OutdoorScenery').ground:get()),
                   tostring(V.require('Gen1OutdoorScenery').trees:get()),
                   tostring(V.require('Gen1PalletVillage').buildings:get()),
@@ -7699,6 +7714,9 @@ local function newBuildJob(key, maps, worldMaps)
   local job = { key = key, maps = maps, meshes = {}, complete = true,
                 resumes = 0 }
   job.co = coroutine.create(function()
+    if #maps==1 and V.require('Gen1Rooftops').matches(maps[1].map) then
+      job.meshes=V.require('RooftopPanorama').build(maps[1]);return
+    end
     local outdoor=V.require('OutdoorHorizon')
     local voxelExterior = outdoor.active(maps[1].map,HorizonWall)
     if voxelExterior then

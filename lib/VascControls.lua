@@ -2,11 +2,13 @@
 -- The panel is a stack state: the world/battle pauses while choosing an action.
 local V=...
 local M={HELP_KEY="f3",FPS_KEY="f4"}
-local Game=require("src.core.Game")
+local Host=V.controlsHost
+local Game=Host and Host.Game or require("src.core.Game")
 local unpack=table.unpack or unpack
 local function pack(...)return{n=select("#",...),...}end
 local function top(g)return g and g.stack and g.stack:top()end
 local function ready(g)
+  if Host then return Host.ready(g) end
   local t=top(g)
   return g and g.save and g.overworld and t and not t.onKeyPressed
     and not t.onGamepadPressed and not t.imeActive
@@ -29,8 +31,9 @@ function M.hintAlpha(g)
   for _,s in ipairs(g.stack and g.stack.states or{})do
     if s.player and s.enemy and s.data and s.phase then b=s end
   end
-  local map=g.overworld and g.overworld.map
-  local id=map and(map.id or map)or g.overworld
+  local world=Host and Host.world(g) or g.overworld
+  local map=world and world.map
+  local id=map and(map.id or map)or world
   local s=hints[g];local t=now()
   if not s then s={map=id,battle=b,started=t};hints[g]=s
   else
@@ -39,7 +42,9 @@ function M.hintAlpha(g)
   end
   -- Menus, dialogue and fades cover the scene: never paint the arrival hint
   -- over their own controls. Context tracking above still consumes its timer.
-  if top(g) ~= g.overworld and top(g) ~= b then return 0 end
+  if Host then
+    if Host.context(g)=="other" then return 0 end
+  elseif top(g) ~= g.overworld and top(g) ~= b then return 0 end
   local age=t-s.started
   if age<0 or age>=2.5 then return 0 end
   return math.max(0,math.min(1,age/.15,(2.5-age)/.5))
@@ -91,14 +96,16 @@ M.rows={
   {key="q",title="Zoom in",hint="Q",detail="Move the current camera closer."},
   {key="e",title="Zoom out",hint="E",detail="Move the current camera further away."},
 }
-local groupNames={wilds={"Wilds","Wilds"},followers={"Followers","Begleiter"},town={"Town Pokémon","Stadt-Pokémon"},effects={"Camera & world","Kamera & Welt"}}
+local groupNames={terrarium={"Terrarium","Terrarium"},wilds={"Wilds","Wilds"},followers={"Followers","Begleiter"},town={"Town Pokémon","Stadt-Pokémon"},effects={"Camera & world","Kamera & Welt"}}
 function M.context(g)
+ if Host then return Host.context(g,M.current(g)) end
  local p=M.current(g);local t=p and p.previous or top(g)
  if t and t.player and t.enemy and t.phase then return "battle",t end
  if t==g.overworld then return "world",t end
  return "other",t
 end
 function M.visibleRows(g,group)
+ if Host then return Host.rows(g,group,M) end
  local context=M.context(g);local out={}
  local allowed=context=="battle" and {['0']=true,['8']=true,['5']=true,['6']=true,f4=true,q=true,e=true}
   or context=="world" and {['0']=true,v=true,f6=true,f4=true}or{f4=true}
@@ -372,7 +379,7 @@ function M.install(shortcuts)
     if k==M.FPS_KEY and M.fps(self)then return end
     return key(self,k,...)
   end
-  function Game:draw(...)local r=pack(draw(self,...));M.draw(self);return unpack(r,1,r.n)end
+  function Game:draw(...)local r=pack(draw(self,...));if Host and Host.drawBackdrop and M.current(self) then Host.drawBackdrop(self)end;M.draw(self);return unpack(r,1,r.n)end
   V.mod.hooks:wrap("input.pointer",function(next,g,p)
     if M.pointer(g,p)then return true end;return next(g,p)
   end,2000002)
@@ -381,7 +388,7 @@ function M.install(shortcuts)
   local pressed,released=Game.gamepadpressed,Game.gamepadreleased
   local states=setmetatable({},{__mode="k"});local nilPad={}
   local function state(j)local id=j or nilPad;states[id]=states[id]or{swallowed={},forwarded={}};return states[id]end
-  local chords={dpup="0",dpleft="f6",dpright="f7",dpdown="f4",start="f3"}
+  local chords=Host and Host.chords or {dpup="0",dpleft="f6",dpright="f7",dpdown="f4",start="f3"}
   function Game:gamepadpressed(j,b,...)
     local s=state(j)
     if s.swallowed[b]then return end

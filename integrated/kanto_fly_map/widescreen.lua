@@ -602,6 +602,7 @@ return function(mod)
     box.line1Y = (box.boxTy + 2) * 8
     box.line2Y = (box.boxTy + 4) * 8
     box.__ascendantGlobalUiSkinSkip = true
+    box.__vascKantoMapOwner = self
     self.game.stack:push(box)
   end
 
@@ -863,7 +864,9 @@ return function(mod)
     setColor(g, 0.05, 0.16, 0.29)
     g.rectangle("fill", 0, 0, UI_WIDTH, UI_HEIGHT)
 
-    if self.image then
+    if self.__vascKantoHD and self.zoomImage then
+      drawMapTexture(g,self.zoomImage,self.mapX,self.mapY,self.viewZoom,1)
+    elseif self.image then
       drawMapTexture(g, self.image, self.mapX, self.mapY, self.viewZoom, 1)
       -- Blend in the dedicated 1152x648 detail texture during the camera
       -- move. At final 2x view one texture pixel maps to one screen pixel.
@@ -1068,11 +1071,15 @@ return function(mod)
 
   for _, method in ipairs({
     "uiSize", "wantsFillScale", "sgbPalettes", "move", "setZoom",
-    "showSelectedInfo", "update", "draw",
+    "showSelectedInfo", "update", "draw", "exit",
   }) do
     SafeWideScreen[method] = function(self, ...)
       return self:_call(method, ...)
     end
+  end
+
+  if mod.kantoFlyMapHD and type(mod.kantoFlyMapHD.bind)=='function' then
+    mod.kantoFlyMapHD.bind(MapScreen)
   end
 
   local function safeWideMap(game, opts, nativeOpts)

@@ -19,14 +19,13 @@ local SLICES = {
   -- Covered work runs during the cartridge's existing map fade and may spend
   -- more, but it is still bounded so a transition never becomes one giant
   -- synchronous stall.
-  -- Current outdoor BODY work receives enough contiguous time to become
-  -- playable quickly instead of revealing one structure strip at a time for
-  -- tens of seconds.  Distant neighbours stay on the smaller idle slice, and
-  -- fades absorb the larger covered slice without affecting visible cadence.
-  max      = { urgent = 0.0140, idle = 0.0030, covered = 0.0500 },
-  handheld = { urgent = 0.0110, idle = 0.0025, covered = 0.0420 },
-  eco      = { urgent = 0.0070, idle = 0.0015, covered = 0.0300 },
-  custom   = { urgent = 0.0110, idle = 0.0025, covered = 0.0420 },
+  -- Match the reviewed Gen1 loading cap: native fades still animate and
+  -- process touch input. They cannot safely absorb the old 30–50ms slices.
+  -- Visible neighbours retain their smaller budgets; terrain stays async.
+  max      = { urgent = 0.0080, idle = 0.0030, covered = 0.0060 },
+  handheld = { urgent = 0.0080, idle = 0.0025, covered = 0.0060 },
+  eco      = { urgent = 0.0060, idle = 0.0015, covered = 0.0040 },
+  custom   = { urgent = 0.0080, idle = 0.0025, covered = 0.0060 },
 }
 
 -- A FULL map includes a scenery apron measured in four-tile map blocks.

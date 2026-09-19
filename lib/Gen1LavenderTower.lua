@@ -1,9 +1,21 @@
--- One old timber tower, split only at the native Route 10 / Lavender seam.
+-- Two materials on one tower, split only at the native Route 10 / Lavender seam.
 -- Authoring in one coordinate system keeps all seven roofs continuous.
 local V=...
 local T={height=272,width=96,depth=160,seam=96}
+T.setting=V.require('ModSetting').new('lavenderTowerStyle','POKEMON TOWER',{'stone','wood'},{'STONE','WOOD'})
+function T.bind(invalidate)
+ for _,name in ipairs({'setIndex','sync'})do
+  local previous=T.setting[name]
+  T.setting[name]=function(self,...)
+   local before=self:get();local value=previous(self,...)
+   if before~=self:get()then invalidate()end
+   return value
+  end
+ end
+end
 function T.create(P,kind,template,light)
  local C=P.decorColors
+ local stone=T.setting:get()=='stone'
  local back=template=='pokemon_tower_top'
  local start,depth=back and 0 or T.seam,back and T.seam or T.depth-T.seam
  local function model(name)
@@ -21,17 +33,41 @@ function T.create(P,kind,template,light)
  local wood,dark,weathered,roof=C.oldTimber or C.oak,C.oldBeam or C.walnut,
   C.oldBoard or C.oak,C.oldShingle or C.walnut
  local paper=C.paperWindow or 11
- -- Low stone footing; everything above it is weathered timber and shutters.
+ if stone then
+  wood,dark,weathered,roof=C.hauntedStone,C.hauntedMortar,C.hauntedWeathered,C.hauntedSlate
+  paper=C.hauntedGlass
+ end
+ m.towerStyle=stone and 'stone'or 'wood'
+ -- Shared low footing; weathered timber or masonry above it.
  b(4,0,4,88,4,152,C.stone or 14)
  for level=0,6 do
   local inset=6+level*4;local y=4+level*36
   local x0,x1=inset,96-inset;local z0,z1=inset,160-inset
   b(x0,y,z0,x1-x0,28,2,wood);b(x0,y,z1-2,x1-x0,28,2,wood)
   b(x0,y,z0,2,28,z1-z0,dark);b(x1-2,y,z0,2,28,z1-z0,wood)
-  -- Alternating long boards and corner posts make the wood read at distance.
-  for yy=y+4,y+24,6 do
-   b(x0,yy,z0,x1-x0,2,2,weathered);b(x0,yy,z1-2,x1-x0,2,2,weathered)
-   b(x0,yy,z0,2,2,z1-z0,weathered);b(x1-2,yy,z0,2,2,z1-z0,weathered)
+  if stone then
+   -- Staggered heavy masonry, deep seams and occasional weathered stones.
+   -- Relief remains inside the original timber tower's silhouette.
+   for row=0,3 do
+    local yy=y+row*7
+    for _,z in ipairs({z0-1,z1-1})do
+     b(x0,yy,z,x1-x0,1,2,dark)
+     for x=x0+((row%2)*6),x1-2,12 do
+      b(x,yy,z,1,7,2,dark)
+      if (x+row*7+level)%5==0 then b(x+1,yy+1,z,math.min(10,x1-x-1),5,2,weathered)end
+     end
+    end
+    for _,x in ipairs({x0-1,x1-1})do
+     b(x,yy,z0,2,1,z1-z0,dark)
+     for z=z0+((row%2)*6),z1-2,12 do b(x,yy,z,2,7,1,dark)end
+    end
+   end
+  else
+   -- Preserve the complete original wooden variant.
+   for yy=y+4,y+24,6 do
+    b(x0,yy,z0,x1-x0,2,2,weathered);b(x0,yy,z1-2,x1-x0,2,2,weathered)
+    b(x0,yy,z0,2,2,z1-z0,weathered);b(x1-2,yy,z0,2,2,z1-z0,weathered)
+   end
   end
   for _,x in ipairs({x0,x1-4})do for _,z in ipairs({z0,z1-4})do b(x,y,z,4,30,4,dark)end end
   for _,z in ipairs({z0-2,z1})do
@@ -60,7 +96,7 @@ function T.create(P,kind,template,light)
    for _,z in ipairs({inset-4,160-inset})do b(x,y+30,z,4,4,4,dark)end
   end
  end
- b(44,260,74,8,4,12,dark);b(46,264,78,4,8,4,C.oak)
+ b(44,260,74,8,4,12,dark);b(46,264,78,4,8,4,stone and dark or C.oak)
  return kind
 end
 return T

@@ -1052,6 +1052,15 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken, presentationMatrix
   if not hull then return nil end
   local head, foot = receiptAnchors(hull, exactHeadY)
   if not head then return nil end
+  local hudHull, hudHead
+  if type(mon.rig.projectedHudBounds)=="function" then
+    local left,top,width,height=mon.rig:projectedHudBounds(
+      Mat4.mul(vp,modelMatrix),pw,ph)
+    if left and top and width and height then
+      hudHull={left,top,width,height}
+      hudHead=receiptAnchors(hudHull)
+    end
+  end
   local battler = session.at and session.at[side] or nil
   local semanticMon = type(battler) == "table" and battler.mon or battler
   return {
@@ -1060,6 +1069,7 @@ function Stadium.visualReceipt(side, vp, pw, ph, renderToken, presentationMatrix
     hull=hull,
     inkHull=inkHull,
     head=head,
+    hudHead=hudHead, hudHull=hudHull,
     foot=foot,
     battler=battler, mon=semanticMon,
     modelKey="stadium:" .. tostring(mon.species or "unknown"),

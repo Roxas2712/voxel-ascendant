@@ -1281,6 +1281,10 @@ function VoxelBattleStage.skyPolicy(arena)
 end
 
 function VoxelBattleStage.presentationPosition(arena, side, groundY, trainer)
+  if arena and arena.terarrium then
+    if trainer then local p=arena.terarriumService.trainerFoot(arena,side,groundY or 0);return p[1],p[2],p[3]end
+    local p=arena.terarrium.actors[side];return arena.mid[1]+p[1],groundY or 0,arena.mid[2]+p[3]
+  end
   local cell = arena and arena[side]
   if not (type(cell) == "table" and finite(cell[1]) and finite(cell[2])) then
     return nil
@@ -1303,6 +1307,7 @@ end
 -- those feet instead of moving the anchors or the engine HUD.  Unknown,
 -- malformed and every non-ARENA surface retain the historical 1:1 size.
 function VoxelBattleStage.presentationScale(arena)
+  if arena and arena.terarrium then return 1.8 end
   local spec = authoredSpec(arena)
   return spec and spec.actorScale or 1
 end

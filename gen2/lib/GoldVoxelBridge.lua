@@ -806,7 +806,8 @@ local function optionCameraSlider()
 end
 
 local function cameraSliderVisible(game)
-  return isAndroid() and voxelModeEnabled() and optionCameraSlider()
+  return not (mod.exports and mod.exports.quickMenu)
+     and isAndroid() and voxelModeEnabled() and optionCameraSlider()
      and goldFreeRoam(game or Bridge.game)
 end
 
@@ -2416,6 +2417,8 @@ function Bridge.install()
         if payload.mod ~= nil and payload.mod ~= mod.id then return end
         if payload.key == "openWorld" then
           applyOpenWorldMode(payload.value)
+        elseif payload.key == "cameraMode" then
+          Bridge.selectCameraMode(payload.value, false, true)
         elseif payload.key == "voxel3d" then
           Bridge.handleUserVoxelOption(payload.value)
         end
@@ -2850,6 +2853,14 @@ function Bridge.renderFrame(world, ctx)
     Bridge.framesFailed = Bridge.framesFailed + 1
     Bridge.lastError = tostring(stateErr)
     return nil, Bridge.lastError, "failed"
+  end
+
+  if (Bridge.currentOnlyPresentedMapRef ~= liveMap
+      or (Bridge.game and Bridge.game.stack and Bridge.game.stack:top()))
+      and type(Voxel3D.prewarmWorldCards) == "function" then
+    local okCards, cardsErr = pcall(Voxel3D.prewarmWorldCards, state)
+    if not okCards then logOnce("card-preload:"..tostring(cardsErr), "warn",
+      "Gen-2 card preload failed: %s", tostring(cardsErr)) end
   end
 
   -- Advance the CURRENT map through one bounded urgent slice.  Older builds

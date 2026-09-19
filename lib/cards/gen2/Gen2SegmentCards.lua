@@ -96,6 +96,8 @@ local DEFINITIONS = {
     files={
       "gen2/lib/VascMenuGen2.lua", "gen2/lib/PauseMenuBattleStyle.lua",
       "gen2/lib/GoldSubmenuBattleStyle.lua",
+      "gen2/lib/Gen2QuickMenu.lua", "lib/VascControls.lua",
+      "lib/PerformanceOverlay.lua",
       "gen2/lib/SharedVascMenuPresentation.lua",
       "gen2/lib/TitleMenuVascStyle.lua",
       "lib/TitleHubPresentation.lua",
@@ -125,6 +127,8 @@ local DEFINITIONS = {
     runtimeOwner="gen2.battle-presentation",
     files={
       "gen2/lib/OverworldBattle.lua",
+      "gen2/lib/Gen2BattleSpriteMetrics.lua", "lib/BattleSpriteSize.lua",
+      "gen2/lib/Gen2Terrarium.lua",
       "gen2/lib/Gen2MegaBridge.lua",
       "gen2/lib/BattleScene.lua", "gen2/lib/BattleControllerUI.lua",
       "gen2/lib/BattleAnimationCompat.lua",

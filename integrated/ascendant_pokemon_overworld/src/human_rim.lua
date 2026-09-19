@@ -50,7 +50,8 @@ M.shader=[[
 
 ]]
 function M.send(shader,w,h,profile)
- local enabled=profile and profile.rimHeadEnd==105 and w==495 and h==900
+ local extent=profile and tonumber(profile.rimHeadEnd) or 0
+ local enabled=w==495 and h==900 and extent>0 and extent<=165
  local trim={0,0,0,0}
  if profile and w==495 and h==900 and type(profile.trimBottomRows)=='table' then
   for row=0,3 do
@@ -58,8 +59,37 @@ function M.send(shader,w,h,profile)
    if type(v)=='number' and v>0 and v<1 then trim[row+1]=v end
   end
  end
- shader:send('rimShape',{1/w,1/h,h/4,enabled and 105 or 0})
+ shader:send('rimShape',{1/w,1/h,h/4,enabled and extent or 0})
  shader:send('rimSoftEdge',enabled and profile.rimSoftEdge and 1 or 0)
  shader:send('rimTrimBottom',trim)
+end
+
+-- The reviewed youngster has matte fragments around his head and hands.
+-- Clean that source once for every animation mode, including classic cards.
+-- Keep the source asset, bounds, eyes, socks and shoes unchanged. These exact
+-- three atlases share the same silhouette; no other art opts in implicitly.
+function M.prepare(texture,path)
+ local name=type(path)=='string' and path:match('([^/]+)$')
+ if name~='youngster-gen1-bald-hd-4x3-walk-sheet-v1.png'
+  and name~='youngster-gen1-bald-hd-4x3-walk-sheet-v1-bald-green.png'
+  and name~='youngster-gen1-bald-hd-4x3-walk-sheet-v1-bald-red.png' then return end
+ local w,h=texture:getDimensions()
+ if w~=495 or h~=900 then return end
+ local g=love.graphics
+ local shader=g.newShader(M.shader..[[
+ vec4 effect(vec4 c,Image t,vec2 uv,vec2 sc){return sourceRim(t,uv,Texel(t,uv))*c;}
+ ]])
+ local canvas=g.newCanvas(w,h)
+ g.push('all')
+ local ok,err=pcall(function()
+  g.setCanvas(canvas);g.origin();g.setScissor();g.setDepthMode()
+  g.clear(0,0,0,0);g.setColor(1,1,1,1)
+  g.setBlendMode('replace','premultiplied');g.setShader(shader)
+  M.send(shader,w,h,{rimHeadEnd=165});g.draw(texture)
+ end)
+ g.pop();shader:release()
+ if not ok then canvas:release();error(err)end
+ local min,mag,aniso=texture:getFilter();canvas:setFilter(min,mag,aniso)
+ return canvas
 end
 return M

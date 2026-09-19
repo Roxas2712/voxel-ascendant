@@ -36,6 +36,7 @@ ScaleProfiles.characters = {
   gold = "human_child",
   kris = "human_child",
   silver = "human_child",
+  misty = "human_child",
   oak = "human_adult",
 }
 
@@ -409,7 +410,7 @@ local function kantoHdBodyHeight(record)
   return target*reference/(bottom-top)
 end
 
-function ScaleProfiles.worldHeightForRecord(record)
+local function recordBodyHeight(record)
   if type(record)=="table" then
     local height=kantoHdBodyHeight(record)
     if height then return height end
@@ -452,6 +453,21 @@ function ScaleProfiles.worldHeightForRecord(record)
     if dex == 226 then return 8.1 end -- Thin ray body, broad animated fins.
   end
   return ScaleProfiles.worldHeightForClass(record and record.scaleClass)
+end
+
+-- Followers share a small screen area with the player. A long tail, wings or
+-- leaves must not reduce the actual HD body below a readable size. Keep the
+-- existing battle/world calibration and pixel sprites unchanged.
+function ScaleProfiles.worldHeightForRecord(record, context)
+  local height = recordBodyHeight(record)
+  local cards = type(record) == "table" and record.animationCards
+  local layout = type(cards) == "table" and cards.layout
+  local reference = type(layout) == "table" and tonumber(layout.referenceHeight)
+  if context == "follower" and reference and reference > 0
+      and reference < math.huge then
+    return math.max(5.4, height)
+  end
+  return height
 end
 
 -- Compatibility alias for the initial Card renderer API.

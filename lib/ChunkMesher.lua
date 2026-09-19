@@ -728,8 +728,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     return baseAtTile(math.floor(wx / 8), math.floor(wz / 8))
   end
 
+  local CaveWalls=V.require('Gen1CaveWalls')
   local caveCaps
-  local function heightAt(tx, ty)
+  local function originalHeightAt(tx, ty)
     if caveCaps and caveCaps[keyOf(tx,ty)]then return caveCaps[keyOf(tx,ty)]end
     local k = keyOf(tx, ty)
     local base = baseAtTile(tx, ty)
@@ -753,7 +754,40 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   end
 
   if caveProfile and caveProfile.walls then
-    caveCaps=V.require('Gen1CaveCaps').plan(map,S,heightAt)
+    caveCaps=V.require('Gen1CaveCaps').plan(map,S,originalHeightAt)
+  end
+
+  local highCaveWalls=caveProfile and caveProfile.walls and CaveWalls.native(map)
+  local wallExtras={}
+  local function wallExtra(tx,ty)
+    if not highCaveWalls then return 0 end
+    local k=keyOf(tx,ty)
+    if wallExtras[k]~=nil then return wallExtras[k] end
+    local s=S.shapeAt[k]
+    local rock=s and (s.class=='wall' or (caveCaps and caveCaps[k]))
+    local extra=0
+    local tile=caveCaps and caveCaps[k] and 2 or S.tileAt[k]
+    local fx,fy=math.floor(tx/2)*2,math.floor(ty/2)*2+1
+    local foot=S.shapeAt[keyOf(fx,fy)]
+    if rock and not S.skip[k] and not S.runs[k]
+      -- The 3RD boom reserves 20px above a blocked wall's canonical
+      -- support. Keep this 16px extension entirely inside that clearance;
+      -- mixed floor/ledge cells must never acquire an untested obstacle.
+      and foot and foot.class=='wall' and foot.h==16
+      and originalHeightAt(fx,fy)>=originalHeightAt(tx,ty)
+      and originalHeightAt(tx,ty)-baseAtTile(tx,ty)==16
+      and CaveWalls.isRock(CaveSurfaces.material(caveProfile,'wall',tile,'top',false,tx,ty))
+      and CaveWalls.eligible(map,tx,ty) then extra=CaveWalls.extraHeight end
+    wallExtras[k]=extra
+    return extra
+  end
+  local function heightAt(tx,ty)
+    return originalHeightAt(tx,ty)+wallExtra(tx,ty)
+  end
+  local function wallTag(material,tx,ty)
+    if CaveWalls.isRock(material) and wallExtra(tx,ty)>0 then
+      return CaveWalls.tagOffset+originalHeightAt(tx,ty)
+    end
   end
 
   local function route4PortalV2(st, base)
@@ -940,6 +974,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
   local function topQuad(x0, z0, h, tile, shade, to, transform, material)
     local aU, aV, bU, bV, cU, cV, dU, dV = topUV(tile, transform)
     if material then aU,bU,cU,dU=material,material,material,material end
+    local tag=wallTag(material,x0/8,z0/8)
+    if tag then aV,bV,cV,dV=tag,tag,tag,tag end
     local shades = aoShades(x0 / 8, z0 / 8, h, shade)
     local scalar = to and waterPushValues or pushValues
     if scalar then
@@ -1028,6 +1064,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
     local x1, z1 = x0 + 8, z0 + 8
     local u0, u1, v0, v1 = uvRect(tile, vTop, vBot)
     if material then u0,u1=material,material end
+    local tag=wallTag(material,x0/8,z0/8)
+    if tag then v0,v1=tag,tag end
     if pushValues then
       if d == 5 then                                     -- south, at z1
         pushValues(x0, y0, z1, u0, v1, x1, y0, z1, u1, v1,
@@ -1164,6 +1202,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
           s={class='wall',h=cap-base,art='top'};tile=2;run=nil
         end
         local localH = run and run.h or s.h
+        localH=localH+wallExtra(tx,ty)
         if flatTerrain and not run and s.class == "ledge" then
           localH = (Stairs.caveFloorHeight and Stairs.caveFloorHeight(map,tile)) or flatLedgeMarker
         end

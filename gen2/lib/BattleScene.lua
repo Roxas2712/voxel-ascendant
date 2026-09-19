@@ -747,7 +747,8 @@ local function castShadows(state, arena, terrain, nbMesh, cx, cy, vw, vh,
   -- shared by both paths and must be cast exactly once before the pass commits.
   if arena.discs then
     pcall(function()
-      V.require("StadiumStage").cast(ShadowMap, arena, groundY or 0)
+      if arena.terarrium then arena.terarriumService.cast(ShadowMap,arena,groundY or 0)
+      else V.require("StadiumStage").cast(ShadowMap, arena, groundY or 0)end
     end)
   else
     ShadowMap.draw(terrain, atlasFor(host), nil)
@@ -1153,7 +1154,12 @@ function BattleScene.render(state, arena, textures, token)
   local groundY = BattleScene.groundY(host, arena)
   local cam, pitch = BattleCam.rig(arena, groundY)
   local cx, cy = arena.mid[1], arena.mid[2]
-  local smartCam, smartCx, smartCy = BattleCinematic.frame()
+  local smartCam, smartCx, smartCy
+  if arena.terarrium then
+    cam,pitch=V.require("Gen2Terrarium").camera(arena,groundY)
+  else
+    smartCam,smartCx,smartCy=BattleCinematic.frame()
+  end
   local cinematic = smartCam and smartCam.eye and smartCam.focus
   if cinematic then
     -- MAP already uses this exact action-aware director through VoxelScene.
@@ -1309,7 +1315,8 @@ function BattleScene.render(state, arena, textures, token)
       -- neighbouring maps, no water, no grass and no flowers -- see the
       -- matching skips further down. What is behind them is the sky the
       -- clear painted.
-      V.require("StadiumStage").draw(arena, groundY)
+      if arena.terarrium then arena.terarriumService.draw(arena,groundY)
+      else V.require("StadiumStage").draw(arena, groundY)end
     else
       Voxel3D.draw(terrain, atlasFor(host), nil)
       for i, nb in ipairs(neighbors) do
@@ -1424,6 +1431,7 @@ function BattleScene.render(state, arena, textures, token)
                     ShadowMap.snug(Mat4.translate(nb.ox, 0, nb.oy)))
       end
     end
+    if arena.terarrium then arena.terarriumService.overlay(arena,groundY) end
     local canvas = AntiAlias.resolve(Voxel3D.endScene(), pw, ph, "battle")
     if not canvas then return end
     if type(Weather.applyBattle) == "function"

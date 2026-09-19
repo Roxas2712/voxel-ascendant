@@ -270,6 +270,7 @@ local appliedDistance = nil
 local activeArena = nil
 local activeBattle = nil
 local lastScreenSafe = nil
+local lastRetreatCut = nil
 -- DISCS actors change their visible bounds as they animate. Keep the optical
 -- room a verified recovery needed for this encounter, rather than alternating
 -- between its wide lens and the ordinary lens on each narrow/wide idle pose.
@@ -320,6 +321,7 @@ function BattleCam.setScreenSafetyEvaluator(evaluator)
   -- changes that decision, so the next update must inspect it again.
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   lastScreenSafe = nil
+  lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
   pendingScreenProbe = nil
@@ -330,14 +332,31 @@ end
 -- spent pending-HUD allowance from portrait must not prevent the first
 -- landscape render from publishing its new head receipts during an attack.
 -- Keep gameplay, camera pose and zoom; invalidate only the old screen proof.
-function BattleCam.noteViewport(w, h)
+function BattleCam.noteViewport(w, h, frameSpan)
   if not (type(w) == "number" and type(h) == "number"
       and w > 0 and h > 0 and w < math.huge and h < math.huge) then return false end
   local changed = BattleCam.viewportW ~= nil
     and (BattleCam.viewportW ~= w or BattleCam.viewportH ~= h)
+  local oldFovScale = BattleCam.viewportFovScale or 1
   BattleCam.viewportW, BattleCam.viewportH = w, h
+  BattleCam.viewportFovScale = type(frameSpan)=="number"
+    and frameSpan>0 and frameSpan<math.huge and h/frameSpan or 1
   if not changed then return false end
-  lastScreenSafe, pendingScreenProbe = nil, nil
+  -- The gesture used coordinates from the old viewport. Keep its accepted
+  -- orbit/zoom, but do not hold off automatic framing in the new format.
+  pendingManualRollback = nil
+  BattleCam.directorManualUntil = 0
+  -- Keep the physical seat as a candidate, preserving its displayed lens.
+  -- The guard revalidates it against the NEW actor/HUD bounds before use.
+  -- Dropping the seat stranded a portrait->landscape switch behind terrain
+  -- when the close default rig could no longer admit all four actors.
+  if lastScreenSafe and lastScreenSafe.camera then
+    local previous = lastScreenSafe.camera
+    previous.fov = 2*math.atan(math.tan(previous.fov*.5)
+      *oldFovScale/BattleCam.viewportFovScale)
+  end
+  pendingScreenProbe = nil
+  lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
@@ -525,6 +544,7 @@ end
 function BattleCam.reset()
   BattleCam.directorRecoveryNext = nil
   BattleCam.viewportW, BattleCam.viewportH = nil, nil
+  BattleCam.viewportFovScale = 1
   local leftAuthoredArena = authoredArena(activeArena)
                             or activeArena and activeArena.stadiumDirector
   BattleCam.t = 0
@@ -561,6 +581,7 @@ function BattleCam.reset()
   activeArena = nil
   activeBattle = nil
   lastScreenSafe = nil
+  lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
   pendingScreenProbe = nil
@@ -1249,6 +1270,73 @@ local function returnRevalidatedScreenCamera(
   return copyCamera(camera), pitch
 end
 
+-- Large flying poses need distance as well as room in the lens. Expanding
+-- an already wide lens bends the whole map while the near actor can still
+-- leave the frame. Keep the bearing and aim, and try a physical retreat with
+-- a moderate lens. Every seat still needs terrain, travel and live HUD proof.
+local function retreatActorCamera(arena, groundY, camera, pitch, context)
+  if not (arena and arena.map and not arena.discs and camera)
+      or (context and context.manual) then return nil end
+  local base = tonumber(camera.fov)
+  if not (base and base>0 and base<math.pi) then return nil end
+  local viewportScale = BattleCam.viewportFovScale or 1
+  local displayed = 2*math.atan(math.tan(base*.5)*viewportScale)
+  if displayed <= math.rad(85) then return nil end
+  local A = V.require("BattleArena")
+  -- BattleScene expands the GB lens to cover the physical display. Limit
+  -- that final lens; a raw 60-degree lens becomes 104 degrees on a phone.
+  local lens = 2*math.atan(math.tan(math.rad(60)*.5)/viewportScale)
+  for _, distance in ipairs({1.15,1.3,1.5,1.75,2,2.5,3,4}) do
+    local candidate = copyCamera(camera)
+    candidate.fov = lens
+    for axis=1,3 do
+      candidate.eye[axis] = camera.focus[axis]
+        + (camera.eye[axis]-camera.focus[axis])*distance
+    end
+    local _, readable = visibilityScore(A,arena.map,arena,
+      candidate.eye,groundY,"both")
+    local from = sameScreenOwner(lastScreenSafe,arena,activeBattle)
+      and lastScreenSafe.camera.eye or camera.eye
+    local clear = readable and travelClear(A,arena.map,from,candidate.eye)
+    -- When the existing shot needs this extreme lens, a single recovery
+    -- CUT may establish a clear seat across blocked terrain. No
+    -- movement through that terrain is rendered. Following frames must prove
+    -- travel from this actual rendered seat, not the old uncorrected rig.
+    local cut = not clear and readable and context and context.recoveryCut
+      and not sameScreenOwner(lastRetreatCut,arena,activeBattle)
+      and travelClear(A,arena.map,candidate.eye,candidate.eye)
+    local margin = copyCamera(candidate)
+    margin.fov = 2*math.atan(math.tan(lens*.5)*.8)
+    if (clear or cut)
+        and screenSafeCamera(activeBattle,arena,groundY,candidate,
+          {phase="rendered-map-retreat",actual=true}) == true
+        -- Leave angular room for the next wing beat instead of accepting a
+        -- pose that just grazes the safe edge and freezes on the next frame.
+        and screenSafeCamera(activeBattle,arena,groundY,margin,
+          {phase="rendered-map-retreat-margin",actual=true}) == true then
+      pendingScreenProbe = nil
+      lastScreenSafe = {arena=arena,battle=activeBattle,
+        camera=copyCamera(candidate),pitch=pitch}
+      local prior = BattleCam.mapRescueLens
+      local hint = {arena=arena,battle=activeBattle,
+        factor=math.tan(lens*.5)/math.tan(base*.5),retreat=distance,lens=lens,
+        shot=BattleCam.directorShot,phase=activeBattle.phase}
+      if prior and sameScreenOwner(prior,arena,activeBattle)
+          and prior.shot==hint.shot and prior.phase==hint.phase then
+        hint.factor=(prior.factor or 1)*math.tan(lens*.5)/math.tan(base*.5)
+        hint.lift=prior.lift
+        hint.focusDrop, hint.focusDropRatio=prior.focusDrop,prior.focusDropRatio
+      end
+      BattleCam.mapRescueLens = hint
+      if cut then lastRetreatCut={arena=arena,battle=activeBattle} end
+      BattleCam.screenSafetyOK = true
+      BattleCam.screenSafetyReason = "rendered-map-retreat"
+      BattleCam.screenSafetyFallbackUsed = true
+      return candidate,pitch
+    end
+  end
+end
+
 -- A phone can expose substantially more rows than the GB-shaped camera solve
 -- anticipated.  The ordinary director safety pass widens its *goal*, but the
 -- eased camera presented in this frame can still be the old narrow lens.  On
@@ -1490,9 +1578,10 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
   -- no safety result is cached. A raised eye also rechecks its world route.
   -- This avoids replaying rejected lenses for every tiny camera drift.
   local hint = BattleCam.mapRescueLens
+  local retreatTravelBlocked = false
   if hint and hint.arena == arena and hint.battle == activeBattle
-      and hint.shot == BattleCam.directorShot
-      and hint.phase == activeBattle.phase then
+      and (hint.retreat or (hint.shot == BattleCam.directorShot
+        and hint.phase == activeBattle.phase)) then
     local candidate = copyCamera(camera)
     -- Start a manual gesture from the lens currently on screen. Removing
     -- its fit correction here would make even a tiny pinch jump past it.
@@ -1523,10 +1612,36 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
       pitch=math.atan2(math.sqrt(dx*dx+dz*dz),
         math.max(.001,candidate.eye[2]-candidate.focus[2]))
     end
-    if reusable then camera = candidate end
+    if hint.retreat then
+      for axis=1,3 do
+        candidate.eye[axis] = candidate.focus[axis]
+          + (candidate.eye[axis]-candidate.focus[axis])*hint.retreat
+      end
+      local A = V.require("BattleArena")
+      local _, readable = visibilityScore(A,arena.map,arena,
+        candidate.eye,groundY,"both")
+      local from = sameScreenOwner(lastScreenSafe,arena,activeBattle)
+        and lastScreenSafe.camera.eye or camera.eye
+      reusable = readable and travelClear(A,arena.map,from,candidate.eye)
+      retreatTravelBlocked = not reusable
+    end
+    if reusable or hint.retreat then camera = candidate end
   end
   local safe, reason = screenSafeCamera(
     activeBattle, arena, groundY, camera, context)
+  if retreatTravelBlocked then
+    -- Returning the old close rig merely because it fits the HUD would
+    -- discard the established perspective. Revalidate the last actual seat
+    -- below while its next physical move is blocked.
+    safe,reason=false,"camera-travel-blocked"
+  end
+  context.recoveryCut = safe == false and type(reason)=="string"
+    and (reason:match("outside%-safe%-frame$") or reason:match("%-under%-"))
+    or safe == true and activeBattle.phase=="menu"
+      and (BattleCam.viewportH or 0)>(BattleCam.viewportW or 0)
+  local retreat, retreatPitch = retreatActorCamera(
+    arena,groundY,camera,pitch,context)
+  if retreat then return retreat,retreatPitch end
   if safe == true then
     pendingScreenProbe = nil
     lastScreenSafe = {
@@ -1554,9 +1669,14 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
       BattleCam.screenSafetyFallbackUsed = true
       return portable, portablePitch
     end
-    local rescued, rescuedPitch = renderedActorFrameRescue(
-      arena, groundY, uncorrectedCamera, uncorrectedPitch, reason, context)
-    if rescued then return rescued, rescuedPitch end
+    -- A gesture starts from the corrected seat. Reframing the old close rig
+    -- here discards that seat and makes a rejected drag jump to a wide lens.
+    -- Keep the correction and let the ordinary last-safe rollback stop it.
+    if not (context.manual and hint and hint.retreat) then
+      local rescued, rescuedPitch = renderedActorFrameRescue(
+        arena, groundY, uncorrectedCamera, uncorrectedPitch, reason, context)
+      if rescued then return rescued, rescuedPitch end
+    end
   end
 
   if safe == false
@@ -2143,6 +2263,7 @@ function BattleCam.update(dt, arena, battle, groundY)
     -- arena/BattleState pair. In particular, A -> B -> A must not resurrect an
     -- old A receipt, and a BattleState __eq alias is still a different owner.
     lastScreenSafe = nil
+    lastRetreatCut = nil
     portableFovFloor = nil
   BattleCam.mapRescueLens = nil
     pendingScreenProbe = nil

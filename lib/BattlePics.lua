@@ -136,28 +136,31 @@ local CUT = 0.5
 local function readBack(img)
   local w, h = img:getDimensions()
   if w <= 0 or h <= 0 then return nil end
-  local prevCanvas = love.graphics.getCanvas()
-  local prevBlend, prevAlpha = love.graphics.getBlendMode()
-  local prevR, prevG, prevB, prevA = love.graphics.getColor()
-  local data = nil
+  local g = love.graphics
+  local data, canvas
+  -- This can run in the middle of a palette pass or a transformed arena
+  -- draw. Read the texture itself, not the caller's shader/clip/transform:
+  -- otherwise those temporary effects become permanent cached artwork and
+  -- bounds. Restore the complete state on failures as well as success.
+  g.push("all")
   local ok = pcall(function()
-    local canvas = love.graphics.newCanvas(w, h, { dpiscale = 1 })
-    love.graphics.setCanvas(canvas)
-    love.graphics.clear(0, 0, 0, 0)
-    love.graphics.setBlendMode("replace", "premultiplied")
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 0, 0)
-    love.graphics.setCanvas()
+    canvas = g.newCanvas(w, h, { dpiscale = 1 })
+    g.setCanvas(canvas)
+    g.origin()
+    g.setShader()
+    g.setScissor()
+    g.setStencilTest()
+    g.setDepthMode()
+    g.setColorMask(true, true, true, true)
+    g.clear(0, 0, 0, 0)
+    g.setBlendMode("replace", "premultiplied")
+    g.setColor(1, 1, 1, 1)
+    g.draw(img, 0, 0)
+    g.setCanvas()
     data = canvas:newImageData()
-    if canvas.release then pcall(canvas.release, canvas) end
   end)
-  if prevCanvas then
-    love.graphics.setCanvas(prevCanvas)
-  else
-    love.graphics.setCanvas()
-  end
-  love.graphics.setBlendMode(prevBlend or "alpha", prevAlpha)
-  love.graphics.setColor(prevR or 1, prevG or 1, prevB or 1, prevA or 1)
+  g.pop()
+  if canvas and canvas.release then pcall(canvas.release, canvas) end
   return ok and data or nil
 end
 

@@ -120,7 +120,7 @@ return function(mod)
   humanActing:install()
 
   local followerSpacing = FollowerSpacing.new({ mod=mod, compat=Compat })
-  local presentationPolicy = PresentationPolicy.new({ mod=mod, compat=Compat })
+  local presentationPolicy = PresentationPolicy.new({ mod=mod, compat=Compat, catalog=Catalog })
   local goProvider = pokemonWalksheets:goRenderCardProvider()
   local goRegistered, goReason = presentationPolicy:register(
     "pokemon_go", goProvider)

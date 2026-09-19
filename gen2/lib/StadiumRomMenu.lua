@@ -463,6 +463,53 @@ function M.value(game)
   return text("CHOOSE")
 end
 
+-- A ROM on disk and a usable model pack are different setup steps. Explain
+-- the live importer state without starting work or exposing local paths.
+-- Language is supplied by the menu's existing Universal-mod language owner.
+function M.guidance(de)
+  local function tr(en,german)return de and german or en end
+  local ok,install=pcall(V.require,"StadiumInstall")
+  if not ok or type(install)~="table" then
+    return tr("UNAVAILABLE","NICHT VERFÜGBAR"),
+      tr("Stadium import is unavailable. You can keep playing with sprites.",
+        "Stadium-Import nicht verfügbar. Du kannst mit Sprites weiterspielen.")
+  end
+  local status=install.status or {}
+  local count=tonumber(type(install.targetCount)=="function" and install.targetCount())
+    or tonumber(status.total) or 151
+  local source=type(install.usesStadium2)=="function" and install.usesStadium2()
+    and "Stadium 2" or "Stadium"
+  if status.state=="building" then
+    local done=math.max(0,math.min(count,tonumber(status.done) or 0))
+    return ("%d/%d"):format(done,count),tr(
+      "Building models from your ROM. Wait for READY; no need to select the file again.",
+      "Modelle werden aus deiner ROM erstellt. Auf BEREIT warten; die Datei nicht erneut auswählen.")
+  end
+  if (type(install.available)=="function" and install.available()) or stadiumReady() then
+    return tr("READY","BEREIT"),tr(
+      "Models available. Select "..source.." under Pokemon Model. Import again only to replace them.",
+      "Modelle verfügbar. "..source.." unter Pokémon-Modell wählen. Nur zum Ersetzen erneut importieren.")
+  end
+  if status.state=="failed" then
+    return tr("RETRY","ERNEUT"),tr(
+      "Import incomplete. A: select a compatible "..source.." ROM again. Sprites remain available.",
+      "Import unvollständig. A: kompatible "..source.."-ROM erneut wählen. Sprites bleiben verfügbar.")
+  end
+  if M._status=="NO PICKER" or M._status=="NO MOBILE PICKER" then
+    return tr("NO PICKER","KEIN DATEIDIALOG"),tr(
+      "This host cannot open the file picker. Stadium is optional; sprites remain available.",
+      "Dieser Host kann den Dateidialog nicht öffnen. Stadium ist optional; Sprites bleiben verfügbar.")
+  end
+  if M._status=="PICK..." then
+    return tr("CHOOSE FILE","DATEI WÄHLEN"),tr(
+      "Choose your "..source.." ROM in the file picker, or cancel to keep playing with sprites.",
+      "Deine "..source.."-ROM im Dateidialog wählen oder abbrechen und mit Sprites weiterspielen.")
+  end
+  return tr("OPTIONAL","OPTIONAL"),tr(
+    ("A: choose your %s ROM (.z64/.n64/.v64) to build %d models. HD sprite downloads are separate."):format(source,count),
+    ("A: eigene %s-ROM (.z64/.n64/.v64) für %d Modelle wählen. HD-Sprite-Downloads sind separat."):format(source,count))
+end
+
 local function configureManagerRow(row, manager)
   row = type(row) == "table" and row or {}
   row.id = "stadiumRomFile"

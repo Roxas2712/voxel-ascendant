@@ -31,7 +31,7 @@ end
 
 function PresentationPolicy.new(options)
   return setmetatable({
-    mod=assert(options.mod), compat=assert(options.compat), providers={},
+    mod=assert(options.mod), compat=assert(options.compat), catalog=options.catalog, providers={},
     selections=0, lastSource="sprite", lastReason="not_resolved",
   }, PresentationPolicy)
 end
@@ -86,7 +86,17 @@ function PresentationPolicy:unregister(id, provider)
   return true
 end
 
-function PresentationPolicy:_stadiumAvailable(dex)
+function PresentationPolicy:_needsShinyCard(context)
+  -- VASC's DSM importer currently exposes only a species' normal model.
+  -- Preserve the actual party variant; an available normal mesh cannot own
+  -- a shiny actor and hide its exact-colour HD/MMO card.
+  if not (self.mod._vascIntegrated and self.catalog and self.catalog.isShiny) then return false end
+  local mon=type(context)=="table" and (context.mon or context.entity)
+  return self.catalog.isShiny(mon)==true
+end
+
+function PresentationPolicy:_stadiumAvailable(dex, context)
+  if self:_needsShinyCard(context) then return false end
   dex = tonumber(dex)
   if not dex or dex < 1 or dex > 251 then return false end
   if self.mod._vascIntegrated then
@@ -140,9 +150,9 @@ function PresentationPolicy:select(dex, context)
   for _, id in ipairs(self:order(dex, mode)) do
     if id == "sprite" then
       self.selections, self.lastSource = self.selections + 1, id
-      self.lastReason = "packaged_hd_fallback"
+      self.lastReason = self:_needsShinyCard(context) and "shiny_variant_card_fallback" or "packaged_hd_fallback"
       return { id=id, provider=nil, reason=self.lastReason }
-    elseif id == "stadium2" and self:_stadiumAvailable(dex)
+    elseif id == "stadium2" and self:_stadiumAvailable(dex, context)
         and (self.mod._vascIntegrated or mode ~= "auto" or self:_animated(id, dex, context)) then
       self.selections, self.lastSource = self.selections + 1, id
       self.lastReason = "vasc_public_capability"
@@ -150,7 +160,7 @@ function PresentationPolicy:select(dex, context)
     elseif self:_providerAvailable(id, dex, context)
         and (mode ~= "auto" or self:_animated(id, dex, context)) then
       self.selections, self.lastSource = self.selections + 1, id
-      self.lastReason = "registered_provider"
+      self.lastReason = self:_needsShinyCard(context) and "shiny_variant_card_fallback" or "registered_provider"
       return { id=id, provider=self.providers[id], reason=self.lastReason }
     end
   end

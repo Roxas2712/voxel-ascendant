@@ -2011,6 +2011,35 @@ local function heldStatusRect(screen, mon, side, ww, wh, w, h)
   return nil
 end
 
+-- A fallback HP seat must stay below the phone's upper Start/Select row.
+local function statusSafeTop(ww,wh,margin)
+ local _,inset=viewportSafeInsets(ww,wh)
+ local top=math.max(margin,tonumber(inset)or 0)
+ if not(TouchControls and TouchControls.visible and TouchControls.layout)then return top end
+ local ok,visible=pcall(TouchControls.visible,TouchControls)
+ if not(ok and visible)then return top end
+ local valid,layout=pcall(TouchControls.layout,TouchControls)
+ if not(valid and type(layout)=='table')then return top end
+ local _,windowH=love.graphics.getDimensions()
+ for _,key in ipairs({'start','select'})do
+  local z=layout[key]
+  if z and tonumber(z.cy)and tonumber(z.w)and z.cy<windowH*.5 then
+   top=math.max(top,(z.cy+z.w*.65)*wh/windowH+margin)
+  end
+ end
+ return top
+end
+M.statusSafeTop=statusSafeTop
+
+local function aboveActors(projection,h,clearance,offset)
+ local top
+ for _,side in ipairs({'player','enemy'})do
+  local y=statusVisualTop(projection.actorVisuals[side])
+  if y then top=top and math.min(top,y)or y end
+ end
+ return top and top-h-clearance+offset
+end
+
 local function projectedStatusRect(screen, mon, side, projection, ww, wh, w, h)
   local state = statusAttachmentState(screen, ww, wh)
   local held = heldStatusRect(screen, mon, side, ww, wh, w, h)
@@ -2031,7 +2060,7 @@ local function projectedStatusRect(screen, mon, side, projection, ww, wh, w, h)
   local attachX = (tonumber(definition.attachX) or 0) * baseScale
   local attachY = (tonumber(definition.attachY) or 0) * baseScale
   local margin = layout.margin
-  local minX, minY = margin, margin
+  local minX, minY = margin, statusSafeTop(ww,wh,margin)
   local maxX, maxY = math.max(minX, ww-margin-w), math.max(minY, wh-margin-h)
   local gap = math.max(8, math.min(ww, wh) * .012)
   -- This is Kanto's reviewed clearance contract.  The old Crystal prototype
@@ -2090,6 +2119,7 @@ local function projectedStatusRect(screen, mon, side, projection, ww, wh, w, h)
         clampY(visualTop-h-clearance + attachY) },
       { semanticX(outsideX + attachX), middleY },
       { semanticX((side == "player" and minX or maxX) + attachX), middleY },
+      { semanticCorner, clampY(aboveActors(projection,h,clearance,attachY) or minY) },
       { semanticCorner, clampY(minY + attachY) },
     }
     local found = false
@@ -3492,7 +3522,7 @@ local function safetyStatusRect(side, projection, ww, wh, w, h)
   local clearance = math.max(8,
     5 * (tonumber(status.scale) or 1) + 18 * baseScale * .30)
   local sideGap = math.max(8, 5 * baseScale)
-  local minX, minY = margin, margin
+  local minX, minY = margin, statusSafeTop(ww,wh,margin)
   local maxX, maxY = math.max(minX, ww-margin-w),
                        math.max(minY, wh-margin-h)
   -- cameraBounds must describe the exact deterministic target seats used by
@@ -3537,7 +3567,8 @@ local function safetyStatusRect(side, projection, ww, wh, w, h)
       clampY(visualTop-h-clearance + attachY) },
     { semanticX(outsideX + attachX), middleY },
     { semanticX((side == "player" and minX or maxX) + attachX), middleY },
-    { semanticCorner, clampY(minY + attachY) },
+    { semanticCorner, clampY(aboveActors(projection,h,clearance,attachY) or minY) },
+      { semanticCorner, clampY(minY + attachY) },
   }) do
     local cx, cy = candidate[1], candidate[2]
     if not hitsActor(cx, cy) then return { cx, cy, w, h } end

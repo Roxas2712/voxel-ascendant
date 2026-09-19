@@ -81,6 +81,7 @@ local SETTING_HELP_DE = {
   outdoorGround = "Natürliche Außenböden: Gras, Sand, Waldgrund und Wege. Wasser und hohes Gras bleiben erkennbar. AUS stellt die Originalgrafik wieder her.",
   outdoorTrees = "Verschiedene Voxelbäume passend zur Region. Alabastia hat seinen eigenen Umgebungsschalter. Zerschneider und Wege bleiben erhalten.",
   outdoorStone = "Voxelsteine, niedrige Steinhecken und Holzpfähle außerhalb Alabastias. Getrennt von Bäumen und Boden schaltbar.",
+  lavenderTowerStyle = "Verwitterter, düsterer Steinturm oder die ursprüngliche Holzvariante. Beide sind gleich hoch; Eingänge und Spielwelt bleiben unverändert.",
   palletBuildings = "Regionale Voxelgebäude in Kanto, moderne Pokémon-Center und die Liga. Grundflächen und Eingänge bleiben. AUS und 2D zeigen die alten Gebäude.",
   palletSurrounds = "Voxelbäume, Felsen und Pfähle. Wege bleiben erhalten. AUS und 2D zeigen die alte Umgebung.",
   palletWindowLights = "Beleuchtete Fenster an den neuen Gebäuden bei Dämmerung und Nacht. Separat abschaltbar.",
@@ -173,8 +174,8 @@ local SETTING_HELP_DE = {
     .. "Schrift, KP-/EP-Balken, Symbole und Editionsrahmen bleiben unverändert.",
   oras_text_glass = "Stärke nur der Glasfläche hinter der Kampf-Textbox. "
     .. "Text, Cursor und Editionsrahmen bleiben unverändert lesbar.",
-  status_anchor = "Verankert die Statuskarten außerhalb oder oberhalb der "
-    .. "Pokémon beziehungsweise in den Bildschirmecken.",
+  status_anchor = "Außerhalb (Standard) und Oberhalb folgen der Kamera mit einer festen Pokémon-Pose, "
+    .. "ohne Flügelschlag oder Wippen zu übernehmen. Bildschirmecken bleiben optional. Kollisionsprüfungen bleiben aktiv.",
   player_hud_x = "Horizontale Feinverschiebung der eigenen ORAS-Statuskarte.",
   player_hud_y = "Vertikale Feinverschiebung der eigenen ORAS-Statuskarte.",
   enemy_hud_x = "Horizontale Feinverschiebung der gegnerischen ORAS-Statuskarte.",
@@ -243,13 +244,13 @@ local SECTION_DEFS = {
   pallet={title="KANTO SCENERY",help={
     en="Kanto buildings, outdoor ground, regional trees, rocks and window lighting can be switched independently.",
     de="Kanto-Gebäude, Außenboden, regionale Bäume, Steine und Fensterlicht lassen sich einzeln schalten."},
-    keys={palletBuildings=true,palletSurrounds=true,palletWindowLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
+    keys={palletBuildings=true,lavenderTowerStyle=true,palletSurrounds=true,palletWindowLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
   terarrium={title="TERRARIUM",help={
     en="Built-in Terrarium battle stage. Select with 8 in battle; customize camera, shell, background and dome here.",
     de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
     keys={terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
       terarriumBallStyle=true,terarriumBackground=true,terarriumDome=true}},
-  battleHeroes={title="BALLWURF",help={
+  battleHeroes={title="BALL THROWS",help={
     en="Ascendant Battle Heroes: Johto throws in Gen1, trainers and gestures. The separate Battle Heroes mod takes precedence when installed.",
     de="Ascendant Battle Heroes: Johto-Ballwuerfe in Gen1, Trainer und Gesten. Ist die separate Battle-Heroes-Mod installiert, hat diese Vorrang."},
     keys={battleHeroesEnabled=true,battleHeroesTrainerStays=true,battleHeroesGestures=true,battleHeroesModernBalls=true}},
@@ -318,12 +319,12 @@ local SECTION_DEFS = {
   pokemon = {
     title = "POKéMON + MODELS",
     help = {
-      en = "Choose Pokémon models and front/rear battle art, import Stadium 2 or open the sprite guide. "
-        .. "Party, PC, Legacy Bank, Bag and menu skins live together in "
-        .. "SKINS & OVERLAYS.",
-      de = "Wähle Pokémon-Modelle und Front-/Rückengrafiken, importiere Stadium 2 oder öffne die Sprite-Anleitung. "
-        .. "Team-, PC-, Bank-, Taschen- und Menüskins liegen gemeinsam unter "
-        .. "SKINS & OVERLAYS.",
+      en = "You can play immediately with sprites. HD downloads and Stadium ROM imports "
+        .. "are optional, separate sources. Choose Pokémon models and battle art here. "
+        .. "Party, PC, Legacy Bank, Bag and menu skins: SKINS & OVERLAYS.",
+      de = "Du kannst sofort mit Sprites spielen. HD-Downloads und Stadium-ROM-Import "
+        .. "sind optionale, getrennte Quellen. Hier wählst du Pokémon-Modelle und Kampfgrafiken. "
+        .. "Team-, PC-, Bank-, Taschen- und Menüskins: SKINS & OVERLAYS.",
     },
     keys = {
       trainerBack=true, battleBack=true, modernDexSpriteSource=true,
@@ -580,6 +581,7 @@ end
 -- ids stable, but never leak their English developer labels into a German
 -- Universal-German session.
 local UI_LABEL_DE = {
+  ["BALL THROWS"]="BALLWURF",
   ["POKEMON HD DOWNLOADS"]="POKéMON-HD-DOWNLOADS",
   ["VIEW + WORLD"]="SICHT + WELT",
   ["KANTO SCENERY"]="KANTO-UMGEBUNG",
@@ -619,6 +621,9 @@ local UI_LABEL_DE = {
 }
 
 local SETTING_LABEL_DE = {
+  terarriumBehindRed="KAMERA HINTER ROT",terarriumIdleAnimation="RUHEANIMATION",terarriumIdleSound="WACKELKLANG",
+  terarriumBallStyle="BALL-DESIGN",terarriumBackground="HINTERGRUND",terarriumDome="GLASKUPPEL",
+  battleHeroesEnabled="BALLWURF",battleHeroesTrainerStays="TRAINER IM KAMPF",battleHeroesGestures="TRAINER-GESTEN",battleHeroesModernBalls="MODERNE BÄLLE",
   liveDisplay="LIVE-ANZEIGE", liveClock="UHRZEIT", liveFps="FPS + BILDZEIT",
   liveCpu="CPU-ZEIT", liveGpu="GPU-TEXTURSPEICHER",
   deviceProfile="GERÄTEPROFIL", sky="HIMMEL", clouds="WOLKEN",
@@ -626,7 +631,7 @@ local SETTING_LABEL_DE = {
   weatherMusic="WETTERMUSIK", weatherTweak="WETTER-EFFEKTE",
   scenery="KULISSE", outdoorHorizon="AUSSENHORIZONT", desktopNeighborRing="PC-KARTENRING", preload="VORLADEN", grid="VOXEL-GITTER",
   terrainHeights="GELÄNDEHÖHEN", battleGrid="KAMPF-GITTER",
-  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",
+  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",lavenderTowerStyle="POKÉMON-TURM",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",
   voxelItems="Voxel Items", currentRoom="NUR AKTUELLER RAUM", interiorFloors="INNENRAUMBÖDEN", shadows="SCHATTEN", curve="WELTKRÜMMUNG", water="WASSER", waterActors="SCHWIMMEN", voxelStairs="TREPPEN", towerAtmosphere="TURM-ATMOSPHÄRE", caveTorches="WANDFACKELN",
   battles="3D-KÄMPFE", arenaArt="ARENA-GRAFIK",
   diskArt="DISK-GRAFIK", qol_ui_skin="MENÜ-DESIGN",
@@ -658,6 +663,11 @@ local SETTING_LABEL_DE = {
 }
 
 local VALUE_DE = {
+  ["BRIGHT GALLERY"]="HELLE GALERIE",FOREST="WALD",ROSE="ROSA",
+  ["POKE BALL"]="POKÉBALL",["GREAT BALL"]="SUPERBALL",["ULTRA BALL"]="HYPERBALL",["MASTER BALL"]="MEISTERBALL",["SAFARI BALL"]="SAFARIBALL",
+  ["RED APRICORN"]="APRIKOKO ROT",["BLUE APRICORN"]="APRIKOKO BLAU",["YELLOW APRICORN"]="APRIKOKO GELB",
+  ["GREEN APRICORN"]="APRIKOKO GRÜN",["PINK APRICORN"]="APRIKOKO ROSA",["BLACK APRICORN"]="APRIKOKO SCHWARZ",["WHITE APRICORN"]="APRIKOKO WEISS",
+  STONE="STEIN", WOOD="HOLZ",
   AUTO="AUTOM.", FULL="VOLL", OFF="AUS", ON="AN", OPEN="ÖFFNEN",
   PENDING="AUSSTEHEND", DONE="FERTIG", DEFAULT="STANDARD",
   ["GAME DEFAULT"]="SPIEL-STANDARD", ["VASC DEFAULT"]="VASC-STANDARD",
@@ -1291,6 +1301,14 @@ local function appendPipelineRows(out, game, section, mod)
   end
 end
 
+local function explainStadium(item,rom,mod)
+  if not (rom and type(rom.guidance)=="function") then return end
+  local ok,right,help=pcall(rom.guidance,languageCode(mod)=="de")
+  if ok and type(right)=="string" and type(help)=="string" then
+    item.right,item.help=right,help
+  end
+end
+
 local function appendActionRows(out, section, mod, game)
   local actions = section.actions or {}
   if not diagnosticsConfigured() then
@@ -1362,6 +1380,7 @@ local function appendActionRows(out, section, mod, game)
         ok, value = pcall(rom.value, game)
       end
       item.right = ok and tostring(value or "CHOOSE") or "UNAVAILABLE"
+      explainStadium(item,rom,mod)
     elseif def.action == "rootHelp" then
       item.right = "START"
       item.help = localized(mod, ROOT_HELP)
@@ -1512,6 +1531,7 @@ local function newSettings(mod, game, opts)
         valueOk, value = pcall(rom.value, game)
       end
       item.right = valueOk and tostring(value or "CHOOSE") or "UNAVAILABLE"
+      explainStadium(item,rom,mod)
       return ok and chosen ~= false
     end
     if item.action == "resetBattleTextbox" then
@@ -1571,6 +1591,7 @@ local function newSettings(mod, game, opts)
         for _, item in ipairs(self.items or rows) do
           if item.action == "stadiumRom" then
             item.right = tostring(value or "CHOOSE")
+            explainStadium(item,rom,mod)
           end
         end
       end

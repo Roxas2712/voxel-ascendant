@@ -190,7 +190,7 @@ BattleCam.PITCH_MOUSE = 0.0016
 -- framing, which is exactly what the dolly breath above is for.
 -- Stahls' NOTE: tweaked these values again so you're no longer looking up charmander's nose into its brain by default. the void up there was visible.
 -- looks like I accidentally reverted these changes when migrating to a proper standalone repo.
-BattleCam.ZOOM_MIN = 1.45         -- the pair filling the frame
+BattleCam.ZOOM_MIN = 0.45         -- the pair filling the frame
 BattleCam.ZOOM_MAX = 3.0          -- the fight in its own landscape
 BattleCam.ZOOM_STEP = 1.15
 BattleCam.ZOOM_TIME = 0.18
@@ -263,7 +263,7 @@ end
 local function setAxis(key, goal)
   if not BattleCam.steerable then return false end
   local was = BattleCam[key]
-  BattleCam[key] = math.max(0, math.min(1, goal))
+  BattleCam[key] = math.max(-1, math.min(1, goal))
   return BattleCam[key] ~= was
 end
 
@@ -450,7 +450,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local fixed = BattleCam.still or canonical
   -- and the steer is withheld a second way, on its own: BACK SPRITES holds
   -- the composition and the DRIFT still runs under it (see steerable)
-  local steered = (not fixed) and BattleCam.steerable
+  local steered = (not canonical) and BattleCam.steerable
 
   -- The drift, plus wherever the player has steered to. The steer is
   -- NEGATIVE because the rotation below runs the other way from the bearing

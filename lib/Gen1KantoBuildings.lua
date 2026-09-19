@@ -53,6 +53,7 @@ function M.register(P,F)
   b(cx-3,cy-3,cz+r-2,6,6,2,3);b(cx-2,cy-2,cz+r,4,4,1,4)
  end
  local function create(kind,map,tx,ty,tw,th,template)
+  if template:find('pokemon_tower')then kind=kind..'_'..V.require('Gen1LavenderTower').setting:get()end
   if P.models[kind]then return kind end
   local w,d=tw*8,th*8;local theme=M.theme(map.id)
   local doors=M.doors(map,tx,ty,tw,th)
@@ -61,6 +62,9 @@ function M.register(P,F)
   local tower=template:find('pokemon_tower')~=nil
   if tower then return V.require('Gen1LavenderTower').create(P,kind,template,village.windowLight)end
   if tower then theme=6 end
+  if template=='silph_co' and V.require('Gen1SilphCo').matches(map.def)then
+   return V.require('Gen1SilphCo').create(P,kind,doors,village.windowLight)
+  end
   local office=template=='silph_co';local tall=office or template=='celadon_mart' or template=='celadon_mansion'
   local house=template:find('gabled') or template=='daycare' or template=='safari_rest_house'
   local flat=template:find('flat_')==1

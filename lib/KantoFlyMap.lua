@@ -96,6 +96,7 @@ function KantoFlyMap.install()
   local receipt = {}
   local feature = featureFor(root, receipt)
   feature.kantoFlyMapMode = KantoFlyMap.mode
+  feature.kantoFlyMapHD = V.require("KantoFlyMapHD")
   feature.kantoFlyMapFallbackFactory = fallbackReceipt.newFallback
 
   local ok, installErr = pcall(installer, feature)

@@ -1,6 +1,6 @@
 # Integrierte VASC Kanto Fly Map Widescreen 1.0.0
 
-Eine zweisprachige 576×324-Kanto-Karte für **Pokémon Rot, Blau und Gelb** mit
+Eine zweisprachige Kanto-Karte mit logischem 576×324-Layout für **Pokémon Rot, Blau und Gelb** mit
 Voxel Ascendant. Sie dient gleichzeitig als echte räumliche Flugauswahl und
 als öffentlicher Widescreen-Fundortprovider für kompatible Pokédex-Ansichten.
 
@@ -47,8 +47,8 @@ auch dieser Rettungspfad, übernimmt die unveränderte Engine-Karte. Alte Werte
   auch nicht beim Ablauf des Flug-Zoomtimers.
 - ORAS-inspirierte Ein-Bildschirm-Oberfläche mit großer Ortsleiste, grünen
   Flugzielen, rotem Zielpfeil und einer separaten unteren Aktionsleiste.
-- Echte 576×324-Widescreen-UI-Fläche mit separater 1152×648-Zoomtextur; die
-  östliche Meeresleiste trägt Ortsname, A/B/SELECT-Hilfe und Stadtinfos, ohne
+- Logische 576×324-Widescreen-UI-Fläche mit 1152×648-Detailtextur; bei größerer Ausgabe zeichnet eine eigene, bis zu vierfach aufgelöste Zeichenfläche die Detailtextur auch in der Übersicht. Die native Palette, Ausgabeeffekte und logische Bedienung bleiben erhalten. Bei fehlender GPU-Zeichenfläche bleibt die native Karte verfügbar.
+- Die östliche Meeresleiste trägt Ortsname, A/B/SELECT-Hilfe und Stadtinfos, ohne
   Kanto zu verdecken oder das Artwork zu strecken.
 - Rahmenlose Crystal-Glass-Kartenleiste mit nur 25 % dunkler Deckkraft;
   `SELECT` und `KARTE/MAP` stehen ohne mittleren Button frei über der Karte.
@@ -83,7 +83,8 @@ Kollisionen, Warps, Storyflags noch Fluglandepunkte. Deaktivieren entfernt die
 Darstellung vollständig, ohne den Spielstand umzubauen.
 
 Die deklarierte Berechtigung `engine_internals` wird ausschließlich benötigt,
-um gültige Flugziele aus den laufenden Editionsdaten zu lesen und normale
+um gültige Flugziele aus den laufenden Editionsdaten zu lesen, die aktive
+Karte in höherer Auflösung durch den nativen Renderer auszugeben und normale
 Town-Map-/Pokédex-Aufrufe sauber an die unveränderte eingebaute Ansicht
 zurückzugeben.
 
@@ -98,8 +99,10 @@ Die bereinigte Vintage-Karte enthält unter anderem:
 - getrennte Verbindungen für Prismania, Saffronia, Orania, Zinnoberinsel und
   Seeschauminseln.
 
-Die Übersicht verwendet die geprüfte 576×324-Textur und der Zoom eine eigene
-1152×648-Detailtextur des bereitgestellten Vintage-Artworks. Nur diese beiden
+Die native Zeichenfläche verwendet die geprüfte 576×324-Textur und im Zoom
+die 1152×648-Detailtextur des bereitgestellten Vintage-Artworks. Die HD-Ausgabe
+verwendet die Detailtextur in beiden Ansichten; sie ergänzt keine neuen
+Bildinhalte über die Auflösung dieser Quelle hinaus. Nur diese beiden
 Runtime-Dateien stehen in der Release-Allowlist; das 3067215-Byte-Masterbild
 aus dem Source-Paket wird nicht noch einmal ausgeliefert. Der exakte Intake,
 alle Hashes und die interne Fallback-Policy stehen in

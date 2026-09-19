@@ -124,8 +124,9 @@ local SHADER = [[
   uniform mat4 model;
   attribute vec3 InstanceOffset;
   attribute float VertexShade;
+  // VASC_CAVE_WALL_VERTEX
   vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    vec4 placed = vertex_position;
+    vec4 placed = caveWallPosition(vertex_position, VertexTexCoord.xy);
     placed.xyz += InstanceOffset;
     vec4 c = lightVP * (model * placed);
     vObjectCaster = step(VertexShade, -0.0001);
@@ -153,6 +154,9 @@ local SHADER = [[
 #endif
 ]]
 
+SHADER=SHADER:gsub('// VASC_CAVE_WALL_VERTEX',function()
+  return V.require('Gen1CaveWalls').GLSL
+end,1)
 ShadowMap._source = function() return SHADER end   -- named for the suite
 
 local shader = nil            -- nil = untried, false = unavailable
@@ -581,6 +585,7 @@ function ShadowMap.begin(cx, cy, vw, vh, casterHeight, staticSignature)
     -- forgot to put it back cannot leak into the next map's terrain
     pcall(sh.send, sh, "sprite", 0)
     pcall(sh.send, sh, "objectOnly", 0)
+    pcall(sh.send, sh, "caveWallsTall", 0)
   end)
   if not ok then
     drawing, ready, lastSig = false, false, nil
@@ -597,6 +602,12 @@ end
 -- bounded colour texture is retained; unsupported depth-writing shaders keep
 -- the ordinary complete pass. The key includes geometry and the exact light
 -- matrix, so changed claims, scenery, sun, zoom and maps cannot reuse it.
+function ShadowMap.caveWalls(amount)
+  if drawing and shader then
+    return pcall(shader.send,shader,'caveWallsTall',amount or 0)
+  end
+end
+
 function ShadowMap.storeStatic(signature)
   if not drawing or not signature or not depthRestorer() then return false end
   if not staticCanvas or staticRes ~= canvasRes then

@@ -290,7 +290,8 @@ local function drawSprite(game, species, x, y, w, h, seen)
   local dx = math.floor(x + (w - iw * scale) / 2)
   local dy = math.floor(y + h - 6 - ih * scale)
   if not resolved.trueColor then
-    local shader = PaletteFX.keyedShader()
+    -- Keep the source alpha, including opaque white within the Pokémon.
+    local shader = PaletteFX.shader()
     local colors = PaletteFX.monPal(game.data, species)
     if shader and colors then
       PaletteFX.sendColors(shader, colors)

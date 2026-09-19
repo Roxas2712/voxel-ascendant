@@ -2,13 +2,13 @@
 local V=...
 local C={ID="vasc.gen1.battle-heroes",VERSION="1.0.1"}
 local definitions={
- {"enabled","battleHeroesEnabled","BALLWURF",false,
+ {"enabled","battleHeroesEnabled","BALL THROWS",false,
   "Enable Johto-style throws. Standing trainers have their own switch; active throws finish safely when disabled."},
- {"trainer_stays","battleHeroesTrainerStays","TRAINER IM KAMPF",true,
+ {"trainer_stays","battleHeroesTrainerStays","TRAINERS IN BATTLE",true,
   "Keep trainers visible after the throw."},
- {"gestures","battleHeroesGestures","TRAINER-GESTEN",true,
+ {"gestures","battleHeroesGestures","TRAINER GESTURES",true,
   "Animate trainer commands during battle."},
- {"qolModernBallSkins","battleHeroesModernBalls","MODERNE BAELLE",true,
+ {"qolModernBallSkins","battleHeroesModernBalls","MODERN BALLS",true,
   "Use modern ball skins in the Johto throw animation."},
 }
 local settings,api,registry

@@ -45,6 +45,7 @@ local DioramaZoom = V.require("DioramaZoom")
 local BattleCinematic = V.require("BattleCinematic")
 
 local CamControl = {}
+local installedGame = nil
 
 -- ------- tuning
 --
@@ -115,8 +116,22 @@ end
 -- staged BattleCam: Gold keeps drawing the current world/1ST/3RD camera there.
 -- Routing its phone pinch to BattleCam changed an invisible lens and made MAP
 -- battles look as if mobile had no zoom control at all.
+local function terrariumCamera()
+  local ok,arena=pcall(function()return V.require("OverworldBattle").arena()end)
+  if ok and arena and arena.terarrium then return V.require("Gen2Terrarium")end
+end
+local function manualCamera()
+  local terrarium=terrariumCamera()
+  if terrarium then return terrarium end
+  if liveWorldBattle() or (type(BattleCinematic.ownsCamera)=='function' and BattleCinematic.ownsCamera()) then return BattleCinematic end
+end
+function CamControl.recentre()
+ local camera=manualCamera()
+ if camera then camera.reset()else BattleCam.recentre()end
+end
 function CamControl.zoomTarget()
   if battleLive() then
+    if terrariumCamera() then return "terrarium"end
     if type(BattleCinematic.ownsCamera) == "function"
         and BattleCinematic.ownsCamera() then return "cinematic" end
     if liveWorldBattle() then return worldZoomTarget() end
@@ -171,7 +186,9 @@ end
 function CamControl.zoomBy(notches)
   if not notches or notches == 0 then return false end
   local target = CamControl.zoomTarget()
-  if target == "cinematic" then
+  if target == "terrarium" then
+    return terrariumCamera().stepZoom(notches)
+  elseif target == "cinematic" then
     return BattleCinematic.stepZoom(notches)
   elseif target == "battle" then
     battleZoom(notches)
@@ -195,7 +212,9 @@ end
 function CamControl.pinchBy(factor)
   if not (factor and factor > 0) then return false end
   local target = CamControl.zoomTarget()
-  if target == "cinematic" then
+  if target == "terrarium" then
+    return terrariumCamera().scaleZoom(1 / factor)
+  elseif target == "cinematic" then
     return BattleCinematic.scaleZoom(1 / factor)
   elseif target == "boom" then
     return ThirdPerson.scaleZoom(1 / factor)
@@ -249,14 +268,15 @@ function CamControl.tick(dt)
   local dead = 0.10
   x = math.abs(x or 0) > dead and x or 0
   y = math.abs(y or 0) > dead and y or 0
-  if liveWorldBattle() then
+  local camera=manualCamera()
+  if camera then
     -- The current Gold live battle is rendered by BattleCinematic, not the
     -- legacy BattleCam orbit. v0.2.27 was still feeding the right stick into
     -- BattleCam, so the values changed but the visible camera did not. Route
     -- the same right-stick axes to the camera that actually owns this frame.
     dt = math.max(0, math.min(0.05, tonumber(dt) or 0))
     if x ~= 0 or y ~= 0 then
-      BattleCinematic.manualLook(x * dt * 2.9, -y * dt * 2.25)
+      camera.manualLook(x * dt * 2.9, -y * dt * 2.25)
     end
     return
   end
@@ -267,7 +287,6 @@ end
 -- ------- the wraps
 
 local installed = false
-local installedGame = nil
 
 function CamControl.install(game)
   -- Gold/Game2 is a separate service owner from src.core.Game. v0.1.93
@@ -297,7 +316,7 @@ function CamControl.install(game)
     local inner = Game.wheelmoved
     function Game:wheelmoved(dx, dy)
       local target = CamControl.zoomTarget()
-      if (target == "battle" or target == "boom" or target == "diorama") and dy and dy ~= 0 then
+      if (target == "battle" or target == "cinematic" or target == "terrarium" or target == "boom" or target == "diorama") and dy and dy ~= 0 then
         CamControl.zoomBy(dy > 0 and -1 or 1)
         return
       end
@@ -319,7 +338,7 @@ function CamControl.install(game)
   -- Not on the orbit rungs: the survey zoom has the OPTIONS row and the
   -- wheel already, and taking a pad button for it would be taking one from
   -- a player who never asked.
-  local CLICK_ZOOMS = { boom = true, battle = true }
+  local CLICK_ZOOMS = { boom = true, battle = true, cinematic = true, terrarium = true }
   do
     local inner = Game.gamepadpressed
     function Game:gamepadpressed(joystick, button)
@@ -355,10 +374,11 @@ function CamControl.install(game)
   do
     local function mouseLook(dx, dy, istouch)
       if battleLive() and not istouch then
-        if liveWorldBattle() then
+        local camera=manualCamera()
+        if camera then
           local w, h = 1280, 720
           pcall(function() w, h = love.graphics.getWidth(), love.graphics.getHeight() end)
-          BattleCinematic.manualLook(-(clamp(dx) / math.max(320, w)) * 4.2,
+          camera.manualLook(-(clamp(dx) / math.max(320, w)) * 4.2,
                                      (clamp(dy) / math.max(240, h)) * 3.0)
         else
           -- dy is NEGATED for the same reason the stick's is: moving the
@@ -468,8 +488,9 @@ function CamControl.install(game)
 
   local function battleLook(dx, dy, w, h)
     if dx == 0 and dy == 0 then return end
-    if liveWorldBattle() then
-      BattleCinematic.manualLook(-(dx / math.max(320, w)) * 4.2,
+    local camera=manualCamera()
+    if camera then
+      camera.manualLook(-(dx / math.max(320, w)) * 4.2,
                                  (dy / math.max(240, h)) * 3.0)
     else
       BattleCam.dragOrbit(dx / math.max(320, w))

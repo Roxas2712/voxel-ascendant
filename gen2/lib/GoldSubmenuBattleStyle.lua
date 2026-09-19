@@ -1665,7 +1665,7 @@ local function drawStarterCrystalCard(world, ww, wh)
   local x, y = (ww - w) * 0.5, (wh - h) * 0.5
   local r = math.max(16 * s, h * 0.035)
   panel(x, y, w, h, r, 0.97, s)
-  header(G, "DEIN STARTER?", cleanText(world.pokePicName),
+  header(G, localized(world.game, "YOUR STARTER?", "DEIN STARTER?"), cleanText(world.pokePicName),
     x, y, w, h * 0.18, wh, s)
   local artX, artY = x + w * 0.08, y + h * 0.20
   local artW, artH = w * 0.84, h * 0.60
@@ -1692,7 +1692,8 @@ local function drawStarterCrystalCard(world, ww, wh)
   local f = font(math.max(13 * s, wh * 0.017))
   if f then G.setFont(f) end
   G.setColor(1, 1, 1, 0.72)
-  G.printf("A/B: ANSEHEN   /   DANACH AUSWAHL BESTÄTIGEN",
+  G.printf(localized(world.game, "A/B: VIEW   /   THEN CONFIRM YOUR CHOICE",
+    "A/B: ANSEHEN   /   DANACH AUSWAHL BESTÄTIGEN"),
     x + w * 0.06, y + h * 0.86, w * 0.88, "center")
   endDraw()
   return true
@@ -2589,22 +2590,28 @@ local function optionsRenderer(screen, ww, wh)
     rows[#rows + 1] = {
       name = cleanText(row.label or row.id or "OPTION"),
       value = optionValue(screen, row),
-      meta = row.activate and "OPEN" or (row.cancel and "BACK" or "LEFT / RIGHT TO CHANGE"),
+      meta = row.activate and localized(screen.game, "OPEN", "ÖFFNEN")
+        or (row.cancel and localized(screen.game, "BACK", "ZURÜCK")
+          or localized(screen.game, "LEFT / RIGHT TO CHANGE", "LINKS / RECHTS ZUM ÄNDERN")),
     }
   end
-  local okShared, handled = pcall(sharedMenu, screen, ww, wh, "OPTIONEN",
+  local title = localized(screen.game, "OPTIONS", "OPTIONEN")
+  local hint = localized(screen.game, "D-PAD: SELECT   L/R: CHANGE   A: OK   B: BACK",
+    "STEUERKREUZ: WAHL   L/R: ÄNDERN   A: OK   B: ZURÜCK")
+  local okShared, handled = pcall(sharedMenu, screen, ww, wh, title,
     rows, tonumber(screen.index) or 1, tonumber(screen.scroll) or 0,
-    "STEUERKREUZ: AUSWAHL   LINKS/RECHTS: ÄNDERN   A: OK   B: ZURÜCK")
+    hint)
   if okShared and handled then return true end
   if not okShared then M.lastError = "OPTIONS: " .. tostring(handled) end
   if not beginDraw(ww, wh, screen) then return false end
-  local geo = drawListPanel(ww, wh, "OPTIONS", "GAME SETTINGS", rows,
+  local geo = drawListPanel(ww, wh, title, localized(screen.game, "GAME SETTINGS", "SPIELEINSTELLUNGEN"), rows,
     tonumber(screen.index) or 1, tonumber(screen.scroll) or 0, {
       widthFrac = 0.56, maxW = 760, rowScale = 0.060,
-      footer = "D-PAD SELECT    LEFT/RIGHT CHANGE    CROSS/A APPLY    CIRCLE/B BACK",
+      footer = hint,
     })
-  drawMessage(ww, wh, geo.x, "OPTIONS",
-    "Settings still use Gold's native OPTION logic. Changes are applied and persisted exactly as before.")
+  drawMessage(ww, wh, geo.x, title,
+    localized(screen.game, "Choose a setting. Changes are saved automatically.",
+      "Wähle eine Einstellung. Änderungen werden automatisch gespeichert."))
   endDraw()
   return true
 end

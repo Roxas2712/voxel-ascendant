@@ -398,6 +398,43 @@ function M.register(P,F)
    end
   end end
  end
+ -- Safari's small boundary boulders have their own four-tile drawing.
+ -- The generic wall reader used to extrude its monochrome stippling into
+ -- rectangular towers. Low, mossy stone keeps the blocked plot readable.
+ for variant=1,4 do
+  local b=make('kanto_safari_rock_'..variant,16,16)
+  for x=0,14,2 do for z=0,14,2 do
+   local dx,dz=(x+1-8)/(7+variant%2),(z+1-8)/7.5
+   local r=dx*dx+dz*dz
+   if r<1 then
+    local h=math.max(2,math.floor((10+variant)*math.sqrt(1-r)))
+    local stone=(x+z*3+variant)%7<2 and C.looseRock3 or C.looseRock2
+    b(x,0,z,2,h,2,stone)
+    if h>4 and (x*3+z+variant)%7<3 then
+     b(x,h,z,2,1,2,C.leafDark or 10)
+    end
+   end
+  end end
+ end
+ for sides=0,3 do local b=make('kanto_safari_fence_post_'..sides,16,32)
+  b(4,0,20,8,3,8,C.looseRock1)
+  b(5,3,21,6,20,6,C.oldTimber)
+  b(5,3,21,1,20,1,C.oldBoard)
+  for _,y in ipairs({8,16})do b(4,y,20,8,2,8,C.oldBeam)end
+  b(3,23,19,10,2,10,C.oldBoard);b(5,25,21,6,1,6,C.oldTimber)
+  for _,y in ipairs({8,16})do
+   for _,part in ipairs({{sides%2==1,0},{sides>=2,11}})do
+    if part[1]then
+     b(part[2],y,21,5,3,4,C.oldTimber);b(part[2],y+2,21,5,1,4,C.oldBoard)
+    end
+   end
+  end
+ end
+ do local b=make('kanto_safari_fence_rail',16,16)
+  for _,y in ipairs({8,16})do
+   b(0,y,5,16,3,4,C.oldTimber);b(0,y+2,5,16,1,4,C.oldBoard)
+  end
+ end
  do local b=make('kanto_hedge',16,16)
   b(0,0,3,16,2,10,16)
   for y=2,6,3 do for x=0,12,4 do b(x,y,3,4,3,10,14)end end
@@ -517,6 +554,28 @@ function M.register(P,F)
   enabled=function()return M.trees:get()end,
   guard=function(map,x,y)return nativeObstacle(map,x,y,2,2)end,
   variant=function(map,x,y)return 'kanto_stump_'..(1+(math.floor(x/2)*7+math.floor(y/2)*11)%4)end}
+ F.patterns[#F.patterns+1]={kind='kanto_safari_rock_1',sets={FOREST=true},
+  maps={SAFARI_ZONE_CENTER=true,SAFARI_ZONE_EAST=true,SAFARI_ZONE_NORTH=true,SAFARI_ZONE_WEST=true},
+  tiles={{84,85},{86,87}},voxelOnly=true,groundTile=48,
+  enabled=function()return M.stone:get()end,
+  guard=function(map,x,y)return nativeObstacle(map,x,y,2,2)end,
+  variant=function(map,x,y)return 'kanto_safari_rock_'..(1+(math.floor(x/2)*7+math.floor(y/2)*11)%4)end}
+ for _,p in ipairs({
+  {kind='kanto_safari_fence_post_0',tiles={{48,48},{10,11},{26,27},{75,76}},
+   variant=function(map,x,y)
+    local left=map:tileAt(x-1,y+2)==66 and map:tileAt(x-1,y+3)==67
+    local right=map:tileAt(x+2,y+2)==66 and map:tileAt(x+2,y+3)==67
+    return 'kanto_safari_fence_post_'..((left and 1 or 0)+(right and 2 or 0))
+   end},
+  {kind='kanto_safari_fence_rail',tiles={{66,66},{67,67}}},
+ })do
+  p.sets={FOREST=true};p.maps={SAFARI_ZONE_CENTER=true,SAFARI_ZONE_EAST=true,SAFARI_ZONE_NORTH=true,SAFARI_ZONE_WEST=true}
+  p.voxelOnly=true;p.groundTile=48
+  p.enabled=function()return M.stone:get()end
+  local height=#p.tiles
+  p.guard=function(map,x,y)return nativeObstacle(map,x,y,2,height)end
+  F.patterns[#F.patterns+1]=p
+ end
  F.patterns[#F.patterns+1]={kind='kanto_plateau_rock_1',sets={PLATEAU=true},
   tiles={{42,43},{34,29}},voxelOnly=true,groundTile=44,
   enabled=function()return M.stone:get()end,

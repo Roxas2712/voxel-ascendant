@@ -7,9 +7,9 @@
 -- v0.3 is the visual reset: the frosted cards are gone. The HUD is built
 -- around x8 transparent battleplate art inspired by Gen I's original battle
 -- furniture, while the live information remains code-driven. Each deployed
--- Pokemon supplies one exact alpha-ink head receipt; its complete status-card
--- rectangle follows that semantic owner's current head/hull with a fixed
--- clearance behind and above the visible Pokemon.
+-- Pokemon supplies a stable HUD reference pose and its current visible hull;
+-- the card follows the reference through camera movement while collision
+-- safety continues to use the animated silhouette.
 
 return function(mod, Bundle)
 Bundle = type(Bundle) == "table" and Bundle or {}
@@ -2323,7 +2323,7 @@ local function toWorld(rect, shot)
 end
 
 -- Each semantic battle side owns one card whose seat is derived from that
--- owner's exact current rendered head and alpha hull. STADIUM/manual camera
+-- owner's stable reference pose when supplied, otherwise its live head. Camera
 -- motion therefore moves the card with the Pokemon without changing semantic
 -- ownership, latch generation or payload identity.
 FloatingHud.OWNER_ATTACHMENT = {
@@ -2334,17 +2334,17 @@ FloatingHud.OWNER_ATTACHMENT = {
 function FloatingHud.ownerAnchorFor(shot, side)
   local visual = type(shot and shot.actorVisuals) == "table"
                  and shot.actorVisuals[side] or nil
-  local head = type(visual) == "table" and visual.head or nil
+  local head = type(visual) == "table" and (visual.hudHead or visual.head) or nil
   if not (type(head) == "table" and tonumber(head.x)
       and tonumber(head.y)) then return nil end
-  return { x=head.x, y=head.y, source="exact-rendered-ink-head" }
+  return { x=head.x, y=head.y, source=visual.hudHead and "stable-pokemon-pose" or "exact-rendered-ink-head" }
 end
 
 function FloatingHud.projectOwnerStatusRect(shot, side)
   local anchor = FloatingHud.ownerAnchorFor(shot, side)
   local visual = type(shot and shot.actorVisuals) == "table"
                  and shot.actorVisuals[side] or nil
-  local hull = type(visual) == "table" and visual.hull or nil
+  local hull = type(visual) == "table" and (visual.hudHull or visual.hull) or nil
   local logicalW, logicalH = plateSize(side)
   if not (anchor and logicalW and logicalH
       and tonumber(shot.pw) and tonumber(shot.ph)) then return nil end
@@ -2400,10 +2400,10 @@ function FloatingHud.projectOwnerStatusRect(shot, side)
   local maxY = math.max(minY,
     shot.ph - (insetBottom or 0) - margin - h)
 
-  -- OUTSIDE is the battle default: player sprites
+  -- OUTSIDE keeps the original placement: player sprites
   -- face right, so the rear of their head is left; enemy sprites face left,
   -- so the rear is right. The card's lower edge stays a fixed clearance above
-  -- the exact rendered head. Ownership remains semantic even when a Stadium
+  -- reference head. Ownership remains semantic even when a Stadium
   -- orbit makes the projections cross.
   local x
   local y
@@ -2581,8 +2581,8 @@ function FloatingHud.statusSlotFromVisual(shot, side, visual)
 end
 
 -- A status card is attached to the semantic battler/mon owner, not to one
--- animation frame or render canvas. Every exact frame reprojects the reviewed
--- behind-head/above-head offset from the current visible hull. Generation and
+-- animation frame or render canvas. Every frame reprojects the reviewed
+-- offset from a fixed pose; the current visible hull still owns safety. Generation and
 -- serial ownership remain stable; a real battler/mon replacement still takes
 -- the ordinary acquisition path.
 function FloatingHud.refreshStatusSlot(old, visual, shot, side)
@@ -2591,8 +2591,16 @@ function FloatingHud.refreshStatusSlot(old, visual, shot, side)
       and old.battler == visual.battler
       and old.mon == visual.mon and type(old.rect) == "table"
       and type(old.anchor) == "table") then return nil end
-  return FloatingHud.statusSlotFromVisual(
-    shot, side or old.side, visual)
+  local slot=FloatingHud.statusSlotFromVisual(shot,side or old.side,visual)
+  if slot and old.anchor.source=="stable-pokemon-pose"
+      and slot.anchor.source==old.anchor.source then
+    -- Keep an already-cleared seat when a wing retracts. Recreating the
+    -- preferred seat every frame made collision avoidance push it out and
+    -- pull it back on every flap. Camera displacement still moves the seat.
+    slot.rect[1]=old.rect[1]+slot.anchor.x-old.anchor.x
+    slot.rect[2]=old.rect[2]+slot.anchor.y-old.anchor.y
+  end
+  return slot
 end
 
 function FloatingHud.rectanglesHit(a, b, padding)
