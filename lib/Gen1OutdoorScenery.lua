@@ -2,6 +2,13 @@
 -- remain authoritative; these claims are used only by the 3D renderer.
 local V=...
 local M={}
+local safariMaps={SAFARI_ZONE_CENTER=true,SAFARI_ZONE_EAST=true,
+ SAFARI_ZONE_NORTH=true,SAFARI_ZONE_WEST=true}
+-- FOREST's connected hills use a different atlas spelling from OVERWORLD
+-- cliffs. Keep the native volume/ledge geometry, including its walkable
+-- interior and stairs; only replace the enlarged original rock drawing.
+local safariHillWalls={[14]=true,[15]=true,[29]=true,[31]=true,
+ [45]=true,[47]=true,[61]=true,[62]=true,[63]=true}
 local S=V.require('ModSetting')
 M.ground=S.new('outdoorGround','OUTDOOR GROUND',{true,false},{'ON','OFF'})
 M.trees=S.new('outdoorTrees','TREES',{true,false},{'ON','OFF'})
@@ -82,6 +89,7 @@ function M.material(map,profile,tile,x,y)
  elseif ts=='OVERWORLD' and tile==82 then return -159
  elseif ts=='FOREST' and tile==32 then return -161
  elseif ts=='FOREST' and tile==48 then return -171
+ elseif ts=='FOREST' and safariMaps[map.id] and tile==30 then return -176
  elseif ts=='FOREST' and (tile==52 or tile==55)then return -161
  elseif ts=='OVERWORLD' and tile==44 then
   if map.id=='CINNABAR_ISLAND' or map.id=='ROUTE_19' or map.id=='ROUTE_20' or map.id=='ROUTE_21'then return -160 end
@@ -229,6 +237,10 @@ function M.jumpLip(direction,tx,ty,h,push)
 end
 function M.wallMaterial(map,class,tile,face)
  if not map or not map.def or map.def.generation==2 or not M.stone:get()then return nil end
+ if map.def.tileset=='FOREST' and safariMaps[map.id]
+    and ((class=='wall' and safariHillWalls[tile])or(class=='ledge' and tile==46))then
+  return face=='top' and -176 or -175
+ end
  -- Structures admits only the connected, gameplay-significant Seafoam
  -- barrier to this class. Keep its low profile, replace the old flat drums.
  if map.id=='ROUTE_20' and map.def.tileset=='OVERWORLD' and class=='reef'
@@ -242,6 +254,36 @@ function M.wallMaterial(map,class,tile,face)
  elseif map.def.tileset=='PLATEAU'and (class=='cliff'or class=='bookcase')and leagueWall[tile]then
   return tile==3 and -167 or face=='top'and -162 or -172
  end
+end
+-- A craggy silhouette above the blocked hill rim, never on the walkable
+-- plateau, stair or warp. World-space samples join across adjacent tiles;
+-- the small stepped facets are baked once into the terrain mesh.
+function M.safariRockCrown(map,class,tile,tx,ty,h,push)
+ if not map or not map.def or map.def.generation==2 or map.def.tileset~='FOREST'
+    or not safariMaps[map.id] or not M.stone:get() or class~='wall'
+    or not safariHillWalls[tile] or map:isWalkableCell(math.floor(tx/2),math.floor(ty/2))
+    or map:isWarpTileCell(math.floor(tx/2),math.floor(ty/2)) then return false end
+ local material={{-175,0},{-175,0},{-175,1},{-175,1}}
+ local function rise(x,z)
+  return 2+2*math.floor((math.sin(x*.21+z*.13)+math.sin(x*.09-z*.26)+2)*1.5)
+ end
+ local function face(q,shade)push(q,material,shade)end
+ for z=0,6,2 do for x=0,6,2 do
+  local xx,zz=tx*8+x,ty*8+z
+  local high=h+rise(xx+1,zz+1)
+  face({{xx,high,zz},{xx+2,high,zz},{xx+2,high,zz+2},{xx,high,zz+2}},1)
+  local sides={
+   {0,-2,{{xx+2,0,zz},{xx,0,zz},{xx,high,zz},{xx+2,high,zz}},.82},
+   {0,2,{{xx,0,zz+2},{xx+2,0,zz+2},{xx+2,high,zz+2},{xx,high,zz+2}},.9},
+   {-2,0,{{xx,0,zz},{xx,0,zz+2},{xx,high,zz+2},{xx,high,zz}},.78},
+   {2,0,{{xx+2,0,zz+2},{xx+2,0,zz},{xx+2,high,zz},{xx+2,high,zz+2}},.86}}
+  for _,s in ipairs(sides)do
+   local nx,nz=x+s[1],z+s[2]
+   local low=(nx<0 or nx>6 or nz<0 or nz>6)and h or h+rise(xx+s[1]+1,zz+s[2]+1)
+   if low<high then s[3][1][2],s[3][2][2]=low,low;face(s[3],s[4])end
+  end
+ end end
+ return true
 end
 function M.grassGroups(map,groups)
  if not M.profile(map)then return groups end
@@ -410,7 +452,7 @@ function M.register(P,F)
     local h=math.max(2,math.floor((10+variant)*math.sqrt(1-r)))
     local stone=(x+z*3+variant)%7<2 and C.looseRock3 or C.looseRock2
     b(x,0,z,2,h,2,stone)
-    if h>4 and (x*3+z+variant)%7<3 then
+    if h>4 and (x*3+z+variant)%11==0 then
      b(x,h,z,2,1,2,C.leafDark or 10)
     end
    end

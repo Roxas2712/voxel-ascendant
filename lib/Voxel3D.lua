@@ -844,10 +844,19 @@ local INTERIOR_FLOOR_GLSL = V.require('Gen1OutdoorScenery').waterGLSL .. [[
     float court=0.0;
     if (family == 11.0) { court=1.0; family=4.0; }
     if (family == 12.0) { court=2.0; family=6.0; }
-    if (family >= 31.0 && family <= 47.0) {
+    if (family >= 31.0 && family <= 48.0) {
       vec2 p=floor(pos*2.0);
       float grain=fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);
       float patches=sin(pos.x*0.033+sin(pos.y*0.025))*0.025;
+      if (family == 48.0) {
+        // Weathered rock/gravel with a few moss pockets, not a grass cap.
+        vec2 p=pos+vec2(sin(pos.y*.17)*2.3,sin(pos.x*.13)*1.8);
+        vec2 cell=floor(p/vec2(5.0,4.0));
+        float facet=fract(sin(dot(cell,vec2(17.17,63.73)))*2719.3);
+        vec3 rock=mix(vec3(.48,.48,.43),vec3(.57,.55,.48),facet);
+        float moss=smoothstep(.88,.99,sin(pos.x*.11+sin(pos.y*.09))*sin(pos.y*.14-pos.x*.03));
+        return vec4(mix(rock,vec3(.27,.35,.22),moss*.7)+(grain-.5)*.035,1.0);
+      }
       if (family == 47.0) {
         // Natural outcrop: angular strata and sparse oblique fractures.
         // No repeating horizontal mortar rows or staggered brick joints.

@@ -1227,7 +1227,11 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink, stampPlan)
         -- drops toward the eave, rounding the drawn corner tiles into 45
         -- degree corners. Flat-topped volumes wear their top rows;
         -- everything else its own art.
-        if rampDirection or graded then
+        if inBody and not rampDirection and not graded
+           and OutdoorScenery.safariRockCrown(map,s.class,tile,tx,ty,h,push) then
+          -- The native rim volume keeps its sides and height datum; only
+          -- the flat cap is replaced by a baked, irregular stone crown.
+        elseif rampDirection or graded then
           local topTile = S.topTileAt and S.topTileAt[k] or tile
           if s.topTile ~= nil then topTile = s.topTile end
           local h1,h2,h3,h4=g1,g2,g3,g4
