@@ -23,10 +23,10 @@ function M.kind(p)
 end
 
 function M.prepare(state,posed)
- if M.setting:get()~=true then return end
+ local enabled=M.setting:get()==true
  local now=love and love.timer and love.timer.getTime and love.timer.getTime() or 0
  for _,p in ipairs(posed)do
-  local kind=M.kind(p);local map
+  local kind=(enabled or p.fossilPoolSpecies) and M.kind(p);local map
   if kind then
    if p.mapId==state.map.id then map=state.map
    else for _,g in ipairs(state.ghosts or{})do if g.map and g.map.id==p.mapId then map=g.map;break end end end

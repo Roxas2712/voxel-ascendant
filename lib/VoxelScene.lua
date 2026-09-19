@@ -2840,6 +2840,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     end
     posed=filtered
   end
+  V.require("Gen1FossilPool").prepare(state, posed, require("src.core.Game"))
   V.require("WaterActors").prepare(state, posed)
   OverworldStadium.prepare(posed)
   -- Complete owner-filtered frame demand, before shadows resolve any textures.
