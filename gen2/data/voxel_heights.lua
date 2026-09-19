@@ -6532,4 +6532,27 @@ for _,id in ipairs({"TilesetJohto","TilesetJohtoModern"}) do
   }
 end
 
+-- Crystal gives Olivine's lighthouse a unique four-row lantern band.
+-- Match its complete native drawing before ordinary brick-house templates;
+-- Gold's original lighthouse remains a separate exact match.
+do
+  local list=profile.buildings.TilesetJohto
+  local original
+  for _,t in ipairs(list)do if t.id=='johto_lighthouse'then original=t;break end end
+  assert(original,'missing native Gold lighthouse profile')
+  local crystal={}
+  for k,v in pairs(original)do crystal[k]=v end
+  crystal.id='johto_lighthouse_crystal'
+  crystal.nativePlacement={mapId='OLIVINE_CITY',width=20,height=18,tx=56,ty=28}
+  crystal.tiles={}
+  for i,row in ipairs(original.tiles)do
+    crystal.tiles[i]={};for j,tile in ipairs(row)do crystal.tiles[i][j]=tile end
+  end
+  crystal.tiles[5]={0x80,0x81,0x81,0x81,0x81,0x81,0x81,0x82}
+  crystal.tiles[6]={0x83,0x84,0x93,0x85,0x86,0x93,0x87,0x88}
+  crystal.tiles[7]={0x89,0x8a,0x8b,0x8c,0x8d,0x8b,0x8e,0x8f}
+  crystal.tiles[8]={0x90,0x91,0x91,0x91,0x91,0x91,0x91,0x92}
+  table.insert(list,1,crystal)
+end
+
 return profile
