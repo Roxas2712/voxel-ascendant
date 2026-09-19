@@ -153,6 +153,58 @@ function GoldColorAtlas.recolorImageData(src, tilePalettes, paletteSet, newImage
   return out
 end
 
+-- Restyle only verified native outdoor wall tiles. Geometry still consumes
+-- the unmodified grayscale atlas; doorways, collision and regional roofs do
+-- not depend on this presentation layer. Exact 64-pixel guards leave custom
+-- tilesets alone, including a replacement in the same numeric tile slot.
+local WALL_TILES = {
+  [7]='3333333322222223222222233333333322232222222322223333333332222223',
+  [27]='2323232333323333333333333332333323232323333333323333333333333332',
+  [26]='3220331332203313322033133220331332203313322033133220331332203313',
+  [28]='3133022331330223313302233133022331330223313302233133022331330223',
+  [1]='3220331332203313322023133220221232202211322102113222100032222222',
+  [2]='2323232333333333333333332222222211111111111111110000000022222222',
+  [22]='3133022331330223313202232122022311220223112012230001222322222223',
+}
+function GoldColorAtlas.styleWalls(src, out, map, mode)
+  local def=map and map.def or {}
+  if mode~='gbc' or (def.environment~='TOWN' and def.environment~='ROUTE')
+    or (def.tileset~='TILESET_JOHTO' and def.tileset~='TILESET_JOHTO_MODERN')
+    or map.tileset.trueColor then return 0 end
+  local w,h=src:getDimensions();local perRow=math.floor(w/8);local changed=0
+  for tile,signature in pairs(WALL_TILES) do
+    local ox,oy=tile%perRow*8,math.floor(tile/perRow)*8
+    local matches=oy+8<=h
+    for y=0,7 do for x=0,7 do
+      if matches then
+        local r,g,b,a=src:getPixel(ox+x,oy+y)
+        matches=math.abs(r-g)<.01 and math.abs(r-b)<.01 and a==1
+          and math.abs(r-tonumber(signature:sub(y*8+x+1,y*8+x+1))/3)<.002
+      end
+    end end
+    if matches then
+      -- The light wall colour retains the city's native daytime palette.
+      -- Compress stipple contrast into subtle plaster variation. Dark frame
+      -- pixels stay native, so the corners and plinth remain readable.
+      local light
+      for y=0,7 do for x=0,7 do
+        if not light and signature:sub(y*8+x+1,y*8+x+1)=='3' then
+          light={out:getPixel(ox+x,oy+y)}
+        end
+      end end
+      for y=0,7 do for x=0,7 do
+        local shade=tonumber(signature:sub(y*8+x+1,y*8+x+1))
+        if shade>=2 then
+          local variation=shade==3 and .94 or .91
+          out:setPixel(ox+x,oy+y,light[1]*variation,light[2]*variation,light[3]*variation,light[4])
+        end
+      end end
+      changed=changed+1
+    end
+  end
+  return changed
+end
+
 local function atlasPath(tileset)
   return tileset and (tileset.image or tileset.path)
 end
@@ -242,6 +294,7 @@ function GoldColorAtlas.forMap(world, map, rawAtlas)
     local out, err = GoldColorAtlas.recolorImageData(
       src, map.tileset.tilePalettes, set, love.image.newImageData)
     if not out then error(err or "Gold atlas recolor failed") end
+    GoldColorAtlas.styleWalls(src,out,map,modeName())
     local img = love.graphics.newImage(out)
     if img and type(img.setFilter) == "function" then img:setFilter("nearest", "nearest") end
     return img, out

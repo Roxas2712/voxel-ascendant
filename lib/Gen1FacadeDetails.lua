@@ -29,6 +29,28 @@ function D.add(a,b,g,C,doors,w,d,front,theme,tx,ty,house,museum)
   end
   return false
  end
+ -- Split a continuous decorative course at native door frames on every
+ -- bearing. Rear and side doors have their glass at x/z=1, where the old
+ -- unbroken board courses intersected the pane at y=8,12,16.
+ local function course(side,start,finish,y)
+  local runs={{start,finish}}
+  for _,door in ipairs(doors)do if door.side==side then
+   local left,right=door.at-door.width/2-2,door.at+door.width/2+2
+   local nextRuns={}
+   for _,run in ipairs(runs)do
+    if right<=run[1] or left>=run[2]then nextRuns[#nextRuns+1]=run
+    else
+     if left>run[1]then nextRuns[#nextRuns+1]={run[1],left}end
+     if right<run[2]then nextRuns[#nextRuns+1]={right,run[2]}end
+    end
+   end
+   runs=nextRuns
+  end end
+  for _,run in ipairs(runs)do
+   if side=='north'then b(run[1],y,1,run[2]-run[1],1,2,dark)
+   else b(side=='west' and 1 or w-3,y,run[1],2,1,run[2]-run[1],dark)end
+  end
+ end
  local function planter(x,z)
   b(x,7,z,12,3,4,timber);b(x+1,10,z+1,10,1,2,dark)
   for n=0,2 do
@@ -41,8 +63,8 @@ function D.add(a,b,g,C,doors,w,d,front,theme,tx,ty,house,museum)
   -- Surface relief follows the building's material, not a random overlay.
   if a.wallMaterial=='timber' then
    for y=4,24,4 do
-    b(2,y,1,w-4,1,2,dark)
-    b(1,y,3,2,1,front-3,dark);b(w-3,y,3,2,1,front-3,dark)
+    course('north',2,w-2,y)
+    course('west',3,front,y);course('east',3,front,y)
     for x=3,w-4,4 do
      if not doorNear('south',x+2,4)then b(x,y,front,4,1,1,dark)end
     end
@@ -52,7 +74,7 @@ function D.add(a,b,g,C,doors,w,d,front,theme,tx,ty,house,museum)
     local shift=(math.floor(y/5)%2)*3
     for x=4+shift,w-8,8 do
      if not doorNear('south',x+3,5)then b(x,y,front,6,3,1,C.silver or 41)end
-     b(x,y,1,6,3,1,C.silver or 41)
+     if not doorNear('north',x+3,5)then b(x,y,1,6,3,1,C.silver or 41)end
     end
    end
   end
