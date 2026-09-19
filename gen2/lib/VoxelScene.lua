@@ -47,6 +47,7 @@ end
 local HorizonWall = V.require("HorizonWall")
 local SceneryWeather = V.require("SceneryWeather")
 local PanoramaBackdrop = V.require("PanoramaBackdrop")
+local JohtoWorldBackdrop = V.require("JohtoWorldBackdrop")
 local InteriorCutaway = V.require("InteriorCutaway")
 local TowerPillar = V.require("Gen2TowerPillar")
 local WallDecals = V.require("WallDecals")
@@ -953,6 +954,8 @@ function VoxelScene.stageMobileScenery(state)
 
   local resource = type(MobileSceneryGate.nextResource) == "function"
                    and MobileSceneryGate.nextResource(map) or nil
+  JohtoWorldBackdrop.setEnabled(type(HorizonWall.enabled)~="function" or HorizonWall.enabled())
+  if resource==nil then JohtoWorldBackdrop.prepare(state) end
   if resource == "horizon" then
     local enabled = type(HorizonWall.enabled) ~= "function"
                     or HorizonWall.enabled() ~= false
@@ -982,6 +985,7 @@ function VoxelScene.stageMobileScenery(state)
   end
 
   if resource == "panorama" then
+    if not JohtoWorldBackdrop.prepare(state) then return false,"johto-world-pending" end
     local enabled = type(HorizonWall.enabled) ~= "function"
                     or HorizonWall.enabled() ~= false
     PanoramaBackdrop.setEnabled(enabled)
@@ -1848,6 +1852,9 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   local sceneryEnabled = scenerySetting
                          and (not MOBILE_RUNTIME or mobileScenery)
   if not MOBILE_RUNTIME then PanoramaBackdrop.setEnabled(scenerySetting) end
+  JohtoWorldBackdrop.setEnabled(scenerySetting)
+  if not MOBILE_RUNTIME then JohtoWorldBackdrop.prepare(state) end
+  local sourceWorldReady=JohtoWorldBackdrop.ready(state) and sceneryEnabled and outdoor
   local panoramaApplicable = outdoor and sceneryEnabled
                               and hasAuthoredPanorama(state.map)
   local panoramaReady = false
@@ -2015,6 +2022,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   -- about anything but their viewpoint.
   local function drawScene()
 
+  if sourceWorldReady then sourceWorldReady=JohtoWorldBackdrop.draw(state) end
   if panoramaReady then
     PanoramaBackdrop.drawAt(me and me.px or cx, 0, me and me.py or cy, {
       weather=groundWeather, amount=groundAmount,
@@ -2043,7 +2051,7 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor, eyes)
   -- HorizonWall's generic tileset/class fallback rather than a hardcoded city.
   Voxel3D.glass(false)
   for _, rim in ipairs(horizon) do
-    if rim.kind ~= "water" and cutawayRimVisible(rim, indoorCutaway) then
+    if rim.kind ~= "water" and not (sourceWorldReady and rim.sourceForest) and cutawayRimVisible(rim, indoorCutaway) then
       local rimTexture = rim.textureMap and atlasFor(rim.textureMap)
                          or rim.texture
       if indoorCutaway and rim.kind == "wall"

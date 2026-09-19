@@ -2845,11 +2845,12 @@ local function geometryFor(entry, own, rects, cooperativeStep,
     end
   end
 
-  local function wallGroup(family)
-    local group = wallGroupsByFamily[family]
+  local function wallGroup(family,sourceForest)
+    local key=family..(sourceForest and ":source-forest" or "")
+    local group = wallGroupsByFamily[key]
     if not group then
-      group = { family = family, vertices = {}, indices = {} }
-      wallGroupsByFamily[family] = group
+      group = { family = family, sourceForest=sourceForest==true, vertices = {}, indices = {} }
+      wallGroupsByFamily[key] = group
     end
     return group
   end
@@ -2928,7 +2929,10 @@ local function geometryFor(entry, own, rects, cooperativeStep,
         shade=1 -- one continuous image must not change brightness at its turn
       end
     end
-    local group = wallGroup(family)
+    local sourceForest=family=="regional" and kind=="forest"
+      and (entry.map.def.tileset=="TILESET_JOHTO" or entry.map.def.tileset=="TILESET_JOHTO_MODERN")
+      and not(placement and placement.editor)
+    local group = wallGroup(family,sourceForest)
     local exitSpec=family=='timber_room' and sproutExit
     local exitPanel=exitSpec and SproutExit.panel(exitSpec,corners,uv,edgeIndex,shade)
     local arenaWindow=(family=="water_arena" or family=="garden_arena" or family=="sky_arena"
@@ -6528,7 +6532,7 @@ local function newBuildJob(key, maps, worldMaps)
       -- allocate unrelated later parts for a result that can never publish.
       error("horizon mesh allocation failed", 0)
     end
-    local function addPart(kind, className, vertices, indices, texture, ox, oy)
+    local function addPart(kind, className, vertices, indices, texture, ox, oy, sourceForest)
       if #vertices == 0 then return end
       coroutine.yield("before-mesh")
       local mesh = texture and Voxel3D.newMesh(vertices, indices) or nil
@@ -6537,7 +6541,7 @@ local function newBuildJob(key, maps, worldMaps)
         mesh = mesh, texture = texture, ox = ox or 0, oy = oy or 0,
         aquariumBase = className=="water_fish" and vertices or nil,
         prismBase = className=="garden_light" and vertices or nil,
-        class = className, kind = kind,
+        class = className, kind = kind, sourceForest=sourceForest==true,
       }
     end
     local function addAtlasPart(kind, className, vertices, indices, textureMap, ox, oy)
@@ -6662,7 +6666,7 @@ local function newBuildJob(key, maps, worldMaps)
         for groupIndex, group in ipairs(built.wallGroups or {}) do
           -- The outside-only underlay survives the camera-side wall cutaway.
           addPart(group.family=="room_void" and "backdrop" or "wall", group.family, group.vertices, group.indices,
-                  wallTextures[groupIndex], built.ox, built.oy)
+                  wallTextures[groupIndex], built.ox, built.oy,group.sourceForest)
         end
         if built.lavaChannels then
           addAtlasPart('lava-channel','lava-channel',built.lavaChannels.vertices,

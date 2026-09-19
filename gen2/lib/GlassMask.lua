@@ -87,6 +87,27 @@ function GlassMask.scan(getPixel, w, h)
       end
     end
   end
+  -- Johto's native paired window is an 8x8 tile, with a grey frame and
+  -- mullion. Gen1's six-wide black-frame scan cannot recognise it. Match
+  -- every source pixel before accepting only the two glass interiors;
+  -- replacement art, wall courses and doors therefore stay untouched.
+  local native = {"00000000", "02222220", "02332330", "02332330",
+                  "02332330", "02332330", "02332330", "00000000"}
+  for y = 0, h - 8, 8 do
+    for x = 0, w - 8, 8 do
+      local matches = true
+      for yy = 0, 7 do for xx = 0, 7 do
+        local r, g, b, a = getPixel(x + xx, y + yy)
+        local expected = tonumber(native[yy + 1]:sub(xx + 1, xx + 1)) / 3
+        if math.abs(r - expected) > .002 or math.abs(g - expected) > .002
+            or math.abs(b - expected) > .002 or a and a < 1 then matches = false end
+      end end
+      if matches then
+        rects[#rects + 1] = {x=x+2, y=y+2, w=2, h=5}
+        rects[#rects + 1] = {x=x+5, y=y+2, w=2, h=5}
+      end
+    end
+  end
   return rects
 end
 
