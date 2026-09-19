@@ -7,7 +7,11 @@ local chunk = assert(loadstring(source:sub(first, last - 1)
 local battle, arena = {}, {map={}, player={1,2}, enemy={3,4}}
 local camera = {eye={10,20,100}, focus={0,0,0}, fov=.76}
 local calls, acceptedFactor = 0, nil
-local env = {activeBattle=battle, BattleCam={}, copyCamera=function(c)
+local raisedChecks = 0
+local env = {activeBattle=battle, BattleCam={},
+ V={require=function(name)assert(name=='BattleArena');return {}end},
+ visibilityScore=function()raisedChecks=raisedChecks+1;return 0,false end,
+ travelClear=function()error('unreadable raised seat must not travel')end, copyCamera=function(c)
   return {eye={unpack(c.eye)}, focus={unpack(c.focus)}, fov=c.fov}
 end}
 env.screenSafeCamera = function(owner, stage, ground, candidate, context)
@@ -41,13 +45,14 @@ assert(not recover(arena, 0, camera, .5, 'player-under-message', {manual=true}))
 assert(not recover({map={}, discs=true}, 0, camera, .5, 'player-under-message', {}))
 assert(calls == 0)
 for _, verdict in ipairs({'unsafe','pending'}) do
-  calls = 0
+  calls,raisedChecks = 0,0
   env.screenSafeCamera = function()
     calls = calls + 1
     if verdict == 'unsafe' then return false, 'enemy-under-player-status' end
     return nil, 'owner-render-pending'
   end
   assert(not recover(arena, 0, camera, .5, 'player-under-message', {}))
-  assert(calls == 7, 'camera search exceeded its bound')
+  assert(calls == 15, 'optical search changed its bounded candidate set')
+  assert(raisedChecks == 4, 'raised search changed its bounded candidate set')
 end
 print('MAP portrait camera recovery: ok')

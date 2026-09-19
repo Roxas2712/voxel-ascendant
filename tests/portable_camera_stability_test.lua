@@ -8,12 +8,20 @@ local cam=assert(loadfile('lib/BattleCam.lua'))({require=function(name)
  error('unexpected dependency '..name)
 end})
 local arena={discs=true,mid={0,0},player={-16,16},enemy={16,-16}}
-local battle={};local wide=false;local checks=0;local requiredFov=.8
+local battle={};local wide=false;local checks=0;local requiredFov=0
 local function evaluator(_,_,_,camera)
  checks=checks+1;return not wide or camera.fov>=requiredFov,'pose-bounds'
 end
 cam.setScreenSafetyEvaluator(evaluator);cam.update(0,arena,battle,0)
 local ordinary=assert(cam.rig(arena,0))
+local savedDistance,savedZoom=cam.distanceSetting:get(),cam.zoomGoal
+-- Derive synthetic pose bounds from the authored rig's actual lens. The
+-- nominal GB-frame FOV is widened later by the renderer; a fixed .8-radian
+-- threshold here accidentally demanded >4x recovery from the current rig.
+local function lens(factor)
+ return 2*math.atan(math.tan(ordinary.fov*.5)*factor)
+end
+requiredFov=lens(1.35)
 wide=true;local recovered=assert(cam.rig(arena,0));wide=false
 assert(recovered.fov>ordinary.fov,'fixture did not require recovery')
 assert(cam.rig(arena,0).fov>=recovered.fov-1e-9,'narrow idle pose undid optical recovery')
@@ -24,11 +32,11 @@ end
 assert(checks>=123,'held lens bypassed current safety evaluation')
 -- A later larger pose must search from the authored rig, not multiply the
 -- previous recovery again and unnecessarily shrink both battlers.
-requiredFov=.94;wide=true
+requiredFov=lens(1.65);wide=true
 local larger=assert(cam.rig(arena,0))
-assert(larger.fov>=.94 and larger.fov<1.0,'repeated recovery compounded the lens')
-recovered=larger;requiredFov=.8
-assert(cam.distanceSetting:get()==3 and cam.zoomGoal==3,'recovery changed saved/manual zoom')
+assert(larger.fov>=requiredFov and larger.fov<lens(2),'repeated recovery compounded the lens')
+recovered=larger;requiredFov=lens(1.35)
+assert(cam.distanceSetting:get()==savedDistance and cam.zoomGoal==savedZoom,'recovery changed saved/manual zoom')
 wide=false;cam.noteViewport(600,1300);cam.noteViewport(1300,600)
 assert(cam.rig(arena,0).fov<recovered.fov,'resize retained portrait floor')
 local function recover()
