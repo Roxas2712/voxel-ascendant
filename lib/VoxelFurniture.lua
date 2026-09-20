@@ -149,6 +149,10 @@ V.require('VoxelInteriorModels')(P,F)
 local interiorPatterns=V.require('VoxelInteriorPatterns')
 for i=#interiorPatterns,1,-1 do table.insert(F.patterns,1,interiorPatterns[i])end
 function F.variantKind(kind,map,x,y)
+  if kind=='wood_chair_north' and map.id=='REDS_HOUSE_1F' then
+    if x==4 then return 'reds_dining_chair_west' end
+    if x==10 then return y==8 and 'reds_dining_chair_west' or 'reds_dining_chair_east' end
+  end
   -- The near bank faces its research table; the far bank faces south.
   if kind=='lounge_chair' and map.id=='CINNABAR_LAB_TRADE_ROOM' and y==10 then
     return 'lounge_chair_south'

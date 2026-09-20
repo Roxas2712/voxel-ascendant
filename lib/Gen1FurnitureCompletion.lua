@@ -58,6 +58,15 @@ return function(P,F,patterns)
    b(3,12,z,10,3,2,C.oak)
   end
  end
+ -- Red's dining chairs face the table. Keep the native cell/support datum,
+ -- but use a compact 12-unit footprint around each cell centre.
+ for _,side in ipairs({'west','east'})do
+  local b=model('reds_dining_chair_'..side,16,16,6)
+  for _,v in ipairs(P.models.wood_chair_west.boxes)do
+   local x=side=='east' and 16-v[1]-v[4] or v[1]
+   b(2+x*.75,v[2],2+v[3]*.75,v[4]*.75,v[5],v[6]*.75,v[7])
+  end
+ end
  local b=model('wood_stool',16,16,6);legs(b,14,14,6);b(1,6,1,12,2,12,C.oak);b(3,8,3,8,1,8,10)
  b=model('waiting_bench',16,16,6)
  legs(b,16,16,5);b(0,5,3,16,2,12,7);b(0,7,2,16,7,2,8)

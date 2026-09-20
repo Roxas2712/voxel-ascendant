@@ -455,19 +455,26 @@ local function recordBodyHeight(record)
   return ScaleProfiles.worldHeightForClass(record and record.scaleClass)
 end
 
--- Followers share a small screen area with the player. A long tail, wings or
--- leaves must not reduce the actual HD body below a readable size. Keep the
--- existing battle/world calibration and pixel sprites unchanged.
+-- Match the readable 16-unit Crystal presentation in the overworld. HD
+-- source padding must not shrink the body; retain larger authored encounters.
+local WORLD_CONTEXT = {follower=true,city=true,grass=true,wilds_town=true}
+local WORLD_MINIMUM = {pokemon_small=16,pokemon_medium=18,pokemon_large=21.6}
 function ScaleProfiles.worldHeightForRecord(record, context)
   local height = recordBodyHeight(record)
-  local cards = type(record) == "table" and record.animationCards
-  local layout = type(cards) == "table" and cards.layout
-  local reference = type(layout) == "table" and tonumber(layout.referenceHeight)
-  if context == "follower" and reference and reference > 0
-      and reference < math.huge then
-    return math.max(5.4, height)
+  local cards = type(record)=="table" and record.animationCards
+  if not (WORLD_CONTEXT[context] and type(cards)=="table") then return height end
+  local minimum = WORLD_MINIMUM[record.scaleClass] or 18
+  local layout = cards.layout
+  local reference = type(layout)=="table" and tonumber(layout.referenceHeight)
+  local top = type(layout)=="table" and tonumber(layout.top)
+  local bottom = type(layout)=="table" and tonumber(layout.bottom)
+  -- The Kanto HD path normalizes to the authored body envelope above.
+  if tonumber(record.dex) and tonumber(record.dex)<=151 and reference
+      and reference>0 and reference<math.huge and top and bottom
+      and bottom>top and bottom<math.huge then
+    minimum = minimum * reference / (bottom-top)
   end
-  return height
+  return math.max(height, minimum)
 end
 
 -- Compatibility alias for the initial Card renderer API.

@@ -318,6 +318,10 @@ function Player:start(moveId, attackerIsPlayer, opts)
   -- never be replaced even if a content mod happens to reuse one of the ids.
   local variant = attackerIsPlayer and "move"
                   or (entry and entry.opp and "opp" or "move")
+  -- GUST's opponent asset is already authored at the player endpoint.
+  -- Our role-based projection would mirror it twice and hit its caster.
+  -- Project the canonical target-centred program once for either attacker.
+  if moveId == "GUST" and entry and entry.move then variant = "move" end
   local program = entry and entry[variant]
   if not (program and type(program.frames) == "table"
           and #program.frames > 0) then

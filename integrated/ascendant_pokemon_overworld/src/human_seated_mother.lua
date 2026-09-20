@@ -47,7 +47,7 @@ function M.new(options)
   if not ok then api.error=tostring(result);release();return end
   pose=result;api.loads=api.loads+1
   local b={left=112,right=400,top=30,bottom=665,imageWidth=512,imageHeight=768}
-  source={id=mod.path..'/'..path..'seated-v1',texture=pose.texture,bounds={},worldHeight=18,offsetY=-5,offsetZ=8}
+  source={id=mod.path..'/'..path..'seated-v1',texture=pose.texture,bounds={},worldHeight=18,offsetY=-3,offsetZ=0}
   for r=0,3 do source.bounds[r]={};for c=0,2 do source.bounds[r][c]=b end end
  end
  function api:queue()

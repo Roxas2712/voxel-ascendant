@@ -3969,7 +3969,7 @@ local function renderMessageCanvas(battle, k, logicalW, logicalH)
   if not canvas then return nil end
 
   local layout = FloatingHud.MESSAGE
-  local lines = visibleBattleMessageLines(battle)
+  local lines = battleMessageActive(battle) and visibleBattleMessageLines(battle) or {}
   -- Resolve the complete visual layout before touching the canvas/transform
   -- stack. An impossible page therefore fails open without leaking g.push().
   local visual = FloatingHud.layoutMessageLines(lines, logicalW, logicalH)
@@ -6324,7 +6324,10 @@ local function messageCameraTransform()
 end
 
 local function drawMessagePanel(battle, shot)
-  if not battleMessageActive(battle) then return false end
+  -- Confirming a move enters messages before the queue supplies its first
+  -- line. Commit an empty message panel during that gap as well: declining
+  -- it makes the exclusive HUD provider expose the native 2D UI for a frame.
+  if not (battle and battle.phase == "messages") then return false end
   if battle.demo then return false end
 
   local rect, k, logicalW, logicalH = HudRuntime.messageRectFor(shot)
