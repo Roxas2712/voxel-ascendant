@@ -63,13 +63,16 @@ return function(api)
   elseif family:find('league')or family:find('johto')then family='gym'
   elseif family=='mansion'then family='interior' end
   if not palettes[family]then family='grass'end
-  local id=tostring(map and map.id or 'UNKNOWN');local behind=(cameraMode or S.cameraMode())=='behind'
-  return {ballStyle=api.ballStyle and api.ballStyle(map)or'poke',id=id,family=family,theme=gymThemes[id],orientation='horizontal',cameraMode=behind and 'behind' or 'side',seed=hash(id),
+  local id=tostring(map and map.id or 'UNKNOWN');local design=api.gymDesign and api.gymDesign(id)
+  if design then family='gym' end
+  local behind=(cameraMode or S.cameraMode())=='behind'
+  return {gymDesign=design,ballStyle=api.ballStyle and api.ballStyle(map)or'poke',id=id,family=family,theme=gymThemes[id],orientation='horizontal',cameraMode=behind and 'behind' or 'side',seed=hash(id),
    radius=74,actors=behind and {player={0,0,20},enemy={0,0,-20}}or{player={-25,0,0},enemy={25,0,0}},
    trainers=behind and {player={-19,2.4,46},enemy={19,2.4,-40}}or{player={-53,2.4,12},enemy={53,2.4,-12}}}
  end
  local function build(setup)
   local verts,indices,colors,colorIds={},{},{},{}
+  local occluders={};local collect=false
   local function color(c)
    local key=string.format('%.3f:%.3f:%.3f',c[1],c[2],c[3]);local id=colorIds[key]
    if not id then id=#colors+1;assert(id<=256);colors[id]=c;colorIds[key]=id end
@@ -81,6 +84,7 @@ return function(api)
    for _,i in ipairs({1,2,3,1,3,4})do indices[#indices+1]=n+i end
   end
   local function box(x,y,z,w,h,d,c)
+   if collect then occluders[#occluders+1]={x,y,z,w,h,d}end
    local a,b=x-w/2,x+w/2;local e,f=z-d/2,z+d/2;local t=y+h
    quad({a,t,e},{b,t,e},{b,t,f},{a,t,f},c,1)
    quad({a,y,f},{b,y,f},{b,t,f},{a,t,f},c,.83)
@@ -108,7 +112,7 @@ return function(api)
   ring(74.4,3.7,73.7,2.5,rim,true);ring(73.7,2.5,73.7,0,black)
   ring(76.9,3.72,76.55,3.72,{.89,.57,.38})
   ring(74.1,1.0,73.7,1.0,{.50,.43,.29})
-  local shellVerts,shellIndices=verts,indices;verts,indices={},{}
+  local shellVerts,shellIndices=verts,indices;verts,indices={},{};collect=true
   for i=0,N-1 do local a,b=i*2*math.pi/N,(i+1)*2*math.pi/N
    local n=#verts
    for _,p in ipairs({{0,0,0},{math.cos(a)*74,0,math.sin(a)*74},{math.cos(b)*74,0,math.sin(b)*74}})do
@@ -116,6 +120,11 @@ return function(api)
    end
    indices[#indices+1]=n+1;indices[#indices+1]=n+2;indices[#indices+1]=n+3
   end
+  local stoneTones={{.43,.44,.43},{.50,.51,.49},{.57,.57,.53},{.64,.63,.58}}
+  local scenery=setup.gymDesign
+  if scenery then
+   scenery.build({box=box,quad=quad},setup)
+  else
   -- Ground flecks remain deterministic per map and never cover the actor feet.
   local n=setup.seed
   local function rand() n=(n*48271)%2147483647;return n/2147483647 end
@@ -217,7 +226,6 @@ return function(api)
    for k=0,2 do box(x,3,z-2+k*1.5,14,.6,1.2,{.55,.35,.16})end
    box(x,5,z-3,14,3,.8,{.62,.40,.20})
   end
-  local stoneTones={{.43,.44,.43},{.50,.51,.49},{.57,.57,.53},{.64,.63,.58}}
   local function masonry(x,y,z,w,h,d)
    box(x,y,z,w,h,d,stoneTones[1])
    local courses=math.max(1,math.floor(h/2.6));local blocks=math.max(1,math.floor(w/4))
@@ -411,6 +419,7 @@ return function(api)
    end end
    for _,side in ipairs({-1,1})do pebbleBed(side*51,44,15,8);crystal(side*36,55,0,{.42,.66,.80})end
   end
+  end -- supplied gym interior or existing portable scenery
   -- Two low stone trainer platforms, with steps facing the battlefield.
   for _,side in ipairs({'player','enemy'})do
    local p=setup.trainers[side];local x,z=p[1],p[3]
@@ -427,7 +436,7 @@ return function(api)
     box(x+direction*6.5,.8,z,2,.8,8,{.67,.65,.59})
    end
   end
-  local terrainVerts,terrainIndices=verts,indices;verts,indices=shellVerts,shellIndices
+  local terrainVerts,terrainIndices=verts,indices;verts,indices=shellVerts,shellIndices;collect=false
   -- Front button: shallow concentric vertical cylinders, facing the viewer.
   local function button(radius,z,c)
    for i=0,31 do local a,b=i*math.pi/16,(i+1)*math.pi/16
@@ -437,7 +446,8 @@ return function(api)
   button(12,77.2,black);button(10.8,77.4,setup.family=='gym' and {.79,.58,.16}or white)
   button(9.3,77.6,setup.family=='gym' and {.97,.80,.35}or{.79,.77,.72})
   button(8.1,77.8,setup.theme=='rock' and {.40,.43,.46}or white)
-  if setup.theme=='rock'then
+  if setup.gymDesign then setup.gymDesign.button({quad=quad})
+  elseif setup.theme=='rock'then
    for i=0,5 do local a,b=i*math.pi/3,(i+1)*math.pi/3
     quad({0,-7,78},{math.cos(a)*7.5,-7+math.sin(a)*7.5,78},
      {math.cos(b)*7.5,-7+math.sin(b)*7.5,78},{0,-7,78},stoneTones[i%4+1],.9)
@@ -461,17 +471,17 @@ return function(api)
    shell=assert(G.newMesh(shellVerts,shellIndices),'Terarrium shell allocation failed')
   end)
   if not ok then if mesh then mesh:release()end;if shell then shell:release()end;texture:release();error(reason)end
-  return {mesh=mesh,shell=shell,texture=texture,vertices=#terrainVerts+#shellVerts,triangles=(#terrainIndices+#shellIndices)/3}
+  return {mesh=mesh,shell=shell,texture=texture,occluders=occluders,vertices=#terrainVerts+#shellVerts,triangles=(#terrainIndices+#shellIndices)/3}
  end
  local function get(setup)
   if idleBattle and setup._ballBattle~=idleBattle then
    setup.ballStyle=api.ballStyle and api.ballStyle({id=setup.id})or'poke'
    setup._ballBattle=idleBattle
   end
-  local key=setup.id..':'..setup.family..':'..tostring(setup.cameraMode)..':'..setup.ballStyle
+  local key=setup.id..':'..setup.family..':'..tostring(setup.cameraMode)..':'..setup.ballStyle..':'..(setup.gymDesign and setup.gymDesign.revision or 'legacy')
   if not cache[key]then
    cache[key]=build(setup);order[#order+1]=key
-   if #order>4 then local old=table.remove(order,1);cache[old].mesh:release();cache[old].shell:release();cache[old].texture:release();cache[old]=nil end
+   if #order>4 then local old=table.remove(order,1);if cache[old].lightmap then cache[old].lightmap:release()end;cache[old].mesh:release();cache[old].shell:release();cache[old].texture:release();cache[old]=nil end
   end
   return cache[key]
  end
@@ -520,6 +530,14 @@ return function(api)
   lightTexture:replacePixels(lightPixels)
   G.draw(lightMesh,lightTexture,matrix)
  end
+ function S.lightEnabled()return api.lighting and api.lighting.enabled()or false end
+ function S.prepareLighting(arena,groundY)
+  if not S.lightEnabled()then return api.lighting and api.lighting.prepare(arena,groundY)or false end
+  local item=get(arena.terarrium)
+  if not item.lightmap then item.lightmap=api.lighting.bake(item.occluders)end
+  return api.lighting.prepare(arena,groundY,item.lightmap)
+ end
+ function S.lightingStatus()return api.lighting and api.lighting.last end
  function S.draw(arena,groundY)
   local item=get(arena.terarrium)
   if api.drawBackground then api.drawBackground(arena)end
@@ -528,7 +546,7 @@ return function(api)
   local ok,reason=pcall(function()
    G.shadowReception(false);G.draw(item.shell,item.texture,matrix)
    local bm,bt=branding();if bm then G.draw(bm,bt,matrix)end
-   local _,pulse,t=S.idleSample();buttonLight(pulse,matrix)
+   local _,pulse,t=S.idleSample();if not arena.terarrium.gymDesign then buttonLight(pulse,matrix)end
    if t then
     local beat=math.floor(t/.56);local phase=t/.56-beat
     local key=tostring(idleSince)..':'..beat
@@ -542,7 +560,11 @@ return function(api)
   G.shadowReception(true);G.glass(true);G.seams(true)
   if not ok then error(reason)end
  end
- function S.overlay(arena,groundY)if api.drawDome then api.drawDome(arena,groundY)end end
+ function S.overlay(arena,groundY)
+  if api.drawAtmosphere then api.drawAtmosphere(arena,groundY)end
+  -- ODias gym designs are compact open bowls, even with a saved dome choice.
+  if not arena.terarrium.gymDesign and api.drawDome then api.drawDome(arena,groundY)end
+ end
  function S.cast(shadow,arena,groundY)
   if not shadow then return end;local item=get(arena.terarrium)
   shadow.draw(item.mesh,item.texture,M.translate(arena.mid[1],groundY,arena.mid[2]))
@@ -570,13 +592,15 @@ return function(api)
   local p=assert(arena.terarrium.trainers[side]);return {arena.mid[1]+p[1],groundY+p[2],arena.mid[2]+p[3]}
  end
  function S.release()
+  if api.lighting then api.lighting.release()end
+  if api.releaseAtmosphere then api.releaseAtmosphere()end
   if api.releaseBackground then api.releaseBackground()end
   if api.releaseDome then api.releaseDome()end
   if api.releaseIdleSound then api.releaseIdleSound()end
   idleBattle,idleSince,lastCursor,idleAllowed=nil,nil,nil,false
   if lightMesh then lightMesh:release();lightTexture:release();lightPixels:release();lightMesh,lightTexture,lightPixels=nil,nil,nil end
   if brandMesh then brandMesh:release();brandTexture:release();brandMesh,brandTexture=nil,nil end
-  for _,item in pairs(cache)do item.mesh:release();item.shell:release();item.texture:release()end;cache,order={},{}
+  for _,item in pairs(cache)do if item.lightmap then item.lightmap:release()end;item.mesh:release();item.shell:release();item.texture:release()end;cache,order={},{}
  end
  return S
 end

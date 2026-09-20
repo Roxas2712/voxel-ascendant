@@ -151,6 +151,52 @@ function VascBattleAnimPlayer.mapPoint(cel, attackerIsPlayer, targetMode)
   return x * (GB_W / ESSENTIALS_W), y * (GB_H / ESSENTIALS_H)
 end
 
+-- Focused artwork must turn with its trajectory, not only move its centre.
+-- Screen-wide weather/background cels keep their authored orientation.
+function VascBattleAnimPlayer.mapAngle(cel, attackerIsPlayer)
+  local angle=math.rad(finite(cel and cel.a,0))
+  local focus=finite(cel and cel.f,4)
+  if not frameAnchors or focus<1 or focus>3 then return angle end
+  local user,target=anchors(attackerIsPlayer)
+  local dx,dy=target[1]-user[1],target[2]-user[2]
+  if dx*dx+dy*dy<1e-8 then return angle end
+  return angle+math.atan2(dy,dx)-math.atan2(TARGET_Y-USER_Y,TARGET_X-USER_X)
+end
+
+-- Native move layers need the same two-endpoint rotation as custom cels.
+-- Capture/send-out programs are explicitly excluded by presentationMove.
+function VascBattleAnimPlayer.nativeProjection(frame, original, attackerIsPlayer)
+  if not frame then return nil end
+  local p=attackerIsPlayer and frame.player.emitter or frame.player.body
+  local e=attackerIsPlayer and frame.enemy.body or frame.enemy.emitter
+  local a,b=original.player,original.enemy
+  local ax,ay=b[1]-a[1],b[2]-a[2]
+  local dx,dy=e[1]-p[1],e[2]-p[2]
+  local source=ax*ax+ay*ay;local target=dx*dx+dy*dy
+  if source<1e-8 or target<1e-8 then return nil end
+  return {x=(p[1]+e[1])*.5,y=(p[2]+e[2])*.5,
+    angle=math.atan2(dy,dx)-math.atan2(ay,ax),scale=math.sqrt(target/source)}
+end
+
+-- The legacy layer already applies midpoint/scale. Undo that transform
+-- when supplying final actor hulls so custom cels are not transformed twice.
+function VascBattleAnimPlayer.projectedAnchors(shot,cx,cy,ax,ay,k)
+  if not (shot and shot.actorVisuals and shot.scale and shot.scale>0 and k>0) then return nil end
+  local result={}
+  for _,side in ipairs({'player','enemy'})do
+    local visual=shot.actorVisuals[side]
+    local h=visual and visual.hull
+    if not (h and h[3]>0 and h[4]>0) then return nil end
+    local function point(fraction)
+      local x=(h[1]+h[3]*.5-(shot.lx or 0))/shot.scale
+      local y=(h[2]+h[4]*fraction-(shot.ly or 0))/shot.scale
+      return {ax+(x-cx)/k,ay+(y-cy)/k}
+    end
+    result[side]={emitter=point(.28),body=point(.55)}
+  end
+  return result
+end
+
 local function frameTargetMode(targetMode, frameIndex, frameCount)
   if targetMode ~= "self-then-foe" then return targetMode end
   -- The supplied FLY program is a ten-frame target swoop.  Its first third is
@@ -233,6 +279,7 @@ function Player:start(moveId, attackerIsPlayer, opts)
   self.attackerIsPlayer = attackerIsPlayer and true or false
   local presentation = type(opts) == "table" and opts.presentation == true
   local nativeSpecial = opts ~= nil and not presentation
+  self.presentationMove = not nativeSpecial
   local requestedTarget = presentation and opts.target or nil
   local registry = self.holder.registry or {}
   local semanticTarget = registry.targetModes
@@ -450,7 +497,8 @@ function Player:drawCustom()
         })
       end
       g.draw(image, quad, x, y,
-             math.rad(finite(cel.a, 0)), zoomX, zoomY, CELL / 2, CELL / 2)
+             VascBattleAnimPlayer.mapAngle(cel, self.attackerIsPlayer),
+             zoomX, zoomY, CELL / 2, CELL / 2)
       drawn = drawn + 1
       if effect and g.setShader then g.setShader() end
     end

@@ -249,6 +249,7 @@ end
 -- ninety-six-step native ramp keeps the change continuous in every camera and
 -- automatically feeds the exact same colours to Water.ramp().
 local WEATHER_ANCHORS = {
+  volcanic={{.12,.10,.115},{.28,.16,.16},{.53,.24,.19},{.68,.35,.24}},
   rain = {
     { .16, .19, .21 }, { .24, .27, .28 }, { .38, .41, .41 },
   },
@@ -1410,6 +1411,12 @@ local function paintAtmosphere(w, h, edge, cell, alpha, ray, context)
   if rw <= 0 or rh <= 0 then return end
   g.setScissor(x, y, rw, rh)
   local night = nightStrength()
+  -- Volcanic dust obscures normal cloud bitmaps, stars and sky events.
+  if context and context.weather=='volcanic'then
+    V.require('KascVolcano').skySmoke(g,w,h,edge,Sky.clock or 0,Sky.projector(ray,w,h,edge),alpha)
+    if sx then g.setScissor(sx,sy,sw,sh)else g.setScissor()end
+    return
+  end
   paintStars(w, h, edge, cell, alpha, ray, night, context)
   local eventContext = {
     skyEnabled = Sky.banded(),

@@ -185,6 +185,8 @@ V.require('Gen1Rooftops').register(P,F)
 V.require('Gen1RoofTerrace').register(P,F)
 V.require('TowerAtmosphere').register(P)
 V.require('CaveTorches').register(P)
+V.require('KascHabitatScenery').register(P)
+V.require('KascLegendScenery').register(P)
 local found=setmetatable({},{__mode='k'})
 local publishedForMap
 local function key(x,y)return (y+64)*4096+x+64 end
@@ -202,7 +204,9 @@ local function find(map,buildingsOnly)
   end
   if not buildingsOnly and found[map] then return found[map] end
   local result,used={},{}
-  if not map or not map.def or map.def.generation==2 then return result end
+  if not map or not map.def then return result end
+  local habitat=map.def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(map)
+  if map.def.generation==2 and not habitat then return result end
   local tw,th=map.def.width*4,map.def.height*4
   -- Index only tiles that can begin a pattern on this map. Previously every
   -- pattern rescanned the complete map, including large empty floor areas.
@@ -244,6 +248,24 @@ local function find(map,buildingsOnly)
       end
   end
   if buildingsOnly then return result end
+  if map.id=='KANTO_ASCENDANT_DRIFTGLASS'then
+   for _,p in ipairs(V.require('KascDriftglass').find(P,map))do result[#result+1]=p end
+  end
+  if map.id=='KA_HOENN_BIRTH_ISLAND'then
+   for _,p in ipairs(V.require('KascBirthIsland').find(P,map))do result[#result+1]=p end
+  end
+  if map.id=='KA_HEVO_RAYQUAZA_CHAMBER'then
+   for _,p in ipairs(V.require('KascSkySanctum').find(P,map))do result[#result+1]=p end
+  end
+  if (map.id or ''):match('^KA_MOLTRES_VOLCANO')then
+   for _,p in ipairs(V.require('KascVolcano').find(P,map))do result[#result+1]=p end
+  end
+  if habitat then
+   for _,p in ipairs(V.require('KascHabitatScenery').find(P,map))do result[#result+1]=p end
+  end
+  for _,p in ipairs(V.require('KascLegendScenery').find(P,map,function(x,y)return used[key(x,y)]end))do
+   result[#result+1]=p
+  end
   for _,p in ipairs(V.require('Gen1MountainExteriors').find(P,map,function(x,y)return used[key(x,y)]end))do
     result[#result+1]=p
   end
@@ -452,6 +474,11 @@ function F.each(state,draw,lightsOnly)
           extra.lightModel=model;extra.glowColor=model.glowColor
         end
       end
+      if model and model.lightSource and not extra then
+        p.drawExtra=p.drawExtra or {};extra=p.drawExtra;extra.lightModel=model
+        extra.glow=model.windowLight and model.windowLight()or 1
+        extra.glowColor=model.glowColor
+      end
       if mesh then
         local base=0
         if decoration then
@@ -530,7 +557,7 @@ function F.snapshot(state)
     entries._voxelStaticSnapshot=true
     for _,stamp in ipairs(stamps)do
       local p,model=stamp.p,stamp.model
-      if stamp.enabled and stamp.visible and p.drawExtra then
+      if stamp.enabled and (stamp.visible or model.lightSource) and p.drawExtra then
         lights[#lights+1]={extra=p.drawExtra,model=model}
       end
     end
@@ -540,7 +567,7 @@ function F.snapshot(state)
   else
     -- Pane intensity and candle flicker stay live; neither changes geometry.
     for _,light in ipairs(previous.lights)do
-      light.extra.glow=light.model.windowLight and light.model.windowLight() or 0
+      light.extra.glow=light.model.windowLight and light.model.windowLight() or (light.model.lightSource and 1 or 0)
     end
   end
   return previous.entries
@@ -595,7 +622,7 @@ function F.drawProp(mesh,tex,mat,shade,extra)
   end
   local drawn=G.draw(mesh,tex,mat,0)
   if drawn==false then return false end
-  if extra then
+  if extra and extra.mesh then
     if extra.glow>0 then G.flatten(extra.glowColor or {1,.78,.38},extra.glow)end
     G.draw(extra.mesh,extra.tex,mat,0)
     if extra.glow>0 then G.flatten(nil)end
@@ -613,7 +640,7 @@ function F.draw(state)
   local function each(view,draw)
     F.eachWorld(view,function(mesh,tex,mat,shade,extra)
       if not P.bounds or visible(P.bounds(mesh),mat)
-        or (extra and visible(P.bounds(extra.mesh),mat))then draw(mesh,tex,mat,shade,extra)end
+        or (extra and extra.mesh and visible(P.bounds(extra.mesh),mat))then draw(mesh,tex,mat,shade,extra)end
     end)
   end
   V.require('VoxelPropBatch').draw(state,each,F.drawProp)
@@ -632,7 +659,7 @@ function F.cast(state,shadow)
   local function each(view,draw)
     F.eachWorld(view,function(mesh,tex,mat,shade,extra)
       if not P.bounds or visible(P.bounds(mesh),mat)
-        or (extra and visible(P.bounds(extra.mesh),mat))then draw(mesh,tex,mat,shade,extra)end
+        or (extra and extra.mesh and visible(P.bounds(extra.mesh),mat))then draw(mesh,tex,mat,shade,extra)end
     end)
   end
   V.require('VoxelPropBatch').draw(state,each,function(mesh,tex,mat,shade,extra)

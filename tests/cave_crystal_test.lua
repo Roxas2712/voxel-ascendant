@@ -3,6 +3,8 @@ local mods={ModSetting={new=function()return {get=function()return true end}end}
  VoxelItems={setting={get=function()return true end}},LocalLights={supported=true},
  TowerAtmosphere={candleLight=function()return .7 end},Sky={clock=0}}
 local V={require=function(n)return assert(mods[n],n)end}
+mods.Gen1CavePanoramas=assert(loadfile(root..'/lib/Gen1CavePanoramas.lua'))()
+mods.KascLegendAtmosphere=assert(loadfile(root..'/lib/KascLegendAtmosphere.lua'))()
 local C=assert(loadfile(root..'/lib/CaveTorches.lua'))(V)
 local P={models={}};C.register(P)
 for dir=1,4 do
@@ -36,4 +38,18 @@ assert(mobileCrystals==0 and mobileTorches==torches,'mobile torches changed')
 mods.LocalLights.supported=true
 assert(#C.find(map,function()return true end)==0,'crystal ignores occupied art')
 map.def.generation=2;assert(#C.find(map)==0,'Gen2 received crystals')
+map.def.generation=1;map.id='KA_HEVO_GROUDON_CHAMBER';map.def.warps={}
+map.def.signs={{x=5,y=5}};map.def.objects={{x=28,y=5}}
+local extension=C.find(map);local nc,nt=counts(extension)
+assert(nt>0 and nt<=16 and nc<=2,'scripted cave without native warps has no bounded lights')
+for _,p in ipairs(extension)do
+ for _,point in ipairs({map.def.signs[1],map.def.objects[1]})do
+  assert(math.abs(p.approachX-point.x)+math.abs(p.approachY-point.y)>=3,'fixture crowds scripted landmark')
+ end
+end
+map.id='KA_HEVO_KYOGRE_CHAMBER'
+local blue=C.find(map);local crystals,torches=counts(blue);assert(crystals>0 and torches==0,'underwater route still uses fire torches')
+assert(#blue<=18,'themed fixtures exceeded existing budget')
+map.def.tileset='PRIVATE_CAVERN';assert(not C.eligible(map),'native atlas assumptions applied to custom art')
+map.def.tileset='CAVERN';map.id='UNKNOWN_CAVE';assert(not C.eligible(map))
 print('PASS_CAVE_CRYSTALS: cool emission, bounded pulse/range, rare separated wall placements, intact torches, collision-safe and mobile/Gen2 exclusions')

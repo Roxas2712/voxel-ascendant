@@ -32,7 +32,6 @@ M.extensionMaps={
  KA_HEVO_SHARED_SEALED_ANTECHAMBER='cave_victory_road',
  KA_HEVO_TUNNEL_ALL='cave_rock_tunnel',
  KA_HOENN_ANCIENT_TOMB='cave_victory_road',
- KA_HOENN_BIRTH_ISLAND='cave_cerulean',
  KA_HOENN_DESERT_RUINS='cave_diglett',
  KA_HOENN_ISLAND_CAVE='cave_seafoam',
  KA_HOENN_WISH_CHAMBER='cave_victory_road',
@@ -40,7 +39,12 @@ M.extensionMaps={
 }
 function M.materialFor(map)
  local def=map and map.def
- if not def or def.tileset~='CAVERN' then return nil end
+ if not def then return nil end
+ if def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and def.voxelOwner=='kanto_ascendant'
+   and (def.tileset=='KA_HABITAT_STONE'or def.tileset=='KA_HABITAT_MYSTIC')then return 'cave_rock_tunnel'end
+ if def.tileset=='KA_MOLTRES_VOLCANO_67'and def.kaOwner=='kasc.hoenn-moltres-volcano/v4'
+  and(map.id=='KA_MOLTRES_VOLCANO_BASE'or map.id=='KA_MOLTRES_VOLCANO_ASCENT')then return 'cave_diglett'end
+ if def.tileset~='CAVERN' then return nil end
  local id=map.id or def.id
  return M.maps[id] or M.extensionMaps[id]
 end

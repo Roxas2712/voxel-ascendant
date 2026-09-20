@@ -477,6 +477,7 @@ local voxelPipeline = {
     -- would fight anyone who changed one deliberately.
     applyFull(level)
     Voxel.update(dt, level)
+    V.require('WorldPokemonAnimation').update(require('src.core.Game'),dt,level)
     -- The player-attached rig must keep easing both into and out of its
     -- rungs, so it ticks even after 1ST/3RD has just been left.
     FirstPerson.update(dt)

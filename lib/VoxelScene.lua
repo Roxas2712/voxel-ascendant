@@ -2481,7 +2481,9 @@ local function castShadows(state, terrain, nbMesh, posed, cx, cy, vw, vh,
       local frame, mirror = frameFor(def, viewFacing(p), p.phase, p.flip)
       local mesh = SpriteBillboards.shadowQuad(def, frame, p.sprite.image)
       if mesh then
-        ShadowMap.draw(mesh, p.sprite:resolveImage(),
+        -- Idle fronts keep their frame-one caster: flapping wings must not
+        -- rebuild the whole world's sun map at the authored sprite FPS.
+        ShadowMap.draw(mesh, p.sprite.shadowImage or p.sprite:resolveImage(),
                        ShadowMap.snug(
                          Voxel3D.casterMatrix(p.px, p.py, p.gh + (p.lift or 0),
                                               mirror)))
@@ -2853,6 +2855,8 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   if type(Voxel3D.preparePokemonFrame) == "function" then
     Voxel3D.preparePokemonFrame(state, posed)
   end
+  V.require('KascLegendActors').prepare(state,posed)
+  V.require('WorldPokemonAnimation').prepare(state,posed)
 
   -- Fractional human positions carry the player's camera displacement on
   -- this frame's captured pose. Never write back to the native camera.

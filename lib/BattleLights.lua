@@ -10,12 +10,14 @@ function M.neutralStage(arena)
     or (arena.discs and not arena.arenaStyle)) or false
 end
 function M.enabled(mode,map,arena)
+  if arena and arena.terarrium then return arena.terarriumService and arena.terarriumService.lightEnabled and arena.terarriumService.lightEnabled() or false end
   if M.neutralStage(arena) then return false end
   return L.available() and M.setting:get() and map and map.def
     and map.def.generation~=2 and (mode=='MAP' or mode=='ARENA') or false
 end
 function M.prepare(state,host,arena,outdoor,ground,props,enabled,weather)
   if not enabled then L.clear(true);return end
+  if arena.terarrium then return arena.terarriumService.prepareLighting(arena,ground) end
   local G=V.require('Voxel3D');local D=V.require('DayNight')
   if not arena.discs then
     -- Use exactly the furniture retained by the battle clearance pass. A

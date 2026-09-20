@@ -807,6 +807,41 @@ local INTERIOR_FLOOR_GLSL = V.require('Gen1OutdoorScenery').waterGLSL .. [[
     vec2 pos=world.xz;
     float family = floor(-material - 128.0 + 0.5);
     if (family == 46.0) return outdoorWater(pos,0.0);
+    if (family == 50.0) {
+      vec2 grainPos=floor(pos*2.0);
+      float grain=fract(sin(dot(grainPos,vec2(12.9898,78.233)))*43758.5453);
+      float ripple=sin(pos.x*.12+sin(pos.y*.045)*1.8)*.018;
+      return vec4(vec3(.68,.59,.43)+ripple+(grain-.5)*.055,1.0);
+    }
+    if (family == 51.0) {
+      // Worn inlaid fragments retain the original glint-floor landmarks.
+      // Break their edges into sand instead of reproducing the atlas grid.
+      vec2 localPos=mod(pos,32.0);
+      float edge=min(min(localPos.x,32.0-localPos.x),min(localPos.y,32.0-localPos.y));
+      float grain=fract(sin(dot(floor(pos),vec2(12.9898,78.233)))*43758.5453);
+      float stone=smoothstep(1.0,4.0,edge+grain*2.0);
+      vec3 base=mix(vec3(.68,.59,.43),vec3(.43,.48,.46),stone);
+      return vec4(base+(grain-.5)*.055,1.0);
+    }
+    if (family == 52.0 || family == 53.0) {
+      // Broken natural strata: no regular paving grid and no new texture.
+      vec2 q=floor(pos*.5);
+      float n=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);
+      float band=sin(q.x*.11+sin(q.y*.18)*1.8)+sin(q.y*.23+q.x*.07)*.5;
+      float vein=1.0-smoothstep(.04,.17,abs(band));
+      vec3 rock=family==52.0 ? vec3(.24,.36,.39) : vec3(.40,.52,.58);
+      vec3 mineral=family==52.0 ? vec3(.40,.54,.55) : vec3(.65,.78,.80);
+      return vec4(mix(rock,mineral,vein*.48)+(n-.5)*.07,1.0);
+    }
+    if (family == 49.0) {
+      // Fine charcoal ash and broken basalt grains, continuous across cells.
+      vec2 p=floor(pos*2.0);
+      float grain=fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);
+      float drift=sin(pos.x*.047+sin(pos.y*.061))*.026;
+      vec3 ash=vec3(.235,.216,.20)+drift+(grain-.5)*.065;
+      float clinker=step(.96,grain);
+      return vec4(mix(ash,vec3(.38,.29,.23),clinker*.5),1.0);
+    }
     // Muted native runner/entry-mat footprints, independent of ROM palette
     // flashes. Small irregular fibres replace the high-contrast checker.
     if (family >= 14.0 && family <= 17.0) {
@@ -2907,6 +2942,15 @@ function Voxel3D.endScene()
   })
   active, activeShader, firstDrawPending = false, nil, false
   return canvas
+end
+
+-- Read-only receipt for a post-world visibility mask. The completed depth
+-- belongs to this exact scene; no extra canvas or world render is allocated.
+function Voxel3D.visibilityDepth()
+  if not (held and held.depth and Voxel3D.vp) then return nil end
+  local inverse=V.require("IndoorMist").inverse(Voxel3D.vp)
+  if not inverse then return nil end
+  return held.depth,inverse
 end
 
 function Voxel3D.canvas()

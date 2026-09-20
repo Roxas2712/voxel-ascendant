@@ -23,7 +23,7 @@ end
 function M.eligible(map)
  local d=map and map.def;local id=map and map.id
  if not d or d.generation==2 then return false end
- return d.tileset=='CAVERN'and caves[id]or d.tileset=='CEMETERY'
+ return d.tileset=='CAVERN'and (caves[id]or V.require('Gen1CavePanoramas').extensionMaps[id]~=nil)or d.tileset=='CEMETERY'
   and(id=='POKEMON_TOWER_1F'or id=='POKEMON_TOWER_7F')or false
 end
 function M.wallCell(map,x,y)
@@ -38,8 +38,18 @@ function M.find(map,occupied)
  local result={}
  if not M.eligible(map)or not map.isWalkableCell then return result end
  local d=map.def;local tower=d.tileset=='CEMETERY';local walls=tower and masonry or rock
+ local theme=V.require('KascLegendAtmosphere').profile(map)
  local floors=tower and{[1]=true}or caveFloor
  local candidates={}
+ -- KASC chambers use scripted return markers rather than native warp tiles.
+ -- Include those landmarks and authored story landings when spacing lamps.
+ local extension=V.require('Gen1CavePanoramas').extensionMaps[map.id]~=nil
+ local anchors={}
+ for _,list in ipairs({d.warps or{},extension and d.signs or{},extension and d.storyPositions or{}})do
+  for _,point in ipairs(list)do
+   if type(point.x)=='number'and type(point.y)=='number'then anchors[#anchors+1]=point end
+  end
+ end
  local function clear(cx,cy,mask)
   for dy=0,1 do for dx=0,1 do
    local x,y=cx*2+dx,cy*2+dy
@@ -67,7 +77,7 @@ function M.find(map,occupied)
     if fx>=0 and fy>=0 and fx<d.width*2 and fy<d.height*2
       and wallFace(x,y,dir)and map:isWalkableCell(fx,fy)and clear(fx,fy,floors)then
      local distance=math.huge;local safe=true
-     for _,w in ipairs(d.warps or{})do
+     for _,w in ipairs(anchors)do
       local ds=math.abs(fx-w.x)+math.abs(fy-w.y)
       distance=math.min(distance,ds)
       if ds<3 then safe=false end
@@ -89,13 +99,14 @@ function M.find(map,occupied)
  for _,c in ipairs(candidates)do
   local separate=true
   for _,p in ipairs(result)do if(c.x-p.tx/2)^2+(c.y-p.ty/2)^2<64 then separate=false end end
-  if separate and c.distance<=7 then
+  if separate and (extension or c.distance<=7) then
    local delta=dirs[c.dir]
-   result[#result+1]={kind='wall_torch_'..c.dir,mapId=map.id,tx=c.x*2,ty=c.y*2,w=2,h=2,
+   local cool=theme and theme.crystals
+   result[#result+1]={kind=(cool and 'cave_crystal_'or'wall_torch_')..c.dir,mapId=map.id,tx=c.x*2,ty=c.y*2,w=2,h=2,
     keepTerrain=true,voxelOnly=true,enabled=M.enabled,
     torchLight={c.x*16+8+delta[1]*10,c.y*16+8+delta[2]*10},
-    approachX=c.fx,approachY=c.fy}
-   if #result>=(tower and 2 or 4)then break end
+    approachX=c.fx,approachY=c.fy,crystal=cool or nil}
+   if #result>=(tower and 2 or extension and 16 or 4)then break end
   end
  end
  -- Rare crystals use additional safe wall anchors, separated from torches.

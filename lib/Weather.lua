@@ -93,6 +93,8 @@ end
 
 function Weather.isOutdoor(map)
   if not (map and map.def) then return false end
+  if map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return true end
+  if map.id=='KA_MOLTRES_VOLCANO'and V.require('KascVolcano').openSky(map)then return true end
   return defIsOutdoor(map.def) or SCENIC_OUTDOORS[mapId(map)] == true
     or V.require("Gen1Rooftops").matches(map)
 end
@@ -230,6 +232,7 @@ function Weather.setSkyProvider(provider)
 end
 
 function Weather.skyState(map)
+  if map and map.id=='KA_MOLTRES_VOLCANO'and V.require('KascVolcano').openSky(map)then return 'volcanic',false end
   if Weather.isLavender(map) then return "fog", false end
   if skyProvider and Weather.isOutdoor(map) then
     local ok, supplied = pcall(skyProvider, map)
@@ -711,7 +714,8 @@ end
 local function apply(canvas, w, h, map, cell, resolvedMode, battle)
   -- Its depth-tested air is already in the world canvas, including battles.
   if Weather.isLavender(map) then return canvas, canvas~=nil end
-  local mode = resolvedMode or Weather.mode(map)
+  local volcanic=map and (map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(map)
+  local mode = volcanic and 'volcanic'or resolvedMode or Weather.mode(map)
   local rainbow = not battle and SkyEvents.rainbowProgress(mapId(map)) or nil
   if not canvas then return canvas, false end
   if (mode == "clear" or mode == "off") and not rainbow then
@@ -719,7 +723,7 @@ local function apply(canvas, w, h, map, cell, resolvedMode, battle)
   end
   if mode ~= "clear" and mode ~= "off" and mode ~= "rain"
       and mode ~= "snow" and mode ~= "fog"
-      and mode ~= "storm" and mode ~= "heat" then return canvas, false end
+      and mode ~= "storm" and mode ~= "heat" and mode ~= "volcanic" then return canvas, false end
   local g = love.graphics
   if not (g and g.setCanvas and g.rectangle) then return canvas, false end
   local flash, occurrence = 0, nil
@@ -749,6 +753,8 @@ local function apply(canvas, w, h, map, cell, resolvedMode, battle)
     elseif mode == "fog" then
       if battle then paintBattleFog(g, w, h, cell)
       else paintFog(g, w, h, cell) end
+    elseif mode == 'volcanic'then
+      V.require('KascVolcano').ash(g,w,h,Weather.clock,cell)
     elseif mode == "heat" then
       paintHeat(g, w, h, battle)
     else

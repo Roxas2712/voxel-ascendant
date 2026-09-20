@@ -6,7 +6,7 @@ return function(mod)
  local source=assert(mod:read('Terarrium.lua'))
  local factory=assert((loadstring or load)(source,'@Terarrium.lua'))()
  local designs=assert((loadstring or load)(assert(mod:read('BallDesigns.lua')),'@TerarriumBallDesigns.lua'))()
- mod.options:define({{key='behindRed',label='KAMERA HINTER ROT',type='toggle',default=false},
+ mod.options:define({{key='lighting',label='LIGHTING',type='toggle',default=true},{key='behindRed',label='KAMERA HINTER ROT',type='toggle',default=false},
   {key='idleAnimation',label='RUHEANIMATION',type='toggle',default=true},
   {key='idleSound',label='WACKELKLANG',type='toggle',default=true},
   {key='ballStyle',label='BALL-DESIGN',type='choice',default='auto',choices=designs.choices()},
@@ -32,10 +32,14 @@ return function(mod)
   local dome=assert((loadstring or load)(assert(mod:read('Dome.lua')),'@TerarriumDome.lua'))()(api)
   api.drawDome=function(arena,y)local style=mod.options:get('dome');if style and style~='off'then dome.draw(arena,y,style)end end
   api.releaseDome=dome.release
+  api.gymDesign=assert((loadstring or load)(assert(mod:read('GymDesigns.lua')),'@GymDesigns.lua'))()(function(path)return mod:read(path)end)
+  local atmosphere=assert((loadstring or load)(assert(mod:read('GymAtmosphere.lua')),'@GymAtmosphere.lua'))()(api)
+  api.drawAtmosphere=atmosphere.draw;api.releaseAtmosphere=atmosphere.release
   api.clock=function()return love.timer.getTime()end
   api.idleEnabled=function()return mod.options:get('idleAnimation')~=false end
   api.branding=function()return assert((loadstring or load)(assert(mod:read('Branding.lua')),'@TerarriumBranding.lua'))()(mod)end
   api.cameraMode=function()return mod.options:get('behindRed')==true and 'behind' or 'side'end
+  if api.LocalLights then api.lighting=assert((loadstring or load)(assert(mod:read('Lighting.lua')),'@TerarriumLighting.lua'))()({lights=api.LocalLights,graphics=api.Voxel3D,clock=api.clock,enabled=function()return mod.options:get('lighting')end})end
   service=factory(api);return service
  end)
  assert(ok,reason)

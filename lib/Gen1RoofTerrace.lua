@@ -35,6 +35,15 @@ function M.register(P,F)
   local m={boxes={},frameW=w,frameH=d+40,depth=d,offsetY=-40,
    support=0,actorSurface=true,replacesGround=true,roofTerrace=true,directBoxes=true,step=1}
   P.models[kind]=m
+  local seats={}
+  if mart then
+   m.support=function(x,z)
+    for _,seat in ipairs(seats)do
+     if x>=seat[1]and x<seat[1]+16 and z>=seat[2]and z<seat[2]+16 then return 8.5 end
+    end
+    return 0
+   end
+  end
   local function b(x,y,z,bw,h,bd,c)
    assert(bw>0 and h>0 and bd>0)
    m.boxes[#m.boxes+1]={x,y,z,bw,h,bd,c}
@@ -99,6 +108,18 @@ function M.register(P,F)
     local x,z=p[1],p[2]
     b(x+12,0,z+12,8,9,8,C.slate);b(x+1,9,z+1,30,1.5,30,C.silver)
     b(x+2,10.5,z+2,28,.5,28,2)
+    -- The full-terrace claim also consumes all eight native stool masks.
+    -- Restore those seats, including the stationary NPC at cell (10,4).
+    -- Restore the native raised actor support as well: otherwise the new
+    -- full-roof claim forces the seated sprite down through its cushion.
+    for _,sx in ipairs({x-16,x+32})do for _,sz in ipairs({z,z+16})do
+     seats[#seats+1]={sx,sz}
+     for _,lx in ipairs({3,11})do for _,lz in ipairs({3,11})do
+      b(sx+lx,0,sz+lz,2,6,2,C.slate)
+     end end
+     b(sx+2,6,sz+2,12,2,12,C.silver)
+     b(sx+3,8,sz+3,10,.5,10,C.navy)
+    end end
    end
    -- Service/stair enclosure: low walls preserve the blocked footprint,
    -- while open upper glazing keeps the horizon visible.

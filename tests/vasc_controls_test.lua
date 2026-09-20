@@ -167,3 +167,29 @@ assert(M.status(game,fpsIndex)==(overlay.enabled:get()and'ON'or'OFF'))
 assert(touches==0,'menu contact leaked')
 M.close(game)
 print('PASS iOS direct touch: actual setting toggled, live status, panel stays open, no gameplay touch leak')
+
+-- Terrarium orientation is reachable from the V/F3 panel in both contexts,
+-- and uses the existing boolean preference through the real setting owner.
+local Setting=assert(loadfile(root..'/lib/ModSetting.lua'))(V)
+local camera=Setting.new('terarriumBehindRed','BATTLE ORIENTATION',{false,true},{'SIDE','BEHIND TRAINER'},false)
+local prior=V.require
+V.require=function(id)
+ if id=='IntegratedTerarrium'then return{entries=function()return{{camera,'Arrange both teams.'}}end}end
+ return prior(id)
+end
+game.save.options={}
+for _,context in ipairs({world,battle})do
+ if context==battle then stack:push(battle)end
+ assert(M.open(game));local submenu
+ for i,r in ipairs(M.current(game).rows)do if r.id=='terrarium'then submenu=i end end
+ assert(submenu);M.activate(game,submenu)
+ local row=assert(M.current(game).rows[1]);assert(row.id=='terarriumBehindRed')
+ assert(row.status(false)=='SIDE'and row.status(true)=='SEITLICH')
+ M.activate(game,1)
+ assert(M.current(game).group=='terrarium'and camera:get()==true)
+ assert(game.save.options.modOptions.VOXEL_ASCENDANT.terarriumBehindRed==true)
+ assert(row.status(false)=='BEHIND TRAINER'and row.status(true)=='HINTER TRAINER')
+ M.activate(game,1);assert(camera:get()==false);M.close(game)
+ if context==battle then stack:pop()end
+end
+print('PASS Terrarium quick menu: world/battle, persisted orientation, DE/EN values, submenu retained')

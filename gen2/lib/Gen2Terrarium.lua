@@ -28,6 +28,11 @@ function M.service()
    idleEnabled=function()return opt('IdleAnimation')~=false end,
    ballStyle=function(map)return designs.resolve(opt('BallStyle'),'standard',map and map.id)end,
    ballAppearance=function(k)return designs.definitions[k]or designs.definitions.poke end}
+ api.lighting=read('Lighting.lua')({lights=V.require('LocalLights'),graphics=api.Voxel3D,clock=api.clock,enabled=function()return opt('Lighting')end})
+ api.gymDesign=read('GymDesigns.lua')(function(path)return V.mod:read('integrated/terarrium/'..path)end,2)
+ api.branding=function()return read('Branding.lua')({path=V.mod.path..'/integrated/terarrium'})end
+ local atmosphere=read('GymAtmosphere.lua')(api)
+ api.drawAtmosphere=atmosphere.draw;api.releaseAtmosphere=atmosphere.release
  local sound=read('IdleSound.lua')()
  api.idleImpact=function()if opt('IdleSound')~=false then sound.play()end end
  api.stopIdleSound=sound.stop;api.releaseIdleSound=sound.release

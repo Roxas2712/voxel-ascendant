@@ -104,6 +104,14 @@ function Catalog.mapSpeciesFor(game, entity)
       or def.item or def.trainer or def.trainerClass then return nil end
   local pokemon = game and game.data and game.data.pokemon
   if type(pokemon) ~= "table" then return nil end
+  -- This fixed encounter's event name ends in VOLCANO rather than its species.
+  -- Keep its native object identity while allowing the chosen HD provider.
+  local world = game and (game.overworld or game.world)
+  local mapId = world and world.map and world.map.id
+  if mapId == "KA_MOLTRES_VOLCANO" and def.name == "KA_MOLTRES_VOLCANO"
+      and def.sprite == "SPRITE_BIRD" and pokemon.MOLTRES then return "MOLTRES" end
+  if mapId == "KA_MOLTRES_VOLCANO_ASCENT" and def.name == "KA_MOLTRES_MAGMAR_GUARD"
+      and pokemon.MAGMAR then return "MAGMAR" end
   for _, key in ipairs({"name", "text"}) do
     local name = def[key]
     if type(name) == "string" then

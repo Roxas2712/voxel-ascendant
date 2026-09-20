@@ -43,6 +43,7 @@ function M.texture(prepare)
  atlas=result;return atlas
 end
 function M.profile(map)
+ if map and map.def and map.def.tileset=='KA_MOLTRES_VOLCANO_67'and map.def.kaOwner=='kasc.hoenn-moltres-volcano/v4'then return nil end
  local mapId=map and (map.id or (map.def and map.def.id))
  local id=ids[P.materialFor(map)]
  if not id and moon[mapId] and map.def.tileset=='CAVERN'then id=6 end

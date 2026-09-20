@@ -169,8 +169,10 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
     end
     for _,b in ipairs(interior.blockers)do buildings[#buildings+1]=b end
   end
-  if outdoor and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then return frame end
-  if not outdoor and not cave and not interior and not V.require('TowerAtmosphere').active(state.map) then return frame end
+  local volcanic=(state.map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(state.map)
+  if outdoor and not volcanic and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then return frame end
+  local habitat=state.map.def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(state.map)
+  if not outdoor and not cave and not interior and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then return frame end
   -- The visible neighborhood supplies translated matrices, including its
   -- ledge elevation. This is the same enumeration used by the furniture pass.
   local function eachSource(fn)
@@ -250,8 +252,19 @@ uniform float localLightCount;
 uniform vec4 localSkyDir;
 uniform vec3 localSkyState; // enabled, canopy, wind clock
 uniform vec3 localSceneTint;
+uniform Image localStageAO;
+uniform vec4 localStageOrigin;
+uniform float localStageOn;
+uniform float localUnoccluded;
+float localStageShade(vec3 world) {
+  if(localStageOn<.5) return 1.0;
+  vec3 p=world-localStageOrigin.xyz;
+  vec2 uv=p.xz/localStageOrigin.w+vec2(.5);
+  if(p.y<-.1 || uv.x<0.0 || uv.y<0.0 || uv.x>1.0 || uv.y>1.0) return 1.0;
+  return mix(Texel(localStageAO,uv).r,1.0,smoothstep(1.0,18.0,p.y));
+}
 float localSurfaceShade(float original, vec3 n, vec3 world) {
-  if(localSkyState.x<.5) return original;
+  if(localSkyState.x<.5) return original*localStageShade(world);
   float direct=max(0.0,dot(n,localSkyDir.xyz))*localSkyDir.w;
   if(localSkyState.y>.5 && world.y<45.0) {
     vec2 q=(world.xz+localSkyDir.xz*(48.0-world.y)/max(.2,localSkyDir.y))*.13;
@@ -386,6 +399,7 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
       uniform Image localVisibility;
       uniform vec2 localPortalVolume;
       float localCachedVisibility(vec3 world,vec4 area,float base,float slot) {
+        if(localUnoccluded>.5) return 1.0;
         vec2 cell=clamp((world.xz-area.xy)/area.zw*32.0,vec2(.5),vec2(31.5));
         float layer=clamp((world.y-base)/8.0,0.0,7.0);
         float lo=floor(layer),hi=min(7.0,lo+1.0);
@@ -443,6 +457,12 @@ function M.send(shader, enabled)
   if shader:hasUniform('localSceneTint') then
     shader:send('localSceneTint',enabled and frame.tint or {1,1,1})
   end
+  if shader:hasUniform('localUnoccluded')then shader:send('localUnoccluded',enabled and frame.unoccluded and 1 or 0)end
+  if shader:hasUniform('localStageAO')then
+    shader:send('localStageAO',enabled and frame.stageAO or emptyWall())
+    shader:send('localStageOrigin',enabled and frame.stageOrigin or {0,0,0,152})
+    shader:send('localStageOn',enabled and frame.stageAO and 1 or 0)
+  end
   local portals=enabled and frame.portals or {}
   local ps=enabled and frame.portalSky
   if shader:hasUniform('localPortalCount') then
@@ -464,7 +484,7 @@ function M.send(shader, enabled)
   end
   if shader:hasUniform('localVisibility') then
     local visibility=emptyWall()
-    if enabled then
+    if enabled and not frame.unoccluded then
       local ok,result=pcall(V.require('LightVisibility').prepare,frame,M,visibility)
       if ok then visibility=result else M.fail(result);return M.send(shader,false) end
     end

@@ -33,7 +33,9 @@ for id,def in pairs(maps)do
 end
 assert(caves>=19 and rock>1000 and warps>50)
 assert(not M.native{id='DIGLETTS_CAVE',def={tileset='CAVERN',generation=2}})
-assert(not M.native{id='KA_HEVO_TUNNEL_ALL',def={tileset='CAVERN'}})
+assert(M.native{id='KA_HEVO_TUNNEL_ALL',def={tileset='CAVERN'}})
+assert(not M.native{id='KA_HEVO_TUNNEL_ALL',def={tileset='CUSTOM_CAVERN'}})
+assert(not M.native{id='UNKNOWN_CAVE',def={tileset='CAVERN'}})
 local g=love.graphics
 local shader=g.newShader('#ifdef VERTEX\n'..M.GLSL..[[
  vec4 position(mat4 transform_projection,vec4 p){

@@ -1027,6 +1027,7 @@ function BattleScene.render(state, arena, textures, token)
   if not (state and state.map and arena) then return nil end
   if not Voxel3D.available() then return nil end
   tickTiles()
+  local localLights=V.require("LocalLights");localLights.clear(true)
 
   -- the floor the fight is staged on: normally the player's own, sometimes
   -- another floor of the same cave or building (see BattleArena)
@@ -1152,6 +1153,8 @@ function BattleScene.render(state, arena, textures, token)
   end
 
   local groundY = BattleScene.groundY(host, arena)
+  local terrariumLighting=arena.terarrium and arena.terarriumService.prepareLighting
+    and arena.terarriumService.prepareLighting(arena,groundY)or false
   local cam, pitch = BattleCam.rig(arena, groundY)
   local cx, cy = arena.mid[1], arena.mid[2]
   local smartCam, smartCx, smartCy
@@ -1275,7 +1278,7 @@ function BattleScene.render(state, arena, textures, token)
     --local skyFill = whiteFill and { 1, 1, 1 } or sky
     local skyFill = sky
     if not Voxel3D.beginScene(rw, rh, cx, cy, vw, vh, skyFill, "battle",
-        { weather = skyWeatherMode,
+        { dynamicLighting=terrariumLighting, weather = skyWeatherMode,
           groundWeather = arenaSky and arenaSky.groundWeather
             or nativeGround and outdoor and skyWeatherMode or nil,
           mapId = host and host.id, arena = true, battleView = true,
@@ -1370,6 +1373,7 @@ function BattleScene.render(state, arena, textures, token)
     --                BattleBillboard.PULL, ShadowMap.snug(card.model))
     -- end
     Voxel3D.glass(false)
+    Voxel3D.actorLighting(true)
     withoutCardShadowReception(function()
       for _, card in ipairs(monCards(
           arena, groundY, textures, host, Voxel3D.vp)) do
@@ -1409,6 +1413,7 @@ function BattleScene.render(state, arena, textures, token)
       V.require("Stadium").draw(BattleBillboard.PULL)
     end)
     if not okStadium then V.require("Stadium").report(stadiumErr) end
+    Voxel3D.actorLighting(false)
     if flashing then Voxel3D.flatten(nil) end
     -- grass and flowers ride the same camera-ward pull the free-roam pass
     -- gives them, measured against THIS camera's pitch rather than the

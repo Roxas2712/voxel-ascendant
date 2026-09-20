@@ -244,6 +244,8 @@ function H.shoulders(maps,horizon,emit,yieldStep,depth,corridors)
 end
 -- Pure geometry callback also supports tests without a graphics context.
 function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
+ if #maps==1 and maps[1].map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(maps[1].map)then return end
+ if #maps==1 and maps[1].map.id=='KA_HEVO_RAYQUAZA_CHAMBER'and V.require('KascSkySanctum').matches(maps[1].map)then return end
  local corridors=H.connectionCorridors(maps,worldMaps)
  H.shoulders(maps,horizon,emit,yieldStep,H.SHOULDER_DEPTH,corridors)
  local gates=V.require('Gen1ForestLandmarks').gates(maps,horizon)
@@ -388,6 +390,7 @@ end
 H.BATCH_CELL = 256
 H.BATCH_BOXES = 256
 function H.build(maps,horizon,yieldStep,worldMaps)
+ if #maps==1 and maps[1].map.id=='KA_MOLTRES_VOLCANO'and V.require('KascVolcano').openSky(maps[1].map)then return {}end
  if H.setting:get()=='off'then return {} end
  local groups,byCell={},{}
  local function emit(x,y,z,w,h,d,c,lit)

@@ -140,6 +140,18 @@ function VascBattleAnimPlayer.mapPoint(cel, attackerIsPlayer)
   return x * (GB_W / ESSENTIALS_W), y * (GB_H / ESSENTIALS_H)
 end
 
+-- Focused artwork must turn with its trajectory, not only move its centre.
+-- Screen-wide weather/background cels keep their authored orientation.
+function VascBattleAnimPlayer.mapAngle(cel, attackerIsPlayer)
+  local angle=math.rad(finite(cel and cel.a,0))
+  local focus=finite(cel and cel.f,4)
+  if not frameAnchors or focus<1 or focus>3 then return angle end
+  local user,target=anchors(attackerIsPlayer)
+  local dx,dy=target[1]-user[1],target[2]-user[2]
+  if dx*dx+dy*dy<1e-8 then return angle end
+  return angle+math.atan2(dy,dx)-math.atan2(TARGET_Y-USER_Y,TARGET_X-USER_X)
+end
+
 local function pseudoSprites(program, attackerIsPlayer)
   local steps = {}
   for _, frame in ipairs(program.frames or {}) do
@@ -405,7 +417,8 @@ function Player:drawCustom()
         })
       end
       g.draw(image, quad, x, y,
-             math.rad(finite(cel.a, 0)), zoomX, zoomY, CELL / 2, CELL / 2)
+             VascBattleAnimPlayer.mapAngle(cel, self.attackerIsPlayer),
+             zoomX, zoomY, CELL / 2, CELL / 2)
       drawn = drawn + 1
       if effect and g.setShader then g.setShader() end
     end

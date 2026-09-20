@@ -91,6 +91,24 @@ end
 function P.kind(def,seed)
   if not P.setting:get() then return nil end
   if not def or def.walker or (def.frames or 1) ~= 1 then return nil end
+  if def.id=='SPRITE_KA_PRISM_SEAM'and type(seed)=='string'then
+    local id,index=seed:match('^(.-)_obj_(%d+)$')
+    local d=id and require('src.core.Data').maps[id]
+    local drift=V.require('KascDriftglass')
+    if drift.matches({id=id,def=d})then
+      for _,obj in ipairs(d.objects or{})do
+        if obj.index==tonumber(index)and obj.name=='DRIFTGLASS_PRISM_SEAM'then return drift.prism(P)end
+      end
+    end
+  end
+  if def.id=='SPRITE_BOULDER'and type(seed)=='string'then
+    local id,index=seed:match('^(KA_MOLTRES_VOLCANO.-)_obj_(%d+)$')
+    if id then
+      local map=require('src.core.Data').maps[id]
+      local volcano=V.require('KascVolcano')
+      if map and volcano.profile({id=id,def=map})then return volcano.boulder(P,index)end
+    end
+  end
   if def.id == 'SPRITE_OLD_AMBER' then return 'old_amber' end
   if def.id == 'SPRITE_POKE_BALL' or def.id == 'SPRITE_FOSSIL' then
     if type(seed)=='string' then
@@ -107,6 +125,10 @@ function P.kind(def,seed)
       end
       local obj=cached.object
       if obj then
+        if mapId=='KA_HOENN_BIRTH_ISLAND'and obj.name=='KA_HOENN_BIRTH_TRIANGLE'then
+          local island=V.require('KascBirthIsland')
+          if island.matches({id=mapId,def=map})then return island.triangle(P)end
+        end
         if P.objectKinds[obj.name] then return P.objectKinds[obj.name] end
         if P.itemKinds and P.itemKinds[obj.item] then return P.itemKinds[obj.item] end
         if obj.pokemon or obj.name=='FIGHTINGDOJO_HITMONLEE_POKE_BALL'

@@ -15,7 +15,13 @@ M.trees=S.new('outdoorTrees','TREES',{true,false},{'ON','OFF'})
 M.stone=S.new('outdoorStone','ROCKS + FENCES',{true,false},{'ON','OFF'})
 function M.profile(map)
  local d=map and map.def
- if not d or d.generation==2 or not M.ground:get()then return nil end
+ if not d or not M.ground:get()then return nil end
+ if map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return 'kasc_birth'end
+ if map.id=='KA_HEVO_RAYQUAZA_CHAMBER'and V.require('KascSkySanctum').matches(map)then return 'kasc_sky'end
+ if d.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(map)then return 'kasc_habitat'end
+ if (map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(map)then return 'kasc_volcano'end
+ if d.generation==2 then return nil end
+ if d.tileset=='CAVERN'and V.require('KascLegendAtmosphere').profile(map)then return 'kasc_legend'end
  if d.tileset=='OVERWORLD' or d.tileset=='FOREST' or d.tileset=='PLATEAU'then return true end
  if d.tileset=='SHIP_PORT'and V.require('Gen1Harbor').kind(map)=='dock'then return true end
 end
@@ -66,6 +72,11 @@ local function checkerPaving(map,x,y)
 end
 function M.material(map,profile,tile,x,y)
  if not profile then return nil end
+ if profile=='kasc_legend'then return V.require('KascLegendAtmosphere').material(map,x,y)end
+ if profile=='kasc_birth'then return V.require('KascBirthIsland').material(map,x,y)end
+ if profile=='kasc_volcano'then return -177 end
+ if profile=='kasc_sky'then return -162 end
+ if profile=='kasc_habitat'then return V.require('KascHabitatScenery').material(map,tile)end
  local ts=map.def.tileset
  if ts=='FOREST' and safariMaps[map.id] and x and y then
   -- The paired ground flecks use the native palette, leaving bright green
@@ -129,6 +140,7 @@ local waterTiles={
  PLATEAU={[20]=true,[31]=true,[50]=true,[51]=true},
 }
 function M.waterMaterial(map,profile,class,tile)
+ if profile=='kasc_habitat'and class=='water'then return -174 end
  local d=map and map.def
  local tiles=d and waterTiles[d.tileset]
  if d and d.tileset=='SHIP_PORT'and V.require('Gen1Harbor').kind(map)~='dock'then return nil end

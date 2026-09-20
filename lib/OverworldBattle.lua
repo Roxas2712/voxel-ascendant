@@ -4009,12 +4009,27 @@ function OverworldBattle.retryNativePresentation()
 end
 
 function OverworldBattle.applyPendingPresentation(active, dt, textures)
+  -- Settings can change through V/F3 or the options page. Queue the same
+  -- atomic stage replacement used by the battle-view selector, then wait for
+  -- a safe command menu. Remember failed requests instead of retrying forever.
   local pending, battle = active.pendingPresentation, active.battle
+  if active.plan and active.plan.terarrium and (not pending or pending.camera) then
+    local service=V.require("TerarriumHost").service
+    local desired=service.cameraMode and service.cameraMode() or "side"
+    local observed=active.requestedTerrariumCamera or active.plan.terarriumCamera
+    if desired~=observed then
+      active.requestedTerrariumCamera=desired
+      pending=desired~=active.plan.terarriumCamera and
+        {mode="terarrium",camera=desired,elapsed=0} or nil
+      active.pendingPresentation=pending
+    end
+  end
   if not pending or not battle or battle.phase ~= "menu"
       or game().stack:top() ~= battle or active.pendingSwitch
       or not active.presentationCommitted or not textures
-      or battle.growIn or battle.sendingOut or battle.current then return false end
-  if pending.mode == (active.plan.terarrium and "terarrium" or active.plan.mode) then
+      or battle.growIn or battle.sendingOut or battle.current or battle.animPlaying then return false end
+  if pending.mode == (active.plan.terarrium and "terarrium" or active.plan.mode)
+      and (not pending.camera or pending.camera==active.plan.terarriumCamera) then
     active.pendingPresentation=nil
     return false
   end
@@ -5679,7 +5694,24 @@ function OverworldBattle.install()
       love.graphics.scale(k, k)
       love.graphics.translate(-ax, -ay)
     end
+    -- Custom move sheets use the final visible bodies instead of the old
+    -- fixed GB slots. Keep the legacy transform for native/capture providers.
+    local player = V.require("VascBattleAnimPlayer")
+    local previous = player.frameAnchorStatus()
+    local frameAnchors=player.projectedAnchors(shot,cx,cy,ax,ay,k)
+    player.setFrameAnchors(frameAnchors)
+    local animation=self.animPlayer
+    if animation and animation.presentationMove and not animation.custom then
+      local transform=player.nativeProjection(frameAnchors,a,animation.attackerIsPlayer)
+      if transform then
+        love.graphics.translate(transform.x,transform.y)
+        love.graphics.rotate(transform.angle)
+        love.graphics.scale(transform.scale,transform.scale)
+        love.graphics.translate(-ax,-ay)
+      end
+    end
     local results = packValues(pcall(innerAnim, self, colorized, ...))
+    player.setFrameAnchors(previous)
     love.graphics.pop()
     if not results[1] then error(results[2], 0) end
     return unpackValues(results, 2, results.n)

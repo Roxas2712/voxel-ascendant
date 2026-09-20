@@ -83,9 +83,17 @@ local function buildCard(def, frame, sourceImage)
   local insetY = fh == 16 and 0.05 or math.min(0.05, fh * 0.003)
   local u0, u1 = insetX / iw, (fw - insetX) / iw
   local v0, v1 = (fy + insetY) / ih, (fy + fh - insetY) / ih
+  local width,height=16,16
+  if def.voxelChamberCard==true then
+    local w,h=tonumber(def.voxelWorldWidth),tonumber(def.voxelWorldHeight)
+    if w and h and w==w and h==h and w>=4 and w<=96 and h>=4 and h<=96 then
+      width,height=w,h
+    end
+  end
+  local left,right=8-width/2,8+width/2
   local verts = {
-    { 0, 0, 0, u0, v1, 1 }, { 16, 0, 0, u1, v1, 1 },
-    { 16, 16, 0, u1, v0, 1 }, { 0, 16, 0, u0, v0, 1 },
+    { left, 0, 0, u0, v1, 1 }, { right, 0, 0, u1, v1, 1 },
+    { right, height, 0, u1, v0, 1 }, { left, height, 0, u0, v0, 1 },
   }
   local indices = {}
   Voxel3D.pushQuad(indices, 0)
@@ -107,6 +115,9 @@ function SpriteBillboards.mesh(def, frame, sourceImage)
     tostring(def.frames or ""),
     tostring(def.frameWidth or ""),
     tostring(def.frameHeight or ""),
+    tostring(def.voxelChamberCard==true),
+    tostring(def.voxelWorldWidth or ""),
+    tostring(def.voxelWorldHeight or ""),
     tostring(math.max(0, math.floor(tonumber(frame) or 0))),
   }, "#")
   if meshes[key] == nil then

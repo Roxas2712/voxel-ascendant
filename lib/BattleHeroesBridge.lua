@@ -17,11 +17,14 @@ function B.attach(textures,battle)
    hero.player=native.adapt(battle,'player',hero.player)
    hero.enemy=native.adapt(battle,'enemy',hero.enemy)
   end
-  local plan=V.require('OverworldBattle').presentationPlan(battle)
+  local renderer=V.require('OverworldBattle')
+  local plan=renderer.presentationPlan(battle)
+  local arena=renderer.arena and renderer.arena()
   if plan and plan.terarrium then
    local service=V.require('TerarriumHost').service
    if service and service.activity then service.activity(battle)end
-   local behind=plan.terarriumCamera=='behind'
+   local camera=arena and arena.terarrium and arena.terarrium.cameraMode or plan.terarriumCamera
+   local behind=camera=='behind'
    if hero.player and hero.player.setView then hero.player=hero.player.setView(behind and 'terarrium-back' or 'side','player')end
    if hero.enemy and hero.enemy.setView then hero.enemy=hero.enemy.setView(behind and 'terarrium-front' or 'side','enemy')end
   end
@@ -286,7 +289,15 @@ function B.append(cards,textures,layout,eye,map,arena,presentationVP,probe)
  local foot=arena and arena.terarrium and arena.terarriumService.trainerFoot(arena,side,p[2])
   or mapFoot(hero,p,desired,scale,map,arena,eye,layout,presentationVP)
  x,y,z=foot[1],foot[2],foot[3]
- local view=arena.terarrium and hero.view or B.bodyView(foot,{foot[1]+e[1]-p[1],foot[2],foot[3]+e[3]-p[3]},eye,hero.view)
+ -- The displayed arena owns the view, including a live camera switch. The
+ -- presentation plan may still describe the previous frame during rebuilding.
+ local view
+ if arena.terarrium then
+  view=arena.terarrium.cameraMode=='behind'
+   and (side=='player' and 'terarrium-back' or 'terarrium-front') or 'side'
+ else
+  view=B.bodyView(foot,{foot[1]+e[1]-p[1],foot[2],foot[3]+e[3]-p[3]},eye,hero.view)
+ end
  if not probe and hero.setView then hero.setView(view,hero.facing) end
  local matrix=Board.matrix(x,y,z,hero.width*scale,hero.height*scale,
   Board.yawToward(x,z,eye))

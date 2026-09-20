@@ -35,6 +35,14 @@ for _,world in ipairs({false,true})do for _,battle in ipairs({false,true})do
 end end
 settings.battleLights=true;settings.localLights=false
 assert(not B.enabled('ARENA',map,{terarrium={}}),'Terrarium accepted a misleading ARENA label')
+local terrariumOn=true
+local ta={terarrium={},terarriumService={lightEnabled=function()return terrariumOn end,prepareLighting=function()return L.stage(nil,{1,1,1},{})end}}
+settings.battleLights=false
+assert(B.enabled('ARENA',map,ta),'Terrarium must own its switch')
+B.prepare(state,map,ta,false,0,nil,true,'clear');assert(L.current().battle)
+terrariumOn=false;assert(not B.enabled('ARENA',map,ta))
+B.prepare(state,map,ta,false,0,nil,false,'clear');assert(not L.active())
+settings.battleLights=true
 assert(not B.enabled('MAP',map,{discs=true}),'DISCS accepted a misleading MAP label')
 local gen2={def={generation=2}}
 assert(not B.enabled('MAP',gen2) and not B.enabled('ARENA',gen2))

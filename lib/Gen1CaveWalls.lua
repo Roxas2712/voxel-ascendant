@@ -6,7 +6,7 @@ local M={extraHeight=16,tagOffset=1024}
 function M.native(map)
  return map and map.def and map.def.tileset=='CAVERN'
    and map.def.generation~=2
-   and P.maps[map.id or map.def.id]~=nil
+   and (P.maps[map.id or map.def.id]~=nil or P.extensionMaps[map.id or map.def.id]~=nil)
 end
 function M.eligible(map,tx,ty)
  if not M.native(map) or tx<0 or ty<0 or tx>=map.def.width*4 or ty>=map.def.height*4 then return false end

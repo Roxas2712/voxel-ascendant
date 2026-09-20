@@ -20,7 +20,7 @@ end
 local function register(factory,builtin)
   if H.service and not H.builtIn then return false,'Terarrium already registered' end
   local service=factory({Voxel3D=V.require('Voxel3D'),Mat4=V.require('Mat4'),
-   resolveStyle=V.require('BattleArenaStyle').resolve,
+   resolveStyle=V.require('BattleArenaStyle').resolve,LocalLights=V.require('LocalLights'),
    playFanfare=function(battle)return require('src.core.Sound').play(battle.data,'Caught_Mon')end})
   for _,name in ipairs({'setup','draw','cast','camera','trainerFoot','release'})do
    if type(service)~='table' or type(service[name])~='function' then return false,'missing '..name end

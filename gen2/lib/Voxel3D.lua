@@ -1144,7 +1144,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext, orbitGr
   -- the wireframe variant when the player has it on AND it built; either
   -- answer falls through to the plain scene rather than to no scene
   local L=V.require('LocalLights')
-  local lighting=skyContext and skyContext.dynamicLighting==true and L.enabled()
+  local lighting=skyContext and skyContext.dynamicLighting==true and L.available() and (L.current().terrarium or L.enabled())
   Voxel3D.localLightsActive=lighting and true or false
   local grid = VoxelGrid.enabled()
   local sh = grid and Voxel3D.shader(true,lighting) or nil

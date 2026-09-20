@@ -34,7 +34,7 @@ local SETTING_HELP_DE = {
   liveGpu="Speicher für LÖVE-Texturen und Renderflächen in MiB. Keine GPU-Auslastung und kein gesamter Grafikspeicherverbrauch.",
   outdoorHorizon="Voxel-Wälder, Felsen und Dächer am äußeren Kartenrand, bisherige Bitmap-Kulisse oder AUS. Innenraum-Panoramen bleiben separat.",
   desktopNeighborRing="PC: aktuelle Karte und alle direkten Nachbarn vorbereiten. AUS lädt zusätzlich weiter entfernte Karten. Android behält seinen mobilen Kartenring.",
-  terarriumBehindRed="Blick hinter dem eigenen Trainer oder seitlich auf beide Teams.",
+  terarriumBehindRed="Teams seitlich oder hinter dem Trainer anordnen. Wechsel erfolgt im nächsten Befehlsmenü.",
   terarriumIdleAnimation="Terrarium bei einer Pause im Befehlsmenue sanft wippen lassen.",
   terarriumIdleSound="Leiser Aufprallklang beim Wippen des Terrariums.",
   terarriumBallStyle="Terrarium-Schale waehlen. AUTO folgt der KASC-Schwierigkeit, sofern vorhanden.",
@@ -250,7 +250,7 @@ local SECTION_DEFS = {
   terarrium={title="TERRARIUM",help={
     en="Built-in Terrarium battle stage. Select with 8 in battle; customize camera, shell, background and dome here.",
     de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
-    keys={terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
+    keys={terarriumLighting=true,terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
       terarriumBallStyle=true,terarriumBackground=true,terarriumDome=true}},
   battleHeroes={title="BALL THROWS",help={
     en="Ascendant Battle Heroes: Johto throws in Gen1, trainers and gestures. The separate Battle Heroes mod takes precedence when installed.",
@@ -623,7 +623,8 @@ local UI_LABEL_DE = {
 }
 
 local SETTING_LABEL_DE = {
-  terarriumBehindRed="KAMERA HINTER ROT",terarriumIdleAnimation="RUHEANIMATION",terarriumIdleSound="WACKELKLANG",
+  terarriumLighting="TERRARIUM-BELEUCHTUNG",
+  terarriumBehindRed="KAMPFAUSRICHTUNG",terarriumIdleAnimation="RUHEANIMATION",terarriumIdleSound="WACKELKLANG",
   terarriumBallStyle="BALL-DESIGN",terarriumBackground="HINTERGRUND",terarriumDome="GLASKUPPEL",
   battleHeroesEnabled="BALLWURF",battleHeroesTrainerStays="TRAINER IM KAMPF",battleHeroesGestures="TRAINER-GESTEN",battleHeroesModernBalls="MODERNE BÄLLE",
   liveDisplay="LIVE-ANZEIGE", liveClock="UHRZEIT", liveFps="FPS + BILDZEIT",
@@ -665,6 +666,7 @@ local SETTING_LABEL_DE = {
 }
 
 local VALUE_DE = {
+  SIDE="SEITLICH", ["BEHIND TRAINER"]="HINTER TRAINER",
   ["BRIGHT GALLERY"]="HELLE GALERIE",FOREST="WALD",ROSE="ROSA",
   ["POKE BALL"]="POKÉBALL",["GREAT BALL"]="SUPERBALL",["ULTRA BALL"]="HYPERBALL",["MASTER BALL"]="MEISTERBALL",["SAFARI BALL"]="SAFARIBALL",
   ["RED APRICORN"]="APRIKOKO ROT",["BLUE APRICORN"]="APRIKOKO BLAU",["YELLOW APRICORN"]="APRIKOKO GELB",

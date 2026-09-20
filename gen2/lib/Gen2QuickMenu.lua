@@ -67,6 +67,7 @@ local function option(key,en,de)
   return {id=key,title=en,titleDe=de,hint='',detail='',
     status=function(german)
       local val=value(key,s)
+      if key=='terarriumBehindRed'then return val and(german and'HINTER TRAINER'or'BEHIND TRAINER')or(german and'SEITLICH'or'SIDE')end
       if s.type=='toggle'then return val and(german and'AN'or'ON')or(german and'AUS'or'OFF')end
       for _,c in ipairs(s.choices or{})do if c[2]==val then return c[1]end end
       return tostring(val)
@@ -115,7 +116,8 @@ local groups={
     {'apo_city_pokemon_sprite_source','Story artwork','Story-Grafik'},
   },
   terrarium={
-    {'terarriumBehindRed','Behind trainer','Hinter dem Trainer'},
+    {'terarriumLighting','Lighting','Beleuchtung'},
+    {'terarriumBehindRed','Battle orientation','Kampfausrichtung'},
     {'terarriumIdleAnimation','Idle motion','Ruheanimation'},
     {'terarriumIdleSound','Idle sound','Animationsklang'},
     {'terarriumBallStyle','Ball design','Ball-Design'},

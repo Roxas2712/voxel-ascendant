@@ -1896,10 +1896,13 @@ end
 function HorizonWall.classFor(map)
   local def = map and map.def or {}
   local id, tileset = tostring(map and map.id or def.id or ""), def.tileset
+  if id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return 'water'end
   -- Tileset semantics are authoritative for enclosed caves. This keeps future
   -- extension maps fail-safe without maintaining an ID allowlist, and prevents
   -- an outdoor/location/room profile collision from opening a real cavern.
+  if id:match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(map)then return V.require('KascVolcano').openSky(map)and'mountain'or'cave'end
   if CAVE_TILESETS[tileset] then return "cave" end
+  if def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(map)=='FIRE'then return 'cave'end
   if not isOutdoor(def) and nativeInteriorProfile(map) then
     return "interior"
   end
@@ -2063,6 +2066,8 @@ end
 -- transition.  It never participates in texture scaling; panelUV receives the
 -- canonical coordinate separately.
 function HorizonWall.panelProfile(map, edge, localAlong, sampleSpan)
+  if map and map.id=='KA_MOLTRES_VOLCANO'and V.require('KascVolcano').openSky(map)then return 'none',0,{ground='none'}end
+  if map and map.id=='KA_HEVO_RAYQUAZA_CHAMBER'and V.require('KascSkySanctum').matches(map)then return 'none',0,{ground='none'}end
   local def = map and map.def or {}
   local id = tostring(map and map.id or def.id or "")
   local profile = HorizonWall.PROFILES[id]
@@ -2135,6 +2140,7 @@ end
 
 function HorizonWall.hasSky(map)
   if not (map and map.def) then return false end
+  if map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return true end
   local profile = HorizonWall.profileFor(map)
   return isOutdoor(map.def)
          or HorizonWall.classFor(map) == "mountain"

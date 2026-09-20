@@ -89,7 +89,18 @@ for _,p in ipairs(Furniture.patterns)do
  local map={id=id,def={width=mart and 10 or 4,height=mart and 4 or 6,tileset=mart and 'LOBBY'or 'MANSION',blocks=blocks,warps=warps}}
  function map:tileAt(x,y)return contracts[id].tiles[y+1][x+1]end
  assert(Terrace.matches(map))
- local m=Props.models[p.kind];assert(m.replacesGround and m.actorSurface and m.support==0)
+ local m=Props.models[p.kind];assert(m.replacesGround and m.actorSurface)
+ if mart then
+  assert(m.support(168,72)==8.5,'seated rooftop NPC lost its chair height')
+  assert(m.support(152,104)==0,'ordinary walkway raised')
+  for _,seat in ipairs({{48,32},{48,48},{96,32},{96,48},{112,64},{112,80},{160,64},{160,80}})do
+   local x,z=seat[1]+8,seat[2]+8;local top
+   for _,b in ipairs(m.boxes)do
+    if x>=b[1]and x<b[1]+b[4]and z>=b[3]and z<b[3]+b[6]then top=math.max(top or 0,b[2]+b[5])end
+   end
+   assert(top==m.support(x,z),'actor is not supported by a physical seat')
+  end
+ else assert(m.support==0)end
  for _,b in ipairs(m.boxes)do assert(b[4]>0 and b[5]>0 and b[6]>0 and b[7]>0)end
  -- No floor sheet or wall closes the centre of a stair opening above the treads.
  for i,warp in ipairs(warps)do

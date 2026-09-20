@@ -3,7 +3,8 @@
 local platform = love and love.system and love.system.getOS and love.system.getOS()
 local controlsTransparency = (platform == "iOS" or platform == "Android") and 40 or 20
 return {
-  {key="terarriumBehindRed",type="toggle",label="TERRARIUM: BEHIND TRAINER",default=false,description="View the Terrarium from behind the player instead of its side."},
+  {key="terarriumBehindRed",type="choice",label="TERRARIUM: BATTLE ORIENTATION",default=false,choices={{"SIDE",false},{"BEHIND TRAINER",true}},description="Arrange both teams side by side or behind the trainer."},
+  {key="terarriumLighting",type="toggle",label="TERRARIUM: LIGHTING",default=true,description="Soft cached shadows and local Terrarium lights. Independent of world lighting."},
   {key="terarriumIdleAnimation",type="toggle",label="TERRARIUM: IDLE MOTION",default=true,description="Gently rock the Terrarium while waiting in the command menu."},
   {key="terarriumIdleSound",type="toggle",label="TERRARIUM: IDLE SOUND",default=true,description="Play a quiet sound during idle motion."},
   {key="terarriumBallStyle",type="choice",label="TERRARIUM: BALL DESIGN",default="auto",choices={{"AUTO","auto"},{"POKE BALL","poke"},{"GREAT BALL","great"},{"ULTRA BALL","ultra"},{"MASTER BALL","master"},{"SAFARI BALL","safari"},{"RED APRICORN","apri_red"},{"BLUE APRICORN","apri_blue"},{"YELLOW APRICORN","apri_yellow"},{"GREEN APRICORN","apri_green"},{"PINK APRICORN","apri_pink"},{"BLACK APRICORN","apri_black"},{"WHITE APRICORN","apri_white"}},description="Choose the Terrarium shell."},

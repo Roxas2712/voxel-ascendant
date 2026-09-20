@@ -104,9 +104,34 @@ function M.context(g)
  if t==g.overworld then return "world",t end
  return "other",t
 end
+local function terrariumRows()
+ local out={}
+ local labels={
+  terarriumBehindRed={"Battle orientation","Kampfausrichtung"},
+  terarriumLighting={"Lighting","Beleuchtung"},
+  terarriumIdleAnimation={"Idle motion","Ruheanimation"},
+  terarriumIdleSound={"Idle sound","Animationsklang"},
+ }
+ for _,entry in ipairs(V.require('IntegratedTerarrium').entries())do
+  local setting=entry[1];local title=labels[setting.key]
+  if title then
+   out[#out+1]={id=setting.key,title=title[1],titleDe=title[2],hint='',
+    detail=entry[2] or '',
+    detailDe=setting.key=='terarriumBehindRed'and'Wechselt im nächsten Befehlsmenü. Trainer, Pokémon und Attacken folgen der Ausrichtung.'or'',
+    status=function(de)
+     local value=setting:get()
+     if setting.key=='terarriumBehindRed'then return value and(de and'HINTER TRAINER'or'BEHIND TRAINER')or(de and'SEITLICH'or'SIDE')end
+     return value and(de and'AN'or'ON')or(de and'AUS'or'OFF')
+    end,
+    change=function(game,dir)setting:cycle(game,dir)end}
+  end
+ end
+ return out
+end
 function M.visibleRows(g,group)
  if Host then return Host.rows(g,group,M) end
  local context=M.context(g);local out={}
+ if group=='terrarium'then return terrariumRows()end
  local allowed=context=="battle" and {['0']=true,['8']=true,['5']=true,['6']=true,f4=true,q=true,e=true}
   or context=="world" and {['0']=true,v=true,f6=true,f4=true}or{f4=true}
  if context=='battle'then
@@ -132,6 +157,9 @@ function M.visibleRows(g,group)
     if count>0 then out[#out+1]={id=id,title=groupNames[id][1],titleDe=groupNames[id][2],submenu=id,hint='',detail='',status=function()return '›'end}end
    end
   end
+ end
+ if not group and (context=='world'or context=='battle')then
+  out[#out+1]={id='terrarium',title='Terrarium',titleDe='Terrarium',submenu='terrarium',hint='',detail='',status=function()return '›'end}
  end
  if context=='battle'and allowed.q then
   out[#out+1]={id='battle-distance',title='Camera distance',titleDe='Kameraabstand',hint='',detail='Starting zoom. Pinch to zoom; drag to look. Mouse wheel / right stick: camera.',detailDe='Startabstand. Zwei Finger: Zoom; ziehen: drehen. Mausrad / rechter Stick: Kamera.',

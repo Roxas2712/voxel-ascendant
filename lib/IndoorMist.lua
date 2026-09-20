@@ -28,7 +28,14 @@ function M.base(map)
 end
 function M.profile(map,dark)
  local d=map and map.def
- if not d or d.generation==2 or dark then return nil end
+ if not d or dark then return nil end
+ if map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return V.require('KascBirthIsland').mist(map)end
+ if map.id=='KA_HEVO_RAYQUAZA_CHAMBER'then return V.require('KascSkySanctum').mist(map)end
+ if d.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'then return V.require('KascHabitatScenery').mist(map)end
+ if (map.id or ''):match('^KA_MOLTRES_VOLCANO')then local mist=V.require('KascVolcano').mist(map);if mist then return mist end end
+ local legend=V.require('KascLegendAtmosphere').profile(map)
+ if legend then return legend end
+ if d.generation==2 then return nil end
  if V.require('Weather').isLavender(map)then return town end
  if isForest(map)then return forest end
  if V.require('TowerAtmosphere').active(map)then

@@ -10,6 +10,7 @@ local modules={LocalLights=lights,Sky={clock=0},
  Weather={isLavender=function(map)return map.id=='LAVENDER_TOWN'end},
  TowerAtmosphere={active=function(map)return map.id:match('^POKEMON_TOWER_')end},
  LedgeElevation={basisAtCell=function()return 0 end}}
+modules.KascLegendAtmosphere=assert(loadfile(root..'/lib/KascLegendAtmosphere.lua'))()
 local M=assert(loadfile(root..'/lib/IndoorMist.lua'))({require=function(n)return assert(modules[n],n)end})
 local g=love.graphics
 local target=g.newCanvas(64,64,{format='rgba16f',dpiscale=1})
