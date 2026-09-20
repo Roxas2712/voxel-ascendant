@@ -62,7 +62,7 @@ return function(api)
    lamps[#lamps+1]={x=x+side*(lava and 57 or 44),y=ground+(lava and 9 or 32),z=z-17,
     radius=112,power=(lava and .92 or .68)*pulse,weight=1,normal={0,0,0},owner={},color=p[i]}
   end
-  if not L.mobile then lamps[3]={x=x,y=ground+38,z=z+49,radius=130,power=.27,weight=1,normal={0,0,0},owner={},color={1,.95,.87}}end
+  if not (L.mobile or L.handheld) then lamps[3]={x=x,y=ground+38,z=z+49,radius=130,power=.27,weight=1,normal={0,0,0},owner={},color={1,.95,.87}}end
   local tint={.80,.81,.84};if lava then tint={.77,.74,.76}end
   api.graphics.tint=tint
   local f=L.stage(nil,tint,lamps)

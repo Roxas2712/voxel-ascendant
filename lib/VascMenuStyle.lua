@@ -247,6 +247,39 @@ end
 -- no engine font page and no KASC module is patched.
 local SPECIAL_ADVANCE = { ["+"]=8, ["%"]=8, ["&"]=8 }
 
+-- Menus measure, wrap and draw the same labels every frame. Font.split makes
+-- one table per glyph; retaining its immutable spans removes that steady
+-- allocation load without retaining menus, saves or GPU resources. Keep both
+-- the entry count and total input bytes bounded for live diagnostic values.
+local spanCache, spanOrder = {}, {}
+local spanHead, spanCount, spanBytes = 1, 0, 0
+local spanFont, spanBorder, spanSplitter
+local function textSpans(Font, value)
+  -- Gen-1/Gen-2 Font.load replaces the public BORDER table on every font
+  -- load, including translations and return-to-launcher. Do not reuse glyph
+  -- codes across that boundary. Unknown font providers stay uncached.
+  if type(Font.BORDER) ~= "table" then return Font.split(value) end
+  if spanFont ~= Font or spanBorder ~= Font.BORDER or spanSplitter ~= Font.split then
+    spanCache, spanOrder = {}, {}
+    spanHead, spanCount, spanBytes = 1, 0, 0
+    spanFont, spanBorder, spanSplitter = Font, Font.BORDER, Font.split
+  end
+  local cached = spanCache[value]
+  if cached then return cached end
+  local spans = Font.split(value)
+  if #value > 1024 then return spans end
+  while spanCount >= 128 or spanBytes + #value > 8192 do
+    local oldest = spanOrder[spanHead]
+    spanCache[oldest], spanOrder[spanHead] = nil, nil
+    spanBytes, spanCount = spanBytes - #oldest, spanCount - 1
+    spanHead = spanHead % 128 + 1
+  end
+  spanOrder[(spanHead + spanCount - 1) % 128 + 1] = value
+  spanCount, spanBytes = spanCount + 1, spanBytes + #value
+  spanCache[value] = spans
+  return spans
+end
+
 local function spanAdvance(Font, value, span)
   local glyph = value:sub(span.from, span.to)
   if SPECIAL_ADVANCE[glyph] then return SPECIAL_ADVANCE[glyph] end
@@ -260,7 +293,7 @@ local function displayWidth(value)
   local Font = runtime().Font
   value = text(value)
   local width = 0
-  for _, span in ipairs(Font.split(value)) do
+  for _, span in ipairs(textSpans(Font, value)) do
     width = width + spanAdvance(Font, value, span)
   end
   return width
@@ -382,7 +415,7 @@ local function drawText(value, x, y, ink)
   local pen = x
   local unknown
   local state = ink and beginGlassInk(ink) or nil
-  for _, span in ipairs(Font.split(value)) do
+  for _, span in ipairs(textSpans(Font, value)) do
     local glyph = value:sub(span.from, span.to)
     if SPECIAL_ADVANCE[glyph] then
       suspendGlassInk(state)
@@ -392,7 +425,7 @@ local function drawText(value, x, y, ink)
       Font.drawCode(span.code, pen, y)
     else
       if unknown == nil then
-        local question = Font.split("?")
+        local question = textSpans(Font, "?")
         unknown = question[1] and question[1].code or 0x7F
       end
       Font.drawCode(unknown, pen, y)
@@ -407,7 +440,7 @@ local function truncate(value, budget)
   local Font = runtime().Font
   value = text(value):gsub("\n.*$", "")
   if displayWidth(value) <= budget then return value end
-  local spans = Font.split(value)
+  local spans = textSpans(Font, value)
   local used, fit = 0, 0
   for index, span in ipairs(spans) do
     used = used + spanAdvance(Font, value, span)
@@ -458,7 +491,7 @@ local function wrapLines(value, budget)
     else
       local remaining = paragraph
       while remaining ~= "" do
-        local spans = Font.split(remaining)
+        local spans = textSpans(Font, remaining)
         local fit = Font.spansFitting(spans, budget)
         if fit >= #spans then
           lines[#lines + 1] = remaining

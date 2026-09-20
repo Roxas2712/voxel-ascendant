@@ -113,9 +113,10 @@ end
 function DeviceProfile.resolve(value)
   value = ({ eco="light", handheld="balanced", max="high" })[value] or value
   if value ~= "auto" then return value end
-  -- Reuse the engine's public AUTO detector instead of probing LÖVE here.
-  -- That keeps one device policy for the whole game (including ARM Linux
-  -- handhelds and low-core desktops) and avoids a raw platform API in a mod.
+  -- Desktop-class APIs do not imply a high-end GPU on Steam Deck.
+  if V.mod and V.mod._vascDeviceHardware and V.mod._vascDeviceHardware.steamDeck then
+    return "balanced"
+  end
   local ok, Performance = pcall(require, "src.core.Performance")
   local tier
   if ok and type(Performance) == "table"

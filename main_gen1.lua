@@ -880,8 +880,8 @@ end
 V.PerformanceOverlay = V.require("PerformanceOverlay")
 local SETTINGS = {
   { DeviceProfile.setting,
-    "Choose a persistent hardware profile. AUTO selects PC/MAX on desktop, "
-    .. "HANDHELD on iOS/Android and ECO on Web. Changing any managed row "
+    "Choose a persistent hardware profile. AUTO selects BALANCED on Steam Deck, HIGH on other desktops, "
+    .. "BALANCED on iOS/Android and LIGHT on low-tier devices. Changing any managed row "
     .. "switches to CUSTOM and preserves those individual values.",
     row = DeviceProfile.row },
   { ShortcutToastSetting,
@@ -1405,7 +1405,9 @@ DeviceProfile.configure({
   { setting = DayNight.setting,
     max = "cycle", handheld = "cycle", eco = "cycle" },
   { setting = AntiAlias.resolution,
-    max = "balanced", handheld = "economy", eco = "economy", ultra = "native" },
+    max = "balanced", handheld = (mod._vascDeviceHardware
+      and mod._vascDeviceHardware.steamDeck) and "balanced" or "economy",
+    eco = "economy", ultra = "native" },
   { setting = AntiAlias.setting,
     max = 0, handheld = 0, eco = 0, ultra = 2 },
 })

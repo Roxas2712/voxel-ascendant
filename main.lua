@@ -6,6 +6,19 @@
 
 local mod = ...
 
+-- Cached once; Gen2 inherits this receipt through its mod facade. The engine's
+-- AUTO detector is corrected for this hardware; explicit host tiers survive.
+do
+  local source = assert(mod:read("lib/DeviceHardware.lua"))
+  local detector = assert((loadstring or load)(source, "@DeviceHardware"))()
+  local hardware = detector.detect(love)
+  local ok, performance = pcall(require, "src.core.Performance")
+  if ok then hardware.hostAutoProfile = detector.installAutoProfile(performance, hardware) end
+  mod._vascDeviceHardware = hardware
+  mod.exports = mod.exports or {}
+  mod.exports.deviceHardware = hardware
+end
+
 -- One engine overlay serves both generations, including its real hit areas.
 do
   local ok, controls = pcall(require, "src.core.TouchControls")
