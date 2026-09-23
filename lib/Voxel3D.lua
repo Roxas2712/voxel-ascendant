@@ -1043,8 +1043,8 @@ local function shaderSource(variant, grid, lighting)
     if (seasonalFoliage > .5 || roofMaterial.g > .5) {
       float green=smoothstep(.01,.10,p.g-max(p.r,p.b));
       float brightness=max(p.r,max(p.g,p.b));
-      float patch=.5+.5*sin(vWorld.x*.057+vWorld.z*.043);
-      vec3 autumn=mix(vec3(.68,.20,.055),vec3(.92,.49,.10),patch)*(.35+brightness*.9);
+      float foliageVariation=.5+.5*sin(vWorld.x*.057+vWorld.z*.043);
+      vec3 autumn=mix(vec3(.68,.20,.055),vec3(.92,.49,.10),foliageVariation)*(.35+brightness*.9);
       vec3 spring=vec3(p.r*.87,min(1.0,p.g*1.10),p.b*.88);
       p.rgb=mix(p.rgb,spring,green*seasonWeights.x*.65);
       p.rgb=mix(p.rgb,autumn,green*seasonWeights.y*.94);
