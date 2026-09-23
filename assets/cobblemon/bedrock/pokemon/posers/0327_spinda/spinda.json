@@ -1,0 +1,45 @@
+{
+  "portraitScale": 1.9,
+  "portraitTranslation": [-0.5, -0.1, 0],
+  "profileScale": 0.76,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "spinda",
+  "animations": {
+    "faint": "q.bedrock_primary('spinda', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('spinda', 'cry')",
+    "recoil": "q.bedrock_stateful('spinda', 'recoil')",
+    "physical": "q.bedrock_primary('spinda', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('spinda', 'special', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('spinda', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('spinda', 'battle_cry', q.curve('symmetrical'))"
+      },
+      "animations": ["q.bedrock('spinda', 'battle_idle')"],
+      "quirks": []
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('spinda', 'ground_idle')"],
+      "quirks": []
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('spinda', 'ground_walk')"],
+      "quirks": []
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('spinda', 'sleep')"]
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+    "portraitScale": 1.9,
+    "portraitTranslation": [-0.7, -0.25, 0],
+    "profileScale": 0.75,
+    "profileTranslation": [0, 0.6, 0],
+    "rootBone": "tauros",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('tauros', 'cry')"
+  },
+  "poses": {
+    "jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros', 'ride_jump')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tauros', 'blink')"
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 5
+    },
+    "running": {
+      "poseTypes": ["WALK", "FLOAT", "SWIM"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLOAT", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tauros', 'sleep')"]
+    }
+  }
+}

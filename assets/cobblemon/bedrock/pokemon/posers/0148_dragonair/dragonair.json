@@ -1,0 +1,139 @@
+{
+  "rootBone": "dragonair",
+  "portraitScale": 2.1,
+  "portraitTranslation": [-0.02, 2.26, 0],
+  "profileScale": 0.57,
+  "profileTranslation": [0, 1, 0],
+  "animations": {
+    "cry": "q.bedrock_stateful('dragonair', 'cry')"
+  },
+  "poses": {
+    "sleep": {
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'sleep')"
+      ]
+    },
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dragonair', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dragonair', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'ground_walk')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dragonair', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": [
+        "HOVER"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dragonair', 'water_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dragonair', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": [
+        "FLY"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dragonair', 'water_swim')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dragonair', 'blink')"
+      ]
+    },
+    "float": {
+      "poseTypes": [
+        "FLOAT"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'water_idle')"
+      ],
+      "transformTicks": 10,
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "sleep": "q.bedrock('dragonair', 'water_sleep')"
+      }
+    },
+    "swim": {
+      "poseTypes": [
+        "SWIM"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'water_swim')"
+      ],
+      "transformTicks": 10,
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "sleep": "q.bedrock('dragonair', 'water_sleep')"
+      }
+    },
+    "surface_float": {
+      "poseTypes": [
+        "STAND",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'surfacewater_idle')"
+      ],
+      "transformTicks": 10,
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "sleep": "q.bedrock('dragonair', 'water_sleep')"
+      }
+    },
+    "surface_swim": {
+      "poseTypes": [
+        "SWIM","FLY"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'surfacewater_swim')"
+      ],
+      "transformTicks": 10,
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "sleep": "q.bedrock('dragonair', 'water_sleep')"
+      }
+    },
+    "battle-standing": {
+      "poseTypes": [
+        "STAND"
+      ],
+      "animations": [
+        "q.bedrock('dragonair', 'battle_idle')"
+      ],
+      "transformTicks": 10,
+      "isTouchingWater": false
+    }
+  }
+}

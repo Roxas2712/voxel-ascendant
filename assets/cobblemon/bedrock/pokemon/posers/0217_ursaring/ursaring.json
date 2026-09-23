@@ -1,0 +1,102 @@
+{
+  "portraitScale": 1.65,
+  "portraitTranslation": [-0.38, 2.23, 0],
+  "profileScale": 0.52,
+  "profileTranslation": [-0.03, 0.99, 0],
+  "rootBone": "ursaring",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('ursaring', 'cry')",
+    "recoil": "q.bedrock_stateful('ursaring', 'recoil')"
+  },
+  "poses": {
+    "in-air": {
+      "poseTypes": ["WALK", "STAND", "NONE"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.bedrock('ursaring','ride_jump')",
+        "q.bedrock('ursaring', 'ride_ground_run')"
+      ],
+      "quirks": ["q.bedrock_quirk('ursaring', 'blink')"],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "standing": {
+      "poseTypes": ["STAND","NONE","PORTRAIT","PROFILE"],
+      "isBattle": false,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaring', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ursaring', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isBattle": false,
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaring', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('ursaring', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ursaring', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "run": {
+      "poseTypes": ["WALK"],
+      "isBattle": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaring', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('ursaring', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('ursaring', 'blink')"],
+      "transformTicks": 5
+    },
+    "battle_standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaring', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ursaring', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('ursaring', 'sleep')"
+      ],
+      "transformTicks": 10
+    }
+  }
+}

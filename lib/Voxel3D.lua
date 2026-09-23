@@ -1036,11 +1036,36 @@ local function shaderSource(variant, grid, lighting)
   end,1)
   source=source:gsub("vec4 p = Texel%(tex, tc%);",
     "if(roomMaskSize.z>0.5){vec2 ru=vWorld.xz/roomMaskSize.xy;bool outsideRoomMap=ru.x<0.0||ru.y<0.0||ru.x>=1.0||ru.y>=1.0;if(outsideRoomMap){if(roomMaskSize.z<1.5)discard;}else if(Texel(roomMask,(floor(vWorld.xz/8.0)+vec2(0.5))/(roomMaskSize.xy/8.0)).r<0.5)discard;}\n    vec4 p = Texel(tex, tc);\n    if (tc.x < -200.5) p = caveSurface(tc.x, vWorld); else if (tc.x < -128.5) p = interiorFloor(tc.x, vWorld);")
+  source=source:gsub("#ifdef PIXEL", "#ifdef PIXEL\nuniform Image rooftopMaterialMask;\nuniform float rooftopMaterials;\nuniform vec2 seasonWeights;\nuniform float seasonalFoliage;",1)
+  source=source:gsub("vec3 rgb = p.rgb", [[
+    vec2 roofMaterial=vec2(0.0);
+    if(rooftopMaterials>.5) roofMaterial=Texel(rooftopMaterialMask,tc).rg;
+    if (seasonalFoliage > .5 || roofMaterial.g > .5) {
+      float green=smoothstep(.01,.10,p.g-max(p.r,p.b));
+      float brightness=max(p.r,max(p.g,p.b));
+      float patch=.5+.5*sin(vWorld.x*.057+vWorld.z*.043);
+      vec3 autumn=mix(vec3(.68,.20,.055),vec3(.92,.49,.10),patch)*(.35+brightness*.9);
+      vec3 spring=vec3(p.r*.87,min(1.0,p.g*1.10),p.b*.88);
+      p.rgb=mix(p.rgb,spring,green*seasonWeights.x*.65);
+      p.rgb=mix(p.rgb,autumn,green*seasonWeights.y*.94);
+    }
+    vec3 rgb = p.rgb]],1)
+  source=source:gsub("weatherGround > 0.5 && vWeatherTop > 0.5", "weatherGround > 0.5 && (vWeatherTop > 0.5 || roofMaterial.r > .5)")
   source=source:gsub("Texel%(glassMask, tc%).a %* glassOn",
     "Texel(glassMask, tc).a * glassOn * step(-128.5, tc.x)")
   source=source:gsub("rgb = mix%(rgb, ghostColor, ghost%);",
     "rgb = caveBattleFade(towerMist(rgb, vWorld), vWorld);\n    rgb = mix(rgb, ghostColor, ghost);")
   local localLights = V.require("LocalLights")
+  -- Dedicated roof-glass receiver: transmitted daylight is not shaded by
+  -- the opaque roof's own shadow. Lead joints retain their dark material.
+  source=source:gsub("#ifdef PIXEL", "#ifdef PIXEL\nuniform vec4 skylightTransmission;",1)
+  source=source:gsub("return vec4%(rgb, 1.0%) %* color;", [[
+    if(skylightTransmission.a>0.0) {
+      float pane=smoothstep(.075,.23,max(p.r,max(p.g,p.b)));
+      vec3 transmitted=sqrt(max(p.rgb,vec3(0.0)))*skylightTransmission.rgb;
+      rgb=mix(p.rgb*.38,transmitted,pane);
+    }
+    return vec4(rgb,1.0)*color;]],1)
   if localLights.supported and lighting ~= false then
     source=source:gsub("#ifdef PIXEL",function()
       return "#ifdef PIXEL\nuniform vec3 eye;\nuniform float localActorOn;\n"..localLights.glsl()
@@ -2022,6 +2047,15 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
     caller="Shader.send", context="world", slot=name,
     variant=shaderVariants[grid],
   })
+  local seasonWeather=V.require("Weather")
+  local spring,autumn=0,0
+  if seasonWeather.setting:get()=="auto" then spring,autumn=seasonWeather.foliageAt(seasonWeather.clock) end
+  Voxel3D._seasonUniform=Voxel3D._seasonUniform or {0,0}
+  Voxel3D._seasonUniform[1],Voxel3D._seasonUniform[2]=spring,autumn
+  pcall(sh.send,sh,"seasonWeights",Voxel3D._seasonUniform)
+  pcall(sh.send,sh,"seasonalFoliage",0)
+  Voxel3D._seasonOn=false
+  pcall(sh.send,sh,"rooftopMaterials",0)
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
   Voxel3D.localLightsActive = sceneLighting
@@ -2119,6 +2153,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   pcall(sh.send, sh, "glassGlint", Voxel3D.glassGlint or 0)
   -- on until a sprite pass says otherwise, reset per frame like `ghost`
   pcall(sh.send, sh, "glassOn", 1)
+  pcall(sh.send,sh,'skylightTransmission',{0,0,0,0})
   -- Bind the sampler on every variant even outside caves; unbound samplers
   -- are not portable. Cave material UVs are emitted only after atlas upload.
   local caveTexture=CaveSurfaces.texture(false) or GlassMask.blank()
@@ -2128,6 +2163,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
     pcall(sh.send,sh,"caveSurfaceSize",{cw,ch})
   end
   local roomBlank=GlassMask.blank()
+  pcall(sh.send,sh,"rooftopMaterialMask",roomBlank)
   local towerLight=skyContext and skyContext.towerLight
   if roomBlank then pcall(sh.send,sh,'towerLight',towerLight and towerLight.texture or roomBlank)end
   pcall(sh.send,sh,'towerLightSize',towerLight and towerLight.size or {0,0})
@@ -2684,10 +2720,14 @@ end
 -- one a few pixels behind it, and a figure cannot fringe itself. On the
 -- caster itself it is a no-op -- that quad is already flat.
 function Voxel3D.casterMatrix(px, py, y, mirror)
-  local m = Mat4.translate(px + 8, y, py + 8)
-  if mirror then m = Mat4.mul(m, Mat4.scale(-1, 1, 1)) end
-  return Mat4.mul(Mat4.mul(m, Mat4.translate(-8, 0, 0)),
-                  Mat4.scale(1, 1, 0))
+  -- Compose the translation, optional reflection and z-flatten directly.
+  -- Every actor uses this in both presentation and shadow passes; allocating
+  -- four to six intermediate matrices here creates avoidable GC pressure.
+  local sx = mirror and -1 or 1
+  return { sx, 0, 0, px + 8 - 8 * sx,
+            0, 1, 0, y,
+            0, 0, 0, py + 8,
+            0, 0, 0, 1 }
 end
 
 -- FALLBACK ONLY (no shadow map: headless, or a driver that cannot make the
@@ -2834,6 +2874,23 @@ function Voxel3D.weatherGround(on)
   local amount = on and (Voxel3D.weatherKind or 0) or 0
   local ok = pcall(activeShader.send, activeShader, "weatherGround", amount)
   return ok and amount > 0
+end
+
+-- Only pre-baked rooftop voxel surfaces carry this semantic mask.
+function Voxel3D.rooftopMaterials(mask)
+  if not (active and activeShader) then return false end
+  local ok=pcall(activeShader.send,activeShader,"rooftopMaterialMask",mask or GlassMask.blank())
+  pcall(activeShader.send,activeShader,"rooftopMaterials",mask and ok and 1 or 0)
+  return ok
+end
+
+function Voxel3D.seasonFoliage(on)
+  if not (active and activeShader) then return false end
+  on=on==true
+  if Voxel3D._seasonOn==on then return on end
+  local ok=pcall(activeShader.send,activeShader,"seasonalFoliage",on and 1 or 0)
+  Voxel3D._seasonOn=ok and on or false
+  return ok
 end
 
 function Voxel3D.weatherGrass(on)
@@ -2985,6 +3042,19 @@ function Voxel3D.invalidate()
   V.require("Water").invalidate()
   -- and the glass masks are textures of this context too
   GlassMask.invalidate()
+end
+
+-- Shared by plain/mobile water and the inexpensive MAP-battle water pass.
+function Voxel3D.waterReceiver(enabled)
+  if active and activeShader then
+    pcall(activeShader.send,activeShader,'localMosaicWater',enabled and 1 or 0)
+  end
+end
+
+function Voxel3D.skylightTransmission(light)
+  if active and activeShader then
+    pcall(activeShader.send,activeShader,'skylightTransmission',light or {0,0,0,0})
+  end
 end
 
 function Voxel3D.prismTransmission(amount)

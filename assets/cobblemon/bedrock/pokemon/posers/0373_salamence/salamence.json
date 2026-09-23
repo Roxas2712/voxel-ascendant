@@ -1,0 +1,154 @@
+{
+  "portraitScale": 1.22,
+  "portraitTranslation": [-1.68, 1.23, 0],
+  "profileScale": 0.35,
+  "profileTranslation": [0, 1.15, 0],
+  "rootBone": "salamence",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 1, 1],
+    "seat_1_reverse": [0, 1, 1],
+    "seat_2": [0, 1, 1],
+    "seat_2_reverse": [0, 1, 1]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 1, 1],
+    "seat_1_reverse": [0, 1, 1],
+    "seat_2": [0, 1, 1],
+    "seat_2_reverse": [0, 1, 1]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('salamence', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('salamence', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "battle_standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('salamence', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('head')",
+        "q.bedrock('salamence', 'air_idle')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "condition": "!q.is_gliding",
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('head')",
+        "q.bedrock('salamence', 'air_fly')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "glide": {
+      "poseTypes": ["FLY"],
+      "condition": "q.is_gliding",
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('head')",
+        "q.bedrock('salamence', 'air_glide')",
+        "q.bedrock('salamence', 'ride_dive')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_air_glide')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "ride-jump": {
+      "poseTypes": ["STAND","WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('head')",
+        "q.bedrock('salamence', 'ride_jump')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('salamence', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    },
+    "running": {
+      "poseTypes": ["WALK"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('salamence', 'ground_run')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('salamence', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('salamence', 'blink')"
+      ],
+      "transformTicks": 5
+    }
+  }
+}

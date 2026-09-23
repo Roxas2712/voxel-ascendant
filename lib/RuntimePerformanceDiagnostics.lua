@@ -20,7 +20,9 @@ local function call(fn, ...)
   return safe(a),safe(b),safe(c),safe(d)
 end
 local selected={
-  VoxelScene={render=true,prefetch=true,drawWater=true}, ChunkMesher={pump=true,build=true},
+  -- build() can yield over many frames. Its wall lifetime is neither CPU
+  -- work nor a child of a later pump(); measure each actual pump slice.
+  VoxelScene={render=true,prefetch=true,drawWater=true}, ChunkMesher={pump=true},
   TerrainAtlas={forMap=true,forSprite=true}, ShadowMap={begin=true,finish=true},
   HorizonWall={meshes=true}, PanoramaBackdrop={prepare=true,drawAt=true},
   Voxel3D={beginScene=true,endScene=true,beginWater=true,endWater=true},
@@ -28,21 +30,36 @@ local selected={
   TiltShift={draw=true}, AntiAlias={resolve=true}, Diagnostics={writeMobileRecoveryMarker=true},
 }
 local wrapped=setmetatable({}, {__mode='k'})
+local mainContext={stack=R.stack,pool={}}
+local contexts=setmetatable({}, {__mode='k'})
+local function context()
+  local thread,isMain=coroutine.running()
+  if not thread or isMain then return mainContext end
+  local value=contexts[thread]
+  if not value then value={stack={},pool={}};contexts[thread]=value end
+  return value
+end
 local function measure(label, fn)
   if wrapped[fn] then return fn end
-  local function wrappedFn(...)
-    local start=clock()
-    local entry={child=0}; local stack=R.stack;stack[#stack+1]=entry
-    local result=pack(pcall(fn,...))
+  local function completed(ctx,entry,start,ok,...)
     local elapsed=math.max(0,(clock()-start)*1000)
+    local stack=ctx.stack
     stack[#stack]=nil
     if #stack>0 then stack[#stack].child=stack[#stack].child+elapsed end
     local row=R.rows[label]
     if not row then row={calls=0,total=0,self=0,max=0,errors=0};R.rows[label]=row end
     row.calls=row.calls+1;row.total=row.total+elapsed
     row.self=row.self+math.max(0,elapsed-entry.child);row.max=math.max(row.max,elapsed)
-    if not result[1] then row.errors=row.errors+1;error(result[2],0) end
-    return unpackValues(result,2,result.n)
+    if not ok then row.errors=row.errors+1;error((...),0) end
+    return ...
+  end
+  local function wrappedFn(...)
+    local ctx=context()
+    local depth=#ctx.stack+1
+    local entry=ctx.pool[depth]
+    if not entry then entry={};ctx.pool[depth]=entry end
+    entry.child=0;ctx.stack[depth]=entry
+    return completed(ctx,entry,clock(),pcall(fn,...))
   end
   wrapped[wrappedFn]=true
   return wrappedFn
@@ -79,19 +96,22 @@ local function closeWindow()
   lines[#lines+1]='render-sample drawcalls='..safe(stats.drawcalls)..' textureBytes='..safe(stats.texturememory)..' canvasSwitches='..safe(stats.canvasswitches)
   local memOk,mem=pcall(collectgarbage,'count')
   if memOk then lines[#lines+1]='lua-memory-KiB='..safe(mem) end
-  local record={mean=w.mean,key=w.map..':'..w.phase,text=table.concat(lines,'\n')}
+  local record={mean=w.mean,peak=w.max,key=w.map..':'..w.phase,text=table.concat(lines,'\n')}
   R.recent[#R.recent+1]=record;if #R.recent>3 then table.remove(R.recent,1) end
   if w.mean>33.34 or w.max>100 then
     local found
     for i,old in ipairs(R.worst) do
       if old.key==record.key then
         found=true
-        if record.mean>old.mean then R.worst[i]=record end
+        if record.peak>old.peak or (record.peak==old.peak and record.mean>old.mean) then R.worst[i]=record end
         break
       end
     end
     if not found then R.worst[#R.worst+1]=record end
-    table.sort(R.worst,function(a,b)return a.mean>b.mean end)
+    table.sort(R.worst,function(a,b)
+      if a.peak~=b.peak then return a.peak>b.peak end
+      return a.mean>b.mean
+    end)
     if #R.worst>3 then table.remove(R.worst) end
   end
   R.window=nil;R.rows={}

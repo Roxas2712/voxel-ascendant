@@ -3,6 +3,7 @@
 local M={}
 function M.install(store,prefix,Assets,graphics,imageApi,filesystem,legacyFlame155)
   local imageBefore,dataBefore=Assets.image,Assets.imageData
+  local bytesBefore=Assets.hdImageBytes
   local textures={}
   local function relative(path)
     if type(path)=="string" and path:sub(1,#prefix)==prefix then
@@ -10,6 +11,11 @@ function M.install(store,prefix,Assets,graphics,imageApi,filesystem,legacyFlame1
       if rel:sub(1,31)=="assets/pokemon-animation-cards/"
         or legacyFlame155 and legacyFlame155.path(rel)then return rel end
     end
+  end
+  local function verifiedBytes(path)
+    local rel=relative(path)
+    if rel then return assert(store:read(rel),"HD package is missing or damaged") end
+    if bytesBefore then return bytesBefore(path) end
   end
   local function data(path)
     local rel=relative(path)
@@ -38,9 +44,11 @@ function M.install(store,prefix,Assets,graphics,imageApi,filesystem,legacyFlame1
     return textures[path]
   end
   Assets.image,Assets.imageData=texture,data
+  Assets.hdImageBytes=verifiedBytes
   return function()
     if Assets.image==texture then Assets.image=imageBefore end
     if Assets.imageData==data then Assets.imageData=dataBefore end
+    if Assets.hdImageBytes==verifiedBytes then Assets.hdImageBytes=bytesBefore end
     for _,value in pairs(textures)do if value.release then pcall(value.release,value)end end
     textures={}
   end

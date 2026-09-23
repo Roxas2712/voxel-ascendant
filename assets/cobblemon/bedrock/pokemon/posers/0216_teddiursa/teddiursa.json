@@ -1,0 +1,104 @@
+{
+  "portraitScale": 2,
+  "portraitTranslation": [-0.2, -0.7, 0],
+  "profileScale": 0.7,
+  "profileTranslation": [0, 0.7, 0],
+  "rootBone": "teddiursa",
+  "animations": {
+    "cry": "q.bedrock_stateful('teddiursa', 'cry')",
+    "recoil": "q.bedrock_stateful('teddiursa', 'recoil')"
+  },
+  "poses": {
+
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND","FLOAT","PROFILE","PORTRAIT"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('teddiursa', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('teddiursa', 'blink')",
+        "q.bedrock_quirk('teddiursa', 'quirk_ground_idle')"
+      ]
+    },
+
+
+    "battle_standing": {
+      "poseName": "battle_standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('teddiursa', 'battle_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('teddiursa', 'blink')"
+      ]
+    },
+
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK","SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('teddiursa', 'ground_walk')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('teddiursa', 'blink')"
+      ]
+    },
+
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('teddiursa', 'sleep')"
+      ],
+      "transformTicks": 10
+    },
+
+    "shoulder_left": {
+      "poseName":"shoulder_left",
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('teddiursa', 'shoulder_left')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('teddiursa', 'blink')"
+      ],
+        "transformedParts": [
+        {
+          "part": "body",
+          "position": [-2, 2, 3]
+        }
+      ]
+    },
+
+    "shoulder_right": {
+      "poseName":"shoulder_right",
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('teddiursa', 'shoulder_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('teddiursa', 'blink')"
+       ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [2, 2, 3]
+        }
+      ]
+    }
+
+
+
+  }
+}

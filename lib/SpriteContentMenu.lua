@@ -51,16 +51,19 @@ function M.new(mod,game,guided,de,session)
     if session.pendingDownloadIds or session.installer and session.installer.state=='downloading'then return session:openStatus()end
     if busy()then return notice('busy_or_restart_required')end
     local ids,plan,checking=selection(group)
-    if plan.ready then return notice('already_installed')end
+    local cb=session:cobblemon();local includeCb=not group or group.id=='pokemon'
+    if plan.ready then if includeCb and cb and not cb.complete()then return session:openCobblemon()end;return notice('already_installed')end
 
     if not plan.canDownload then return notice('not_yet_available')end
-    return session:confirmDownload(ids)
+    return session:confirmDownload(ids,includeCb)
   end
   local function allRow(group)
     if session.pendingDownloadIds or session.installer and session.installer.state=='downloading'then return {label=tr('VIEW ACTIVE DOWNLOAD','LAUFENDEN DOWNLOAD ANZEIGEN'),action='all',help=batchHelp}end
     local ids,plan,checking=selection(group)
     local checked,total=0,0;if session.inventoryProgress then checked,total=session:inventoryProgress(ids)end
-    local status=checking and (tr('Checking: ','Pruefung: ')..checked..'/'..total..'. ')or plan.ready and tr('Already installed. ','Bereits installiert. ')or string.format('%.1f MiB. ',plan.downloadBytes/1048576)
+    local cb=session:cobblemon();local cbMissing=(not group or group.id=='pokemon') and cb and not cb.complete()
+    local size=plan.downloadBytes+(cbMissing and cb.size() or 0)
+    local status=checking and (tr('Checking: ','Pruefung: ')..checked..'/'..total..'. ')or (plan.ready and not cbMissing) and tr('Already installed. ','Bereits installiert. ')or string.format('%.1f MiB. ',size/1048576)
     return {label=group and tr('DOWNLOAD / UPDATE','LADEN / AKTUALISIEREN')or tr('DOWNLOAD / UPDATE ALL','ALLES LADEN / UPDATEN'),action='all',
       muted=false,help=status..(group and group.help or batchHelp)}
   end
@@ -260,7 +263,8 @@ function M.new(mod,game,guided,de,session)
         return rows
       end
       return push(make('vasc_content_category_'..g.id,g.label,children,function(row)
-        if row.action=='all'then return downloadSelection(g)end
+        if row.action=='cobblemon'then return session:openCobblemon()end
+    if row.action=='all'then return downloadSelection(g)end
         if row.group then groupsMenu(row.group)end
       end,g.help or batchHelp))
     end
@@ -271,7 +275,8 @@ function M.new(mod,game,guided,de,session)
         {label=tr('MANAGE / DELETE','VERWALTEN / LOESCHEN'),action='manage',help=tr('Check installed parts, delete a part, or download individual Pokemon ranges.','Installierte Teile ansehen, loeschen oder einzelne Pokemon-Bereiche laden.')},
         {label=tr('DOWNLOAD FAILED?','DOWNLOAD-FEHLER?'),action='manual',help=tr('Choose a part to copy alternative download links and import its file.','Teil auswaehlen, alternative Downloadlinks kopieren und die Datei importieren.')}}
     end,function(row)
-      if row.action=='all'then return downloadSelection(g)end
+      if row.action=='cobblemon'then return session:openCobblemon()end
+    if row.action=='all'then return downloadSelection(g)end
       if row.action=='manage'or row.action=='manual'then
         if g.id=='pokemon'then
           local rows={};for _,child in ipairs(g.children)do rows[#rows+1]={label=child.label,group=child}end
@@ -309,8 +314,8 @@ function M.new(mod,game,guided,de,session)
   end
   local function categoryGroups()
     local base={id='pokemon',label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),children={},
-      help=tr('Crystal, Mega, animations, pixel sprites + icons. Complete pack.',
-        'Crystal, Mega, Animationen, Pixel-Sprites + Icons. Komplettpaket.')}
+      help=tr('Cobblemon models, Crystal, Mega, animations, pixel sprites + icons.',
+        'Cobblemon-Modelle, Crystal, Mega, Animationen, Pixel-Sprites + Icons.')}
     local hd={id='full-hd',label=tr('OPTIONAL HD SPRITES','OPTIONALE HD-SPRITES'),children={},
       help=tr('Optional HD sprites. Download all HD or select a collection.','Optionale HD-Sprites. Alle HD laden oder eine Sammlung waehlen.')}
     for _,g in ipairs(session.model:groups())do
@@ -331,6 +336,8 @@ function M.new(mod,game,guided,de,session)
   local function rows()
     local buckets=categoryGroups()
     local result={allRow()}
+    local cb=session:cobblemon()
+    if cb then result[#result+1]={label='COBBLEMON',right=cb.available() and tr('INSTALLED','INSTALLIERT') or tr('IN BASE PACK','IM BASISPAKET'),action='cobblemon',help=tr('Models and animations included in the base pack. Download, resume or repair here.','Modelle und Animationen im Basispaket. Hier laden, fortsetzen oder reparieren.')}end
     for _,bucket in ipairs(buckets)do
       if #bucket.children>0 then
         local _,plan,checking=selection(bucket)
@@ -350,6 +357,7 @@ function M.new(mod,game,guided,de,session)
     return result
   end
   local menu=make("vasc_pokemon_hd_downloads",tr("SPRITE DOWNLOADS","SPRITE-DOWNLOADS"),rows,function(row)
+    if row.action=='cobblemon'then return session:openCobblemon()end
     if row.action=='all'then return downloadSelection()end
     if row.action=='maintenance'then return maintenanceMenu()end
     if row.group then return groupsMenu(row.group) end

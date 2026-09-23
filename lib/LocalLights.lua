@@ -145,10 +145,14 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
   if not outdoor then interior,indoorTint=V.require('InteriorLights').prepare(state.map) end
   frame.interior=interior
   frame.map=state.map
+  if V.require('HorizonWall').gymSkylightTexture then
+    frame.mosaic=V.require('GymSkylights').light(state.map,V.require('DayNight'),weather)
+  end
   local cave=V.require('CaveTorches').eligible(state.map)
   local tower=V.require('TowerAtmosphere').active(state.map)
   frame.sky=M.sky(state.map,outdoor,weather,battle)
   if cave then frame.wall=wallField(state.map) end
+  if frame.mosaic then indoorTint={.66,.68,.72} end
   frame.tint=indoorTint or V.require('Voxel3D').tint
   if tower and not dark then frame.tint={.34,.36,.49} end
   if indoorTint or tower then V.require('Voxel3D').tint=frame.tint end
@@ -167,14 +171,14 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
     for _,l in ipairs(interior.lamps)do
       local q=l.position
       sources[#sources+1]={x=q[1],y=q[2],z=q[3],normal=l.normal,radius=l.radius,
-        power=l.power*(.35+night*.65),color=l.color,owner={},fixture=l,kind=l.kind}
+        power=l.power*(l.constant and 1 or (.35+night*.65)),color=l.color,owner={},fixture=l,kind=l.kind}
     end
     for _,b in ipairs(interior.blockers)do buildings[#buildings+1]=b end
   end
   local volcanic=(state.map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(state.map)
   if outdoor and not volcanic and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then return frame end
   local habitat=state.map.def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(state.map)
-  if not outdoor and not cave and not interior and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then return frame end
+  if not outdoor and not cave and not interior and not frame.mosaic and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then return frame end
   -- The visible neighborhood supplies translated matrices, including its
   -- ledge elevation. This is the same enumeration used by the furniture pass.
   local function eachSource(fn)
@@ -251,6 +255,11 @@ function M.glsl(rawVisibility)
   if not M.supported then return '' end
   local s={[[
 uniform float localLightCount;
+uniform Image localMosaicArt;
+uniform float localMosaicWater;
+uniform vec4 localMosaicArea; // centre X/Z, size, roof height
+uniform vec4 localMosaicColor; // transmission RGB, strength
+
 uniform vec4 localSkyDir;
 uniform vec3 localSkyState; // enabled, canopy, wind clock
 uniform vec3 localSceneTint;
@@ -316,6 +325,23 @@ float localBoxHit(vec3 from, vec3 to, vec3 lo, vec3 hi) {
   end
   s[#s+1]='return visible*localCaveVisible(from,to); }'
   s[#s+1]=[[
+vec3 localMosaicLight(vec3 world,float water) {
+  if(localMosaicColor.w<=0.0 || world.y>localMosaicArea.w-8.0) return vec3(0.0);
+  vec2 p=world.xz-localMosaicArea.xy;
+  float shimmer=1.0;
+  if(water>.5) {
+    // Only the water receiver moves. Paths and the roof artwork remain still.
+    float t=localSkyState.z;
+    p+=vec2(sin(world.z*.16+t*1.1),sin(world.x*.19-t*.85))*1.3;
+    shimmer=.87+.13*sin(world.x*.31+world.z*.23+t*1.8);
+  }
+  vec2 uv=p/localMosaicArea.z+vec2(.5);
+  if(uv.x<0.0||uv.y<0.0||uv.x>1.0||uv.y>1.0)return vec3(0.0);
+  vec3 glass=Texel(localMosaicArt,uv).rgb;
+  // Lead seams block light; pigments are transmitted without a dark decal.
+  glass=max(vec3(0.0),(glass-vec3(.045))/ .955);
+  return glass*localMosaicColor.rgb*localMosaicColor.w*shimmer;
+}
 vec3 localLamp(vec3 world, vec4 pos, vec4 dir, vec4 tint) {
   vec3 d=world-pos.xyz;
   float r2=dot(d,d)/(pos.w*pos.w);
@@ -359,11 +385,12 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
   if(t<0.0 || t>400.0) return 0.0;
   vec3 hit=world+ray*t;
   float along=plane.w<2.0 ? hit.z : hit.x;
-  float edge=min(min(along-rect.x,rect.y-along),min(hit.y-rect.z,rect.w-hit.y));
+  float across=abs(plane.w-2.0)<.1 ? hit.z : hit.y;
+  float edge=min(min(along-rect.x,rect.y-along),min(across-rect.z,rect.w-across));
   float soft=.35+t*.008;
   float pane=smoothstep(-soft,soft,edge);
   // The window mullions project onto walls, the floor and actors together.
-  float bar=min(abs(along-(rect.x+rect.y)*.5),abs(hit.y-(rect.z+rect.w)*.5));
+  float bar=min(abs(along-(rect.x+rect.y)*.5),abs(across-(rect.z+rect.w)*.5));
   pane*=smoothstep(.3,.7+soft*.2,bar);
   return pane*facing*localPortalSun.w*localVisible(hit+inward*.4,world,0.0);
 }
@@ -376,7 +403,7 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
     s[#s+1]=('if(localPortalCount>%.1f) light+=localPortalBeam(world,localPortalP%d,localPortalRect%d,localPortalN%d);'):format(i+.5,i,i,i)
   end
   s[#s+1]='return localPortalColor*light*localPortalOcclusion(world)*(.25+.75*max(0.0,dot(normal,localPortalSun.xyz))); }'
-  s[#s+1]='vec3 localIrradiance(vec3 world, vec3 normal) { vec3 light=localWindowLight(world,normal);'
+  s[#s+1]='vec3 localIrradiance(vec3 world, vec3 normal) { vec3 light=localWindowLight(world,normal)+localMosaicLight(world,localMosaicWater)*max(0.0,normal.y);'
   for i=0,M.MAX_LIGHTS-1 do
     s[#s+1]=('if(localLightCount>%.1f) light+=localLamp(world,localPos%d,localDir%d,localTint%d)*(.12+.88*max(0.0,dot(normal,normalize(localPos%d.xyz-world))));'):format(i+.5,i,i,i,i)
   end
@@ -386,7 +413,7 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
     s[#s+1]=('if(localLightCount>%.1f) light+=localLamp(world,localPos%d,localDir%d,localTint%d)*(.55+.45*max(0.0,dot(normal,normalize(localPos%d.xyz-world))));'):format(i+.5,i,i,i,i)
   end
   s[#s+1]='return min(light,vec3(.85)); }'
-  s[#s+1]='vec3 localWaterLight(vec3 world, vec3 reflected) { vec3 light=localWindowLight(world,vec3(0,1,0))*.2;'
+  s[#s+1]='vec3 localWaterLight(vec3 world, vec3 reflected) { vec3 light=localWindowLight(world,vec3(0,1,0))*.2+localMosaicLight(world,1.0)*.8;'
   for i=0,M.MAX_LIGHTS-1 do
     s[#s+1]=('if(localLightCount>%.1f) { vec3 l=localLamp(world,localPos%d,localDir%d,localTint%d); float shine=pow(max(0.0,dot(reflected,normalize(localPos%d.xyz-world))),24.0); light+=l*(.07+shine*.9); }'):format(i+.5,i,i,i,i)
   end
@@ -396,7 +423,7 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
     -- Keep ray tests only in the cached visibility prepass. This also avoids
     -- enormous inlined programs/register spills on Apple's OpenGL driver.
     local first=assert(source:find('uniform float localBlockCount;',1,true))
-    local last=assert(source:find('vec3 localLamp(',first,true))
+    local last=assert(source:find('vec3 localMosaicLight(',first,true))
     source=source:sub(1,first-1)..[[
       uniform Image localVisibility;
       uniform vec2 localPortalVolume;
@@ -452,6 +479,13 @@ function M.send(shader, enabled)
   local sky=enabled and frame.sky
   -- Water uses its own wave normals; localSurfaceShade also replaces its
   -- fixed face light. All programs explicitly reset their previous scene.
+  if shader:hasUniform('localMosaicWater')then shader:send('localMosaicWater',0)end
+  if shader:hasUniform('localMosaicColor')then
+    local mosaic=enabled and frame.mosaic
+    shader:send('localMosaicColor',mosaic and mosaic.color or {0,0,0,0})
+    shader:send('localMosaicArea',mosaic and mosaic.area or {0,0,1,160})
+    shader:send('localMosaicArt',mosaic and mosaic.texture or emptyWall())
+  end
   if shader:hasUniform('localSkyDir') then shader:send('localSkyDir',sky and sky.direction or {0,1,0,0}) end
   if shader:hasUniform('localSkyState') then
     shader:send('localSkyState',{sky and 1 or 0,sky and sky.canopy or 0,V.require('Sky').clock or 0})

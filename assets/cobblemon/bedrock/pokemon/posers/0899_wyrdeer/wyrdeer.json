@@ -1,0 +1,104 @@
+{
+    "portraitScale": 3.0,
+    "portraitTranslation": [-0.8, 0.8, 0.0],
+    "profileScale": 0.7,
+    "profileTranslation": [0.0, 0.7, 0.0],
+    "rootBone": "wyrdeer",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+    "animations": {
+      "cry": "q.bedrock_stateful('wyrdeer', 'cry')"
+    },
+    "poses": {
+      "battle-standing": {
+        "poseTypes": ["STAND"],
+        "isBattle": true,
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('wyrdeer', 'battle_idle')"
+        ],
+        "quirks": ["q.bedrock_quirk('wyrdeer', 'blink')"]
+        },
+      "standing": {
+        "poseName": "standing",
+        "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+        "isBattle": false,
+        "condition": "!q.in_air",
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('wyrdeer', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('wyrdeer', 'ride_ground_run')"
+        }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('wyrdeer', 'blink')","q.bedrock_quirk('wyrdeer', 'quirk_idle', 30, 60, 1)"
+        ],
+        "transformTicks": 10
+      },
+      "in-air": {
+        "poseTypes": ["STAND", "WALK"],
+        "isBattle": false,
+        "condition": "q.in_air && q.is_ridden",
+        "animations": ["q.look('head')", "q.bedrock('wyrdeer', 'ride_jump')"],
+        "transformTicks": 2,
+        "transformToTicks": 2
+      },
+      "sleep": {
+        "poseTypes": ["SLEEP"],
+        "animations": [
+          "q.bedrock('wyrdeer', 'sleep')"
+        ],
+        "namedAnimations": {
+          "cry": "q.bedrock_stateful('dummy', 'cry')"
+        }
+      },
+      "walk": {
+        "poseName": "walk",
+        "poseTypes": ["WALK"],
+        "isBattle": false,
+        "condition": "!q.in_air && !q.is_sprinting",
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('wyrdeer', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('wyrdeer', 'ride_ground_run')"
+        }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('wyrdeer', 'blink')"
+        ],
+        "transformTicks": 10
+      },
+      "run": {
+        "poseName": "run",
+        "poseTypes": ["STAND","WALK"],
+        "isBattle": false,
+        "condition": "!q.in_air && q.is_sprinting",
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('wyrdeer', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('wyrdeer', 'ride_ground_run')"
+        }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('wyrdeer', 'blink')"
+        ],
+        "transformTicks": 10
+      }
+    }
+  }
+  

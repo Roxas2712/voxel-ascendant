@@ -1,0 +1,47 @@
+{
+  "portraitScale": 1.49,
+  "portraitTranslation": [-0.13, -0.61, 0],
+  "profileScale": 0.74,
+  "profileTranslation": [0.00, 0.57, 0],
+  "rootBone": "cascoon",
+  "poses": {
+	"battle-standing": {
+     "poseTypes": ["STAND"],
+     "isBattle": true,
+     "animations": [
+        "q.bedrock('cascoon', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('cascoon', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+	  "isBattle": false,
+      "animations": [
+        "q.bedrock('cascoon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('cascoon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('cascoon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('cascoon', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('cascoon', 'sleep')"
+      ]
+	}
+  }
+ }

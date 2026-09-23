@@ -79,7 +79,9 @@ local function createController(mod, opts)
     bagImageLoader = function(path) return mod.assets:image(path) end
   end
   local supplied = opts.classes or {}
+  local battleClass = safeRequire("src.battle.BattleState")
   local classes = {
+    StatBox = supplied.StatBox or (battleClass and battleClass.StatBox),
     TextBox = supplied.TextBox or ui.TextBox
       or safeRequire("src.render.TextBox"),
     ChoiceBox = supplied.ChoiceBox or ui.ChoiceBox
@@ -299,7 +301,17 @@ local function createController(mod, opts)
     return false
   end
 
+  -- Gen1's native save panel has no exported class. Its delayed prompt and
+  -- anchored stack receipt distinguish it from arbitrary mod-owned screens.
+  local function isSaveSummary(state)
+    return type(state)=='table' and getmetatable(state)==nil
+      and state.holdsUIAnchors==true and type(state.delay)=='number'
+      and type(state.openPrompt)=='function' and type(state.update)=='function'
+      and type(state.draw)=='function'
+  end
+
   local function isCoreInstance(state)
+    if isSaveSummary(state) then return true end
     for _, class in pairs(classes) do
       if classInstance(state, class) then return true end
     end
@@ -566,8 +578,11 @@ local function createController(mod, opts)
     if not PaletteFX or type(PaletteFX.markTrueColor) ~= "function" then return end
     local left, top, right, bottom = transformedRectBounds(
       graphics, x, y, width, height)
+    local rects = PaletteFX.trueColorRects and PaletteFX.trueColorRects("ui")
+    local before = rects and #rects or 0
     pcall(PaletteFX.markTrueColor, left, top,
           math.max(0, right - left), math.max(0, bottom - top))
+    if rects and #rects > before then rects[#rects].vascGlass = true end
   end
 
   -- Game:draw centres classic menus in a retained 304x144 WideBattle surface
@@ -601,6 +616,8 @@ local function createController(mod, opts)
       error("ORAS UI graphics are unavailable", 0)
     end
 
+    local previousShader = graphics.getShader and graphics.getShader()
+    if graphics.setShader then graphics.setShader() end
     local previousColor
     if type(graphics.getColor) == "function" then
       local color = packed(pcall(graphics.getColor))
@@ -618,6 +635,7 @@ local function createController(mod, opts)
     end
 
     local function restoreGraphics()
+      if graphics.setShader then graphics.setShader(previousShader) end
       if previousStyle ~= nil and type(graphics.setLineStyle) == "function" then
         pcall(graphics.setLineStyle, previousStyle)
       end
@@ -945,6 +963,76 @@ local function createController(mod, opts)
       return state, false
     end
     local originalDraw = state.draw
+    local statGains=classInstance(state,classes.StatBox) and opts.levelStats
+      and opts.levelStats.take(state.mon) or nil
+    local function forceFor(instance)
+      if not (classInstance(instance, classes.TextBox)
+          or classInstance(instance, classes.StatBox)
+          or isSaveSummary(instance)) then return false end
+      if type(opts.forceWorldBoxes) ~= "function" then return false end
+      local ok, enabled = pcall(opts.forceWorldBoxes, instance, gameFor(instance))
+      return ok and enabled == true
+    end
+    local function presentation(instance, ...)
+      if isSaveSummary(instance) and (forceFor(instance) or G.enabled(gameFor(instance))) then
+        local game=gameFor(instance)
+        local save=game and game.save
+        if not save then return originalDraw(instance,...) end
+        local Strings=safeRequire('src.core.Strings')
+        local Badges=safeRequire('src.inventory.Badges')
+        if not Badges then return originalDraw(instance,...) end
+        local owned=0
+        for _ in pairs(save.pokedex and save.pokedex.owned or {})do owned=owned+1 end
+        local time=math.floor(save.playTime or 0)
+        local rows={{'PLAYER',save.player and save.player.name or 'RED'},
+          {'BADGES',tostring(Badges.count(game.data,save))},
+          {'POKéDEX',tostring(owned)},
+          {'TIME',string.format('%d:%02d',math.floor(time/3600),math.floor(time/60)%60)}}
+        -- Finish above y=56, where the native Yes/No box begins. This is a
+        -- draw-only layout; its delay, confirmation and saving stay native.
+        Font.drawBox(0,0,20,7)
+        for i,row in ipairs(rows)do
+          local y=8+(i-1)*12
+          Font.draw(Strings and Strings(row[1]) or row[1],8,y)
+          local text=tostring(row[2])
+          local width=Font.width and Font.width(text) or #text*8
+          Font.draw(text,math.max(88,152-width),y)
+        end
+        return
+      end
+      if classInstance(instance, classes.StatBox) and forceFor(instance) then
+        local Strings = safeRequire("src.core.Strings")
+        local function label(value)
+          return Strings and Strings(value) or value
+        end
+        local mon = instance.mon or {}
+        local stats = mon.stats or {}
+        Font.drawBox(1, 1, 18, 14)
+        Font.draw("Lv. " .. tostring(mon.level or "?"), 16, 16)
+        local rows = {{"HP", stats.hp, "hp"}, {"ATTACK", stats.attack,"attack"},
+          {"DEFENSE", stats.defense,"defense"}, {"SPEED", stats.speed,"speed"},
+          {"SPECIAL", stats.special or stats.spAttack,stats.special and "special" or "spAttack"}}
+        for i, row in ipairs(rows) do
+          local y=32+(i-1)*16
+          Font.draw(label(row[1]), 16, y)
+          Font.draw(string.format("%4d", row[2] or 0), 80, y+8)
+          local gain=statGains and statGains[row[3]]
+          if gain~=nil then
+            -- The cartridge font has no '+' glyph. Draw its small pixel sign
+            -- explicitly instead of silently dropping the gained-value cue.
+            local graphics=loveRuntime().graphics
+            graphics.push('all');graphics.setColor(1,1,1,1)
+            graphics.rectangle('fill',121,y+11,5,1)
+            if gain>=0 then graphics.rectangle('fill',123,y+9,1,5)end
+            markTrueColorRect(graphics,120,y+8,8,8)
+            graphics.pop()
+            Font.draw(tostring(math.abs(gain)),128,y+8)
+          end
+        end
+        return
+      end
+      return originalDraw(instance, ...)
+    end
     local originalWide = type(state.drawWidescreen) == "function"
       and state.drawWidescreen or nil
     state.__ascendantGlobalUiSkinOriginalDraw = originalDraw
@@ -952,14 +1040,14 @@ local function createController(mod, opts)
     state[G.decoratedMarker] = true
     state.__ascendantGlobalUiSkinEditionAccent = editionAccentId
     state.draw = function(self, ...)
-      return drawWithSkin(self, originalDraw, false, ...)
+      return drawWithSkin(self, presentation, forceFor(self), ...)
     end
     if originalWide then
       -- Game2 passes physical dimensions straight to the active screen. Keep
       -- that presenter and its transform entirely engine-owned; the shared
       -- skin only replaces Font/box drawing for the duration of the call.
       state.drawWidescreen = function(self, winW, winH, ...)
-        return drawWithSkin(self, originalWide, false, winW, winH, ...)
+        return drawWithSkin(self, originalWide, forceFor(self), winW, winH, ...)
       end
     end
     return state, true

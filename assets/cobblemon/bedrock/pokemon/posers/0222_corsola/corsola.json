@@ -1,0 +1,86 @@
+{
+  "portraitScale": 1.59,
+  "portraitTranslation": [0.02, -0.7, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0.01, 0.45, 0],
+  "rootBone": "corsola",
+  "animations": {
+    "cry": "q.bedrock_stateful('corsola', 'cry')",
+    "physical": "q.bedrock_primary('corsola', 'physical', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head', 0.5)",
+        "q.bedrock('corsola', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "PORTRAIT", "PROFILE", "NONE"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head', 0.5)",
+        "q.bedrock('corsola', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('corsola', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head')",
+        "q.bedrock('corsola', 'water_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('corsola', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('corsola', 'sleep')"]
+    },
+    "surface_idle": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head')",
+        "q.bedrock('corsola', 'surfacewater_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    },
+    "surface_swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('corsola', 'surfacewater_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola', 'blink')"]
+    }
+  }
+}

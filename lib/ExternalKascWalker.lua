@@ -156,6 +156,9 @@ function ExternalKascWalker.resolve(player, sprite, deps)
     game = ok and loaded or nil
   end
   local identity = identityOf(player, sprite, provider, game)
+  local clothes=provider and provider.exports and provider.exports.wardrobe
+  if clothes and clothes.native(identity)then return sprite,'wardrobe-native'end
+  if clothes and spriteDef(sprite)and spriteDef(sprite).kaWardrobe2d then return sprite,'wardrobe-2d'end
   local contract = identity and APPROVED[identity] or nil
   if not contract then
     return fallback("normal 3-D WALK identity is unknown",

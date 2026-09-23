@@ -1,0 +1,86 @@
+{
+    "portraitScale": 1.9,
+    "portraitTranslation": [-0.7, -0.25, 0],
+    "profileScale": 0.75,
+    "profileTranslation": [0, 0.6, 0],
+    "rootBone": "tauros",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('tauros_paldean_blaze', 'cry')"
+  },
+  "poses": {
+    "jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_blaze', 'ride_jump')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_blaze', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tauros_paldean_blaze', 'blink')"
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 5
+    },
+    "running": {
+      "poseTypes": ["WALK", "FLOAT", "SWIM"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_blaze', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_blaze', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_blaze', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLOAT", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_blaze', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_blaze', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_blaze', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_blaze', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_blaze', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_blaze', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tauros_paldean_blaze', 'sleep')"]
+    }
+  }
+}

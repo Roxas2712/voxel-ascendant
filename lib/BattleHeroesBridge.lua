@@ -1,6 +1,20 @@
 -- Optional presentation-only extension for both trainer actors.
 local V=...
 local B={}
+-- Preparation is opt-in on the presentation provider; do not call its live
+-- pose API early. Each side is scheduled in a separate covered transition tick.
+function B.prepare(battle,side,arena)
+ if not battle or not V.mod or not V.mod.find then return false end
+ local mod=V.mod:find('ascendant_battle_heroes')
+ local api=mod and mod.exports or V.mod.exports.battleHeroes
+ if not (api and api.schema=='ascendant.battle-heroes/v1'
+  and type(api.preparePresentation)=='function') then return false end
+ local view
+ if arena and arena.terarrium and arena.terarrium.cameraMode=='behind' then
+  view=side=='player' and 'terarrium-back' or 'terarrium-front'
+ end
+ return api.preparePresentation(battle,side,view)==true
+end
 function B.attach(textures,battle)
  if not V.mod or not V.mod.find then return end
  local ok,hero=pcall(function()
@@ -11,6 +25,7 @@ function B.attach(textures,battle)
   end
  end)
  if ok and hero then
+  hero.settled=battle and battle.phase=='menu' and not battle.animPlaying
   local apo=V.mod.exports and V.mod.exports.overworldPokemon
   if apo and apo.walkingSprites and apo.walkingSprites.enabled()==false then
    local native=V.require('NativeBattlePeople')
@@ -48,18 +63,23 @@ function B.chooseFoot(p,desired,scale,accept,cached,preferred,ground)
  if cached and accept(cached) then return cached,true end
  local dx,dz=desired[1]-p[1],desired[3]-p[3]
  local angle=math.atan2(dz,dx)
- local function search(filter)
-  if accept(desired) and (not filter or filter(desired)) then return desired end
+ local function search(filter,reject)
+  local function eligible(point)
+   return (not filter or filter(point)) and (not reject or not reject(point))
+  end
+  if eligible(desired) and accept(desired) then return desired end
   for _,radius in ipairs({13,18,24,32})do
    for _,step in ipairs({0,1,-1,2,-2,3,-3,4,-4,5,-5,6,-6,7,-7,8})do
     local a=angle+step*math.pi/8
     local candidate=supported({p[1]+math.cos(a)*radius*scale,p[2],p[3]+math.sin(a)*radius*scale})
-    if (not filter or filter(candidate)) and accept(candidate) then return candidate end
+    if eligible(candidate) and accept(candidate) then return candidate end
    end
   end
  end
  local foot=preferred and search(preferred) or nil
- foot=foot or search()
+ -- If no preferred point passed, each of those points is already known to
+ -- fail this immutable placement test. Only test the remaining side once.
+ foot=foot or search(nil,preferred)
  return foot or desired,foot~=nil
 end
 -- Keep the trainer on their own Pokemon's side of the battle line, rather
@@ -136,6 +156,15 @@ function B.geometryField(structures,furniture,models)
  end
  return function(x,z)local row=heights[math.floor(z/4)];return row and row[math.floor(x/4)] or 0 end
 end
+function B.geometryForMap(map)
+ local structures=V.require('Structures').forMap(map)
+ local height=fields[structures]
+ if not height then
+  height=B.geometryField(structures,V.require('VoxelFurniture').find(map),V.require('VoxelItems').models)
+  fields[structures]=height
+ end
+ return height
+end
 function B.geometryClear(height,eye,point)
  local dx,dy,dz=point[1]-eye[1],point[2]-eye[2],point[3]-eye[3]
  local steps=math.ceil(math.sqrt(dx*dx+dz*dz)/2)
@@ -145,17 +174,12 @@ function B.geometryClear(height,eye,point)
  end
  return true
 end
-local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp)
+local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
  if not (map and arena and arena.presentationMode=='MAP') then return desired end
  local A=V.require('BattleArena');local Scene=V.require('VoxelScene')
  local Board=V.require('BattleBillboard')
  if arena.discs or arena.portableStage then return desired end
- local structures=V.require('Structures').forMap(map)
- local height=fields[structures]
- if not height then
-  height=B.geometryField(structures,V.require('VoxelFurniture').find(map),V.require('VoxelItems').models)
-  fields[structures]=height
- end
+ local height=B.geometryForMap(map)
  vp=vp or V.require('Voxel3D').vp
  local function screenSpan(point,width,height)
   if not vp then return end
@@ -233,8 +257,22 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp)
  local same=cache and cache.arena==arena and cache.x==p[1] and cache.z==p[3]
  relaxed=same and cache.needsClearance or false
  sideFlank=same and cache.sideFlank or false
- local preferred=layout.player==p and function(q)return B.inForeground(p,eye,q,scale)end or nil
+ local preferred=not arena.trainerOffsets and layout.player==p
+  and function(q)return B.inForeground(p,eye,q,scale)end or nil
  local function support(x,z)return Scene.groundAt(map,math.floor(x/16),math.floor(z/16))end
+ -- Once an actual frame has established a clear seat, moving the lens or
+ -- animating a Pokemon must not teleport its trainer. Keep reporting the
+ -- live clearance so the camera guard can reframe the same world actors.
+ -- Probe calls use a copy of hero and cannot commit this latch. A failed
+ -- initial search is not latched, and a new arena/anchor searches afresh.
+ -- The introduction has no Pokemon bounds yet. Do not freeze that temporary
+ -- seat before both combatants have appeared: a large mon can occupy it.
+ if same and cache.locked then
+  local foot={cache.foot[1],support(cache.foot[1],cache.foot[3]),cache.foot[3]}
+  hero.mapFoot={arena=arena,x=p[1],z=p[3],foot=foot,clear=accept(foot)==true,
+   locked=true,needsClearance=relaxed,sideFlank=sideFlank}
+  return foot
+ end
  local foot,clear=B.chooseFoot(p,desired,scale,accept,same and cache.foot,preferred,support)
  if not clear then
   relaxed=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
@@ -244,7 +282,15 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp)
   -- level with its own Pokemon, never advancing toward midfield.
   sideFlank=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
  end
- hero.mapFoot={arena=arena,x=p[1],z=p[3],foot=foot,clear=clear,needsClearance=relaxed,sideFlank=sideFlank}
+ -- Billboard sprites provide ink sizes; native 3D models provide projected
+ -- hulls. Either complete pair establishes the combatants' occupied space.
+ -- Waiting only for ink sizes left model battles searching every frame.
+ local boundsReady=(layout.actorInkWidth and layout.actorInkWidth.player and layout.actorInkWidth.enemy)
+  or (layout.actorScreenHulls and layout.actorScreenHulls.player and layout.actorScreenHulls.enemy)
+ local ready=settled and not hero.intro and same and cache.clear
+  and cache.foot[1]==foot[1] and cache.foot[3]==foot[3] and boundsReady
+ hero.mapFoot={arena=arena,x=p[1],z=p[3],foot=foot,clear=clear,locked=clear and ready and true or false,
+  needsClearance=relaxed,sideFlank=sideFlank}
  return foot
 end
 -- Compare the body's direction toward its opponent with the actual camera
@@ -284,10 +330,12 @@ function B.append(cards,textures,layout,eye,map,arena,presentationVP,probe)
  if math.abs(toward)>.001 then sign=toward>0 and 1 or -1 end
  hero.facing=sign==1 and 'player' or 'enemy'
  local scale=layout.actorScale and layout.actorScale[side] or 1
- local desired=B.rearFoot(p,e,eye,scale,side)
+ local offset=arena and arena.trainerOffsets and arena.trainerOffsets[side]
+ local desired=offset and {p[1]+offset[1]*scale,p[2],p[3]+offset[2]*scale}
+  or B.rearFoot(p,e,eye,scale,side)
  local x,y,z=desired[1],desired[2],desired[3]
  local foot=arena and arena.terarrium and arena.terarriumService.trainerFoot(arena,side,p[2])
-  or mapFoot(hero,p,desired,scale,map,arena,eye,layout,presentationVP)
+  or mapFoot(hero,p,desired,scale,map,arena,eye,layout,presentationVP,heroes.settled)
  x,y,z=foot[1],foot[2],foot[3]
  -- The displayed arena owns the view, including a live camera switch. The
  -- presentation plan may still describe the previous frame during rebuilding.

@@ -1,6 +1,7 @@
 -- Central visual scale policy. Canonical centimetres remain metadata, while
--- the overworld uses five readable size tiers: two for humans and three for
--- Pokemon. A normal adult / large Pokemon is capped at 16 VASC world units.
+-- the overworld uses readable size tiers: two for humans, three baseline
+-- Pokemon tiers and a compact intermediate HD tier. Values below are
+-- multiplied by the shared display multiplier.
 
 local ScaleProfiles = {}
 
@@ -15,6 +16,7 @@ ScaleProfiles.classes = {
   human_child = 12.5,
   human_adult = 16,
   pokemon_small = 7,
+  pokemon_compact = 9,
   pokemon_medium = 11.5,
   pokemon_large = 16,
 }
@@ -455,21 +457,27 @@ local function recordBodyHeight(record)
   return ScaleProfiles.worldHeightForClass(record and record.scaleClass)
 end
 
--- Match the readable 16-unit Crystal presentation in the overworld. HD
--- source padding must not shrink the body; retain larger authored encounters.
+-- Crystal frames include empty pixels: their 16-unit image height is not a
+-- 16-unit body. Use the existing visual tiers for the visible HD silhouette
+-- and compensate source padding once; retain larger authored encounters.
 local WORLD_CONTEXT = {follower=true,city=true,grass=true,wilds_town=true}
-local WORLD_MINIMUM = {pokemon_small=16,pokemon_medium=18,pokemon_large=21.6}
+-- A compact evolved body should read larger than a small starter without
+-- promoting every small species or changing battle/pixel-art scaling.
+local WORLD_HD_CLASS = {[20]="pokemon_compact"}
 function ScaleProfiles.worldHeightForRecord(record, context)
   local height = recordBodyHeight(record)
   local cards = type(record)=="table" and record.animationCards
   if not (WORLD_CONTEXT[context] and type(cards)=="table") then return height end
-  local minimum = WORLD_MINIMUM[record.scaleClass] or 18
+  local minimum = ScaleProfiles.worldHeightForClass(WORLD_HD_CLASS[tonumber(record.dex)]
+    or record.scaleClass)
   local layout = cards.layout
   local reference = type(layout)=="table" and tonumber(layout.referenceHeight)
   local top = type(layout)=="table" and tonumber(layout.top)
   local bottom = type(layout)=="table" and tonumber(layout.bottom)
-  -- The Kanto HD path normalizes to the authored body envelope above.
-  if tonumber(record.dex) and tonumber(record.dex)<=151 and reference
+  -- Every animated sheet has an envelope and body reference, including
+  -- Johto. Applying a full-height minimum to Mantine's thin body reference
+  -- enlarged its entire fin envelope by more than two times.
+  if reference
       and reference>0 and reference<math.huge and top and bottom
       and bottom>top and bottom<math.huge then
     minimum = minimum * reference / (bottom-top)

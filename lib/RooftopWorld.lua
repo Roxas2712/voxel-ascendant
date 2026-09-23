@@ -49,6 +49,44 @@ function M.groundColor(material,C)
  if material==-130 or material==-171 then return C.oak end
  return C.leaf
 end
+-- Distant mountains use the same native rock footprint, height field and
+-- strata as the walkable maps. Only the sampling density is reduced; no
+-- extra peaks are invented north of the routes or scaled above the skyline.
+function M.mountains(entry,defs,emit,yieldStep)
+ if not V.require('Gen1Rooftops').matches(entry.map)then return end
+ local game=require('src.core.Game');defs=defs or game.data.maps
+ local source=defs.CELADON_CITY;if not source then return end
+ local Map=require('src.world.Map');local F=V.require('VoxelFurniture')
+ local P=V.require('VoxelItems');local Mountains=V.require('Gen1MountainExteriors')
+ local city=Map.new(source,game.data.tilesets[source.tileset])
+ local anchor=M.anchor(entry,F.findBuildings(city),P.models)
+ if not anchor then return end
+ M.lastMountains={maps={},boxes=0}
+ for _,place in ipairs(M.maps(entry,defs))do
+  if Mountains.supports({id=place.id,def=place.def})then
+   local map=Map.new(place.def,game.data.tilesets[place.def.tileset])
+   local occupied={}
+   for _,p in ipairs(F.findBuildings(map))do
+    for y=p.ty,p.ty+p.h-1 do for x=p.tx,p.tx+p.w-1 do occupied[y*4096+x]=true end end
+   end
+   local scratch={models={},decorColors=P.decorColors}
+   local props=Mountains.find(scratch,map,function(x,y)return occupied[y*4096+x]end,
+    {coarse=true,yieldStep=yieldStep})
+   if #props>0 then M.lastMountains.maps[#M.lastMountains.maps+1]=place.id end
+   for _,p in ipairs(props)do
+    local model=scratch.models[p.kind]
+    for _,box in ipairs(model.boxes)do
+     emit(place.x+p.tx*8+box[1]+anchor.x,box[2]+anchor.y,
+      place.z+p.ty*8+box[3]+anchor.z,box[4],box[5],box[6],box[7],false)
+     M.lastMountains.boxes=M.lastMountains.boxes+1
+    end
+    scratch.models[p.kind]=nil
+    if yieldStep then yieldStep()end
+   end
+  end
+ end
+end
+
 function M.geometry(entry,defs,emit,yieldStep)
  if not V.require('Gen1Rooftops').matches(entry.map)then return end
  local game=require('src.core.Game');defs=defs or game.data.maps
@@ -60,9 +98,9 @@ function M.geometry(entry,defs,emit,yieldStep)
  local C=P.decorColors;local Shapes=V.require('TileShape')
  local detail=V.require('Gen1OutdoorScenery')
  M.last={maps=0,buildings=0,boxes=0,landmarks={}}
- local function box(x,y,z,w,h,d,c,lit)
+ local function box(x,y,z,w,h,d,c,lit,foliage)
   M.last.boxes=M.last.boxes+1
-  emit(x+anchor.x,y+anchor.y,z+anchor.z,w,h,d,c,lit)
+  emit(x+anchor.x,y+anchor.y,z+anchor.z,w,h,d,c,lit,foliage==true)
  end
  local maps=M.maps(entry,defs)
  -- Source maps describe playable corridors, not the land between them.
@@ -81,9 +119,9 @@ function M.geometry(entry,defs,emit,yieldStep)
     for n=0,3 do
      local tx=x+(n%2)*32;local tz=z+math.floor(n/2)*32
      local top=height+(n*7+x/64)%11
-     box(tx+5,7,tz+5,22,top-7,22,C.leafDark)
-     box(tx+2,top-15,tz+3,28,12,26,C.leaf)
-     box(tx+8,top-3,tz+8,16,7,16,C.leafLight)
+     box(tx+5,7,tz+5,22,top-7,22,C.leafDark,false,true)
+     box(tx+2,top-15,tz+3,28,12,26,C.leaf,false,true)
+     box(tx+8,top-3,tz+8,16,7,16,C.leafLight,false,true)
     end
    end
   end
@@ -121,8 +159,8 @@ function M.geometry(entry,defs,emit,yieldStep)
     local x,z=e.x+run.x*8,e.z+ty*8;local w=run.w*8;local d=step*8
     box(x,-4,z,w,4,d,run.color)
     if run.tree then
-     box(x+2,0,z+2,math.max(2,w-4),run.tree,d-4,C.leafDark)
-     box(x+4,run.tree,z+4,math.max(2,w-8),5,d-8,C.leafLight)
+     box(x+2,0,z+2,math.max(2,w-4),run.tree,d-4,C.leafDark,false,true)
+     box(x+4,run.tree,z+4,math.max(2,w-8),5,d-8,C.leafLight,false,true)
     end
    end
    for tx=0,e.def.width*4-1,step do

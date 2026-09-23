@@ -1,0 +1,44 @@
+{
+  "portraitScale": 2.27,
+  "portraitTranslation": [-0.76, 0.85, 0],
+  "profileScale": 0.57,
+  "profileTranslation": [0, 0.9, 0],
+  "rootBone": "ninetales_alolan",
+  "animations": {"cry": "q.bedrock_stateful('ninetales_alolan', 'cry')"},
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('ninetales_alolan', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ninetales_alolan', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('ninetales_alolan', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'leg_front_left', 'leg_front_right', 'leg_back_left', 'leg_back_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ninetales_alolan', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

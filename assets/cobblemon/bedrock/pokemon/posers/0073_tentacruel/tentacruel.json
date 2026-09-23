@@ -1,0 +1,122 @@
+{
+  "portraitScale": 1.3,
+  "portraitTranslation": [-0.3, 1.18, 0.0],
+  "profileScale": 0.41,
+  "profileTranslation": [0.0, 1.06, 0.0],
+  "rootBone": "tentacruel",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "animations": {},
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "WALK", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('tentacruel', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tentacruel', 'blink')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.bedrock('tentacruel', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tentacruel', 'blink')"
+      ]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.bedrock('tentacruel', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('tentacruel', 'blink')"]
+    },
+    "mount-surface-float": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "q.is_ridden",
+      "animations": [
+        "q.bedrock('tentacruel', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tentacruel', 'blink')"
+      ]
+    },
+    "mount-surface-swim": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "q.is_ridden",
+      "animations": [
+        "q.bedrock('tentacruel', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('tentacruel', 'blink')"]
+    },
+    "surface-float": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('tentacruel', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tentacruel', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 25, 0]
+        }
+      ]
+    },
+    "surface-swim": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('tentacruel', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('tentacruel', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 25, 0]
+        }
+      ]
+    },
+    "water-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tentacruel', 'sleep')"]
+    },
+    "ground-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isTouchingWater": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tentacruel', 'sleep')"]
+    }
+  }
+}

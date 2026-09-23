@@ -1,0 +1,37 @@
+{
+  "portraitScale": 1.88,
+  "portraitTranslation": [-0.22, -0.98, 0],
+  "profileScale": 0.78,
+  "profileTranslation": [-0.01, 0.52, 0],
+  "rootBone": "mantyke",
+  "animations": {
+    "cry": "q.bedrock_stateful('mantyke', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('mantyke', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('mantyke', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head')", "q.bedrock('mantyke', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('mantyke', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "animations": ["q.look('head')", "q.bedrock('mantyke', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('mantyke', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('mantyke', 'water_swim')"],
+      "quirks": ["q.bedrock_quirk('mantyke', 'blink')"]
+    },
+    "sleeping": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('mantyke', 'sleep')"]
+    }
+  }
+}

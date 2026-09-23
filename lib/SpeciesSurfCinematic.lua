@@ -13,7 +13,7 @@ local KantoAscendantCompat = V.require
   or { fieldTech = function() return nil end }
 
 local SpeciesSurfCinematic = {
-  VERSION = "0.3.1",
+  VERSION = "0.3.2",
 }
 
 local installed = false
@@ -772,29 +772,47 @@ function SpeciesSurfCinematic.install()
           else
             setColor(g, 0.08, 0.34, 0.58, boardAlpha)
           end
-          g.rectangle("fill", profile.mode == "pikachu_board" and 0 or 2,
-            y + 10, profile.mode == "pikachu_board" and 16 or 12, 2.75)
+          if direction=="side"then
+            g.rectangle("fill",profile.mode=="pikachu_board"and 0 or 2,y+10,profile.mode=="pikachu_board"and 16 or 12,2.75)
+          else
+            g.polygon("fill",8,y+7,11.5,y+10,11.5,y+14,8,y+15,4.5,y+14,4.5,y+10)
+          end
           if profile.mode == "pikachu_board" then
             setColor(g, 0.66, 0.91, 1, boardAlpha)
           else
             setColor(g, 0.85, 0.94, 0.96, boardAlpha)
           end
-          g.rectangle("fill", profile.mode == "pikachu_board" and 1 or 3,
-            y + 10, profile.mode == "pikachu_board" and 14 or 10, 0.5)
+          g.rectangle("fill",direction=="side"and 3 or 5,
+            y+10,direction=="side"and 10 or 6,.5)
           setColor(g, 0.03, 0.14, 0.25, boardAlpha)
-          g.rectangle("fill", profile.mode == "pikachu_board" and 2 or 4,
-            y + 12.75, profile.mode == "pikachu_board" and 12 or 8, 0.5)
+          g.rectangle("fill",direction=="side"and 4 or 5,
+            y+12.75,direction=="side"and 8 or 6,.5)
         end
 
         -- The composite itself supplies motion through wake, mount and water
         -- timing. Keep the trainer on the standing DOWN/UP/LEFT poses so Red
         -- does not walk in place while swimming.
         local playerQuad = source.frames[pose] or source.frames[0]
+        local function seatedPair(mode)
+          local side=direction=="side"
+          local mount=mode=="mount"
+          local riderScale=mount and .62 or (mode=="pikachu_board"and .55 or .68)
+          local monSize=mount and 14.2 or (mode=="pikachu_board"and 9.2 or 9.6)
+          -- North/south share a centre line and swap occlusion order. Side
+          -- travel faces left (right is the carrier's native mirror).
+          local monX=side and (mount and 7.4 or 4.7)or 8
+          local monBottom=mount and 15 or (direction=="up"and 9 or 15)
+          local riderCenter=side and (mount and 8.6 or 10.4)or 8
+          local riderBottom=mount and 10 or (side and 12.5 or (direction=="up"and 15 or 10.5))
+          local scale=lerp(1,riderScale,seat)
+          local riderX=lerp(0,riderCenter-8*riderScale,seat)
+          local riderY=y+lerp(0,riderBottom-16*riderScale,seat)-math.sin(seat*math.pi)*4
+          local function rider()drawPlayer(playerQuad,riderX,riderY,scale)end
+          local function pokemon()drawPokemon(direction,monX,y+monBottom,monSize,monAlpha)end
+          if direction=="down"then rider();pokemon()else pokemon();rider()end
+        end
         if profile.mode == "mount" then
-          drawPokemon(direction, 7.4, y + 15, 14.2, monAlpha)
-          drawPlayer(playerQuad, math.floor(lerp(0, 5, seat) + 0.5),
-            y - math.sin(seat * math.pi) * 4,
-            lerp(1, 0.64, seat))
+          seatedPair("mount")
         elseif profile.mode == "field_kit_jetski" then
           -- The tool is the SURF user. Keep the live KASC/player skin and
           -- seat that trainer alone behind the jet ski's handlebars.
@@ -816,30 +834,12 @@ function SpeciesSurfCinematic.install()
           setColor(g, 0.54, 0.84, 0.90, boardAlpha)
           g.rectangle("fill", direction == "side" and 3.75 or 5.75,
             y + 5, 1, 0.25)
-        elseif profile.mode == "pikachu_board" then
-          -- Surfing Pikachu balances on the nose while the trainer crouches
-          -- behind it.  Moving frames alternate the lean and leave yellow
-          -- spray sparks, making #025 visibly distinct from generic boarders.
-          local lean = moving and (f % 2 == 0 and -1 or 1) or 0
-          drawPokemon(direction, 4.6, y + 14 + lean, 9.2, monAlpha)
-          drawPlayer(playerQuad, 7,
-            y + 2 - math.sin(seat * math.pi) * 4,
-            lerp(1, 0.55, seat))
-          if moving then
-            setColor(g, 1, 0.88, 0.12, 0.9 * monAlpha)
-            g.rectangle("fill", 1, y + 13, 2, 1)
-            g.rectangle("fill", 13, y + 12, 1, 1)
-          end
-        elseif profile.mode == "tow" then
-          drawPokemon(direction, 4.8, y + 14, 9.6, monAlpha)
-          drawPlayer(playerQuad, math.floor(lerp(0, 5, seat) + 0.5),
-            y + lerp(0, 1, seat) - math.sin(seat * math.pi) * 4,
-            lerp(1, 0.70, seat))
         else
-          drawPokemon(direction, 4.9, y + 14, 9.8, monAlpha)
-          drawPlayer(playerQuad, math.floor(lerp(0, 6, seat) + 0.5),
-            y + lerp(0, 1, seat) - math.sin(seat * math.pi) * 4,
-            lerp(1, 0.68, seat))
+          seatedPair(profile.mode)
+          if profile.mode=="pikachu_board"and moving then
+            setColor(g,1,.88,.12,.9*monAlpha)
+            g.rectangle("fill",1,y+13,2,1)
+          end
         end
 
         setColor(g, 1, 1, 1, 0.86 * boardAlpha)

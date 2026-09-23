@@ -276,6 +276,13 @@ function M.register(P,F)
   end
   V.require('Gen1FacadeDetails').add(a,b,g,C,doors,w,d,front,theme,tx,ty,house or flat,museum)
   V.require('Gen1BuildingLandmarks').add(a,b,g,C,P,doors,w,d,front,height)
+  -- Follow the low eaves of each roof instead of hanging ornaments in air
+  -- in front of the tall gable or over a native doorway.
+  local sides=house and (a.roofShape=='side_gable' and {'north','south'}
+    or a.roofShape=='hipped' and {'north','south','west','east'} or {'west','east'})
+    or {'north','south','west','east'}
+  local eaves=house and 26 or center and 27 or league and 38 or routeGate and 30 or height-5
+  a.winterKind=V.require('VoxelWinterDetails').roof(P,kind,w,d,eaves,sides,doors)
   return kind
  end
  for _,set in ipairs({'OVERWORLD','FOREST'})do

@@ -1,0 +1,26 @@
+{
+  "portraitScale": 1.38,
+  "portraitTranslation": [-0.21, 0.48, 0],
+  "profileScale": 0.61,
+  "profileTranslation": [0.0, 0.79, 0.0],
+  "rootBone": "wigglytuff",
+  "animations": {
+    "cry": "q.bedrock_stateful('wigglytuff', 'cry')",
+    "faint": "q.bedrock_primary('wigglytuff', 'faint', q.curve('one'))"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('wigglytuff', 'ground_idle')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.biped_walk(0.66, 0.6, 'foot_left', 'foot_right')",
+        "q.bedrock('wigglytuff', 'ground_idle')"
+      ]
+    }
+  }
+}

@@ -227,6 +227,9 @@ local function dexOf(species)
   if not species then return nil end
   local data = game() and game().data
   local def = data and data.pokemon and data.pokemon[species]
+  if V.PokemonModelProvider and V.PokemonModelProvider.resolve()=="cobblemon" then
+    return def and (def.sourceDex or def.dex) or nil
+  end
   return def and def.dex or nil
 end
 
@@ -236,6 +239,9 @@ end
 local function catalogDex(dex)
   dex = tonumber(dex)
   if not dex then return nil end
+  if V.PokemonModelProvider and V.PokemonModelProvider.resolve()=="cobblemon" then
+    return dex>=1 and dex<=1026 and dex or nil
+  end
   local limit = 251
   local ok, install = pcall(V.require, "StadiumInstall")
   if ok and type(install) == "table"
@@ -693,7 +699,7 @@ function Stadium.update(dt, battle, groundY)
       -- updateGen2; otherwise READY packs are silently rejected as sprites.
       -- Do not extend that policy to the legacy Stadium-1 integration.
       mon:setSpecies(dex, V.stadium2ForGen1 == true
-        or (V.game and V.game.world ~= nil))
+        or (V.game and V.game.world ~= nil), battler.mon)
     end
     -- and tell the pack cache this one is standing there, every frame. Its
     -- eviction order is keyed on LOADS, and a side only loads when its

@@ -1,0 +1,82 @@
+{
+  "portraitScale": 1.73,
+  "portraitTranslation": [-0.09, 0.26, 0],
+  "profileScale": 0.60,
+  "profileTranslation": [0, 0.90, 0],
+  "rootBone": "beautifly",
+  "poses": {
+	"battle-standing": {
+     "poseTypes": ["STAND"],
+     "isBattle": true,
+     "animations": [
+		"q.look('head_ai')",
+        "q.bedrock('beautifly', 'ground_idle')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('beautifly', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+	  "isBattle": false,
+      "animations": [
+		"q.look('head_ai')",
+        "q.bedrock('beautifly', 'ground_idle')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('beautifly', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('beautifly', 'ground_idle')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('beautifly', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('beautifly', 'sleep')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ]
+	},
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "FLOAT",
+        "HOVER",
+        "NONE"
+      ],
+      "animations": [
+		"q.look('head_ai')",
+        "q.bedrock('beautifly', 'ground_idle')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('beautifly', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY"
+      ],
+      "animations": [
+        "q.bedrock('beautifly', 'ground_idle')",
+		"q.bedrock('beautifly', 'fly_overlay')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('beautifly', 'blink')"
+      ]
+    }
+  }
+ }

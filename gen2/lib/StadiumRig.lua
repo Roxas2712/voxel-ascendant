@@ -299,7 +299,7 @@ end
 function StadiumRig:pose(anim, frame, wrap)
   local model = self.model
   local n = model.boneCount
-  local tracks = anim and StadiumPack.tracks(model, anim) or nil
+  local tracks = anim and (model.assetProvider and model.assetProvider.sample(model,anim,frame,wrap) or StadiumPack.tracks(model, anim)) or nil
   local frames = anim and model.anims[anim] and model.anims[anim].frames or 1
 
   -- The two frames this instant falls between, and how far. `k` is 0 on
@@ -1032,7 +1032,7 @@ function StadiumRig:measureBind()
   if not bindBounds then
     model.bindBroken = true
     model.staticPose = true
-  elseif not model.useExactNodeFlags then
+  elseif not model.useExactNodeFlags or model.source=="cobblemon" then
     -- 0.2.16 may have packed stance extents using the experimental roster-wide
     -- DSM5 transform path.  Re-measure them from the proven compatibility bind
     -- so an already-built DSM5 cache is repaired immediately without another

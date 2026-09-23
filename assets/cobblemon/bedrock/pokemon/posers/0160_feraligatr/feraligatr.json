@@ -1,0 +1,159 @@
+{
+  "portraitScale": 1.3,
+  "portraitTranslation": [-0.7, 1.1, 0],
+  "profileScale": 0.6,
+  "profileTranslation": [0, 0.84, -10],
+  "rootBone": "feraligatr",
+  "animations": {
+    "cry": "q.bedrock_stateful('feraligatr', 'cry')",
+    "recoil": "q.bedrock_stateful('feraligatr', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "PROFILE",
+        "PORTRAIT",
+        "NONE"
+      ],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'ground_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "isTouchingWater": false,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'battle_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'ground_walk')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "surface_float": {
+      "poseTypes": ["STAND","FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'watersurface_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "surface_swim": {
+      "poseTypes": ["WALK","SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'watersurface_swim')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["STAND","FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'water_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "swim": {
+      "poseTypes": ["WALK","SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('feraligatr', 'water_swim')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('feraligatr', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "isTouchingWater": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('feraligatr', 'sleep')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ]
+    },
+    "water-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('feraligatr', 'water_sleep')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('feraligatr', 'hold_item')"
+       }
+      ]
+    }
+  }
+}

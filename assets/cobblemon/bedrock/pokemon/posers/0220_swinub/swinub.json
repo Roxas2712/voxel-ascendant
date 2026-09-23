@@ -1,0 +1,40 @@
+{
+  "portraitScale": 2.7,
+  "portraitTranslation": [-0.17, -2.56, 0],
+  "profileScale": 1.16,
+  "profileTranslation": [0, -0.02, 0],
+  "animations": {
+    "faint": "q.bedrock_primary('swinub', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('swinub', 'cry')",
+    "recoil": "q.bedrock_stateful('swinub', 'recoil')",
+    "physical": "q.bedrock_primary('swinub', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('swinub', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('swinub', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('swinub', 'battle_cry')"
+      },
+      "animations": ["q.look('head')", "q.bedrock('swinub', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('swinub', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('swinub', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('swinub', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head')", "q.bedrock('swinub', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('swinub', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('swinub', 'sleep')"]
+    }
+  }
+}

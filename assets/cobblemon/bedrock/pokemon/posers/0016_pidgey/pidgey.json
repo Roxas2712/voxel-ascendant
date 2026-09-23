@@ -1,0 +1,246 @@
+{
+  "portraitScale": 3.29,
+  "portraitTranslation": [-0.39, -1.73, 0],
+  "profileScale": 0.76,
+  "profileTranslation": [-0.04, 0.62, 0.0],
+  "rootBone": "pidgey",
+  "animations": {
+    "cry": "q.bedrock_stateful('pidgey', 'cry')",
+    "recoil": "q.bedrock_stateful('pidgey', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["PORTRAIT", "PROFILE", "STAND", "NONE"],
+      "animations": [
+        "q.look('neck', 1, 1, 35, -12.5, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 1.5, -12.5, 2.5, -2.5)",
+        "q.bedrock('pidgey', 'ground_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgey', 'blink')",
+        "q.bedrock_quirk('pidgey', q.array('idle_quirk', 'idle_quirk2'), 8, 30, 1)"
+      ]
+    },
+    "walk": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('neck', 1, 1, 35, -12.5, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 1.5, -12.5, 2.5, -2.5)",
+        "q.bedrock('pidgey', 'ground_walk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgey', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER", "FLOAT"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('neck', 1, 1, 35, -12.5, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 1.5, -12.5, 2.5, -2.5)",
+        "q.bedrock('pidgey', 'air_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgey', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY", "SWIM"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('pidgey', 'air_fly')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgey', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('pidgey', 'sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        }
+      ]
+    },
+    "air-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('pidgey', 'air_sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ]
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": [
+        "q.look('neck', 1, 1, 35, -12.5, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 1.5, -12.5, 2.5, -2.5)",
+        "q.bedrock('pidgey', 'shoulder_left')"],
+      "quirks": ["q.bedrock_quirk('pidgey', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        },
+        {
+          "part": "body",
+          "position": [-5, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": [
+        "q.look('neck', 1, 1, 35, -12.5, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 1.5, -12.5, 2.5, -2.5)",
+        "q.bedrock('pidgey', 'shoulder_right')"],
+      "quirks": ["q.bedrock_quirk('pidgey', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        },
+        {
+          "part": "body",
+          "position": [5, 0, 0]
+        }
+      ]
+    }
+  }
+}

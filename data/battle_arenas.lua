@@ -1,261 +1,454 @@
--- Where each map's battles happen.
---
--- Reviewed fallback spots per area. BattleArena first accepts a nearby,
--- visible clearing on the player's own elevation; these records cover places
--- where no such local shot exists and let long routes/caves provide several
--- geographically distinct, photographed compositions instead of one repeated
--- postcard. "Open ground" alone is not enough: a hedge, ledge lip or house
--- corner along the low camera line can hide a Pokemon completely.
---
--- Each entry is the arena's north-west corner in map CELLS, and which of
--- BattleArena.SHAPES it is. Picked by tools/arena_pick (BattleArena.search
--- with the clearance test on, from the middle of the map) and then looked at,
--- one screenshot per map -- these are eyeballed answers, not just passing
--- ones. Grass and flowers around a mon's feet are fine and wanted; anything
--- that cuts into a body is not.
---
--- A map with no entry here falls back to the nearest-clear search at battle
--- time, so a mod that adds maps, or an entry that goes stale against an
--- edited map, degrades to the old behaviour rather than to no battle.
---
--- The entries below are generated; regenerate with
---
---   SHOT_DIR=.scratchpad/arenas \
---   POKEPORT_DRIVER=mods/DramaticShapeVoxelMod/tests/arena_pick.lua love .
-
--- `cam = "wide"` on an entry swaps the long default lens for the 44-degree
--- one (BattleCam.RIGS). Both frame the same composition -- the two mons land
--- on the same screen anchors either way -- so it is purely a choice about how
--- much of the place is in shot, at the cost of a smaller pair. Rooms the long
--- lens cannot stand back from NEED it; anywhere that simply reads better with
--- more of itself visible may ask for it.
---
--- Tall grass is never part of an arena (BattleArena.openCell rejects it), so
--- a route's spot is always its bare path rather than the field beside it --
--- grass is knee-high geometry to a Pokemon and this camera is nearly level
--- with the floor, so tufts on the mon's own tile stand between it and the
--- lens. Flowers are left alone: they are ankle height and read as ground.
-
+-- Fixed Gen1 battle compositions, in native map cells.
+-- Four-actor courts reserve walkable floor and camera sightlines for both
+-- Pokemon AND trainers. Select the nearest safe spot at the current height.
+-- The regional catalogue passed native terrain/prop clearance; representative
+-- views are reviewed separately. No camera or gameplay coordinates are saved
+-- into the overworld. Manual orbit, pitch and zoom remain available.
+-- Empty fixed entries deliberately choose the caller's room-specific 3D
+-- alternative where no complete court/camera can fit safely (small cabins,
+-- planted/pool gyms). They never reopen the arbitrary runtime search.
+-- Entries are revalidated at runtime so other map mods cannot bypass safety.
+-- Shared by wild and trainer fights. Surface-tagged sea courts are reserved
+-- for surfing; fixed courts decline to the caller's 3D fallback if obstructed.
 return {
-  -- ------- routes
-  -- A route's camera anchor is part of the route contract too. Entries marked
-  -- WIDE below are the reviewed spots whose telephoto eye would stand beyond
-  -- the map border; BattleArena also enforces this invariant dynamically so
-  -- edited maps and future anchors fall back to an in-route shot.
-  -- narrow, deliberately: the route's interior is a 3-cell-wide lane and the
-  -- wide shape only fits in the western connection border, which staged every
-  -- fight at the edge of the world instead of on the road.
-  --
-  -- Of the seventeen spots the route has outside that border, fourteen are
-  -- this one mid-route clearing and the other three bury the near mon behind
-  -- a hedge -- which the clearance test passes, since it measures terrain
-  -- height along the sightline and a hedge in the apron row is not terrain.
-  -- So the choice is where in the clearing, and this is its west end: tree
-  -- line square behind the pair, nothing crossing either of them.
-  ["ROUTE_1"] = { x = 4, y = 14, shape = "narrow" },
-  ["ROUTE_2"] = { x = 1, y = 49, shape = "wide" },
-  -- Route 3 is the long Mt Moon approach. Its former single eastern wide
-  -- point was terrain-obstructed and every fight teleported there. The later
-  -- west lane at (27,4) also let a low voxel edge cross the opponent's feet
-  -- in the real battle camera, so only the three visually reviewed clear
-  -- lanes remain: middle/east plus the short-lens southern overlook.
-  ["ROUTE_3"] = { spots = {
-    { x = 49, y = 6, shape = "narrow" },
-    { x = 59, y = 4, shape = "narrow" },
-    { x = 44, y = 8, shape = "wide", cam = "wide" },
+  ["AGATHAS_ROOM"] = { adaptive=false, fixed=true, spots={
+    { x=2, y=1, shape="court_tight_east", cam="court_tight", surface="land" },
   } },
-  ["ROUTE_4"] = { spots = {
-    { x = 46, y = 2, shape = "wide" },
-    { x = 47, y = 3, shape = "wide" },
-    { x = 47, y = 4, shape = "narrow" },
+  ["BRUNOS_ROOM"] = { adaptive=false, fixed=true, spots={
+    { x=4, y=2, shape="court_small_south", cam="wide", surface="land" },
   } },
-  ["ROUTE_5"] = { x = 13, y = 24, shape = "wide", cam = "wide" },
-  ["ROUTE_6"] = { x = 5, y = 17, shape = "narrow" },
-  ["ROUTE_7"] = { x = 8, y = 8, shape = "narrow", cam = "wide" },
-  ["ROUTE_8"] = { x = 25, y = 7, shape = "wide", cam = "wide" },
-  -- the whole route admits six bare wide arenas, all in the west cliff
-  -- corridor; this is the best of them. A flower cluster crosses the far
-  -- mon's hind legs, which the brief allows -- every alternative put a
-  -- terrace through the near mon's waist, which it does not.
-  ["ROUTE_9"] = { x = 1, y = 11, shape = "wide", cam = "wide" },
-  ["ROUTE_10"] = { x = 7, y = 40, shape = "wide" },
-  ["ROUTE_11"] = { x = 9, y = 6, shape = "wide", cam = "wide" },
-  ["ROUTE_12"] = { x = 0, y = 73, shape = "wide" },
-  ["ROUTE_13"] = { x = 50, y = 8, shape = "narrow", cam = "wide" },
-  ["ROUTE_14"] = { x = 11, y = 25, shape = "wide" },
-  ["ROUTE_15"] = { x = 9, y = 10, shape = "wide", cam = "wide" },
-  ["ROUTE_16"] = { x = 6, y = 10, shape = "wide", cam = "wide" },
-  ["ROUTE_17"] = { x = 14, y = 70, shape = "wide", cam = "wide" },
-  ["ROUTE_18"] = { x = 11, y = 4, shape = "wide" },
-
-  -- ------- buildings and caves
-  --
-  -- Indoors the narrow shape earns its keep: a room with furniture, machinery
-  -- or gravestones in it rarely holds a 3x6 clearing whose whole width is
-  -- also SEEN, and giving up the apron is usually the difference between a
-  -- fight in the open and one behind a console.
-  ["POKEMON_MANSION_1F"] = { x = 4, y = 12, shape = "wide" },
-  ["POKEMON_MANSION_2F"] = { x = 15, y = 17, shape = "wide" },
-  ["POKEMON_MANSION_3F"] = { x = 23, y = 2, shape = "narrow", cam = "wide" },
-  ["POKEMON_MANSION_B1F"] = { x = 19, y = 10, shape = "wide" },
-  ["POKEMON_TOWER_2F"] = { x = 4, y = 7, shape = "narrow" },
-  ["POKEMON_TOWER_3F"] = { x = 4, y = 6, shape = "wide" },
-  -- every one of 4F's thirty candidate spots puts a gravestone through a
-  -- mon; the floor below is the same tower and has the room, so the fight
-  -- is shot there
-  ["POKEMON_TOWER_4F"] = { map = "POKEMON_TOWER_3F", x = 4, y = 6,
-                           shape = "wide" },
-  ["POKEMON_TOWER_5F"] = { x = 10, y = 1, shape = "narrow" },
-  ["POKEMON_TOWER_6F"] = { x = 14, y = 6, shape = "narrow" },
-  ["POKEMON_TOWER_7F"] = { x = 9, y = 5, shape = "wide" },
-  ["POWER_PLANT"] = { x = 18, y = 5, shape = "narrow" },
-  ["ROCK_TUNNEL_1F"] = { x = 14, y = 15, shape = "wide" },
-  ["ROCK_TUNNEL_B1F"] = { x = 20, y = 17, shape = "wide" },
-  ["ROCKET_HIDEOUT_B1F"] = { x = 11, y = 6, shape = "narrow" },
-  ["ROCKET_HIDEOUT_B2F"] = { x = 19, y = 7, shape = "narrow" },
-  ["ROCKET_HIDEOUT_B3F"] = { x = 22, y = 11, shape = "narrow" },
-  ["ROCKET_HIDEOUT_B4F"] = { x = 17, y = 3, shape = "narrow" },
-  ["SAFARI_ZONE_CENTER"] = { x = 1, y = 8, shape = "wide" },
-  ["SAFARI_ZONE_EAST"] = { x = 21, y = 8, shape = "wide" },
-  ["SAFARI_ZONE_NORTH"] = { x = 19, y = 14, shape = "wide" },
-  ["SAFARI_ZONE_WEST"] = { x = 18, y = 3, shape = "wide" },
-  ["SEAFOAM_ISLANDS_1F"] = { x = 14, y = 7, shape = "wide" },
-  ["SEAFOAM_ISLANDS_B1F"] = { x = 11, y = 1, shape = "wide" },
-  ["SEAFOAM_ISLANDS_B2F"] = { x = 16, y = 2, shape = "wide" },
-  ["SEAFOAM_ISLANDS_B3F"] = { x = 25, y = 7, shape = "wide" },
-  ["SEAFOAM_ISLANDS_B4F"] = { x = 12, y = 6, shape = "narrow" },
-  -- Silph Co is office floors partitioned into small rooms, so the long lens
-  -- often lands outside the walls it is meant to be looking between; the
-  -- floors that could not be framed any other way ask for the wide one.
-  ["SILPH_CO_2F"] = { x = 16, y = 8, shape = "narrow" },
-  ["SILPH_CO_4F"] = { x = 24, y = 2, shape = "narrow" },
-  ["SILPH_CO_5F"] = { x = 16, y = 7, shape = "wide" },
-  ["SILPH_CO_6F"] = { x = 10, y = 8, shape = "narrow" },
-  ["SILPH_CO_7F"] = { x = 1, y = 2, shape = "wide", cam = "wide" },
-  ["SILPH_CO_8F"] = { x = 8, y = 6, shape = "narrow" },
-  ["SILPH_CO_9F"] = { x = 20, y = 11, shape = "wide", cam = "wide" },
-  -- Horizontal aisles need an authored axis; keep automatic route search
-  -- north/south. These anchors retain the exact ship map and collision grid.
-  ["SS_ANNE_B1F"] = { spots = {
-    { x = 4, y = 4, shape = "narrow_east", cam = "ship" },
-    { x = 20, y = 4, shape = "narrow_east", cam = "ship" },
+  -- Their plant/pool/invisible-wall aisles cannot reserve all four bodies
+  -- and a clear physical camera. Use the room's authored 3D alternative.
+  ["CELADON_GYM"] = { fixed=true, spots={} },
+  ["CERULEAN_CAVE_1F"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=8, shape="court_small_west", cam="court_aisle", surface="land" },
+    { x=1, y=8, shape="court_small_east", cam="court_aisle_reverse", surface="land" },
   } },
-  ["SS_ANNE_3F"] = { x = 7, y = 2, shape = "narrow_east", cam = "ship" },
-  ["SS_ANNE_CAPTAINS_ROOM"] = { x = 1, y = 4, shape = "narrow_east", cam = "ship" },
-  ["SS_ANNE_1F_ROOMS"] = { x = 10, y = 1, shape = "narrow", cam = "wide" },
-  -- the ship is all two-cell corridors, so the wide arena shape fits nowhere
-  -- aboard and the long lens always lands outside the hull
-  ["SS_ANNE_2F"] = { x = 36, y = 8, shape = "narrow", cam = "wide" },
-  -- these two decks are byte-identical geometry, so they take the same spot
-  ["SS_ANNE_2F_ROOMS"] = { x = 11, y = 12, shape = "narrow" },
-  ["SS_ANNE_B1F_ROOMS"] = { x = 11, y = 12, shape = "narrow" },
-  ["SS_ANNE_BOW"] = { x = 8, y = 3, shape = "wide" },
-  ["VICTORY_ROAD_2F"] = { x = 16, y = 6, shape = "wide" },
-  ["VICTORY_ROAD_3F"] = { x = 20, y = 1, shape = "wide" },
-
-  -- ------- towns and the last interiors
-  -- Do not stage the rival between the north-city houses. These are the
-  -- nearest genuinely open west/east grounds; the height-aware local search
-  -- may still choose a closer plaza when it has the full one-cell apron.
-  ["CERULEAN_CITY"] = { spots = {
-    { x = 6, y = 19, shape = "wide" },
-    { x = 6, y = 20, shape = "wide" },
-    { x = 35, y = 13, shape = "narrow" },
-    { x = 35, y = 14, shape = "narrow" },
+  ["CERULEAN_CAVE_2F"] = { adaptive=false, fixed=true, spots={
+    { map="CERULEAN_CAVE_B1F", x=11, y=6, shape="court_small_west", cam="court_aisle", surface="land" },
+    { map="CERULEAN_CAVE_B1F", x=1, y=1, shape="court_small_north", cam="court_aisle", surface="land" },
   } },
-  -- The automatic land search accepts the plaza cells under Cinnabar's wide
-  -- roof overhang because they are walkable, but the low MAP-battle camera
-  -- then sits inside the real roof geometry. Stage the island's encounters
-  -- on its completely open southern water strip instead: the full 3x6 shape
-  -- at x=1,y=10 is water, the eye looks back toward the island, and no map,
-  -- collision, camera or encounter position is moved.
-  ["CINNABAR_ISLAND"] = {
-    x = 1, y = 10, shape = "wide", adaptive = false,
-  },
-  ["GAME_CORNER"] = { x = 8, y = 7, shape = "wide" },
-  -- the lab is ten cells by twelve, so the long lens is always off-map, and
-  -- on it a desk clipped one mon and a pillar the other
-  ["OAKS_LAB"] = { x = 3, y = 2, shape = "narrow", cam = "wide" },
-  -- Saffron's gym is a grid of small walled cells: no wide shape exists
-  -- anywhere in it, and the long lens sits inside a divider
-  ["SAFFRON_GYM"] = { x = 9, y = 7, shape = "narrow", cam = "wide" },
-  ["SILPH_CO_3F"] = { x = 18, y = 11, shape = "wide", cam = "wide" },
-  ["SILPH_CO_10F"] = { x = 1, y = 2, shape = "wide" },
-  ["SILPH_CO_11F"] = { x = 1, y = 11, shape = "wide", cam = "wide" },
-  -- the upper corridor (cols 4-5, rows 1-4) is sealed at runtime by the
-  -- gym's barrier, so arenas there silently fail the fit test
-  -- The western apron is clear but excluded by the generic city one-cell
-  -- padding rule. A reviewed same-map anchor also serves the southwest shore.
-  ["VERMILION_CITY"] = { x = 16, y = 4, shape = "wide", cam = "wide" },
-  ["VERMILION_GYM"] = { x = 4, y = 11, shape = "narrow" },
-  ["VICTORY_ROAD_1F"] = { x = 11, y = 2, shape = "narrow" },
-  ["VIRIDIAN_FOREST"] = { x = 16, y = 34, shape = "narrow" },
-
-  -- ------- the remaining routes
-  ["ROUTE_19"] = { x = 8, y = 6, shape = "narrow" },
-  -- the two surf routes fight AFLOAT, in the middle of their own sea rather
-  -- than on the rim of beach the land search would otherwise find
-  ["ROUTE_20"] = { x = 23, y = 7, shape = "wide", cam = "wide" },
-  ["ROUTE_21"] = { x = 8, y = 46, shape = "wide" },
-  -- The old east-edge court (35,7) put its wide camera into the boundary.
-  -- Both grass patches need a shallow east/west court above the ledges;
-  -- the rotated wide rig clears the hedge without leaving this route.
-  -- Keep ordinary local placements preferred and validate these normally.
-  ["ROUTE_22"] = { spots = {
-    { x = 23, y = 4, shape = "narrow_east", cam = "wide" },
-    { x = 32, y = 4, shape = "narrow_east", cam = "wide" },
+  ["CERULEAN_CAVE_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=6, shape="court_small_west", cam="court_aisle", surface="land" },
+    { x=1, y=1, shape="court_small_north", cam="court_aisle", surface="land" },
   } },
-  ["ROUTE_23"] = { x = 4, y = 36, shape = "wide" },
-  ["ROUTE_24"] = { x = 13, y = 15, shape = "wide" },
-  ["ROUTE_25"] = { x = 32, y = 2, shape = "wide", cam = "wide" },
-
-  -- ------- caves, gyms and the Elite Four
-  --
-  -- None of these tilesets has a grass tile at all, so the no-grass rule
-  -- constrained nothing here; what constrains them is furniture, rock
-  -- pillars and how small the rooms are.
-  ["AGATHAS_ROOM"] = { x = 2, y = 1, shape = "narrow", cam = "wide" },
-  ["BRUNOS_ROOM"] = { x = 3, y = 1, shape = "narrow" },
-  ["CELADON_GYM"] = { x = 0, y = 3, shape = "narrow" },
-  ["CERULEAN_CAVE_1F"] = { x = 1, y = 7, shape = "narrow" },
-  -- 2F is a maze of one-cell rock corridors; all 24 of its candidate spots
-  -- hide a mon, so it borrows the floor below -- the same cave
-  ["CERULEAN_CAVE_2F"] = { map = "CERULEAN_CAVE_B1F", x = 2, y = 0,
-                           shape = "wide" },
-  ["CERULEAN_CAVE_B1F"] = { x = 2, y = 0, shape = "wide" },
-  ["CERULEAN_GYM"] = { x = 0, y = 1, shape = "narrow" },
-  ["CHAMPIONS_ROOM"] = { x = 2, y = 2, shape = "narrow", cam = "wide" },
-  ["CINNABAR_GYM"] = { x = 18, y = 10, shape = "narrow" },
-  ["DIGLETTS_CAVE"] = { x = 19, y = 16, shape = "wide" },
-  ["FIGHTING_DOJO"] = { x = 4, y = 1, shape = "narrow" },
-  ["LANCES_ROOM"] = { x = 5, y = 15, shape = "wide" },
-  -- Use the shallow room diagonally with inset feet, leaving foreground
-  -- floor for Red beside Charizard instead of placing him at midfield.
-  ["LORELEIS_ROOM"] = { x = 2, y = 2, shape = "diagonal_east" },
-  ["MT_MOON_1F"] = { spots = {
-    { x = 7, y = 3, shape = "wide" },
-    { x = 14, y = 3, shape = "wide" },
-    { x = 31, y = 3, shape = "wide" },
-    { x = 6, y = 24, shape = "wide" },
-    { x = 12, y = 24, shape = "wide" },
-    { x = 34, y = 24, shape = "wide" },
+  ["CERULEAN_CITY"] = { adaptive=false, fixed=true, spots={
+    { x=17, y=18, shape="court_tight_east", cam="court_close", surface="land" },
+    { x=33, y=31, shape="court_tight_west", cam="court_aisle", surface="land" },
   } },
-  ["MT_MOON_B1F"] = { x = 5, y = 12, shape = "wide" },
-  ["MT_MOON_B2F"] = { spots = {
-    { x = 1, y = 13, shape = "wide" },
-    { x = 2, y = 16, shape = "wide" },
-    { x = 1, y = 24, shape = "wide" },
-    { x = 2, y = 27, shape = "wide" },
+  ["CERULEAN_GYM"] = { fixed=true, spots={} },
+  ["CHAMPIONS_ROOM"] = { adaptive=false, fixed=true, spots={
+    { x=1, y=3, shape="court_small_east", cam="wide", surface="land" },
   } },
-
-  -- The three gyms the default rig cannot stand back from. Five blocks is
-  -- further than these rooms are wide, so the eye landed outside the map and
-  -- the border ring -- extruded into a cliff by this mode -- crossed the near
-  -- mon wherever it stood. `cam = "wide"` swaps in the 44-degree lens (see
-  -- BattleCam), which fits inside the room; the mons come out smaller and all
-  -- three became stageable. It is asked for HERE, per map, so every area that
-  -- does not ask keeps the long lens it was framed for.
-  ["FUCHSIA_GYM"] = { x = 7, y = 6, shape = "narrow", cam = "wide" },
-  ["PEWTER_GYM"] = { x = 4, y = 8, shape = "narrow", cam = "wide" },
-  ["VIRIDIAN_GYM"] = { x = 10, y = 8, shape = "narrow", cam = "wide" },
+  ["CINNABAR_GYM"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=6, shape="court_small_south", cam="court_close", surface="land" },
+  } },
+  ["CINNABAR_ISLAND"] = { adaptive=false, fixed=true, spots={
+    { x=10, y=6, shape="court_tight_west", cam="court_close", surface="land" },
+    { x=6, y=12, shape="court_tight_west", cam="court_aisle", surface="land" },
+  } },
+  ["DIGLETTS_CAVE"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=17, shape="court_east", cam="court_aisle", surface="land" },
+    { x=1, y=29, shape="court_small_north", cam="court_aisle", surface="land" },
+    { x=37, y=1, shape="court_small_south", cam="court_aisle", surface="land" },
+  } },
+  ["FIGHTING_DOJO"] = { adaptive=false, fixed=true, spots={
+    { x=1, y=5, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["FUCHSIA_GYM"] = { fixed=true, spots={} },
+  ["GAME_CORNER"] = { adaptive=false, fixed=true, spots={
+    { x=9, y=6, shape="court_small_south", cam="wide", surface="land" },
+  } },
+  ["LANCES_ROOM"] = { adaptive=false, fixed=true, spots={
+    { x=7, y=14, shape="court_south", cam="court_close", surface="land" },
+  } },
+  ["LORELEIS_ROOM"] = { adaptive=false, fixed=true, spots={
+    { x=4, y=2, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["MT_MOON_1F"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=12, shape="court_south", cam="wide", surface="land" },
+    { x=30, y=33, shape="court_west", cam="court_close", surface="land" },
+    { x=36, y=2, shape="court_south", cam="court_close", surface="land" },
+    { x=2, y=26, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["MT_MOON_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=14, y=8, shape="court_east", cam="wide", surface="land" },
+    { x=4, y=10, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["MT_MOON_B2F"] = { adaptive=false, fixed=true, spots={
+    { x=14, y=22, shape="court_east", cam="court_close", surface="land" },
+    { x=31, y=12, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=27, shape="court_north", cam="court_close", surface="land" },
+    { x=2, y=12, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["MT_MOON_POKECENTER"] = { adaptive=false, fixed=true, spots={
+    { x=3, y=3, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["OAKS_LAB"] = { x = 1, y = 8, shape = "court_east", cam = "court", adaptive = false, fixed=true, surface="land",
+    cameraApron={edge="south",depth=96,width=10,height=12} },
+  ["PEWTER_GYM"] = { x = 1, y = 11, shape = "court_east", cam = "wide", adaptive = false, fixed=true, surface="land",
+    cameraApron={edge="south",depth=16,width=10,height=14} },
+  ["POKEMON_MANSION_1F"] = { adaptive=false, fixed=true, spots={
+    { x=10, y=5, shape="court_west", cam="wide", surface="land" },
+    { x=4, y=19, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["POKEMON_MANSION_2F"] = { adaptive=false, fixed=true, spots={
+    { x=15, y=17, shape="court_east", cam="court_close", surface="land" },
+    { x=10, y=1, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["POKEMON_MANSION_3F"] = { adaptive=false, fixed=true, spots={
+    { x=4, y=2, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["POKEMON_MANSION_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=13, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=19, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["POKEMON_TOWER_1F"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=8, shape="court_east", cam="court_close", surface="land" },
+  } },
+  ["POKEMON_TOWER_2F"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=4, shape="court_small_west", cam="wide", surface="land" },
+  } },
+  ["POKEMON_TOWER_3F"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=14, shape="court_small_west", cam="court_aisle", surface="land" },
+  } },
+  ["POKEMON_TOWER_4F"] = { adaptive=false, fixed=true, spots={
+    { map="POKEMON_TOWER_3F", x=8, y=14, shape="court_small_west", cam="court_aisle", surface="land" },
+  } },
+  ["POKEMON_TOWER_5F"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=8, shape="court_small_east", cam="wide", surface="land" },
+  } },
+  ["POKEMON_TOWER_6F"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=6, shape="court_small_west", cam="wide", surface="land" },
+  } },
+  ["POKEMON_TOWER_7F"] = { adaptive=false, fixed=true, spots={
+    { x=9, y=5, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["POWER_PLANT"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=10, shape="court_small_west", cam="court_aisle", surface="land" },
+    { x=1, y=7, shape="court_small_east", cam="court_aisle", surface="land" },
+    { x=6, y=16, shape="court_small_south", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["ROCKET_HIDEOUT_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=17, y=10, shape="court_small_north", cam="court_aisle", surface="land" },
+    { x=17, y=25, shape="court_small_west", cam="wide", surface="land" },
+  } },
+  ["ROCKET_HIDEOUT_B2F"] = { adaptive=false, fixed=true, spots={
+    { x=19, y=10, shape="court_small_north", cam="court_aisle", surface="land" },
+    { x=19, y=21, shape="court_small_north", cam="court_aisle", surface="land" },
+  } },
+  ["ROCKET_HIDEOUT_B3F"] = { adaptive=false, fixed=true, spots={
+    { x=22, y=12, shape="court_small_north", cam="wide", surface="land" },
+    { x=15, y=25, shape="court_small_west", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["ROCKET_HIDEOUT_B4F"] = { adaptive=false, fixed=true, spots={
+    { x=17, y=7, shape="court_north", cam="court_aisle", surface="land" },
+    { x=21, y=17, shape="court_small_south", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["ROCK_TUNNEL_1F"] = { adaptive=false, fixed=true, spots={
+    { x=14, y=17, shape="court_east", cam="court_close", surface="land" },
+    { x=31, y=33, shape="court_west", cam="court_close", surface="land" },
+    { x=1, y=33, shape="court_west", cam="court_close", surface="land" },
+    { x=36, y=5, shape="court_south", cam="wide", surface="land" },
+  } },
+  ["ROCK_TUNNEL_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=20, y=16, shape="court_north", cam="court_close", surface="land" },
+    { x=30, y=2, shape="court_east", cam="court_close", surface="land" },
+    { x=2, y=4, shape="court_north", cam="wide", surface="land" },
+    { x=36, y=26, shape="court_south", cam="court_close", surface="land" },
+  } },
+  ["ROCK_TUNNEL_POKECENTER"] = { adaptive=false, fixed=true, spots={
+    { x=3, y=3, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_1"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=14, shape="court_east", cam="court_close", surface="land" },
+    { x=12, y=10, shape="court_small_west", cam="wide", surface="land" },
+    { x=4, y=21, shape="court_small_west", cam="wide", surface="land" },
+  } },
+  ["ROUTE_10"] = { adaptive=false, fixed=true, spots={
+    { x=14, y=32, shape="court_north", cam="wide", surface="land" },
+    { x=10, y=63, shape="court_east", cam="wide", surface="land" },
+    { x=2, y=18, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["ROUTE_11"] = { adaptive=false, fixed=true, spots={
+    { x=24, y=10, shape="court_east", cam="wide", surface="land" },
+    { x=48, y=1, shape="court_east", cam="court_close", surface="land" },
+    { x=1, y=6, shape="court_east", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_12"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=52, shape="court_east", cam="court_close", surface="land" },
+    { x=12, y=98, shape="court_north", cam="court_close", surface="land" },
+    { x=8, y=2, shape="court_north", cam="wide", surface="land" },
+    { x=8, y=26, shape="court_east", cam="court_close", surface="land" },
+    { x=4, y=82, shape="court_east", cam="wide", surface="land" },
+    { x=13, y=58, shape="court_north", cam="court_close", surface="water" },
+    { x=14, y=15, shape="court_small_north", cam="court_close", surface="water" },
+    { x=12, y=92, shape="court_small_east", cam="court_close", surface="water" },
+    { x=9, y=38, shape="court_small_west", cam="court_close", surface="water" },
+    { x=4, y=4, shape="court_small_north", cam="court_close", surface="water" },
+    { x=4, y=73, shape="court_small_west", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_13"] = { adaptive=false, fixed=true, spots={
+    { x=34, y=10, shape="court_east", cam="court_close", surface="land" },
+    { x=50, y=1, shape="court_north", cam="court_close", surface="land" },
+    { x=42, y=10, shape="court_east", cam="court_close", surface="land" },
+    { x=44, y=12, shape="court_east", cam="court_close", surface="water" },
+    { x=36, y=13, shape="court_small_west", cam="court_close", surface="water" },
+    { x=53, y=1, shape="court_small_east", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_14"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=23, shape="court_north", cam="wide", surface="land" },
+    { x=1, y=48, shape="court_west", cam="court_close", surface="land" },
+    { x=4, y=12, shape="court_east", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_15"] = { adaptive=false, fixed=true, spots={
+    { x=26, y=10, shape="court_east", cam="wide", surface="land" },
+    { x=2, y=1, shape="court_east", cam="court_close", surface="land" },
+    { x=51, y=12, shape="court_west", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_16"] = { adaptive=false, fixed=true, spots={
+    { x=10, y=7, shape="court_west", cam="court_close", surface="land" },
+    { x=27, y=7, shape="court_west", cam="wide", surface="land" },
+    { x=1, y=15, shape="court_west", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_17"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=67, shape="court_north", cam="court_close", surface="land" },
+    { x=1, y=1, shape="court_east", cam="court_close", surface="land" },
+    { x=6, y=139, shape="court_west", cam="court_close", surface="land" },
+    { x=15, y=32, shape="court_south", cam="court_close", surface="land" },
+    { x=1, y=101, shape="court_north", cam="court_close", surface="land" },
+    { x=17, y=115, shape="court_south", cam="court_close", surface="land" },
+    { x=9, y=12, shape="court_south", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_18"] = { adaptive=false, fixed=true, spots={
+    { x=21, y=8, shape="court_east", cam="court_close", surface="land" },
+    { x=41, y=1, shape="court_east", cam="court_close", surface="land" },
+    { x=6, y=1, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_19"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=7, shape="court_east", cam="wide", surface="land" },
+    { x=5, y=38, shape="court_east", cam="court_close", surface="water" },
+    { x=6, y=15, shape="court_east", cam="court_close", surface="water" },
+    { x=2, y=51, shape="court_west", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_2"] = { adaptive=false, fixed=true, spots={
+    { x=2, y=50, shape="court_north", cam="wide", surface="land" },
+    { x=11, y=2, shape="court_east", cam="wide", surface="land" },
+    { x=17, y=53, shape="court_south", cam="court_close", surface="land" },
+    { x=1, y=8, shape="court_small_west", cam="wide", surface="land" },
+  } },
+  ["ROUTE_20"] = { adaptive=false, fixed=true, spots={
+    { x=46, y=8, shape="court_east", cam="court_close", surface="land" },
+    { x=54, y=2, shape="court_east", cam="wide", surface="land" },
+    { x=13, y=4, shape="court_north", cam="court_close", surface="water" },
+    { x=77, y=4, shape="court_north", cam="court_close", surface="water" },
+    { x=40, y=4, shape="court_south", cam="court_close", surface="water" },
+    { x=95, y=4, shape="court_north", cam="wide", surface="water" },
+    { x=62, y=4, shape="court_small_north", cam="court_close", surface="water" },
+    { x=1, y=4, shape="court_north", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_21"] = { adaptive=false, fixed=true, spots={
+    { x=15, y=2, shape="court_north", cam="wide", surface="land" },
+    { x=6, y=38, shape="court_east", cam="court_close", surface="water" },
+    { x=6, y=70, shape="court_east", cam="court_close", surface="water" },
+    { x=8, y=10, shape="court_north", cam="court_close", surface="water" },
+    { x=6, y=86, shape="court_west", cam="court_close", surface="water" },
+    { x=9, y=50, shape="court_north", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_22"] = { adaptive=false, fixed=true, spots={
+    { x=21, y=4, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_23"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=48, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=132, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=20, shape="court_east", cam="wide", surface="land" },
+    { x=14, y=104, shape="court_south", cam="court_close", surface="land" },
+    { x=1, y=32, shape="court_north", cam="wide", surface="land" },
+    { x=11, y=124, shape="court_east", cam="wide", surface="land" },
+    { x=4, y=88, shape="court_east", cam="court_close", surface="water" },
+    { x=8, y=72, shape="court_small_east", cam="court_close", surface="water" },
+    { x=9, y=101, shape="court_east", cam="court_close", surface="water" },
+  } },
+  ["ROUTE_24"] = { adaptive=false, fixed=true, spots={
+    { x=4, y=14, shape="court_west", cam="wide", surface="land" },
+    { x=5, y=4, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_25"] = { adaptive=false, fixed=true, spots={
+    { x=30, y=8, shape="court_west", cam="wide", surface="land" },
+    { x=47, y=4, shape="court_east", cam="court_close", surface="land" },
+    { x=38, y=5, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_3"] = { adaptive=false, fixed=true, spots={
+    { x=30, y=8, shape="court_east", cam="wide", surface="land" },
+    { x=10, y=4, shape="court_east", cam="wide", surface="land" },
+    { x=50, y=12, shape="court_west", cam="wide", surface="land" },
+  } },
+  ["ROUTE_4"] = { adaptive=false, fixed=true, spots={
+    { x=46, y=5, shape="court_north", cam="wide", surface="land" },
+    { x=5, y=9, shape="court_west", cam="wide", surface="land" },
+    { x=52, y=10, shape="court_east", cam="wide", surface="land" },
+    { x=34, y=6, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_5"] = { adaptive=false, fixed=true, spots={
+    { x=15, y=14, shape="court_north", cam="wide", surface="land" },
+    { x=1, y=1, shape="court_north", cam="wide", surface="land" },
+    { x=1, y=24, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_6"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=20, shape="court_east", cam="wide", surface="land" },
+    { x=6, y=8, shape="court_east", cam="wide", surface="land" },
+    { x=4, y=29, shape="court_west", cam="court_close", surface="land" },
+  } },
+  ["ROUTE_7"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=12, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["ROUTE_8"] = { adaptive=false, fixed=true, spots={
+    { x=27, y=5, shape="court_south", cam="court_close", surface="land" },
+    { x=54, y=8, shape="court_south", cam="wide", surface="land" },
+    { x=5, y=14, shape="court_west", cam="wide", surface="land" },
+  } },
+  ["ROUTE_9"] = { adaptive=false, fixed=true, spots={
+    { x=38, y=2, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SAFARI_ZONE_CENTER"] = { adaptive=false, fixed=true, spots={
+    -- Keep the item pedestal's small island out of the battle lane.
+    { x=11, y=16, shape="court_east", cam="wide", surface="land" },
+    { x=23, y=1, shape="court_tight_east", cam="court_aisle", surface="land" },
+    { x=1, y=7, shape="court_small_north", cam="court_close", surface="land" },
+    { x=1, y=22, shape="court_tight_west", cam="court_close", surface="land" },
+  } },
+  ["SAFARI_ZONE_EAST"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=8, shape="court_tight_east", cam="court_aisle", surface="land" },
+    { x=7, y=17, shape="court_small_north", cam="wide", surface="land" },
+    { x=24, y=18, shape="court_tight_west", cam="court_tight", surface="land" },
+    { x=22, y=11, shape="court_tight_west", cam="court_aisle", surface="land" },
+  } },
+  ["SAFARI_ZONE_NORTH"] = { adaptive=false, fixed=true, spots={
+    { x=18, y=17, shape="court_tight_east", cam="court_close", surface="land" },
+    { x=1, y=28, shape="court_small_north", cam="court_aisle", surface="land" },
+    { x=33, y=32, shape="court_tight_west", cam="court_close", surface="land" },
+    { x=37, y=4, shape="court_small_south", cam="court_close", surface="land" },
+  } },
+  ["SAFARI_ZONE_WEST"] = { adaptive=false, fixed=true, spots={
+    { x=9, y=14, shape="court_tight_east", cam="court_close", surface="land" },
+    { x=27, y=4, shape="court_small_south", cam="court_aisle", surface="land" },
+    { x=22, y=20, shape="court_small_west", cam="court_close", surface="land" },
+    { x=12, y=2, shape="court_tight_east", cam="court_close", surface="land" },
+  } },
+  ["SAFFRON_GYM"] = { adaptive=false, fixed=true, spots={
+    { x=7, y=8, shape="court_small_east", cam="wide", surface="land" },
+  } },
+  ["SEAFOAM_ISLANDS_1F"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=8, shape="court_small_east", cam="court_close", surface="land" },
+    { x=26, y=2, shape="court_small_south", cam="court_aisle_reverse", surface="land" },
+    { x=2, y=14, shape="court_tight_west", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["SEAFOAM_ISLANDS_B1F"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=4, shape="court_small_north", cam="court_aisle", surface="land" },
+    { x=2, y=10, shape="court_small_north", cam="court_close", surface="land" },
+    { x=26, y=10, shape="court_small_south", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["SEAFOAM_ISLANDS_B2F"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=8, shape="court_east", cam="court_aisle", surface="land" },
+    { x=2, y=2, shape="court_small_north", cam="court_close", surface="land" },
+    { x=4, y=14, shape="court_tight_west", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["SEAFOAM_ISLANDS_B3F"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=5, shape="court_tight_west", cam="court_close", surface="land" },
+    { x=27, y=9, shape="court_small_south", cam="court_aisle_reverse", surface="land" },
+    { x=1, y=7, shape="court_small_north", cam="court_close", surface="land" },
+  } },
+  ["SEAFOAM_ISLANDS_B4F"] = { adaptive=false, fixed=true, spots={
+    { x=13, y=6, shape="court_small_south", cam="court_close", surface="land" },
+    { x=18, y=1, shape="court_tight_east", cam="court_aisle", surface="land" },
+    { x=10, y=15, shape="court_tight_west", cam="court_tight", surface="land" },
+  } },
+  ["SILPH_CO_10F"] = { adaptive=false, fixed=true, spots={
+    { x=2, y=2, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_11F"] = { adaptive=false, fixed=true, spots={
+    { x=5, y=9, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=9, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_1F"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=11, shape="court_east", cam="court_close", surface="land" },
+    { x=19, y=1, shape="court_east", cam="court_close", surface="land" },
+    { x=3, y=4, shape="court_north", cam="court_close", surface="land" },
+  } },
+  ["SILPH_CO_2F"] = { adaptive=false, fixed=true, spots={
+    { x=9, y=6, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=8, shape="court_west", cam="court_close", surface="land" },
+  } },
+  ["SILPH_CO_3F"] = { adaptive=false, fixed=true, spots={
+    { x=18, y=3, shape="court_north", cam="wide", surface="land" },
+    { x=19, y=1, shape="court_east", cam="wide", surface="land" },
+    { x=18, y=9, shape="court_north", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_4F"] = { adaptive=false, fixed=true, spots={
+    { x=11, y=13, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=13, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_5F"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=5, shape="court_north", cam="court_close", surface="land" },
+    { x=1, y=4, shape="court_east", cam="wide", surface="land" },
+    { x=21, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_6F"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=1, shape="court_east", cam="wide", surface="land" },
+    { x=17, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_7F"] = { adaptive=false, fixed=true, spots={
+    { x=19, y=6, shape="court_small_north", cam="wide", surface="land" },
+    { x=1, y=1, shape="court_small_north", cam="wide", surface="land" },
+    { x=16, y=1, shape="court_small_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_8F"] = { adaptive=false, fixed=true, spots={
+    { x=14, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SILPH_CO_9F"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=1, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["SS_ANNE_1F_ROOMS"] = { fixed=true, spots={} },
+  ["SS_ANNE_2F"] = { adaptive=false, fixed=true, spots={
+    { x=32, y=12, shape="court_tight_west", cam="court_aisle_reverse", surface="land" },
+  } },
+  ["SS_ANNE_2F_ROOMS"] = { fixed=true, spots={} },
+  ["SS_ANNE_3F"] = { fixed=true, spots={} },
+  ["SS_ANNE_B1F"] = { fixed=true, spots={} },
+  ["SS_ANNE_B1F_ROOMS"] = { fixed=true, spots={} },
+  ["SS_ANNE_BOW"] = { adaptive=false, fixed=true, spots={
+    { x=10, y=3, shape="court_south", cam="court_close", surface="land" },
+    { x=1, y=6, shape="court_tight_east", cam="court_tight", surface="land" },
+  } },
+  ["SS_ANNE_CAPTAINS_ROOM"] = { fixed=true, spots={} },
+  ["VERMILION_CITY"] = { adaptive=false, fixed=true, spots={
+    { x=17, y=16, shape="court_tight_west", cam="court_close", surface="land" },
+    { x=37, y=1, shape="court_small_south", cam="court_aisle", surface="land" },
+  } },
+  ["VERMILION_GYM"] = { adaptive=false, fixed=true, spots={
+    { x=4, y=15, shape="court_tight_west", cam="wide", surface="land" },
+  } },
+  ["VICTORY_ROAD_1F"] = { adaptive=false, fixed=true, spots={
+    { x=6, y=4, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["VICTORY_ROAD_2F"] = { adaptive=false, fixed=true, spots={
+    { x=16, y=4, shape="court_north", cam="court_close", surface="land" },
+    { x=16, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["VICTORY_ROAD_3F"] = { adaptive=false, fixed=true, spots={
+    { x=12, y=6, shape="court_east", cam="wide", surface="land" },
+    { x=1, y=15, shape="court_west", cam="wide", surface="land" },
+    { x=21, y=1, shape="court_east", cam="wide", surface="land" },
+    { x=16, y=13, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["VIRIDIAN_FOREST"] = { adaptive=false, fixed=true, spots={
+    { x=13, y=18, shape="court_small_west", cam="wide", surface="land" },
+    { x=22, y=42, shape="court_small_west", cam="wide", surface="land" },
+    { x=6, y=42, shape="court_small_west", cam="wide", surface="land" },
+    { x=6, y=1, shape="court_east", cam="wide", surface="land" },
+  } },
+  ["VIRIDIAN_GYM"] = { adaptive=false, fixed=true, spots={
+    { x=8, y=8, shape="court_small_east", cam="wide", surface="land" },
+  } },
 }

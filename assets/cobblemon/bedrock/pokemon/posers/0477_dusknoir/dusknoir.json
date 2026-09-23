@@ -1,0 +1,100 @@
+{
+  "portraitScale": 1.65,
+  "portraitTranslation": [-0.9,2.65,0],
+  "profileScale": 0.5,
+  "profileTranslation": [-0.2,1.25,0],
+  "rootBone": "dusknoir",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {
+    "faint": "q.bedrock_primary('dusknoir', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('dusknoir', 'cry')",
+    "recoil": "q.bedrock_stateful('dusknoir', 'recoil')",
+    "physical": "q.bedrock_primary('dusknoir', 'physical', q.curve('symmetrical'))",
+    "special": "q.bedrock_primary('dusknoir', 'special', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('dusknoir', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.bedrock('dusknoir', 'battle_idle')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('dusknoir', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "mount-standing": {
+      "poseTypes": ["STAND", "HOVER"],
+      "isBattle": false,
+      "condition": "q.is_ridden",
+      "transformTicks": 10,
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_idle')",
+        "q.bedrock('dusknoir', 'ride_ground_run')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "HOVER", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dusknoir', 'idle_quirk')"
+      ]
+    },
+    "mount-walking": {
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "condition": "q.has_entity ? q.is_ridden && !q.is_sprinting",
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_run')",
+        "q.bedrock('dusknoir', 'ride_ground_run')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isBattle": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_walk')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "isBattle": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_idle')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.bedrock('dusknoir', 'ground_walk')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('dusknoir', 'sleep')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "portraitScale": 1.72,
+  "portraitTranslation": [-0.26,-0.36,0],
+  "profileScale": 0.72,
+  "profileTranslation": [0,0.66,0],
+  "rootBone": "togepi",
+  "animations": {
+  "cry": "q.bedrock_stateful('togepi', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head_ai', 1, 1, 7, -7, 0, 0)",
+        "q.look('torso', 1, 1, 5, -8, 7, -7)",
+        "q.bedrock('togepi', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togepi', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head_ai', 1, 1, 7, -7, 0, 0)",
+        "q.look('torso', 1, 1, 5, -8, 7, -7)",
+        "q.bimanual_swing(0.66, 0.5, 'arm_left', 'arm_right')",
+        "q.biped_walk(0.66, 0.5, 'foot_left', 'foot_right')",
+        "q.bedrock('togepi', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togepi', 'blink')"
+      ]
+    }
+  }
+}

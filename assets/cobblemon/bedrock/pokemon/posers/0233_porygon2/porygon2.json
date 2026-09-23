@@ -1,0 +1,56 @@
+{
+  "portraitScale": 2.42,
+  "portraitTranslation": [-0.45, 0.68, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0, 0.68, 0],
+  "rootBone": "porygon2",
+  "animations": {
+    "faint": "q.bedrock_primary('porygon2', 'faint', q.curve('one'))",
+    "recoil": "q.bedrock_stateful('porygon2', 'recoil')",
+    "cry": "q.bedrock_stateful('porygon2', 'cry')",
+    "physical": "q.bedrock_primary('porygon2', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('porygon2', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('porygon2', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('porygon2', 'battle_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('porygon2', 'blink')",
+        "q.bedrock_primary_quirk('porygon2', 'battle_quirk', 20, 40, 1, q.curve('symmetrical_wide'))"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('porygon2', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "HOVER", "NONE", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('porygon2', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('porygon2', 'blink')",
+        "q.bedrock_quirk('porygon2', 'quirk')",
+        "q.bedrock_primary_quirk('porygon2', q.array('idle_quirk', 'idle_quirk2'), 20, 40, 1, q.curve('symmetrical'))"
+      ]
+    },
+    "portrait": {
+      "poseTypes": ["PORTRAIT"],
+      "animations": ["q.bedrock('porygon2', 'portrait_idle')"],
+      "quirks": ["q.bedrock_quirk('porygon2', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLY", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('porygon2', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('porygon2', 'blink')"]
+    },
+    "sleeping": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('porygon2', 'sleep')"]
+    }
+  }
+}

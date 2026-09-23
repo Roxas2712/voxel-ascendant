@@ -1,0 +1,118 @@
+{
+  "portraitScale": 1.39,
+  "portraitTranslation": [-0.34, 0.33, 0],
+  "profileScale": 0.67,
+  "profileTranslation": [0, 0.77, 0],
+  "rootBone": "togekiss",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "animations": {
+    "faint": "q.bedrock_primary('togekiss', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('togekiss', 'cry')",
+    "recoil": "q.bedrock_stateful('togekiss', 'recoil')",
+    "special": "q.bedrock_primary('togekiss', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('togekiss', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head_ai', 1, 1, 15, 0, 0, 0)",
+        "q.look('neck', 1, 1, 10, -2, 2, -2)",
+        "q.bedrock('togekiss', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togekiss', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('togekiss', 'battle_cry', q.curve('symmetrical_wide'))",
+        "recoil": "q.bedrock_stateful('togekiss', 'air_recoil')"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head_ai', 1, 1, 3, 0, 10, -10)",
+        "q.look('neck', 1, 1, 2, -18, 4, -4)",
+        "q.look('torso', 1, 1, 18, -1, 10, -10)",
+        "q.bedrock('togekiss', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togekiss', 'blink')",
+        "q.bedrock_quirk('togekiss', 'stretch_quirk')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai', 1, 1, 15, 0, 0, 0)",
+        "q.look('neck', 1, 1, 10, -2, 2, -2)",
+        "q.bedrock('togekiss', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('togekiss', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('togekiss', 'sleep')"]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "isBattle": false,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head_ai', 1, 1, 15, 0, 0, 0)",
+        "q.look('neck', 1, 1, 10, -2, 2, -2)",
+        "q.bedrock('togekiss', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togekiss', 'blink')",
+        "q.bedrock_primary_quirk('togekiss', 'air_quirk', 20, 40, 1, q.curve('symmetrical'))"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "!q.is_gliding",
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('neck', 1, 1, 0, 0, 2, -2)",
+        "q.bedrock('togekiss', 'air_fly')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('togekiss', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togekiss', 'blink')"
+      ]
+    },
+    "glide": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "q.is_gliding",
+      "animations": [
+        "q.look('head_ai', 1, 1, 15, 0, 0, 0)",
+        "q.bedrock('togekiss', 'air_glide')",
+        "q.bedrock('togekiss', 'ride_dive')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('togekiss', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('togekiss', 'blink')"
+      ]
+    }
+  }
+}

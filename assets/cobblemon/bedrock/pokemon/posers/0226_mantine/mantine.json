@@ -1,0 +1,141 @@
+{
+  "portraitScale": 1.44,
+  "portraitTranslation": [-0.35, -0.17, 0],
+  "profileScale": 0.46,
+  "profileTranslation": [-0.02, 0.95, 0],
+  "rootBone": "mantine",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('mantine', 'cry')"
+  },
+  "poses": {
+    "jump": {
+      "poseTypes": ["FLOAT", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('mantine', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_jump')"
+        }
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "surface-float": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "surface-swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER", "FLY"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mantine', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mantine', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mantine', 'blink')"
+      ]
+    },
+    "sleeping": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('mantine', 'sleep')"]
+    }
+  }
+}

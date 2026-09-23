@@ -63,6 +63,15 @@ function M.geometry(entry,emitWorld,yieldStep)
  -- Exposed facade below the native roof edge establishes the building height.
  box(x0,-100,z0,x1-x0,100,1,4);box(x0,-100,z1-1,x1-x0,100,1,4)
  box(x0,-100,z0,1,100,z1-z0,4);box(x1-1,-100,z0,1,100,z1-z0,4)
+ -- Layered cornice closes the top of the exposed facade while keeping
+ -- railings, stair approaches and the view over the city open.
+ for _,level in ipairs({{-5,3,2},{-2,2,3}})do
+  local y,height,color=unpack(level)
+  box(x0-1,y,z0-1,x1-x0+2,height,2,color)
+  box(x0-1,y,z1-1,x1-x0+2,height,2,color)
+  box(x0-1,y,z0+1,2,height,z1-z0-2,color)
+  box(x1-1,y,z0+1,2,height,z1-z0-2,color)
+ end
  if emitWorld then emitWorld(out,group,quad,yieldStep)end
  return out
 end
@@ -71,28 +80,29 @@ function M.build(entry,yieldStep,worldMaps)
  local near,baked=V.require('RooftopCache').load(entry,worldMaps,yieldStep)
  for _,g in ipairs(M.geometry(entry,function(out,group,quad)
   local batches={}
-  local function emit(x,y,z,w,h,d,c,lit)
-   local key=lit and 'windows'or 'world';local g=batches[key]
-   if not g or (g.boxes or 0)>=128 then g=group(key);g.boxes=0;g.lit=lit;batches[key]=g end
+  local function emit(x,y,z,w,h,d,c,lit,foliage)
+   local key=lit and 'windows'or foliage and 'foliage'or 'world';local g=batches[key]
+   if not g or (g.boxes or 0)>=128 then g=group(key);g.boxes=0;g.lit=lit;g.foliage=foliage==true;batches[key]=g end
    g.boxes=g.boxes+1
    local u=(c-.5)/#V.require('VoxelItems').palette;local uv={{u,.5},{u,.5},{u,.5},{u,.5}}
    for face,corners in ipairs(V.require('Voxel3D').FACE_CORNERS)do
     local p={};for _,v in ipairs(corners)do p[#p+1]={x+v[1]*w,y+v[2]*h,z+v[3]*d}end
-    quad(g,p,uv,({.82,.82,1,.65,.85,.85})[face])
+    quad(g,p,uv,({.82,.82,1,.65,.85,.85})[face]+((face==3 and not lit and c~=8)and 2 or 0))
    end
   end
   if near then for _,b in ipairs(near)do emit(unpack(b))end
   else V.require('RooftopWorld').geometry(entry,worldMaps,emit,yieldStep)end
+  V.require('RooftopWorld').mountains(entry,worldMaps,emit,yieldStep)
  end,yieldStep))do
   local mesh=V.require('Voxel3D').newMesh(g.vertices,g.indices)
   if not mesh then
    for _,p in ipairs(out)do p.mesh:release()end
-   for _,p in ipairs(baked or{})do p.mesh:release();p.texture:release()end
+   for _,p in ipairs(baked or{})do p.mesh:release();p.texture:release();if p.materialMask then p.materialMask:release()end end
    error('rooftop panorama mesh',0)
   end
   local city=g.name~='frame'
   out[#out+1]={mesh=mesh,texture=city and V.require('RooftopWorld').texture()or texture(g.name),ox=entry.ox or 0,oy=entry.oy or 0,
-   kind='wall',class=city and 'voxel_horizon'or 'rooftop_panorama',windowLight=g.lit==true,castsShadow=false}
+   kind='wall',class=city and 'voxel_horizon'or 'rooftop_panorama',windowLight=g.lit==true,seasonalFoliage=g.foliage==true,castsShadow=false}
   if yieldStep then yieldStep()end
  end
  for _,p in ipairs(baked or{})do out[#out+1]=p end

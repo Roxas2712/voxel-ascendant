@@ -1,0 +1,118 @@
+{
+  "portraitScale": 2.19,
+  "portraitTranslation": [-0.94, 1.21, 0],
+  "profileScale": 0.68,
+  "profileTranslation": [0.03, 0.75, 0],
+  "rootBone": "girafarig",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('girafarig', 'cry')",
+    "recoil": "q.bedrock_stateful('girafarig', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -10, 35, -35)",
+        "q.look('neck2', 1, 0, 15, -15, 0, 0)",
+        "q.look('head', 1, 1, 35, -15, 15, -15)",
+        "q.bedrock('girafarig', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('girafarig', 'blink')",
+        "q.bedrock_quirk('girafarig', 'blink2')",
+        "q.bedrock_quirk('girafarig', 'quirk_ground_idle')"
+      ],
+      "transformTicks": 10
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -10, 35, -35)",
+        "q.look('neck2', 1, 0, 15, -15, 0, 0)",
+        "q.look('head', 1, 1, 35, -15, 15, -15)",
+        "q.bedrock('girafarig', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('girafarig', 'blink')",
+        "q.bedrock_quirk('girafarig', 'blink2')",
+        "q.bedrock_quirk('girafarig', 'quirk_battle_idle')"
+      ],
+      "transformTicks": 10
+    },
+    "in-air": {
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -10, 35, -35)",
+        "q.look('neck2', 1, 0, 15, -15, 0, 0)",
+        "q.look('head', 1, 1, 35, -15, 15, -15)",
+        "q.bedrock('girafarig', 'ride_jump')",
+        "q.bedrock('girafarig', 'ride_ground_run')"
+      ],
+      "transformTicks": 2,
+      "transformToTicks": 2
+    },
+    "sleep": {
+     "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('girafarig', 'sleep')"
+      ],
+      "quirks": ["q.bedrock_quirk('girafarig', 'blink2')"],
+      "transformTicks": 10
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -10, 35, -35)",
+        "q.look('neck2', 1, 0, 15, -15, 0, 0)",
+        "q.look('head', 1, 1, 35, -15, 15, -15)",
+        "q.bedrock('girafarig', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('girafarig', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('girafarig', 'blink')",
+        "q.bedrock_quirk('girafarig', 'blink2')"
+      ],
+      "transformTicks": 10
+    },
+    "running": {
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -10, 35, -35)",
+        "q.look('neck2', 1, 0, 15, -15, 0, 0)",
+        "q.look('head', 1, 1, 35, -15, 15, -15)",
+        "q.bedrock('girafarig', 'ground_run')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('girafarig', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('girafarig', 'blink')",
+        "q.bedrock_quirk('girafarig', 'blink2')"
+      ],
+      "transformTicks": 10
+    }
+  }
+}

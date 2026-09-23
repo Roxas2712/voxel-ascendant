@@ -1,0 +1,26 @@
+{
+  "portraitScale": 0.82,
+  "portraitTranslation": [-0.14,0.49, 0],
+  "profileScale": 0.50,
+  "profileTranslation": [0, 0.95, 0],
+  "rootBone": "glalie",
+  "animations": {
+    "cry": "q.bedrock_stateful('glalie', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "HOVER", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.bedrock('glalie', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('glalie', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLY"],
+      "animations": [
+        "q.bedrock('glalie', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('glalie', 'blink')"]
+    }
+  }
+}

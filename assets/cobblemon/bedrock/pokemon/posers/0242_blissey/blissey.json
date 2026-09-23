@@ -1,0 +1,69 @@
+{
+  "portraitScale": 1.5,
+  "portraitTranslation": [-0.6, 0.9, 0],
+  "profileScale": 0.7,
+  "profileTranslation": [0, 0.7, 0],
+  "rootBone": "blissey",
+  "animations": {
+      "faint": "q.bedrock_primary('blissey', 'faint', q.curve('one'))",
+      "cry": "q.bedrock_stateful('blissey', 'cry')",
+      "recoil": "q.bedrock_stateful('blissey', 'recoil')",
+      "physical": "q.bedrock_primary('blissey', 'physical', q.curve('symmetrical'))",
+      "special": "q.bedrock_primary('blissey', 'special', q.curve('symmetrical'))",
+      "status": "q.bedrock_primary('blissey', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.look('egg_torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('blissey', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('blissey', 'blink')",
+        "q.bedrock_quirk('blissey', 'eggadjust_quirk')"
+      ] 
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('blissey', 'battle_idle')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('blissey', 'battle_cry', q.curve('symmetrical'))"
+      },
+      "quirks": [
+        "q.bedrock_quirk('blissey', 'blink')",
+        "q.bedrock_quirk('blissey', 'eggadjust_quirk')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('blissey', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('blissey', 'blink')"]
+    },
+    "run": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('blissey', 'ground_run')"
+      ],
+      "quirks": ["q.bedrock_quirk('blissey', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('blissey', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

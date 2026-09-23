@@ -35,6 +35,9 @@ function M.register(P,F)
   local a,b=model(kind,w,d)
   local panes,g=model(kind..'_glass',w,d);panes.step=1
   a.glassKind=kind..'_glass';a.windowLight=M.windowLight
+  a.winterKind=V.require('VoxelWinterDetails').roof(P,kind,w,d,lab and 26 or 24,
+    lab and {'north','south','west','east'} or {'west','east'},
+    {{side='south',at=lab and 40 or 24,width=18}})
   local front=d-8;local roof=blue and C.navy or lab and 10 or 13
   local roofLight=blue and 8 or lab and 9 or 1
   local facade=lab and 2 or blue and (C.sage or 40)or(C.warmBrick or 14)

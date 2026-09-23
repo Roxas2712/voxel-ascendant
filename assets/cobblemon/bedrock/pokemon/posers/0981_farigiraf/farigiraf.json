@@ -1,0 +1,126 @@
+{
+  "portraitScale": 1.34,
+  "portraitTranslation": [-1.51, 4.56, 0],
+  "profileScale": 0.31,
+  "profileTranslation": [0.01, 1.38, 0],
+  "rootBone": "farigiraf",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('farigiraf', 'cry')",
+    "recoil": "q.bedrock_stateful('farigiraf', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "isBattle": false,
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('neck', 0.25, 0.5, 35, -10, 25, -25)",
+        "q.look('neck2', 0.25, 0, 10, -5, 0, 0)",
+        "q.look('neck3', 0.35, 0, 15, -5, 0, 0)",
+        "q.look('neck4', 0.5, 0, 20, -5, 0, 0)",
+        "q.look('neck5', 0.75, 0, 25, -10, 0, -0)",
+        "q.look('head', 1, 1, 25, -20, 25, -25)",
+        "q.bedrock('farigiraf', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('farigiraf', 'blink')"
+      ],
+      "transformTicks": 10
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('neck', 0.25, 0.5, 35, -10, 25, -25)",
+        "q.look('neck2', 0.25, 0, 10, -5, 0, 0)",
+        "q.look('neck3', 0.35, 0, 15, -5, 0, 0)",
+        "q.look('neck4', 0.5, 0, 20, -5, 0, 0)",
+        "q.look('neck5', 0.75, 0, 25, -10, 0, -0)",
+        "q.look('head', 1, 1, 25, -20, 25, -25)",
+        "q.bedrock('farigiraf', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('farigiraf', 'blink')"
+      ],
+      "transformTicks": 10
+    },
+    "in-air": {
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.look('neck', 0.25, 0.5, 35, -10, 25, -25)",
+        "q.look('neck2', 0.25, 0, 10, -5, 0, 0)",
+        "q.look('neck3', 0.35, 0, 15, -5, 0, 0)",
+        "q.look('neck4', 0.5, 0, 20, -5, 0, 0)",
+        "q.look('neck5', 0.75, 0, 25, -10, 0, -0)",
+        "q.look('head', 1, 1, 25, -20, 25, -25)",
+        "q.bedrock('farigiraf', 'ride_jump')",
+        "q.bedrock('farigiraf', 'ride_ground_run')"
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 5
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('farigiraf', 'sleep')"
+      ],
+      "transformTicks": 10
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('neck', 0.25, 0.5, 35, -10, 25, -25)",
+        "q.look('neck2', 0.25, 0, 10, -5, 0, 0)",
+        "q.look('neck3', 0.35, 0, 15, -5, 0, 0)",
+        "q.look('neck4', 0.5, 0, 20, -5, 0, 0)",
+        "q.look('neck5', 0.75, 0, 25, -10, 0, -0)",
+        "q.look('head', 1, 1, 25, -20, 25, -25)",
+        "q.bedrock('farigiraf', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('farigiraf', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('farigiraf', 'blink')"
+      ],
+      "transformTicks": 10
+    },
+    "running": {
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('neck', 0.25, 0.5, 35, -10, 25, -25)",
+        "q.look('neck2', 0.25, 0, 10, -5, 0, 0)",
+        "q.look('neck3', 0.35, 0, 15, -5, 0, 0)",
+        "q.look('neck4', 0.5, 0, 20, -5, 0, 0)",
+        "q.look('neck5', 0.75, 0, 25, -10, 0, -0)",
+        "q.look('head', 1, 1, 25, -20, 25, -25)",
+        "q.bedrock('farigiraf', 'ground_run')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('farigiraf', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('farigiraf', 'blink')"
+      ],
+      "transformTicks": 10
+    }
+  }
+}

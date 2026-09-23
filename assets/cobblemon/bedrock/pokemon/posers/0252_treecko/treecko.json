@@ -1,0 +1,44 @@
+{
+  "portraitScale": 1.95,
+  "portraitTranslation": [-0.08, 0.23, 0],
+  "profileScale": 0.72,
+  "profileTranslation": [0, 0.68, 0],
+  "rootBone": "treecko",
+  "animations": {
+    "cry": "q.bedrock_stateful('treecko', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": [
+        "STAND",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE",
+        "SLEEP"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('treecko', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('treecko', 'blink')"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('treecko', 'ground_idle')",
+        "q.biped_walk(0.6, 0.9, 'leg_left', 'leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('treecko', 'blink')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "portraitScale": 2.56,
+  "portraitTranslation": [-0.49, -1.66, 0],
+  "profileScale": 0.98,
+  "profileTranslation": [0.00, 0.24, 0],
+  "rootBone": "wurmple",
+  "poses": {
+	"battle-standing": {
+     "poseTypes": ["STAND"],
+     "isBattle": true,
+     "animations": [
+		"q.look('head_ai')",
+        "q.bedrock('wurmple', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('wurmple', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+	  "isBattle": false,
+      "animations": [
+		"q.look('head_ai')",
+        "q.bedrock('wurmple', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('wurmple', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('wurmple', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('wurmple', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('wurmple', 'sleep')"
+      ]
+	}
+  }
+ }

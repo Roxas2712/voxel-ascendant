@@ -2856,7 +2856,11 @@ local function runJob(job)
   -- conspicuous pop on Route 1. A neighbour may expose terrain first and warm
   -- decorations later, but promotion sets needsAtomicAux and pair()/ready()
   -- hide that cached terrain until this same budgeted job completes its aux.
-  local atomicAux = job.needsAtomicAux and not auxComplete(c)
+  -- refresh() retains the old drawable auxiliary meshes. Their presence does
+  -- not mean they are current: leaving stale.aux set makes request() enqueue
+  -- another terrain rebuild every time this job finishes.
+  local atomicAux = job.needsAtomicAux
+                    and (not auxComplete(c) or (c.stale and c.stale.aux))
   local aux = atomicAux and buildAux(job, map) or nil
   if (gen[job.id] or 0) ~= job.gen then
     releasePartialJob(job)
@@ -2872,7 +2876,7 @@ local function runJob(job)
     c.stale[job.slot] = nil
   end
 
-  if auxComplete(c) then
+  if auxComplete(c) and not (c.stale and c.stale.aux) then
     if c.stale and not (c.stale.full or c.stale.body or c.stale.aux) then
       c.stale = nil
     end

@@ -8,13 +8,21 @@ local rock={[1]=true,[2]=true,[17]=true,[19]=true,[30]=true,[36]=true,
 local function cave(dest)
  return dest and (dest:match('^DIGLETTS_CAVE_')or dest:match('^MT_MOON_[1B]')or dest=='ROCK_TUNNEL_1F'or dest=='CERULEAN_CAVE_1F'or dest=='SEAFOAM_ISLANDS_1F')
 end
-function M.find(P,map,occupied)
+function M.supports(map)
+ local d=map and map.def
+ return d and regions[map.id]~=nil and d.generation~=2 and d.tileset=='OVERWORLD'
+end
+function M.find(P,map,occupied,options)
  local d=map and map.def;local region=map and regions[map.id]
  if not region or not d or d.generation==2 or d.tileset~='OVERWORLD'
   or not map.isWalkableCell or not map.isWarpTileCell then return {} end
  local entrances={}
  for _,w in ipairs(d.warps or{})do if cave(w.destMap)then entrances[#entrances+1]=w end end
  if #entrances==0 then return {} end
+ -- The rooftop samples this same native footprint and height field at cell
+ -- resolution. Its private model table never replaces foreground geometry.
+ local step=options and options.coarse and 16 or 4
+ local checkpoint=options and options.yieldStep
  local width,height=d.width*2,d.height*2
  local function key(x,z)return z*width+x+1 end
  local mask,seen={},{}
@@ -80,7 +88,7 @@ function M.find(P,map,occupied)
    box(0,32,0,16,8,16,palette[1]);box(0,40,0,16,8,12,palette[2])
    box(0,48,0,16,4,8,palette[3])
   else
-   for zz=0,h*16-4,4 do for xx=0,w*16-4,4 do
+   for zz=0,h*16-step,step do for xx=0,w*16-step,step do
     local wx,wz=x*16+xx+2,z*16+zz+2
     local peak=0
     for _,entry in ipairs(entrances)do
@@ -101,10 +109,10 @@ function M.find(P,map,occupied)
     while y<lower do
      local layer=math.floor(y/16)
      local thickness=math.min(lower-y,12+4*((layer+math.floor(wx/32)+math.floor(wz/48))%2))
-     box(xx,y,zz,4,thickness,4,palette[layer%3==1 and 2 or 1]);y=y+thickness
+     box(xx,y,zz,step,thickness,step,palette[layer%3==1 and 2 or 1]);y=y+thickness
     end
-    box(xx,lower,zz,4,8,4,palette[2])
-    box(xx,lower+8,zz,4,4,4,palette[3])
+    box(xx,lower,zz,step,8,step,palette[2])
+    box(xx,lower+8,zz,step,4,step,palette[3])
     if top<52 and (math.floor(wx/4)*7+math.floor(wz/4)*13)%41==0 then
      box(xx,lower+12,zz,4,4,4,C.leafDark or 10)
     end
@@ -112,6 +120,7 @@ function M.find(P,map,occupied)
   end
   result[#result+1]={kind=kind,mapId=map.id,tx=x*2,ty=z*2,w=w*2,h=h*2,
    enabled=enabled,groundTile=44,voxelOnly=true,replacesPortal=door}
+  if checkpoint then checkpoint()end
  end
  for z=0,height-1 do for x=0,width-1 do local k=key(x,z)
   if seen[k]and not used[k]then

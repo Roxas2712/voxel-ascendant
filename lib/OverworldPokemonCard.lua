@@ -43,6 +43,7 @@ function M.new(mod)
   local defaults={}
   for _,spec in ipairs(self.options.schema(mod)) do defaults[spec.key]=spec.default end
   function self:get(key)
+    if key=="human_art_style" and mod.options:get("voxelCharacterCardEnabled")==false then return "hd" end
     local value=mod.options and mod.options:get("apo_"..key)
     if value==nil then return defaults["apo_"..key] end
     return value
@@ -81,7 +82,15 @@ function M.new(mod)
   local function proxy()
     local child={id="ascendant_pokemon_overworld",version=M.VERSION,
       path=mod.path.."/"..ROOT:sub(1,-2),exports={},log=mod.log,
-      _vascIntegrated=true}
+      _vascIntegrated=true, voxelWardrobe=V.require("VoxelWardrobe")}
+    child._vascCobblemonDex=function(mon)
+      local pack=mod.exports.cobblemonModels
+      return pack and pack.dex(mon) or nil
+    end
+    child._vascCobblemonAvailable=function(dex,mon)
+      local pack=mod.exports.cobblemonModels
+      return pack and pack.available(dex,mon) or false
+    end
     child._vascStadiumAvailable=function(dex)
       local probe=mod.exports.overworldPokemonModelAvailable
       if type(probe)~="function" then return false end
@@ -108,7 +117,13 @@ function M.new(mod)
       local id=second or first
       return find(mod,id)
     end
-    child.options={get=function(_,key) return self:get(key) end}
+    child.options={get=function(_,key) return self:get(key) end,
+      setHumanArtStyle=function(_,value,game)
+        assert(value=="hd" or value=="voxel", "invalid human art style")
+        local setting=V.require("ModSetting").new("apo_human_art_style","PEOPLE STYLE",{"hd","voxel"},{"ORIGINAL-HD","VOXEL"},"hd")
+        return self.options.decorateSetting(mod,setting):setValue(value,game)
+      end,
+    }
     child.save={
       get=function(_,key,default) return mod.save:get("apo_"..key,default) end,
       set=function(_,key,value) return mod.save:set("apo_"..key,value) end,

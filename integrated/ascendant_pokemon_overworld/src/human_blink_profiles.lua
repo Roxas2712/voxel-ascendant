@@ -291,4 +291,33 @@ eyes["little-boy"]={procedural=true,width=495,height=900,
 eyes["pokefan-female-gen2"]={procedural=true,seatedOnly=true,width=495,height=900,
  path='npcs/pokefan-female-gen2-kasc-hd-4x3-walk-sheet-v1.png',rows={
  [1]={{58,303,69,313}},[3]={{97,753,108,763}}}}
+
+-- Voxel-specific eye apertures; coordinates belong to the 1152x1536 atlas.
+eyes['voxel_red']={procedural=true,width=1152,height=1536,path='voxel-demo/red_cards_4x3.png',rows={
+[0]={{164,104,180,125},{204,104,221,125}},
+[1]={{165,489,180,511}},
+[3]={{204,1257,220,1279}},
+}}
+eyes['voxel_blue']={procedural=true,width=1152,height=1536,path='voxel-demo/blue_cards_4x3.png',rows={
+[0]={{165,113,183,131},{201,112,221,131}},
+[1]={{167,493,184,513}},
+[3]={{209,1263,224,1283}},
+}}
+eyes['voxel_green']={procedural=true,width=1152,height=1536,path='voxel-demo/green_cards_4x3.png',rows={
+[0]={{156,105,175,128},{196,105,216,128}},
+[1]={{142,483,155,507}},
+[3]={{233,1252,244,1275}},
+}}
+
+for _,role in ipairs({'red','blue','green'}) do
+ local p=eyes['voxel_'..role];p.voxelLids=true;p.eyeClips={};p.skinSamples={}
+ for row,boxes in pairs(p.rows) do
+  p.eyeClips[row]={};p.skinSamples[row]={}
+  for i,e in ipairs(boxes) do
+   local l,t,r,b=e[1],e[2],e[3],e[4]
+   p.eyeClips[row][i]={l+1,t,r-1,t,r,t+1,r,b-1,r-1,b,l+1,b,l,b-1,l,t+1}
+   p.skinSamples[row][i]={(l+r)/2,b+3}
+  end
+ end
+end
 return eyes

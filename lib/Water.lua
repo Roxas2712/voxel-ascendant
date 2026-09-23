@@ -456,7 +456,10 @@ uniform vec3 curve;          // xy = the focus in world XZ, z = k; 0 = off
 attribute float VertexShade;
 
 vec4 position(mat4 transform_projection, vec4 vertex_position) {
-  vShade = VertexShade;
+  // Match Voxel3D: sign marks object casters, +2 marks upward terrain.
+  // Those mesh flags are not brightness, including on indoor pool sheets.
+  float encodedShade = abs(VertexShade);
+  vShade = encodedShade - step(1.5, encodedShade) * 2.0;
   vec4 w = model * vertex_position;
   vSun = (sunVP * w).xyz;
   if (curve.z > 0.0) {

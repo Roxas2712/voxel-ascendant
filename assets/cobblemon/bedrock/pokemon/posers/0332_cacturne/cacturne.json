@@ -1,0 +1,67 @@
+{
+  "portraitScale": 2.5,
+  "portraitTranslation": [0, 0.5, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "cacturne",
+  "animations": {
+    "cry": "q.bedrock_stateful('cacturne', 'cry')"
+  },
+  "poses": {
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('cacturne', 'sleep')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": [
+        "STAND",
+        "FLOAT",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('cacturne', 'ground_idle')"
+      ],
+      "transformTicks": 10
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('cacturne', 'ground_walk')"
+      ],
+      "transformTicks": 10
+    },
+    "battle_idle": {
+      "poseName": "battle_idle",
+      "isBattle": true,
+      "poseTypes": [
+        "STAND",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.bedrock('cacturne', 'battle_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('cacturne', 'blink')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "portraitScale": 2.19,
+  "portraitTranslation": [ -0.25, -1.47, 0],
+  "profileScale": 0.89,
+  "profileTranslation": [ 0, 0.43, 0],
+  "rootBone": "jumpluff",
+  "animations": {
+    "cry": "q.bedrock_stateful('jumpluff', 'cry')"
+  },
+  "poses": {
+	"battle-standing": {
+     "poseTypes": [
+		"STAND"
+	  ],
+     "isBattle": true,
+     "animations": [
+        "q.bedrock('jumpluff', 'battle_idle')"
+      ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('jumpluff', 'blink')"
+	  ]
+    },
+    "standing": {
+      "poseTypes": [
+		"STAND",
+		"PORTRAIT",
+        "PROFILE"
+	  ],
+	  "isBattle": false,
+      "animations": [
+        "q.bedrock('jumpluff', 'ground_idle')"
+      ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('jumpluff', 'blink')"
+	  ]
+    },
+	"walking": {
+      "poseTypes": [
+		"WALK",
+		"SWIM"
+	  ],
+      "animations": [
+	  "q.bedrock('jumpluff', 'ground_walk')"
+	  ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('jumpluff', 'blink')"
+	  ]
+    },
+	"air-sleep": {
+      "poseTypes": [
+	    "SLEEP"
+	  ],
+      "condition": "q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('jumpluff', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('jumpluff', 'air_sleep')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+	  "condition": "!q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+       },
+      "animations": [
+        "q.bedrock('jumpluff', 'sleep')"
+      ]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "FLOAT",
+        "HOVER",
+        "NONE"
+      ],
+      "animations": [
+        "q.bedrock('jumpluff', 'air_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('jumpluff', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY"
+      ],
+      "animations": [
+        "q.bedrock('jumpluff', 'air_fly')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('jumpluff', 'blink')"
+      ]
+    }
+  }
+}

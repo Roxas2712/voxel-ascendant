@@ -1,0 +1,162 @@
+{
+	"format_version": "1.12.0",
+	"minecraft:geometry": [
+		{
+			"description": {
+				"identifier": "geometry.masquerain",
+				"texture_width": 64,
+				"texture_height": 64,
+				"visible_bounds_width": 5,
+				"visible_bounds_height": 3.5,
+				"visible_bounds_offset": [0, 1.25, 0]
+			},
+			"bones": [
+				{
+					"name": "masquerain",
+					"pivot": [0, 0, 0]
+				},
+				{
+					"name": "body",
+					"parent": "masquerain",
+					"pivot": [0, 6, -2]
+				},
+				{
+					"name": "head",
+					"parent": "body",
+					"pivot": [0, 6, -2],
+					"cubes": [
+						{"origin": [-4, 6, -8], "size": [8, 6, 8], "uv": [0, 20]},
+						{"origin": [-3, 8.5, -8.03], "size": [1, 1, 0], "uv": [6, 22]},
+						{"origin": [2, 8.5, -8.03], "size": [1, 1, 0], "uv": [2, 22]},
+						{"origin": [-2, 15, -6], "size": [4, 3, 4], "uv": [40, 41]},
+						{"origin": [-3, 12, -7], "size": [6, 3, 6], "uv": [26, 28]},
+						{"origin": [-1, 18, -5], "size": [2, 7, 2], "uv": [0, 45]}
+					]
+				},
+				{
+					"name": "eye_right",
+					"parent": "head",
+					"pivot": [-2.5, 8, -8],
+					"cubes": [
+						{"origin": [-3.5, 8, -8.02], "size": [2, 2, 0], "uv": [4, 20]}
+					]
+				},
+				{
+					"name": "locator_eye_right",
+					"parent": "eye_right",
+					"pivot": [-2.5, 9, -8],
+					"locators": {
+						"eye1": [-2.5, 9, -8]
+					}
+				},
+				{
+					"name": "eyelash_right",
+					"parent": "eye_right",
+					"pivot": [-3.5, 10, -8],
+					"cubes": [
+						{"origin": [-4, 9.5, -8.01], "size": [1, 1, 0], "uv": [4, 22]}
+					]
+				},
+				{
+					"name": "eyelid_right",
+					"parent": "eye_right",
+					"pivot": [-2.5, 8, -7.9],
+					"cubes": [
+						{"origin": [-3.5, 8, -7.93], "size": [2, 2, 1], "inflate": 0.01, "uv": [0, 37]},
+						{"origin": [-4, 7.5, -7.91], "size": [1, 1, 0], "uv": [4, 22]}
+					]
+				},
+				{
+					"name": "eye_left",
+					"parent": "head",
+					"pivot": [2.5, 8, -8],
+					"cubes": [
+						{"origin": [1.5, 8, -8.02], "size": [2, 2, 0], "uv": [0, 20]}
+					]
+				},
+				{
+					"name": "locator_eye_left",
+					"parent": "eye_left",
+					"pivot": [2.5, 9, -8],
+					"locators": {
+						"eye2": [2.5, 9, -8]
+					}
+				},
+				{
+					"name": "eyelid_left",
+					"parent": "eye_left",
+					"pivot": [2.5, 8, -7.9],
+					"cubes": [
+						{"origin": [1.5, 8, -7.93], "size": [2, 2, 1], "inflate": 0.01, "uv": [0, 24]},
+						{"origin": [3, 7.5, -7.91], "size": [1, 1, 0], "uv": [0, 22]}
+					]
+				},
+				{
+					"name": "eyelash_left",
+					"parent": "eye_left",
+					"pivot": [3.5, 10, -8],
+					"cubes": [
+						{"origin": [3, 9.5, -8.01], "size": [1, 1, 0], "uv": [0, 22]}
+					]
+				},
+				{
+					"name": "antenna_left",
+					"parent": "head",
+					"pivot": [3, 12, -6],
+					"cubes": [
+						{"origin": [3, 2, -6], "size": [24, 10, 0], "uv": [0, 10]}
+					]
+				},
+				{
+					"name": "antenna_right",
+					"parent": "head",
+					"pivot": [-3, 12, -6],
+					"cubes": [
+						{"origin": [-27, 2, -6], "size": [24, 10, 0], "uv": [0, 0]}
+					]
+				},
+				{
+					"name": "abdomen",
+					"parent": "body",
+					"pivot": [0, 6, -2],
+					"cubes": [
+						{"origin": [-2.5, 4, -2], "size": [5, 5, 6], "uv": [0, 34]},
+						{"origin": [-1, 9.01, 0.5], "size": [2, 0, 2], "uv": [-2, 34]}
+					]
+				},
+				{
+					"name": "wing_left_back2",
+					"parent": "abdomen",
+					"pivot": [-2.5, 6, 2.5],
+					"cubes": [
+						{"origin": [-13.5, 4, 2.5], "size": [11, 4, 0], "uv": [24, 20]}
+					]
+				},
+				{
+					"name": "wing_left_back",
+					"parent": "abdomen",
+					"pivot": [2.5, 6, 2.5],
+					"cubes": [
+						{"origin": [2.5, 4, 2.5], "size": [11, 4, 0], "uv": [22, 37]}
+					]
+				},
+				{
+					"name": "wing_left_front2",
+					"parent": "abdomen",
+					"pivot": [-2.5, 7, 1.5],
+					"cubes": [
+						{"origin": [-13.5, 5, 1.5], "size": [11, 4, 0], "uv": [24, 24]}
+					]
+				},
+				{
+					"name": "wing_left_front",
+					"parent": "abdomen",
+					"pivot": [2.5, 7, 1.5],
+					"cubes": [
+						{"origin": [2.5, 5, 1.5], "size": [11, 4, 0], "uv": [22, 41]}
+					]
+				}
+			]
+		}
+	]
+}

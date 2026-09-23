@@ -1,0 +1,49 @@
+{
+  "portraitScale": 1.8,
+  "portraitTranslation": [-0.2, 0.2, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0, 0.4, 0],
+  "rootBone": "shedinja",
+  "animations": {
+    "faint": "q.bedrock_primary('shedinja', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('shedinja', 'cry')",
+    "recoil": "q.bedrock_stateful('shedinja', 'recoil')",
+    "physical": "q.bedrock_primary('shedinja', 'physical', q.curve('symmetrical'))",
+    "special": "q.bedrock_primary('shedinja', 'special', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('shedinja', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER", "FLOAT"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('shedinja', 'battle_cry', q.curve('symmetrical'))"
+      },
+      "animations": ["q.bedrock('shedinja', 'battle_idle')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('shedinja', 'ground_idle')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.bedrock('shedinja', 'ground_walk')"]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "animations": ["q.bedrock('shedinja', 'air_idle')"]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "animations": ["q.bedrock('shedinja', 'air_fly')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('shedinja', 'sleep')"]
+    }
+  }
+}

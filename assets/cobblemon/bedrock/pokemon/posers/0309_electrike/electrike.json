@@ -1,0 +1,43 @@
+{
+  "portraitScale": 2.01,
+  "portraitTranslation": [ -0.64, -0.91, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [ 0.03, 0.35, 0],
+  "rootBone": "electrike",
+  "animations": {
+    "cry": "q.bedrock_stateful('electrike', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('electrike', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('electrike', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('electrike', 'ground_idle')",
+        "q.quadruped_walk(1, 1, 'leg_front_left', 'leg_front_right', 'leg_back_left', 'leg_back_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('electrike', 'blink')"
+      ]
+    }
+  }
+}

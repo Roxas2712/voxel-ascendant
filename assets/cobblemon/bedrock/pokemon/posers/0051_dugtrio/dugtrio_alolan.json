@@ -1,0 +1,75 @@
+{
+  "portraitScale": 1.3,
+  "portraitTranslation": [-0.11, -0.1, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0.0, 0.29, 0],
+  "rootBone": "dugtrio_alolan",
+  "animations": {
+    "cry": "q.bedrock_stateful('dugtrio_alolan', 'cry')",
+    "recoil": "q.bedrock_stateful('dugtrio_alolan', 'recoil')",
+    "physical": "q.bedrock_primary('dugtrio_alolan', 'physical', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('body1', 1, 1, 0, 0, 45, -45)",
+        "q.look('body1_2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body2', 1, 1, 10, -10, 45, -45)",
+        "q.look('body3', 1, 1, 5, -5, 45, -45)",
+        "q.look('body3_2', 1, 1, 10, -10, 0, 0)",
+        "q.bedrock('dugtrio_alolan', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dugtrio_alolan', 'blink')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink2')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink3')",
+        "q.bedrock_quirk('dugtrio_alolan', q.array('quirk_idle', 'quirk_idle2', 'quirk_idle3'), 20, 40, 1)"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('body1', 1, 1, 0, 0, 45, -45)",
+        "q.look('body1_2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body2', 1, 1, 10, -10, 45, -45)",
+        "q.look('body3', 1, 1, 5, -5, 45, -45)",
+        "q.look('body3_2', 1, 1, 10, -10, 0, 0)",
+        "q.bedrock('dugtrio_alolan', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dugtrio_alolan', 'blink')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink2')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink3')",
+        "q.bedrock_quirk('dugtrio_alolan', q.array('quirk_idle', 'quirk_idle2', 'quirk_idle3'), 20, 40, 1)"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('body1_2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body3_2', 1, 1, 10, -10, 0, 0)",
+        "q.bedrock('dugtrio_alolan', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dugtrio_alolan', 'blink')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink2')",
+        "q.bedrock_quirk('dugtrio_alolan', 'blink3')",
+        "q.bedrock_quirk('dugtrio_alolan', q.array('quirk_idle', 'quirk_idle2', 'quirk_idle3'), 20, 40, 1)"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('dugtrio_alolan', 'sleep')"],
+      "quirks": [
+        "q.bedrock_quirk('dugtrio_alolan', q.array('quirk_idle', 'quirk_idle2', 'quirk_idle3'), 20, 40, 1)"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

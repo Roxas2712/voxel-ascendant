@@ -1,0 +1,92 @@
+{
+  "portraitScale": 2,
+  "portraitTranslation": [-0.09, 0.2, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0.03, 0.66, 0],
+  "rootBone": "weavile",
+  "animations": {
+    "cry": "q.bedrock_stateful('weavile', 'cry')",
+    "recoil": "q.bedrock_stateful('weavile', 'recoil')"
+  },
+  "poses": {
+    "portrait": {
+      "poseName": "portrait",
+      "poseTypes": ["PORTRAIT"],
+      "animations": [
+        "q.bedrock('weavile', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weavile', 'blink')"
+      ]
+    },
+    "battle-idle": {
+      "poseName": "battle-idle",
+      "isBattle": true,
+      "poseTypes": ["STAND"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weavile', 'battle_idle')"
+
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weavile', 'blink')",
+        "q.bedrock_quirk('weavile', q.array('quirk_battle', 'quirk_battle2'), 20, 40, 1)"
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": ["STAND", "PROFILE", "NONE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weavile', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weavile', 'blink')",
+        "q.bedrock_quirk('weavile', 'quirk_ground', 20, 40, 1)"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": ["WALK"],
+      "condition": "!q.is_sprinting",
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weavile', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weavile', 'blink')"
+      ]
+    },
+    "run": {
+      "poseName": "run",
+      "poseTypes": ["WALK"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weavile', 'ground_run')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weavile', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "animations": ["q.bedrock('weavile', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "battle-sleep": {
+      "poseName": "battle-sleep",
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "animations": ["q.bedrock('weavile', 'battle_sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

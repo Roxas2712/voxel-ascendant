@@ -1,0 +1,52 @@
+{
+  "portraitScale": 1.59,
+  "portraitTranslation": [0.02, -0.32, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0.01, 0.39, 0],
+  "rootBone": "corsola",
+  "animations": {
+      "faint": "q.bedrock_primary('corsola_galarian', 'faint', q.curve('one'))",
+      "cry": "q.bedrock_stateful('corsola_galarian', 'cry')"},
+  "poses": {
+      "battle-standing": {
+      "isBattle": true,
+      "poseTypes": ["STAND","PORTRAIT","PROFILE"],
+      "animations": [
+        "q.look('head_ai', 0.5)",
+        "q.bedrock('corsola_galarian', 'battle_idle')",
+        "q.bedrock('corsola_galarian', 'ectoplasma_overlay')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola_galarian', 'blink')"],
+        "namedAnimations": {
+            "cry": "q.bedrock_primary('corsola_galarian', 'battle_cry')"
+          }
+    },
+    "standing": {
+      "isBattle": false,
+      "poseTypes": ["STAND", "FLOAT", "NONE"],
+      "animations": [
+        "q.bedrock('corsola_galarian', 'ground_idle')"
+      ],
+        "quirks": [
+          "q.bedrock_quirk('corsola_galarian', 'quirk', 30, 60, 1)"
+        ],
+        "transitions": {
+          "battle-standing": "q.bedrock_primary('corsola_galarian', 'battle_intro', q.curve('one'))"
+        }
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai', 0.5)",
+        "q.bedrock('corsola_galarian', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('corsola_galarian', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('corsola_galarian', 'sleep')"
+      ]
+    }
+  }
+}

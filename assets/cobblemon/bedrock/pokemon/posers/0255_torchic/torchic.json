@@ -1,0 +1,71 @@
+{
+  "portraitScale": 1.86,
+  "portraitTranslation": [-0.18, -0.29, 0],
+  "profileScale": 0.76,
+  "profileTranslation": [0, 0.64, 0],
+  "rootBone": "torchic",
+  "animations": {
+    "recoil": "q.bedrock_stateful('torchic', 'recoil')",
+    "cry": "q.bedrock_stateful('torchic', 'cry')",
+    "physical": "q.bedrock_primary('torchic', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('torchic', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('torchic', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('torchic', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('torchic', 'blink')",
+        "q.bedrock_quirk('torchic', 'quirk_ground_idle1')",
+        "q.bedrock_quirk('torchic', 'quirk_ground_idle2')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('torchic', 'battle_idle')"
+      ],
+      "namedAnimations": {"cry": "q.bedrock_primary('torchic', 'battle_cry', q.curve('symmetrical_wide'))"},
+      "quirks": [
+        "q.bedrock_quirk('torchic', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('torchic', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('torchic', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('torchic', 'sleep')"],
+      "namedAnimations": {"cry": "q.bedrock_stateful('dummy', 'cry')"}
+    }
+  }
+}

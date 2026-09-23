@@ -1,0 +1,83 @@
+{
+  "portraitScale": 1.94,
+  "portraitTranslation": [-0.32, -0.41, 0],
+  "profileScale": 0.77,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "eevee",
+  "animations": {
+    "cry": "q.bedrock_stateful('eevee', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('eevee', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('eevee', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('eevee', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'front_leg_left', 'front_leg_right', 'back_leg_left', 'back_leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('eevee', 'blink')"
+      ]
+    },
+    "shoulder_left": {
+      "poseName": "shoulder_left",
+      "poseTypes": [
+        "SHOULDER_LEFT"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('eevee', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('eevee', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [5, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseName": "shoulder_right",
+      "poseTypes": [
+        "SHOULDER_RIGHT"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('eevee', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('eevee', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-5, 0, 0]
+        }
+      ]
+    }
+  }
+}
+   
+   
+   

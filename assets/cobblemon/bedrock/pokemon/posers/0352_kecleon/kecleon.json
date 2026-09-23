@@ -1,0 +1,30 @@
+{
+  "portraitScale": 1.58,
+  "portraitTranslation": [-0.04, 0.51, 0],
+  "profileScale": 0.77,
+  "profileTranslation": [0, 0.66, 0],
+  "rootBone": "kecleon",
+  "animations": {
+    "cry": "q.bedrock_stateful('kecleon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head')", "q.bedrock('kecleon', 'ground_idle')"],
+      "quirks": []
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('kecleon', 'ground_walk')"],
+      "quirks": []
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('kecleon', 'sleep')"]
+    }
+  }
+}

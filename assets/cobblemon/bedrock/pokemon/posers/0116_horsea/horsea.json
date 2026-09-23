@@ -1,0 +1,32 @@
+{
+  "portraitScale": 1.78,
+  "portraitTranslation": [0.04, 0.2, 0],
+  "profileScale": 0.71,
+  "profileTranslation": [0, 0.59, 0],
+  "rootBone": "horsea",
+  "animations": {
+    "cry": "q.bedrock_stateful('horsea', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "animations": ["q.look('head')", "q.bedrock('horsea', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('horsea', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head')", "q.bedrock('horsea', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('horsea', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head')", "q.bedrock('horsea', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('horsea', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('horsea', 'water_swim')"],
+      "quirks": ["q.bedrock_quirk('horsea', 'blink')"]
+    }
+  }
+}

@@ -462,6 +462,14 @@ end
 -- `shapes` is the table forMap returned for this map; `tile` is
 -- map:tileAt(tx, ty), passed in because every caller already has it.
 function TileShape.at(map, shapes, tile, tx, ty)
+  -- Koga's hidden barriers share the floor artwork but are not walkable.
+  -- The collision-derived fallback therefore raised them into solid walls.
+  -- Keep this exact Gen1 puzzle flat without changing collision or other gyms.
+  local d = map and map.def
+  if tile == 31 and map.id == "FUCHSIA_GYM" and d and d.generation ~= 2
+      and d.tileset == "GYM" and d.width == 5 and d.height == 9 then
+    return shapes.authoredClasses.ground
+  end
   local blockClass = mapBlockClass(map, tile, tx, ty)
   if blockClass and shapes.authoredClasses
      and shapes.authoredClasses[blockClass] then

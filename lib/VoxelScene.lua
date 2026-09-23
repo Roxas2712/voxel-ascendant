@@ -117,12 +117,59 @@ end
 -- including under fast-forward's multiple logic steps per rendered frame.
 local readyMap = nil
 
+-- Scripted field scenes (most visibly the Oak -> Lab walk) can finish on a
+-- different native facing one frame after pose() has returned its last
+-- interpolated sample.  Keep the renderer's presentation row tied to the
+-- player's authoritative facing during that short hand-off.  The cache is
+-- render-only and weakly keyed; it never writes back to the game actor.
+local scriptedPlayerFacing = setmetatable({}, { __mode = "k" })
+
+local function playerFacingForScene(player, posedFacing)
+  if not player then return posedFacing end
+  local direct = player.facing
+  local scripted = player.scriptedMoving == true
+    or player.inputLocked == true
+    or player._ascendantScriptedMove == true
+  local remembered = scriptedPlayerFacing[player]
+  if type(direct) == "string" then
+    -- Keep the last explicit native direction through the final settling
+    -- frame.  During scripted movement it is authoritative even when the
+    -- pose interpolation still reports the previous card row.
+    scriptedPlayerFacing[player] = direct
+    if scripted then return direct end
+    remembered = direct
+  end
+  return posedFacing or remembered
+end
+
+-- Compile at most one selected first-use program in the update lane. These
+-- resources used to stack with actor/prop allocation in the first 3D draw.
+-- Compilation failures remain terminal in each owner's normal fallback.
+function VoxelScene.preparePrograms(state)
+  if MOBILE_RUNTIME or not (state and state.map) then return false end
+  local shadowCold=ShadowMap.programPrepared and not ShadowMap.programPrepared()
+  local skyCold=Sky.programPrepared and not Sky.programPrepared()
+  if not shadowCold and not skyCold then return false end
+  local outdoor=HorizonWall.hasSky(state.map)
+  if shadowCold and Shadows.enabled() then
+    local weather=Weather.skyMode and Weather.skyMode(state.map) or Weather.mode(state.map)
+    local policy=resolveShadowPolicy({map=state.map,mapId=state.map.id,outdoor=outdoor,
+      weather=weather,daytime=DayNight.tod and DayNight.tod() or "DAY",
+      clock=Sky.clock or 0,clouds=not (Sky.cloudSetting and Sky.cloudSetting:get()=="off")})
+    if policy.enabled and policy.casters~="none" then ShadowMap.prepareProgram();return true end
+  end
+  if skyCold and outdoor then Sky.prepareProgram();return true end
+  return false
+end
+
 function VoxelScene.readyForReveal(state)
   return state ~= nil and state.map ~= nil
          and Voxel.ready == true and readyMap == state.map
          and (MOBILE_RUNTIME or type(Voxel3D.worldCardsReady) ~= "function"
               or Voxel3D.worldCardsReady(state))
 end
+
+VoxelScene._playerFacingForScene = playerFacingForScene
 
 -- What the active display mode actually paints with.
 --
@@ -415,6 +462,10 @@ local function rampFooting(map,entity)
 end
 
 local function groundForEntity(map, entity, hopping, neighbors)
+  local snow = V.require("SnowRamps").height(map,
+    (tonumber(entity.px) or entity.cellX*16)+8,
+    (tonumber(entity.py) or entity.cellY*16)+8)
+  if snow ~= nil and not hopping then return snow end
   if entity.moving and not hopping then
     local furniture = V.require("VoxelFurniture")
     local support = furniture.actorSupportAt and furniture.actorSupportAt(map,
@@ -1942,6 +1993,9 @@ local function posesOf(state, spriteColors, drawableMaps, externalPlayerWalker)
   for _, e in ipairs(state.entities or {}) do
     if not hiddenDuringFlight(state, e) then
       local sprite, vx, vy, facing, phase, flip, hopping = e:pose()
+      if e == state.player then
+        facing = playerFacingForScene(e, facing)
+      end
       if e == state.player and externalPlayerWalker then
         -- Keep the native/KASC 2-D renderer on the entity. Only this captured
         -- 3-D pose receives the approved preflighted walker for its identity.
@@ -2248,6 +2302,7 @@ function VoxelScene.drawWater(draws, cast, options)
   draws=V.require('PropVisibility').visibleWater(draws,Voxel3D.vp,
     Voxel3D.curveK,Voxel3D.curveX,Voxel3D.curveZ)
   if #draws==0 then return end
+  Voxel3D.waterReceiver(true)
   -- Reflections need another scene copy, optional readable depth and a second
   -- fragment program. The mobile world-core pass keeps water as ordinary
   -- textured geometry; it is still water from the ROM atlas, merely without
@@ -2256,6 +2311,7 @@ function VoxelScene.drawWater(draws, cast, options)
     for _, d in ipairs(draws) do
       Voxel3D.draw(d[1], d[2], d[3])
     end
+    Voxel3D.waterReceiver(false)
     return
   end
   -- prepass only under the bend; see the header
@@ -2283,7 +2339,7 @@ function VoxelScene.drawWater(draws, cast, options)
                                                     Voxel3D.curveZ or 0,
                                                     Voxel3D.curveK or 0 },
       screen = { w, h }, cell = Voxel3D.cell, fov = Voxel3D.fovY,
-      skyEdge = Voxel3D.skyEdge, grid = VoxelGrid.enabled(),
+      skyEdge = not (options and options.indoorPool) and Voxel3D.skyEdge or nil, grid = VoxelGrid.enabled(),
       skyRay = Voxel3D.skyRayLive,
       lookFlat = Voxel3D.lookFlat, descent = Voxel3D.descent,
       maritime = options and options.maritime == true,
@@ -2309,6 +2365,7 @@ function VoxelScene.drawWater(draws, cast, options)
       Voxel3D.draw(d[1], d[2], d[3])
     end
   end
+  Voxel3D.waterReceiver(false)
 end
 
 -- A stamp of everything the sun pass depends on. Nothing in it moving
@@ -2676,6 +2733,8 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     state.map, skyWeatherMode, nativeGround)
   local groundAmount = WeatherTweak.groundAmount(
     state.map, skyWeatherMode, nativeGround)
+  V.require("SnowRamps").observe(state, groundWeather == "snow" and nativeGround ~= false
+    and type(WeatherTweak.enabled)=="function" and WeatherTweak.enabled() and groundAmount or 0)
   local shadowPolicy = resolveShadowPolicy({
     map = state.map,
     mapId = state.map and (state.map.id
@@ -2919,6 +2978,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
                  Mat4.translate(nb.ox, 0, nb.oy))
   end
   Voxel3D.caveWalls(0)
+  V.require("SnowRamps").draw(state)
   if type(Voxel3D.weatherGround) == "function" then
     Voxel3D.weatherGround(false)
   end
@@ -2937,7 +2997,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
       -- blocked cells otherwise punch sky-shaped holes above arena props.
       -- Whole-roof cutaway was already decided by cutawayRimVisible above.
       Voxel3D.towerBackdrop(V.require("TowerAtmosphere").active(state.map))
-      local unmaskedCeiling = completeArenaCeiling and rim.kind == "ground"
+      local unmaskedCeiling = (completeArenaCeiling or rim.class=="interior_ceiling") and rim.kind == "ground" or rim.kind=="arena_floor"
       if unmaskedCeiling then Voxel3D.roomVisibility(nil) end
       -- The cold Route 8 seam proxy samples the current Route 8 atlas instead
       -- of retaining a duplicate $39 texture.  All ordinary horizon parts
@@ -2962,6 +3022,9 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
       elseif rim.class=='room_breach_exterior' or rim.class=='room_breach_roof' then
         V.require('Gen1BreachExterior').draw(Voxel3D,rim,
           Mat4.translate(rim.ox,0,rim.oy),DayNight,love.graphics)
+      elseif V.require('GymSkylights').isFamily(rim.class) then
+        V.require('GymSkylights').draw(Voxel3D,rim,state.map,DayNight,skyWeatherMode,
+          Mat4.translate(rim.ox,0,rim.oy))
       elseif HorizonWall.architecturalRoom(state.map) then
         ArenaScenery.draw(Voxel3D, rim, rimTexture,
           Mat4.translate(rim.ox, 0, rim.oy), {
@@ -3049,7 +3112,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   if #waterDraws > 0 then
     VoxelScene.drawWater(waterDraws, function()
       drawCast(drawState, posed, atlasFor)
-    end, { maritime = maritimeWater })
+    end, { maritime = maritimeWater, indoorPool=state.map.id=="CERULEAN_GYM" and HorizonWall.arenaViewFor(state.map)~=nil })
   end
 
 

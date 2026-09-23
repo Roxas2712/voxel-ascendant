@@ -1,0 +1,27 @@
+{
+  "portraitScale": 1.71,
+  "portraitTranslation": [-0.42, 1.88, 0],
+  "profileScale": 0.42,
+  "profileTranslation": [0, 1.08, 0],
+  "rootBone": "magmortar",
+  "animations": {
+    "cry": "q.bedrock_stateful('magmortar', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head')", "q.bedrock('magmortar', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('magmortar', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bimanual_swing(0.66, 0.6, 'arm_left', 'arm_right')",
+        "q.bedrock('magmortar', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('magmortar', 'blink')"]
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "portraitScale": 1.79,
+  "portraitTranslation": [-0.32, -0.99, 0],
+  "profileScale": 0.77,
+  "profileTranslation": [-0.03, 0.55, 0],
+  "rootBone": "ledyba",
+  "animations": {
+    "cry": "q.bedrock_stateful('ledyba', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseName": "battle-standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head', 0.8, 0.8)",
+        "q.bedrock('ledyba', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('ledyba', 'blink')"]
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 0.8, 0.8)",
+        "q.bedrock('ledyba', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('ledyba', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head', 0.8, 0.8)",
+        "q.bedrock('ledyba', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('ledyba', 'blink')"]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.look('head', 0.8, 0.8)",
+        "q.bedrock('ledyba', 'air_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('ledyba', 'blink')"]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": ["FLY"],
+      "animations": [
+        "q.look('head', 0.8, 0.8)",
+        "q.bedrock('ledyba', 'air_fly')"
+      ],
+      "quirks": ["q.bedrock_quirk('ledyba', 'blink')"]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('ledyba', 'sleep')"]
+    }
+  }
+}

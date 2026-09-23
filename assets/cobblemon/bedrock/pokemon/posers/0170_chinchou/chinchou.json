@@ -1,0 +1,88 @@
+{
+	"portraitScale": 1.75,
+	"portraitTranslation": [-0.3, -0.8, 0],
+	"profileScale": 0.65,
+	"profileTranslation": [-0.05, 0.45, 0],
+	"rootBone": "chinchou",
+	"animations": {
+	  "cry": "q.bedrock_stateful('chinchou', 'cry')"
+	},
+	"poses": {
+	  "portrait": {
+		 "poseTypes": ["PORTRAIT", "PROFILE"],
+		 "animations": ["q.bedrock('chinchou', 'water_idle')"]
+	  },
+	  "battle-standing": {
+		 "poseTypes": ["STAND"],
+		 "isBattle": true,
+		 "animations": ["q.bedrock('chinchou', 'battle_idle')"],
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')"
+		]
+	  },
+	  "water-battle-standing": {
+		 "poseTypes": ["FLOAT"],
+		 "isBattle": true,
+		 "animations": ["q.bedrock('chinchou', 'water_battle_idle')"],
+		 "namedAnimations": {
+			"faint": "q.bedrock('chinchou', 'water_faint', q.curve('one'))"
+		 },
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')"
+		]
+	  },
+	  "standing": {
+		 "poseTypes": ["STAND", "NONE"],
+		 "isTouchingWater": false,
+		 "animations": ["q.bedrock('chinchou', 'ground_idle')"],
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')",
+			"q.bedrock_quirk('chinchou', 'ground_quirk')"
+		]
+	  },
+	  "walking": {
+		 "poseTypes": ["WALK"],
+		 "isTouchingWater": false,
+		 "animations": ["q.bedrock('chinchou', 'water_swim')"],
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')"
+		]
+	  },
+	  "floating": {
+		 "poseTypes": ["FLOAT"],
+		 "isTouchingWater": true,
+		 "isUnderWater": true,
+		 "animations": ["q.bedrock('chinchou', 'water_idle')"],
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')",
+			"q.bedrock_quirk('chinchou', 'water_idle_quirk')"
+		]
+	  },
+	  "swimming": {
+		 "poseTypes": ["SWIM"],
+		 "isTouchingWater": true,
+		 "isUnderWater": true,
+		 "animations": ["q.bedrock('chinchou', 'water_swim')"],
+		 "quirks": [
+			"q.bedrock_quirk('chinchou', 'blink')"
+		]
+	  },
+	  "water-sleeping": {
+		 "poseTypes": ["SLEEP"],
+		 "isTouchingWater": true,
+		 "namedAnimations": {
+			"cry": "q.bedrock_stateful('dummy', 'cry')"
+		 },
+		 "animations": ["q.bedrock('chinchou', 'water_sleep')"]
+	  },
+	  "sleeping": {
+		 "poseTypes": ["SLEEP"],
+		 "isTouchingWater": false,
+		 "namedAnimations": {
+			"cry": "q.bedrock_stateful('dummy', 'cry')"
+		 },
+		 "animations": ["q.bedrock('chinchou', 'sleep')"]
+	  }
+	}
+ }
+ 

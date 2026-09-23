@@ -16,6 +16,7 @@ local WorldPlacement = {}
 local registryRef
 local positions = {}
 local invalid = {}
+local revision = 0
 
 local DIRECTIONS = { "north", "south", "west", "east" }
 
@@ -29,6 +30,7 @@ local function registry(maps)
   if maps ~= registryRef then
     registryRef = maps
     positions, invalid = {}, {}
+    revision = revision + 1
   end
   return maps
 end
@@ -141,6 +143,14 @@ end
 function WorldPlacement.invalidate()
   registryRef = nil
   positions, invalid = {}, {}
+  revision = revision + 1
+end
+
+-- Address memoization must expire even when an editor keeps the same registry
+-- table and explicitly invalidates its connection graph.
+function WorldPlacement.revision(maps)
+  registry(maps)
+  return revision
 end
 
 return WorldPlacement

@@ -1,0 +1,42 @@
+{
+  "portraitScale": 1.89,
+  "portraitTranslation": [-0.13, 0.91, 0],
+  "profileScale": 0.71,
+  "profileTranslation": [0, 0.69, 0],
+  "rootBone": "charmeleon",
+  "animations": {
+    "cry": "q.bedrock_stateful('charmeleon', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('charmeleon', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('charmeleon', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('charmeleon', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('charmeleon', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('charmeleon', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('charmeleon', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('charmander', 'sleep')"]
+    }
+  }
+}

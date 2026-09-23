@@ -1,0 +1,52 @@
+{
+  "portraitScale": 1.43,
+  "portraitTranslation": [-0.2,0.09,0],
+  "profileScale": 0.62,
+  "profileTranslation": [0,0.8,0],
+  "rootBone": "clefairy",
+  "animations": {
+    "faint": "q.bedrock_primary('clefairy', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('clefairy', 'cry')",
+    "special": "q.bedrock_primary('clefairy', 'special', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": [
+        "STAND",
+        "FLOAT",
+        "HOVER",
+        "NONE",
+        "PROFILE",
+        "PORTRAIT"
+      ],
+      "animations": [
+        "q.look('torso', 1, 1, 15, -5, 7, -7)",
+        "q.bedrock('clefairy', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('clefairy', 'blink')"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK",
+        "SWIM",
+        "FLY"
+      ],
+      "animations": [
+        "q.look('torso', 1, 1, 15, -5, 7, -7)",
+        "q.bedrock('clefairy', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('clefairy', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('clefairy', 'sleep')"]
+    }
+  }
+}

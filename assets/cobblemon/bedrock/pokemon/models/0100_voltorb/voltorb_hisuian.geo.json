@@ -1,0 +1,192 @@
+{
+	"format_version": "1.12.0",
+	"minecraft:geometry": [
+		{
+			"description": {
+				"identifier": "geometry.voltorb_hisui",
+				"texture_width": 64,
+				"texture_height": 48,
+				"visible_bounds_width": 2,
+				"visible_bounds_height": 2.5,
+				"visible_bounds_offset": [0, 0.75, 0]
+			},
+			"bones": [
+				{
+					"name": "voltorb_hisuian",
+					"pivot": [0, 0, 0]
+				},
+				{
+					"name": "body",
+					"parent": "voltorb_hisuian",
+					"pivot": [0, 5.5, 0],
+					"cubes": [
+						{"origin": [-5, 0.5, -5], "size": [10, 10, 10], "inflate": 0.25, "uv": [0, 28]},
+						{"origin": [-3.5, 5, -5.24], "size": [7, 1, 0], "uv": [12, 26]},
+						{"origin": [-5, 0.5, -5], "size": [10, 10, 10], "uv": [0, 0]},
+						{"origin": [-1.5, 7, -5.61], "size": [3, 2, 1], "inflate": 0.01, "uv": [0, 7]}
+					]
+				},
+				{
+					"name": "eyebrow_left",
+					"parent": "body",
+					"pivot": [3.25, 9.25, -5.21],
+					"cubes": [
+						{"origin": [1.25, 8.25, -5.71], "size": [4, 2, 1], "inflate": 0.01, "uv": [0, 3]}
+					]
+				},
+				{
+					"name": "eyebrow_right",
+					"parent": "body",
+					"pivot": [-3.25, 9.25, -5.21],
+					"cubes": [
+						{"origin": [-5.25, 8.25, -5.71], "size": [4, 2, 1], "inflate": 0.01, "uv": [0, 0]}
+					]
+				},
+				{
+					"name": "eyes",
+					"parent": "body",
+					"pivot": [0, 1, -1]
+				},
+				{
+					"name": "eye_right",
+					"parent": "eyes",
+					"pivot": [-2.25, 6.5, -5.01],
+					"cubes": [
+						{"origin": [-4.75, 5.5, -5.01], "size": [4, 3, 0], "uv": [0, 28]}
+					]
+				},
+				{
+					"name": "pupil_right",
+					"parent": "eye_right",
+					"pivot": [-2, 7, -5.01],
+					"cubes": [
+						{"origin": [-2.5, 6, -5.01], "size": [1, 2, 0], "inflate": 0.01, "uv": [8, 20]}
+					]
+				},
+				{
+					"name": "eyelid_right",
+					"parent": "pupil_right",
+					"pivot": [-2, 7, -4.41],
+					"cubes": [
+						{"origin": [-3, 6, -4.92], "size": [2, 2, 1], "inflate": 0.01, "uv": [0, 21]}
+					]
+				},
+				{
+					"name": "locator_eye_right",
+					"parent": "pupil_right",
+					"pivot": [-2, 7, -5.1],
+					"locators": {
+						"eye1": [-2, 7, -5.1]
+					}
+				},
+				{
+					"name": "eye_left",
+					"parent": "eyes",
+					"pivot": [2.25, 6.5, -5.01],
+					"cubes": [
+						{"origin": [0.75, 5.5, -5.01], "size": [4, 3, 0], "uv": [0, 25]}
+					]
+				},
+				{
+					"name": "pupil_left",
+					"parent": "eye_left",
+					"pivot": [2, 7, -5.01],
+					"cubes": [
+						{"origin": [1.5, 6, -5.01], "size": [1, 2, 0], "inflate": 0.01, "uv": [8, 7]}
+					]
+				},
+				{
+					"name": "locator_eye_left",
+					"parent": "pupil_left",
+					"pivot": [2, 7, -5.1],
+					"locators": {
+						"eye2": [2, 7, -5.1]
+					}
+				},
+				{
+					"name": "eyelid_left",
+					"parent": "pupil_left",
+					"pivot": [2, 7, -4.41],
+					"cubes": [
+						{"origin": [1, 6, -4.92], "size": [2, 2, 1], "inflate": 0.01, "uv": [0, 33]}
+					]
+				},
+				{
+					"name": "locator_item",
+					"parent": "body",
+					"pivot": [-5.25, 5.5, 0],
+					"rotation": [90, 90, 0],
+					"locators": {
+						"item": [-5.25, 5.5, 0]
+					}
+				},
+				{
+					"name": "locator_item_face",
+					"parent": "body",
+					"pivot": [0, 6.75, -5.5],
+					"locators": {
+						"item_face": [0, 6.75, -5.5]
+					}
+				},
+				{
+					"name": "locator_face",
+					"parent": "body",
+					"pivot": [0, 6.25, -6],
+					"locators": {
+						"face": [0, 6.25, -6]
+					}
+				},
+				{
+					"name": "locator_item_hat",
+					"parent": "body",
+					"pivot": [0, 11, 0],
+					"locators": {
+						"item_hat": [0, 11, 0]
+					}
+				},
+				{
+					"name": "locator_head",
+					"parent": "body",
+					"pivot": [0, 11, -2.5],
+					"locators": {
+						"head": [0, 11, -2.5],
+						"physical": [0, 11, -2.5],
+						"special": [0, 11, -2.5]
+					}
+				},
+				{
+					"name": "locator_middle",
+					"parent": "body",
+					"pivot": [0, 5.5, 0],
+					"locators": {
+						"middle": [0, 5.5, 0]
+					}
+				},
+				{
+					"name": "locator_target",
+					"parent": "body",
+					"pivot": [0, 5, -8],
+					"locators": {
+						"target": [0, 5, -8]
+					}
+				},
+				{
+					"name": "locator_root",
+					"parent": "voltorb_hisuian",
+					"pivot": [0, 0, 0],
+					"locators": {
+						"root": [0, 0, 0]
+					}
+				},
+				{
+					"name": "locator_top",
+					"parent": "voltorb_hisuian",
+					"pivot": [0, 11.25, 0],
+					"locators": {
+						"top": [0, 11.25, 0]
+					}
+				}
+			]
+		}
+	]
+}

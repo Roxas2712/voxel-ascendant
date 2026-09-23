@@ -178,8 +178,9 @@ local STATES = {
   attack = { slot = "attack_default", loop = false, next = "idle" },
 }
 
-function StadiumMon.new(side)
+function StadiumMon.new(side, provider)
   return setmetatable({
+    provider = provider,
     side = side,               -- "player" or "enemy"
     species = nil,             -- the dex number currently modelled
     model = nil,
@@ -225,8 +226,15 @@ end
 -- DATA rather than a list of dex numbers, so a future extraction bug that
 -- corrupts a species' idle falls back to the sprite instead of coming
 -- apart on the field -- and nothing here has to be edited when it does.
-function StadiumMon:setSpecies(dex, allowStatic)
-  if dex == self.species then return self.rig ~= nil end
+function StadiumMon:setSpecies(dex, allowStatic, appearance)
+  if self.side=="player" or self.side=="enemy" then
+    local source=V.PokemonModelProvider and V.PokemonModelProvider.resolve()
+    local provider=source=="cobblemon" and V.require("CobblemonPack") or nil
+    if provider~=self.provider then self:release();self.provider=provider end
+  end
+  local variant=self.provider and self.provider.variant(appearance) or "normal"
+  if dex == self.species and variant==self.variant then return self.rig ~= nil end
+  self.variant=variant
   if self.rig then self.rig:release() end
   self.rig, self.model, self.species = nil, nil, dex
   self.staticPose = nil
@@ -239,9 +247,9 @@ function StadiumMon:setSpecies(dex, allowStatic)
   -- was the renderer skipping its textureless 647-vertex main body and only
   -- showing textured detail primitives.  Try the real Stadium 2 pack first.
   -- The procedural Lugia remains a last-resort GPU/cache fallback only.
-  local model = StadiumPack.load(dex)
+  local model = self.provider and self.provider.load(dex,appearance) or (not self.provider and StadiumPack.load(dex))
   if not model then
-    if tonumber(dex) == 249 then
+    if not self.provider and tonumber(dex) == 249 then
       local rescueModel, rescueRig = LugiaRescue.create()
       if not (rescueModel and rescueRig) then return false end
       self.model, self.rig = rescueModel, rescueRig
@@ -266,7 +274,7 @@ function StadiumMon:setSpecies(dex, allowStatic)
 
   local rig = StadiumRig.new(model)
   if not rig then
-    if tonumber(dex) == 249 then
+    if not self.provider and tonumber(dex) == 249 then
       local rescueModel, rescueRig = LugiaRescue.create()
       if rescueModel and rescueRig then
         self.model, self.rig = rescueModel, rescueRig
@@ -300,6 +308,10 @@ end
 -- Which animation a context slot resolves to for this species, or nil.
 function StadiumMon:slotAnim(name)
   local model = self.model
+  if model and model.actions then
+    if name=="idle" and self.side~="overworld" then return model.actions.battle or model.actions.idle end
+    return model.actions[name]
+  end
   local slot = model and StadiumPack.SLOT[name]
   if not slot then return nil end
   local index = model.ctx[slot]
@@ -525,6 +537,9 @@ end
 
 -- How tall this species stands on the map, in world pixels.
 function StadiumMon:worldHeight()
+  if self.model and self.model.source=="cobblemon" then
+    return V.require("CobblemonSize").worldHeight(self.model.crystalDex or self.dex, self.model)
+  end
   local model = self.model
   local h = model and model.height or 0
   if not (h > 0) then return StadiumMon.REF_HEIGHT end
@@ -604,7 +619,7 @@ function StadiumMon:pose()
   -- branch.  During ATTACKS only, keep that authored torso at its bind location
   -- while preserving all of the clip's local rotations and child animation.
   local pinned = false
-  if tonumber(self.species) == 249 and self.state == "attack"
+  if not self.provider and tonumber(self.species) == 249 and self.state == "attack"
       and type(self.rig.pinBoneToBind) == "function" then
     pinned = self.rig:pinBoneToBind(3) and true or false
   end

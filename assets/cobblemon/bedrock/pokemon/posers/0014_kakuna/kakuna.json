@@ -1,0 +1,27 @@
+  {
+    "portraitScale": 1.7,
+    "portraitTranslation": [-0.1, -0.4, 0],
+    "profileScale": 0.96,
+    "profileTranslation": [0, 0.35, 0],
+    "rootBone": "kakuna",
+    "animations": {
+      "faint": "q.bedrock_primary('kakuna', 'faint', q.curve('one'))",
+      "cry": "q.bedrock_stateful('kakuna', 'cry')",
+      "physical": "q.bedrock_primary('kakuna', 'physical', q.curve('symmetrical'))"
+    },
+    "poses": {
+      "standing": {
+        "poseTypes": ["STAND", "FLOAT", "HOVER", "NONE", "PORTRAIT", "PROFILE"],
+        "animations": [
+          "q.bedrock('kakuna', 'ground_idle')"
+        ]
+      },
+    "sleeping": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+        "animations": ["q.bedrock('kakuna', 'sleep')"]
+      }
+    }
+  }

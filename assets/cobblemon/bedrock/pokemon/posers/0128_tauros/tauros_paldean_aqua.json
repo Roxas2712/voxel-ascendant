@@ -1,0 +1,132 @@
+{
+    "portraitScale": 1.9,
+    "portraitTranslation": [-0.7, -0.25, 0],
+    "profileScale": 0.75,
+    "profileTranslation": [0, 0.6, 0],
+    "rootBone": "tauros",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('tauros_paldean_aqua', 'cry')"
+  },
+  "poses": {
+    "boat-jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "isRideStyle": ["LIQUID"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'ride_jump_liquid')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_surfacewater_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tauros_paldean_aqua', 'blink')"
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 2
+    },
+    "land-jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'ride_jump_land')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tauros_paldean_aqua', 'blink')"
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 5
+    },
+    "running": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_aqua', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_aqua', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isTouchingWater": false,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_aqua', 'blink')"]
+    },
+    "surface-swimming": {
+      "isTouchingWater": true,
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.bedrock('tauros_paldean_aqua', 'surfacewater_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_surfacewater_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_aqua', 'blink')"]
+    },
+    "surface-floating": {
+      "isTouchingWater": true,
+      "poseTypes": ["STAND", "FLOAT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('tauros_paldean_aqua', 'surfacewater_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tauros_paldean_aqua', 'ride_surfacewater_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('tauros_paldean_aqua', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tauros_paldean_aqua', 'sleep')"]
+    }
+  }
+}

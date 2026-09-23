@@ -65,7 +65,7 @@ function M.install(mod,store,cache,fs,graphics,imageApi,Assets,owner)
     return before.image(self,path,...)
   end
   if Assets then
-    local priorImage,priorData=Assets.image,Assets.imageData
+    local priorImage,priorData,priorBytes=Assets.image,Assets.imageData,Assets.hdImageBytes
     local prefix=mod.path:gsub('/$','')..'/'
     local function relative(path)
       if type(path)=='string' and path:sub(1,#prefix)==prefix then return path:sub(#prefix+1)end
@@ -80,10 +80,17 @@ function M.install(mod,store,cache,fs,graphics,imageApi,Assets,owner)
       if rel then if known(rel)then return pixels(rel)end;local meta=missing(rel);if meta then return placeholderPixels(meta)end end
       return priorData(path,...)
     end
+    local wrappedBytes=function(path)
+      local rel=relative(path)
+      if rel and known(rel)then return assert(read(rel),'verified sprite unavailable') end
+      if priorBytes then return priorBytes(path) end
+    end
     Assets.image,Assets.imageData=wrappedImage,wrappedData
+    Assets.hdImageBytes=wrappedBytes
     restoreAssets=function()
       if Assets.image==wrappedImage then Assets.image=priorImage end
       if Assets.imageData==wrappedData then Assets.imageData=priorData end
+      if Assets.hdImageBytes==wrappedBytes then Assets.hdImageBytes=priorBytes end
     end
   end
   local function close()

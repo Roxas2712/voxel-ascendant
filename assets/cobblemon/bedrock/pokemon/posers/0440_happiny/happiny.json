@@ -1,0 +1,48 @@
+{
+  "portraitScale": 2.09,
+  "portraitTranslation": [-0.1, -0.8, 0],
+  "profileScale": 0.76,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "happiny",
+  "animations": {
+    "faint": "q.bedrock_primary('happiny', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('happiny', 'cry')",
+    "recoil": "q.bedrock_stateful('happiny', 'recoil')",
+    "physical": "q.bedrock_primary('happiny', 'physical', q.curve('symmetrical'))",
+    "special": "q.bedrock_primary('happiny', 'special', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('happiny', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.bedrock('happiny', 'battle_idle')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('happiny', 'battle_cry', q.curve('symmetrical'))"
+      },
+      "quirks": [
+        "q.bedrock_quirk('happiny', 'blink')",
+        "q.bedrock_quirk('happiny', 'hairshake_quirk')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "FLOAT", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('happiny', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('happiny', 'blink')",
+        "q.bedrock_quirk('happiny', q.array('hairshake_quirk', 'happy_quirk'), 30, 60, 1)"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.bedrock('happiny', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('happiny', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {"cry": "q.bedrock_stateful('dummy', 'cry')"},
+      "animations": ["q.bedrock('happiny', 'sleep')"]
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "portraitScale": 1.5,
+  "portraitTranslation": [ 0, 0, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0, 0.46, 0],
+  "rootBone": "weezing",
+  "animations": {
+    "faint": "q.bedrock_primary('weezing', 'faint')",
+    "cry": "q.bedrock_stateful('weezing', 'cry')",
+    "recoil": "q.bedrock_stateful('weezing', 'recoil')",
+    "physical": "q.bedrock_primary('weezing', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('weezing', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('weezing', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER", "FLOAT"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('weezing', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weezing', 'blink')",
+        "q.bedrock_quirk('weezing', 'blink2')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('weezing', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "HOVER", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('weezing', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weezing', 'blink')",
+        "q.bedrock_quirk('weezing', 'blink2')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('weezing', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('weezing', 'blink')",
+        "q.bedrock_quirk('weezing', 'blink2')"
+      ]
+    },
+    "battle-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('weezing', 'battle-sleep')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('weezing', 'sleep')"]
+    }
+  }
+}

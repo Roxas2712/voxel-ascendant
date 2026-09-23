@@ -1,0 +1,114 @@
+{
+ "portraitScale": 2.08,
+ "portraitTranslation": [-0.13, -1.36, 0],
+ "profileScale": 0.89,
+ "profileTranslation": [0, 0.39, 0],
+ "rootBone": "swablu",
+ "animations": {
+   "cry": "q.bedrock_stateful('swablu', 'cry')"
+ },
+ "poses": {
+   "standing": {
+     "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+     "animations": [
+       "q.look('torso', 1, 1, 18, -9, 45, -45)",
+       "q.look('head', 1, 1, 9, -10, 0, 0)",
+       "q.bedrock('swablu', 'ground_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": [
+       "q.bedrock_quirk('swablu', 'blink')"
+     ]
+   },
+   "walking": {
+     "poseTypes": ["WALK", "SWIM"],
+     "animations": [
+       "q.look('torso', 1, 1, 18, -9, 0, 0)",
+       "q.look('head', 1, 1, 9, -10, 0, 0)",
+       "q.bedrock('swablu', 'ground_walk')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": ["q.bedrock_quirk('swablu', 'blink')"]
+   },
+   "hover": {
+     "poseTypes": ["HOVER"],
+     "animations": [
+       "q.pitch_tilt('body')",
+       "q.look('torso', 1, 1, 18, -9, 0, 0)",
+       "q.look('head', 1, 1, 9, -10, 0, 0)",
+       "q.bedrock('swablu', 'air_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": ["q.bedrock_quirk('swablu', 'blink')"]
+   },
+   "fly": {
+     "poseTypes": ["FLY"],
+     "animations": [
+       "q.pitch_tilt('body')",
+       "q.bedrock('swablu', 'air_fly')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": ["q.bedrock_quirk('swablu', 'blink')"]
+   },
+   "sleep": {
+     "poseTypes": ["SLEEP"],
+     "isBattle": false,
+     "animations": [
+      "q.bedrock('swablu', 'wild_sleep')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ]
+   },
+   "battle-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "animations": [
+        "q.bedrock('swablu', 'battle_sleep')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+        }
+      ]
+    },
+   "shoulder_left": {
+     "poseTypes": ["SHOULDER_LEFT"],
+     "animations": [
+       "q.look('torso', 1, 1, 18, -9, 45, -45)",
+       "q.look('head', 1, 1, 9, -10, 0, 0)",
+       "q.bedrock('swablu', 'shoulder_left')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": ["q.bedrock_quirk('swablu', 'blink')"]
+   },
+   "shoulder_right": {
+     "poseTypes": ["SHOULDER_RIGHT"],
+     "animations": [
+       "q.look('torso', 1, 1, 18, -9, 45, -45)",
+       "q.look('head', 1, 1, 9, -10, 0, 0)",
+       "q.bedrock('swablu', 'shoulder_right')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('swablu', 'hold_item')"
+       }
+     ],
+     "quirks": ["q.bedrock_quirk('swablu', 'blink')"]
+   }
+ }
+}

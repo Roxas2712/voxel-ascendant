@@ -1,0 +1,71 @@
+{
+  "portraitScale": 2.1,
+  "portraitTranslation": [-0.1, -0.8, 0],
+  "profileScale": 0.7,
+  "profileTranslation": [0.0, 0.7, 0.0],
+  "rootBone": "pichu",
+    "animations": {
+      "faint": "q.bedrock_primary('pichu', 'faint', q.curve('one'))",
+      "cry": "q.bedrock_stateful('pichu', 'cry')",
+      "recoil": "q.bedrock_stateful('pichu', 'recoil')",
+      "physical": "q.bedrock_primary('pichu', 'physical', q.curve('symmetrical_wide'))",
+      "special": "q.bedrock_primary('pichu', 'special', q.curve('symmetrical_wide'))",
+      "status": "q.bedrock_primary('pichu', 'status', q.curve('symmetrical_wide'))"
+    },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')", "q.bedrock_quirk('pichu', q.array('look_quirk','friend_quirk'), 30, 60, 1)"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('pichu', 'sleep')"]
+    },    
+      "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'shoulder_left')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-7, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'shoulder_right')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [7, 0, 0]
+        }
+      ]
+    }, 
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'surfacewater_idle')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": ["q.look('head_ai')", "q.bedrock('pichu', 'surfacewater_swim')"],
+      "quirks": ["q.bedrock_quirk('pichu', 'blink')"]
+    }
+  }
+}

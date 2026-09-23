@@ -1,0 +1,46 @@
+{
+  "portraitScale": 1.89,
+  "portraitTranslation": [-0.8, 1.36, 0.0],
+  "profileScale": 0.57,
+  "profileTranslation": [0, 0.81, 0.0],
+  "rootBone": "nidoking",
+  "animations": {
+    "cry": "q.bedrock_stateful('nidoking', 'cry')",
+    "recoil": "q.bedrock_stateful('nidoking', 'recoil')",
+    "physical": "q.bedrock_primary('nidoking', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('nidoking', 'special', q.curve('symmetrical_wide'))",
+    "beam": "q.bedrock_primary('nidoking', 'beam', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('nidoking', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoking', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('charizard', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('nidoking', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head')", "q.bedrock('nidoking', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('nidoking', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoking', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoking', 'blink')"]
+    }
+  }
+}

@@ -12,12 +12,18 @@ local M = {
   CRYSTAL = "crystal",
   STADIUM1 = "stadium1",
   STADIUM2 = "stadium2",
+  COBBLEMON = "cobblemon",
 }
 
 M.setting = ModSetting.new(
   "pokemonModelSkin", "POKéMON MODEL",
-  { M.AUTO, M.CRYSTAL, M.STADIUM1, M.STADIUM2 },
-  { "AUTO", "CRYSTAL", "STADIUM 1", "STADIUM 2" }, M.AUTO)
+  { M.AUTO, M.CRYSTAL, M.STADIUM1, M.STADIUM2, M.COBBLEMON },
+  { "AUTO", "CRYSTAL", "STADIUM 1", "STADIUM 2", "COBBLEMON" }, M.AUTO)
+local originalAllows=M.setting.allows
+function M.setting:allows(i)
+  if self.values[i]==M.COBBLEMON and not V.require("CobblemonContent").available()then return false end
+  return not originalAllows or originalAllows(self,i)
+end
 
 local function generation()
   local host = V.mod and V.mod._vascHostGeneration
@@ -97,6 +103,10 @@ function M.resolve(requested)
   local mode = stagedMode()
   if not mode then return M.CRYSTAL, "battle-mode-off" end
   requested = requested or (V.BattleSpriteControl and V.BattleSpriteControl.modelRequest()) or M.setting:get()
+  if requested == M.COBBLEMON then
+    if V.require("CobblemonContent").available()then return M.COBBLEMON,"built-in" end
+    return M.CRYSTAL,"cobblemon-unavailable"
+  end
   if requested == M.CRYSTAL then return M.CRYSTAL, "selected" end
   if requested == M.STADIUM1 then
     if externalReady(M.STADIUM1, mode) then return M.STADIUM1, "provider" end
@@ -122,7 +132,7 @@ end
 -- provider receipts retain ownership of their own pixels and lifecycle.
 function M.builtInModelsEnabled()
   local source, reason = M.resolve()
-  return source == M.STADIUM2
+  return (source == M.STADIUM2 or source==M.COBBLEMON)
     and (reason == "built-in" or reason == "auto-built-in")
 end
 
@@ -140,6 +150,7 @@ function M.status()
     requested=M.setting:get(), active=active, reason=reason,
     battleMode=stagedMode() or "OFF", generation=generation(),
     catalogLimit=catalogLimit,
+    cobblemonProvider=V.require("CobblemonContent").available(),
     stadium1Provider=externalReady(M.STADIUM1, stagedMode() or "OFF"),
     stadium2Provider=builtInStadium2Ready()
       or externalReady(M.STADIUM2, stagedMode() or "OFF"),
@@ -149,11 +160,12 @@ end
 function M.public()
   return {
     apiVersion=M.API_VERSION, contract=M.CONTRACT,
-    choices={M.CRYSTAL, M.STADIUM1, M.STADIUM2},
+    choices={M.CRYSTAL, M.STADIUM1, M.STADIUM2, M.COBBLEMON},
     requested=M.requested, resolve=M.resolve,
     builtInModelsEnabled=M.builtInModelsEnabled, status=M.status,
     allows=function(source, mode)
       if mode ~= "MAP" and mode ~= "ARENA" and mode ~= "DISCS" then return false end
+      if source == M.COBBLEMON then return V.require("CobblemonContent").available() end
       if source == M.STADIUM1 then return externalReady(source, mode) end
       if source == M.STADIUM2 then
         return builtInStadium2Ready() or externalReady(source, mode)

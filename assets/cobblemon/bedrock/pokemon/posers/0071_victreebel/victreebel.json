@@ -1,0 +1,41 @@
+{
+  "portraitScale": 1.02,
+  "portraitTranslation": [-0.03, 1.1, 0],
+  "profileScale": 0.53,
+  "profileTranslation": [0, 0.94, 0],
+  "animations": {
+    "cry": "q.bedrock_stateful('victreebel', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('victreebel', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('victreebel', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('victreebel', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('victreebel', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('victreebel', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('victreebel', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('victreebel', 'sleep')"]
+    }
+  }
+}

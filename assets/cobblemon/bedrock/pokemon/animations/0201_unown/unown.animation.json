@@ -1,0 +1,60 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"animation.unown.ground_idle": {
+			"loop": true,
+			"animation_length": 4,
+			"bones": {
+				"body": {
+					"rotation": ["1+math.sin(q.anim_time*90*2)*1.5", 0, "math.sin(q.anim_time*90*1)*4"],
+					"position": ["math.sin(q.anim_time*90*1-90)*0.8", "1.2+math.sin(q.anim_time*90*2+135)*0.35", "math.sin(q.anim_time*90*2+90)*0.25"]
+				}
+			}
+		},
+		"animation.unown.ground_walk": {
+			"loop": true,
+			"animation_length": 4,
+			"bones": {
+				"body": {
+					"rotation": ["30+math.sin(q.anim_time*90*2)*4", 0, "math.sin(q.anim_time*90*1)*4"],
+					"position": ["math.sin(q.anim_time*90*1-90)*0.8", "1.2+math.sin(q.anim_time*90*2+135)*0.5", "-0.75+math.sin(q.anim_time*90*2+90)*0.25"]
+				}
+			}
+		},
+		"animation.unown.sleep": {
+			"loop": true,
+			"animation_length": 8,
+			"bones": {
+				"body": {
+					"rotation": ["10+math.sin(q.anim_time*90*1)*1", 0, "math.sin(q.anim_time*90*0.5)*2.5"],
+					"position": ["math.sin(q.anim_time*90*0.5-90)*0.6", "1.2+math.sin(q.anim_time*90*1+135)*0.3", "-0.3+math.sin(q.anim_time*90*1+90)*0.15"]
+				},
+				"pupil_open": {
+					"scale": [2, 1, 1]
+				}
+			}
+		},
+		"animation.unown.blink": {
+			"animation_length": 0.1667,
+			"bones": {
+				"pupil_open": {
+					"scale": {
+						"0.0": [2, 1, 1],
+						"0.1667": {
+							"pre": [2, 1, 1],
+							"post": [1, 1, 1]
+						}
+					}
+				}
+			}
+		},
+        "animation.unown.cry": {
+            "animation_length": 1.25,
+            "sound_effects": {
+                "0.0417": {
+                    "effect": "pokemon.unown.cry"
+                }
+            }
+        }
+	}
+}

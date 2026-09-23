@@ -1,0 +1,51 @@
+{
+  "portraitScale": 1.4,
+  "portraitTranslation": [-0.1, 0.18, 0],
+  "profileScale": 0.8,
+  "profileTranslation": [0, 0.5, 0],
+  "rootBone": "poliwhirl",
+  "animations": {
+    "cry": "q.bedrock_stateful('poliwhirl', 'cry')",
+    "recoil": "q.bedrock_stateful('poliwhirl', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "isBattle": false,
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('poliwhirl', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('poliwhirl', 'blink')"]
+    },
+    "battle-standing": {
+      "isBattle": true,
+      "poseTypes": ["STAND"],
+      "animations": ["q.bedrock('poliwhirl', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('poliwhirl', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.bedrock('poliwhirl', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('poliwhirl', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "animations": [
+        "q.bedrock('poliwhirl', 'water_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('poliwhirl', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": [
+        "q.bedrock('poliwhirl', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('poliwhirl', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('poliwhirl', 'sleep2')"]
+    }
+  }
+}

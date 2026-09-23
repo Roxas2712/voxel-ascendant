@@ -31,17 +31,22 @@ function M.draw()
  local b=M.layout(x,y,w,h,font:getWidth(n.name))
  g.push('all');g.origin();g.setCanvas();g.setShader();g.setScissor();g.setDepthMode()
  g.setBlendMode('alpha');g.setFont(font)
- g.setColor(.025,.055,.065,.77*a)
- -- Small stepped corners and an inset top edge echo the voxel buildings.
- g.rectangle('fill',b.x+3,b.y,b.w-6,b.h)
- g.rectangle('fill',b.x,b.y+3,b.w,b.h-6)
- g.setColor(.48,.76,.72,.5*a);g.rectangle('fill',b.x+5,b.y,b.w-10,1)
- local cx,cy=b.x+15,b.y+13
- g.setColor(.67,.86,.78,.95*a);g.polygon('fill',cx,cy,cx+7,cy-4,cx+14,cy,cx+7,cy+4)
- g.setColor(.32,.57,.51,.95*a);g.polygon('fill',cx,cy,cx+7,cy+4,cx+7,cy+12,cx,cy+8)
- g.setColor(.46,.70,.62,.95*a);g.polygon('fill',cx+7,cy+4,cx+14,cy,cx+14,cy+8,cx+7,cy+12)
+ -- Cartridge-inspired route plaque: cream face, double border and a small
+ -- Poke Ball rather than the former voxel cube. Stay within the safe lane.
+ g.setColor(.035,.08,.10,.28*a);g.rectangle('fill',b.x+2,b.y+3,b.w,b.h,9,9)
+ g.setColor(.95,.96,.88,.96*a);g.rectangle('fill',b.x,b.y,b.w,b.h,9,9)
+ g.setLineWidth(2);g.setColor(.15,.32,.35,.94*a)
+ g.rectangle('line',b.x+1,b.y+1,b.w-2,b.h-2,8,8)
+ g.setLineWidth(1);g.setColor(.64,.75,.66,.9*a)
+ g.rectangle('line',b.x+4,b.y+4,b.w-8,b.h-8,5,5)
+ local cx,cy=b.x+21,b.y+b.h/2
+ g.setColor(.98,.98,.94,a);g.circle('fill',cx,cy,10)
+ g.setColor(.82,.20,.23,a);g.arc('fill','pie',cx,cy,10,math.pi,2*math.pi)
+ g.setColor(.14,.25,.28,a);g.setLineWidth(2);g.circle('line',cx,cy,10)
+ g.line(cx-10,cy,cx+10,cy);g.circle('fill',cx,cy,4)
+ g.setColor(.98,.98,.94,a);g.circle('fill',cx,cy,2)
  local scale=math.min(1,(b.w-48)/math.max(1,font:getWidth(n.name)))
- g.setColor(.94,.96,.92,.96*a)
+ g.setColor(.12,.24,.27,a)
  g.print(n.name,b.x+40,b.y+(b.h-font:getHeight()*scale)/2,0,scale,scale)
  g.pop()
 end

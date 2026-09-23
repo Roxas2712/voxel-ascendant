@@ -1,0 +1,130 @@
+{
+  "rootBone": "dewott",
+  "portraitScale": 2,
+  "portraitTranslation": [-0.15, 0.8, 0 ],
+  "profileScale": 0.7,
+  "profileTranslation": [0, 0.69, 0],
+  "animations": {
+    "cry": "q.bedrock_stateful('dewott', 'cry')"
+  },
+  "poses": {
+    "battle_idle": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dewott', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dewott', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "scalchop_skirt_left",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_skirt_right",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_hand_left",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand_right",
+          "isVisible": true
+        }
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dewott', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dewott', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "scalchop_skirt_left",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_skirt_right",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand_left",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_hand_right",
+          "isVisible": false
+        }
+      ]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dewott', 'ground_walk')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('dewott', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "scalchop_skirt_left",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_skirt_right",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand_left",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_hand_right",
+          "isVisible": false
+        }
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('dewott', 'sleep')"
+      ],
+      "transformTicks": 10,
+      "transformedParts": [
+        {
+          "part": "scalchop_skirt_left",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_skirt_right",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand_left",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_hand_right",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

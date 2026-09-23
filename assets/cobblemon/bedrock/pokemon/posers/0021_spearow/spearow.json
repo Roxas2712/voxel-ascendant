@@ -1,0 +1,119 @@
+{
+  "portraitScale": 3.5,
+  "portraitTranslation": [-0.56, -1.61, 0],
+  "profileScale": 0.93,
+  "profileTranslation": [0, 0.39, 0],
+  "rootBone": "spearow",
+  "animations": {"cry": "q.bedrock_stateful('spearow', 'cry')"},
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('spearow', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('spearow', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        }
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('spearow', 'ground_idle')",
+        "q.biped_walk(1, 1, 'leg_left', 'leg_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('spearow', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        }
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.sine_wing_flap(0.9, 0.9, 25, 'z', 'wing_open_left', 'wing_open_right')",
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head')",
+        "q.bedrock('spearow', 'air_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('spearow', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        }
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.sine_wing_flap(0.9, 0.9, 25, 'z', 'wing_open_left', 'wing_open_right')",
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head')",
+        "q.bedrock('spearow', 'air_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('spearow', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

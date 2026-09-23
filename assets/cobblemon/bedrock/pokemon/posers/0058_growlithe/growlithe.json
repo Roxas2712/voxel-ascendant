@@ -1,0 +1,42 @@
+{
+  "portraitScale": 2.1,
+  "portraitTranslation": [ -0.53, -0.33, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [ 0, 0.4, 0],
+  "rootBone": "growlithe",
+  "animations": {
+    "cry": "q.bedrock_stateful('growlithe', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('growlithe', 'idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('growlithe', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('growlithe', 'idle')",
+        "q.quadruped_walk(0.66, 1.4, 'leg_front_left', 'leg_front_right', 'leg_back_left', 'leg_back_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('growlithe', 'blink')"
+      ]
+    }
+  }
+}

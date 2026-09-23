@@ -1,0 +1,79 @@
+{
+  "portraitScale": 1.94,
+  "portraitTranslation": [-0.38, -0.88, 0],
+  "profileScale": 0.83,
+  "profileTranslation": [0, 0.50, 0],
+  "rootBone": "tepig",
+  "animations": {
+    "cry": "q.bedrock_stateful('tepig', 'cry')",
+    "recoil": "q.bedrock_stateful('tepig', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('tepig', 'battle_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('tepig', 'blink')",
+        "q.bedrock_quirk('tepig', 'sniff_quirk')",
+        "q.bedrock_quirk('tepig', q.array('lookleft_quirk', 'lookright_quirk'), 20, 40, 1)"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('tepig', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('tepig', 'blink')",
+        "q.bedrock_quirk('tepig', q.array('lookleft_quirk', 'lookright_quirk', 'sniff_quirk', 'sniffground_quirk'), 20, 40, 1)"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('tepig', 'ground_walk')"],
+      "quirks": [
+        "q.bedrock_quirk('tepig', 'blink')",
+        "q.bedrock_quirk('tepig', 'sniff_quirk')",
+        "q.bedrock_quirk('tepig', q.array('lookleft_quirk', 'lookright_quirk'), 20, 40, 1)"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('tepig', 'sleep')"],
+      "quirks": ["q.bedrock_quirk('tepig', 'sniff_quirk')"]
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": ["q.look('head')", "q.bedrock('tepig', 'shoulder_left')"],
+      "quirks": [
+        "q.bedrock_quirk('tepig', 'blink')",
+        "q.bedrock_quirk('tepig', 'sniff_quirk')",
+        "q.bedrock_quirk('tepig', q.array('lookleft_quirk', 'lookright_quirk'), 20, 40, 1)"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-2.5, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": ["q.look('head')", "q.bedrock('tepig', 'shoulder_right')"],
+      "quirks": [
+        "q.bedrock_quirk('tepig', 'blink')",
+        "q.bedrock_quirk('tepig', 'sniff_quirk')",
+        "q.bedrock_quirk('tepig', q.array('lookleft_quirk', 'lookright_quirk'), 20, 40, 1)"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [2.5, 0, 0]
+        }
+      ]
+    }
+  }
+}

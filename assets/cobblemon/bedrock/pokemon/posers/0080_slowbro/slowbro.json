@@ -1,0 +1,67 @@
+{
+    "portraitScale": 2.0,
+    "portraitTranslation": [-0.23, 0.46, 0],
+    "profileScale": 0.95,
+    "profileTranslation": [0, 0.3, 0],
+    "rootBone": "slowbro",
+    "animations": {
+      "cry": "q.bedrock_stateful('slowbro', 'cry')"
+    },
+    "poses": {
+      "standing": {
+        "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('slowbro', 'ground_idle')"
+        ],
+        "quirks": [
+          "q.bedrock_quirk('slowbro', 'blink1')","q.bedrock_quirk('slowbro', 'blink2')","q.bedrock_quirk('slowbro', 'bite_quirk')"
+        ]
+      },
+      "battle-standing": {
+        "poseTypes": ["STAND"],
+        "isBattle": true,
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('slowbro', 'battle_idle')"
+        ],
+        "quirks": [
+          "q.bedrock_quirk('slowbro', 'blink1')","q.bedrock_quirk('slowbro', 'blink2')","q.bedrock_quirk('slowbro', 'bite_quirk')"
+        ]
+      },
+      "walking": {
+        "poseTypes": ["WALK"],
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('slowbro', 'ground_walk')"
+        ],
+        "quirks": [
+          "q.bedrock_quirk('slowbro', 'blink1')","q.bedrock_quirk('slowbro', 'blink2')"
+        ]
+      },
+      "sleep": {
+        "poseTypes": ["SLEEP"],
+        "animations": ["q.bedrock('slowbro', 'sleep')"]
+      },
+      "float": {
+        "poseTypes": ["FLOAT"],
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('slowbro', 'ground_idle')"
+        ],
+        "quirks": [
+          "q.bedrock_quirk('slowbro', 'blink1')","q.bedrock_quirk('slowbro', 'blink2')","q.bedrock_quirk('slowbro', 'bite_quirk')"
+        ]
+      },
+      "swim": {
+        "poseTypes": ["SWIM"],
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('slowbro', 'water_swim')"
+        ],
+        "quirks": [
+          "q.bedrock_quirk('slowbro', 'blink1')","q.bedrock_quirk('slowbro', 'blink2')"
+      ]
+      }
+    }
+   }

@@ -552,6 +552,9 @@ local function getShader()
   return shader or nil
 end
 
+function Sky.programPrepared() return shader ~= nil end
+function Sky.prepareProgram() return getShader() ~= nil end
+
 Sky._getShader = getShader        -- named for the suite
 
 -- The flat fallback: the authored key colours as solid rectangles, no checker,

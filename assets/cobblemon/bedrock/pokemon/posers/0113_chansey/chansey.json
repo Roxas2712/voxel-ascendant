@@ -1,0 +1,76 @@
+{
+  "portraitScale": 1.5,
+  "portraitTranslation": [-0.35, 0.3, 0],
+  "profileScale": 0.8,
+  "profileTranslation": [0, 0.55, 0],
+  "rootBone": "chansey",
+  "animations": {
+      "faint": "q.bedrock_primary('chansey', 'faint', q.curve('one'))",
+      "cry": "q.bedrock_stateful('chansey', 'cry')",
+      "recoil": "q.bedrock_stateful('chansey', 'recoil')",
+      "physical": "q.bedrock_primary('chansey', 'physical', q.curve('symmetrical'))",
+      "special": "q.bedrock_primary('chansey', 'special', q.curve('symmetrical'))",
+      "status": "q.bedrock_primary('chansey', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 5, -5, 0, 0)",
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.look('egg_torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('chansey', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('chansey', 'blink')",
+        "q.bedrock_quirk('chansey', 'idle_quirk')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head', 1, 1, 5, -5, 0, 0)",
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.look('egg_torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('chansey', 'battle_idle')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('chansey', 'battle_cry', q.curve('symmetrical'))"
+      },
+      "quirks": [
+        "q.bedrock_quirk('chansey', 'blink')",
+        "q.bedrock_quirk('chansey', 'idle_quirk')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head', 1, 1, 5, -5, 0, 0)",
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.look('egg_torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('chansey', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('chansey', 'blink')"]
+    },
+    "run": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head', 1, 1, 5, -5, 0, 0)",
+        "q.look('torso', 1, 1, 10, -5, 0, 0)",
+        "q.look('egg_torso', 1, 1, 10, -5, 0, 0)",
+        "q.bedrock('chansey', 'ground_run')"
+      ],
+      "quirks": ["q.bedrock_quirk('chansey', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('chansey', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+   "portraitScale": 2.2,
+   "portraitTranslation": [ -0.2, -1.4, 0 ],
+   "profileScale": 1.1,
+   "profileTranslation": [ 0.0, 0.1, 0 ],
+   "rootBone": "rattata",
+   "animations": {
+      "faint": "q.bedrock_primary('rattata_alolan', 'faint')",
+      "cry": "q.bedrock_stateful('rattata_alolan', 'cry')"
+   },
+   "poses": {
+      "battle-standing": {
+         "poseTypes": [ "STAND" ],
+         "isBattle": true,
+         "animations": [
+            "q.look('head')",
+            "q.bedrock('rattata_alolan', 'ground_idle')"
+         ],
+         "quirks": [
+            "q.bedrock_quirk('rattata_alolan', 'blink')"
+         ]
+      },
+      "standing": {
+         "poseTypes": [ "STAND", "NONE", "PORTRAIT", "PROFILE" ],
+         "isBattle": false,
+         "animations": [
+            "q.look('head')",
+            "q.bedrock('rattata_alolan', 'ground_idle')"
+         ],
+         "quirks": [
+            "q.bedrock_quirk('rattata_alolan', 'blink')"
+         ]
+      },
+      "walking": {
+         "poseTypes": [ "WALK" ],
+         "animations": [
+            "q.look('head')",
+            "q.bedrock('rattata_alolan', 'ground_walk')"
+         ],
+         "quirks": [
+            "q.bedrock_quirk('rattata_alolan', 'blink')"
+         ]
+      },
+      "sleep": {
+         "poseTypes": [ "SLEEP" ],
+         "animations": [
+            "q.bedrock('rattata_alolan', 'sleep')"
+         ],
+         "namedAnimations": {
+            "cry": "q.bedrock_stateful('dummy', 'cry')"
+         }
+      }
+   }
+}

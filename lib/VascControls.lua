@@ -57,6 +57,16 @@ function M.mobile(g)
   local osName=love and love.system and love.system.getOS and love.system.getOS()
   return osName=="Android"or osName=="iOS"
 end
+-- Platform detection selects the UI style; it must not override the user's
+-- overlay visibility choice or the engine's controller/editor visibility.
+function M.launcherVisible(g)
+  if not M.mobile(g) then return true end
+  local controls=g and g.touchControls
+  if not controls then return false end
+  if controls.enabled==false or controls.preview or controls.controllerHidden then return false end
+  if type(controls.visible)=="function" then return controls:visible() end
+  return true
+end
 function M.fps(g)
   if not ready(g)then return false end
   local hud=V.PerformanceOverlay or V.require("PerformanceOverlay")
@@ -70,7 +80,7 @@ function M.fps(g)
 end
 local germanRows={
   {key="0",title="Pokémon-Sprites",hint="0 · R1 + oben",detail="Im Kampf wechseln, sonst Sprite-Auswahl öffnen."},
-  {key="f6",title="Personen",hint="F6 · R1 + links",detail="HD und Original-2D umschalten."},
+  {key="f6",title="Personen",hint="F6 · R1 + links",detail="Original-2D, HD und Voxel-Card umschalten."},
   {key="f7",title="Begleiter",hint="F7 · R1 + rechts",detail="Verfügbare Begleiter-Sprites wechseln."},
   {key="f4",title="FPS / Framezeit",hint="F4 · R1 + unten",detail="Leistungsanzeige ein- oder ausblenden."},
   {key="8",title="Kampfansicht",hint="8",detail="MAP, Arena, Discs und Terrarium durchschalten."},
@@ -84,7 +94,7 @@ local germanRows={
 }
 M.rows={
   {key="0",title="Pokémon sprites",hint="0 · R1 + up",detail="Switch in battle; otherwise open sprite selection."},
-  {key="f6",title="Characters",hint="F6 · R1 + left",detail="Switch between HD and original 2D."},
+  {key="f6",title="Characters",hint="F6 · R1 + left",detail="Cycle original 2D, HD and the voxel Card."},
   {key="f7",title="Follower",hint="F7 · R1 + right",detail="Cycle through available follower sprites."},
   {key="f4",title="FPS / Frame time",hint="F4 · R1 + down",detail="Show or hide performance statistics."},
   {key="8",title="Battle view",hint="8",detail="Cycle MAP, Arena, Discs and Terrarium."},
@@ -195,6 +205,7 @@ function M.status(g,index)
     if k=="f4"then return setting((V.PerformanceOverlay or V.require("PerformanceOverlay")).enabled)end
     if k=="f6"or k=="f7"then
       local a=V.require("AppearanceShortcuts").settings
+      if k=="f6"and V.mod.exports.voxelCharacterCard then return V.mod.exports.voxelCharacterCard.label()end
       if k=="f6"then return a.apo_hd_walking_sprites and(a.apo_hd_walking_sprites:get()and"HD"or"2D / ORIGINAL")end
       if not a.apo_hd_pokemon_followers then return end
       return a.apo_hd_pokemon_followers:get()and setting(a.apo_follower_sprite_source)or"2D / ORIGINAL"
@@ -221,8 +232,12 @@ function M.status(g,index)
     end
     if k=="0"then
       local panel=M.current(g);local b=panel and panel.previous or top(g)
+      local control=V.require("BattleSpriteControl")
+      if not (b and b.player and b.enemy and b.phase) and panel then
+        b=control.active({stack={states=g.stack.states,top=function()return panel.previous end}})
+      end
       if b and b.player and b.enemy and b.phase then
-        local choice=V.require("BattleSpriteControl").choice(b)
+        local choice=control.choice(b)
         return choice=="current"and"AUTO"or choice:upper()
       end
       return de and "Auswahl öffnen"or"Open selection"
@@ -312,7 +327,9 @@ function M.draw(g)
   local p=M.current(g)
   local de=M.language()=="de"
   local rows=p and p.rows or{}
-  if not p and(not ready(g)or M.context(g)=="other")then return end
+  local show=ready(g)
+  if Host and Host.launcherReady then show=Host.launcherReady(g) end
+  if not p and(not show or M.context(g)=="other"or not M.launcherVisible(g))then return end
   local mobile=M.mobile(g)
   local hintAlpha=mobile and 1 or M.hintAlpha(g)
   local t=M.layout(g);local graphics=love.graphics;local ww,hh=graphics.getDimensions()
@@ -320,6 +337,9 @@ function M.draw(g)
     M.paint={screen=top(g),w=ww,h=hh,layout=t};return
   end
   graphics.push("all");graphics.origin();graphics.setCanvas();graphics.setShader();graphics.setScissor();graphics.setBlendMode("alpha")
+  -- This screen-space overlay must not inherit world depth/stencil/colour
+  -- masks: those can change while moving and intermittently hide the marker.
+  graphics.setDepthMode();graphics.setStencilTest();graphics.setColorMask(true,true,true,true)
   M.font=M.font or graphics.newFont(14);M.small=M.small or graphics.newFont(12)
   local function box(r,active)
     graphics.setColor(active and .09 or .025,active and .26 or .075,active and .32 or .10,.97)
@@ -388,6 +408,7 @@ function M.pointer(g,p)
   if not paint or paint.screen~=top(g)or paint.w~=w or paint.h~=h then return panel~=nil end
   local t=paint.layout
   if not panel then
+    if not ready(g) or M.context(g)=="other" or not M.launcherVisible(g) then return false end
     if hit(t.launcher,p.x,p.y)then M.toggle(g);return true end
     return false
   end

@@ -176,6 +176,9 @@ end
 
 local g = love.graphics
 local FloatingHud = {}
+FloatingHud.ExperiencePresentation = assert(Bundle.ExperiencePresentation, "EXP presentation bundle missing")
+FloatingHud.SoundPreparation = Bundle.SoundPreparation
+if FloatingHud.SoundPreparation then FloatingHud.SoundPreparation.install() end
 
 -- Translate the platform safe rectangle into the staged HUD viewport. Desktop
 -- normally returns zero insets; phones keep controls above the home indicator,
@@ -1512,13 +1515,14 @@ local function expRatio(battle, battler)
 
   local cap = (battle.data.constants and battle.data.constants.levelCap) or 100
   local level = mon.level or 1
-  if level >= cap then return 1 end
+  if level >= cap then return FloatingHud.ExperiencePresentation.ratio(battle, 1) end
 
   local rates = battle.data.growth_rates
   local from = Growth.expForLevel(def.growthRate, level, rates)
   local to = Growth.expForLevel(def.growthRate, level + 1, rates)
   if to <= from then return 0 end
-  return clamp(((mon.exp or from) - from) / (to - from), 0, 1)
+  return FloatingHud.ExperiencePresentation.ratio(battle,
+    clamp(((mon.exp or from) - from) / (to - from), 0, 1))
 end
 
 local function uiScale(shot)
@@ -7327,6 +7331,22 @@ local baseBattleUpdate = BattleState[UPDATE_KEY]
 if type(baseBattleUpdate) == "function" then
   function BattleState:update(...)
     FloatingHud.advanceMegaTransformation(self, select(1, ...))
+    if FloatingHud.SoundPreparation then
+      FloatingHud.SoundPreparation.scan(self)
+      FloatingHud.SoundPreparation.pump(self)
+    end
+    local mon = self.player and self.player.mon
+    local def = mon and self.data.pokemon[mon.species]
+    if def then
+      FloatingHud.ExperiencePresentation.advance(self, mon, select(1, ...), function(level)
+        return Growth.expForLevel(def.growthRate, level, self.data.growth_rates)
+      end, (self.data.constants and self.data.constants.levelCap) or 100)
+      if self.voxelAscendantShot and hudExpChoice(self) ~= "off" then
+        local options = self.game and self.game.save and self.game.save.options
+        FloatingHud.ExperiencePresentation.sound(self,
+          math.max(0, math.min(1, (tonumber(options and options.sfxVol) or 7) / 7)))
+      end
+    end
     local input = self.game and self.game.input
     local commandsEnabled = floatingCommandsEnabled(self)
     if not commandsEnabled then
@@ -7465,7 +7485,7 @@ if type(baseBattleUpdate) == "function" then
     -- by this HUD. BAG intentionally has no HUD latch: native command index 3
     -- reaches BattleState:openItems(), which resolves the registered BagMenu with
     -- { battle = self } and already fail-opens to the builtin screen.
-    if ownsCommand and not self._ascendantBattleHudMegaFocus
+    if ownsCommand and not self.safari and not self._ascendantBattleHudMegaFocus
         and input:wasPressed("a") then
       if self.menuIndex == 2 then
         self._floatingBattlePartyPending = true
@@ -7473,7 +7493,9 @@ if type(baseBattleUpdate) == "function" then
       if self.menuIndex ~= 1 then FloatingHud.clearMegaArmed(self) end
     end
 
-    if ownsCommand then
+    -- Safari is drawn as BALL/BAIT over ROCK/RUN: preserve the native 2x2
+    -- navigation instead of remapping it to the ordinary triangular menu.
+    if ownsCommand and not self.safari then
       local up = input:wasPressed("up")
       local down = input:wasPressed("down")
       local left = input:wasPressed("left")

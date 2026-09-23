@@ -1,0 +1,55 @@
+{
+  "portraitScale": 2.13,
+  "portraitTranslation": [-0.39, -0.94, 0],
+  "profileScale": 1,
+  "profileTranslation": [0, 0.21, 0],
+  "rootBone": "nidorina",
+  "animations": {
+    "cry": "q.bedrock_stateful('nidorina', 'cry')",
+    "recoil": "q.bedrock_stateful('nidorina', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidorina', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidorina', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidorina', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidorina', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidorina', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidorina', 'blink')"]
+    },
+    "run": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidorina', 'ground_run')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidorina', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('nidorina', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

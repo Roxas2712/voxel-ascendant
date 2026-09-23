@@ -73,6 +73,11 @@ end
 local function isOutdoor(map)
   if not (map and map.def) then return false end
   local id, def = mapId(map), map.def
+  -- Native terrace maps use indoor tilesets; Weather owns their exact guards.
+  if id == "CELADON_MART_ROOF" or id == "CELADON_MANSION_ROOF" then
+    local weather = V.require("Weather")
+    return type(weather.isOutdoor) == "function" and weather.isOutdoor(map) or false
+  end
   if SCENIC_OUTDOORS[id] then return true end
   if def.outdoor ~= nil then return def.outdoor and true or false end
   if def.environment ~= nil then
@@ -146,7 +151,7 @@ end
 function WeatherTweak.observe(map, baseMode, baseClock, outdoor)
   local clock = finite(baseClock, WeatherTweak.clock)
   local elapsed = WeatherTweak.lastClock and (clock - WeatherTweak.lastClock) or 0
-  if elapsed < 0 then elapsed = elapsed + 65521 end
+  if elapsed < 0 then elapsed = elapsed + (V.require("Weather").CLOCK_SECONDS or 65521) end
   -- A save restore/long suspension is not a weather transition. Reset the
   -- small observer instead of manufacturing an aftermath from stale state.
   if elapsed > 120 then
@@ -177,9 +182,13 @@ function WeatherTweak.observe(map, baseMode, baseClock, outdoor)
     local spell = math.floor(clock / 240)
     local target = .62 + ((spell * 19 + 11) % 39) / 100
     WeatherTweak.snowTarget = math.min(1, target)
-    WeatherTweak.snowAmount = math.min(
-      WeatherTweak.snowTarget,
-      WeatherTweak.snowAmount + elapsed / WeatherTweak.SNOW_BUILD_SECONDS)
+    if WeatherTweak.snowAmount < WeatherTweak.snowTarget then
+      WeatherTweak.snowAmount = math.min(WeatherTweak.snowTarget,
+        WeatherTweak.snowAmount + elapsed / WeatherTweak.SNOW_BUILD_SECONDS)
+    else
+      WeatherTweak.snowAmount = math.max(WeatherTweak.snowTarget,
+        WeatherTweak.snowAmount - elapsed / WeatherTweak.SNOW_MELT_SECONDS)
+    end
   else
     WeatherTweak.snowAmount = math.max(
       0, WeatherTweak.snowAmount - elapsed / WeatherTweak.SNOW_MELT_SECONDS)
@@ -205,7 +214,7 @@ function WeatherTweak.groundMode(map, baseMode, nativeGround)
   if nativeGround == false then return "clear" end
   if WeatherTweak.enabled() and isOutdoor(map)
       and WeatherTweak.snowAmount > 0
-      and (baseMode == "clear" or baseMode == "heat") then
+      then
     return "snow"
   end
   if WeatherTweak.enabled() and isOutdoor(map)

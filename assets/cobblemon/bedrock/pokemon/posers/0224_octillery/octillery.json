@@ -1,0 +1,32 @@
+{
+  "portraitScale": 1.33,
+  "portraitTranslation": [-0.03, 0.26, 0],
+  "profileScale": 0.61,
+  "profileTranslation": [0, 0.76, 0],
+  "rootBone": "octillery",
+  "animations": {
+    "cry": "q.bedrock_stateful('octillery', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "WALK", "PORTRAIT", "PROFILE", "NONE"],
+      "animations": [
+        "q.bedrock('octillery', 'ground_idle')",
+        "q.look('head')",
+        "q.quadruped_walk(0.66, 0.3, 'tentacle_front_left', 'tentacle_front_right', 'tentacle_outer_back_left', 'tentacle_outer_back_right')",
+        "q.quadruped_walk(0.66, 0.3, 'tentacle_middle_back_left', 'tentacle_middle_back_right', 'tentacle_inner_back_left', 'tentacle_inner_back_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('octillery', 'blink')"]
+    },
+    "swimming": {
+      "poseTypes": ["SWIM", "FLOAT"],
+      "animations": [
+        "q.bedrock('octillery', 'ground_idle')",
+        "q.look('head')",
+        "q.quadruped_walk(1, 1, 'tentacle_front_left', 'tentacle_front_right', 'tentacle_outer_back_left', 'tentacle_outer_back_right')",
+        "q.quadruped_walk(1, 1, 'tentacle_middle_back_left', 'tentacle_middle_back_right', 'tentacle_inner_back_left', 'tentacle_inner_back_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('octillery', 'blink')"]
+    }
+  }
+}

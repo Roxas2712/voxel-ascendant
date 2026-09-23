@@ -1,6 +1,9 @@
--- Encounter-local appearance control. Never writes a live mon or a save option.
+-- Encounter-local overrides with an optional persisted HD default.
+-- Rendering never writes a live Pokemon or changes its battle state.
 local V = ...
 local M = { KEY="0" }
+M.setting=V.require("ModSetting").new("battleHdSprites", "HD BATTLE SPRITES",
+  {false,true}, {"OFF", "ON"}, false)
 local states = setmetatable({}, {__mode="k"})
 local Game = require("src.core.Game")
 local Battle = require("src.battle.BattleState")
@@ -8,10 +11,22 @@ local unpack = table.unpack or unpack
 local function pack(...) return {n=select("#",...),...} end
 local function active(game)
   local stack=game and game.stack
-  local b=stack and stack:top()
-  if b and b.player and b.enemy and b.data and b.phase=="menu"
+  local top=stack and stack:top()
+  local function ready(b)
+    return b and b.player and b.enemy and b.data and (b.phase=="menu" or b.phase=="moveSelect")
       and not b.current and not b.growIn and not b.sendingOut
-      and not b.ended and not b.demo and not b.oakDemo then return b end
+      and not b.ended and not b.demo and not b.oakDemo
+  end
+  if ready(top) then return top end
+  -- F3 may be opened from the move/item selector, which is a ListMenu above
+  -- the BattleState. Its command-menu battle is still the exact art owner.
+  if top and type(top.items)=="table" then
+    for i=#(stack.states or {}),1,-1 do
+      local b=stack.states[i]
+      if ready(b) then return b end
+      if b and b.player and b.enemy then return end
+    end
+  end
 end
 M.active=active
 local function staged(b)
@@ -19,12 +34,18 @@ local function staged(b)
 end
 local function state(b)
   local s=states[b]
-  if not s then s={choice="current",cache={}};states[b]=s end
+  if not s then
+    local hd=M.setting:get()==true
+    s={choice=hd and "hd" or "current",label=hd and "HD ANIMATED" or "AUTO",cache={}}
+    states[b]=s
+  end
   return s
 end
-function M.choice(b) return states[b] and states[b].choice or "current" end
+function M.choice(b)
+  return b and b.player and b.enemy and state(b).choice or "current"
+end
 function M.manual(b)
-  local c=M.choice(b);return c=="original" or c=="crystal"
+  local c=M.choice(b);return c=="original" or c=="crystal" or c=="hd"
 end
 local function pathFor(b,mon,view,choice)
   if not mon or mon._ascMegaForm or mon.ascMegaForm or mon.form then return nil end
@@ -36,7 +57,8 @@ local function pathFor(b,mon,view,choice)
   elseif choice=="crystal" then
     -- Public companion seam preserves its exact shiny and rear artwork.
     for _,id in ipairs({"kanto_ascendant","trainer_rematch"})do
-      local ok,h=pcall(V.mod.find,V.mod,id)
+      local ok,h=pcall(V.mod.find,id)
+      if not ok or not h then ok,h=pcall(V.mod.find,V.mod,id)end
       local a=ok and h and h.exports and h.exports.crystalAnimation
       if a and a.staticFrameOne then
         local shiny=V.require("Gen2CrystalFronts").isShiny(mon)
@@ -74,8 +96,27 @@ local function imageFor(b,side,view,choice)
   local old=s.cache[key]
   local stamp=tostring(mon.species)..":"..tostring(mon._ascMegaForm)..":"..tostring(mon.form)..":"..tostring(mon.shiny)..":"..tostring(mon.dvs)
   if old and old.mon==mon and old.stamp==stamp then return old.image or nil end
-  local image,animation,presentation
-  if choice=="crystal"then image,animation,presentation=crystalMotion(b,mon,view)end
+  local image,animation,presentation,pending
+  if choice=="hd" then
+    animation=V.require("HdPokemonPresentation")
+    presentation,pending=animation.create(b.game,mon,view)
+    -- All direction banks share the actor's clock: orbiting must not restart
+    -- an idle animation or change its playback speed.
+    if presentation then
+      for _,entry in pairs(s.cache)do
+        if entry.side==side and entry.mon==mon and entry.stamp==stamp
+            and entry.animation==animation and entry.presentation then
+          presentation.elapsed=entry.presentation.elapsed
+          animation.advancePresentation(presentation,0,b.game or Game)
+          break
+        end
+      end
+    end
+    image=presentation and presentation.image
+    -- Pending is not missing artwork: retry when the bounded preparation
+    -- completes instead of caching a permanent native fallback for this mon.
+    if pending=="pending" then return nil end
+  elseif choice=="crystal" then image,animation,presentation=crystalMotion(b,mon,view)end
   local path,tc
   if not image then path,tc=pathFor(b,mon,view,choice)end
   if path then
@@ -88,9 +129,55 @@ local function imageFor(b,side,view,choice)
   return image
 end
 M.imageFor=imageFor
+-- Source rows are front/left/back/right. Select from the opponent bearing
+-- in camera space; the card itself remains a readable upright billboard.
+function M.viewToward(position,other,eye,previous)
+  if not (position and other and eye) then return previous or "front" end
+  local dx,dz=other[1]-position[1],other[3]-position[3]
+  local ex,ez=eye[1]-position[1],eye[3]-position[3]
+  local forward=dx*ex+dz*ez
+  local right=dx*ez-dz*ex
+  if dx*dx+dz*dz<1e-8 or ex*ex+ez*ez<1e-8 then return previous or "front" end
+  local a,b=math.abs(forward),math.abs(right)
+  -- Small hysteresis prevents alternating rows at a diagonal during drift.
+  local sameQuadrant=(previous=="front" and forward>=0)
+    or (previous=="world_back" and forward<0)
+    or (previous=="right" and right>=0)
+    or (previous=="left" and right<0)
+  if sameQuadrant and math.abs(a-b)<math.max(a,b)*.12 then return previous end
+  if a>b then return forward>=0 and "front" or "world_back" end
+  return right>=0 and "right" or "left"
+end
+function M.worldView(b,side)
+  local s=state(b)
+  return s.worldViews and s.worldViews[side] or (side=="player" and "right" or "left")
+end
+function M.orientWorld(b,layout,eye)
+  if M.choice(b)~="hd" or not (layout and eye) then return false end
+  local s=state(b);s.worldViews=s.worldViews or {}
+  local changed=false
+  for _,side in ipairs({"player","enemy"})do
+    local previous=M.worldView(b,side)
+    local nextView=M.viewToward(layout[side],layout[side=="player" and "enemy" or "player"],eye,previous)
+    if nextView~=previous then changed=true end
+    s.worldViews[side]=nextView
+  end
+  return changed
+end
+-- Warm only immutable HD frames during the covered introduction. Do not add
+-- a live presentation to the encounter cache or advance its animation clock.
+function M.prepare(b,side,view)
+  if M.choice(b)~="hd" then return false end
+  local actor=b[side];local mon=actor and actor.mon
+  if not mon or actor.transformed or actor.preTransform
+      or (actor.curStats and actor.curStats~=mon.stats)
+      or (side=="enemy" and (b.ghost or b.ghostReal)) then return false end
+  local presentation,status=V.require("HdPokemonPresentation").create(b.game,mon,view)
+  return presentation~=nil,status
+end
 function M.update(b,dt)
   local s=states[b]
-  if not s or s.choice~="crystal"then return end
+  if not s or (s.choice~="crystal" and s.choice~="hd") then return end
   for _,entry in pairs(s.cache)do
     if entry.animation and entry.presentation and b[entry.side]
         and b[entry.side].mon==entry.mon then
@@ -104,16 +191,28 @@ function M.choices(b)
   local rows={{id="current",label="AUTO"}}
   local view=staged(b) and "front" or "back"
   for _,r in ipairs({{id="original",label="ORIGINAL"},{id="crystal",label="CRYSTAL"}})do
-    if imageFor(b,"player",view,r.id) and imageFor(b,"enemy","front",r.id) then rows[#rows+1]=r end
+    -- Availability is per actor, just like HD. A missing enemy pack must
+    -- not hide an installed player style; that actor retains its native art.
+    if imageFor(b,"player",view,r.id) or imageFor(b,"enemy","front",r.id) then rows[#rows+1]=r end
+  end
+  local hd=V.require("HdPokemonPresentation")
+  if hd.resolve(b.game,b.player and b.player.mon) or hd.resolve(b.game,b.enemy and b.enemy.mon) then
+    rows[#rows+1]={id="hd",label="HD ANIMATED"}
   end
   if staged(b) then
     local provider=V.PokemonModelProvider
-    for _,id in ipairs({"stadium1","stadium2"})do
+    for _,id in ipairs({"stadium1","stadium2","cobblemon"})do
       local source=provider.resolve(id)
-      if source==id then rows[#rows+1]={id=id,label=id=="stadium1" and "STADIUM 1" or "STADIUM 2"} end
+      if source==id then rows[#rows+1]={id=id,label=id=="cobblemon" and "COBBLEMON" or id=="stadium1" and "STADIUM 1" or "STADIUM 2"} end
     end
   end
   return rows
+end
+-- A broken optional art provider may fall back for this encounter only.
+-- The persisted HD preference remains untouched for the next encounter.
+function M.recover(b)
+  local s=state(b)
+  s.choice="original";s.label="ORIGINAL (RECOVERY)";s.cache={}
 end
 function M.cycle(game)
   local b=active(game);if not b then return false end
@@ -128,7 +227,7 @@ function M.modelRequest()
   local stack=Game.stack
   for _,b in ipairs(stack and stack.states or {})do
     local c=M.choice(b)
-    if c~="current" then return (c=="stadium1" or c=="stadium2") and c or "crystal" end
+    if c~="current" then return (c=="stadium1" or c=="stadium2" or c=="cobblemon") and c or "crystal" end
   end
 end
 function M.withSprites(b,world,fn,...)
@@ -187,7 +286,15 @@ function M.install()
     return key(self,k,...)
   end
   local draw=Game.draw
-  function Game:draw(...)local r=pack(draw(self,...));M.draw(self);return unpack(r,1,r.n)end
+  function Game:draw(...)
+    -- Includes covered transitions and Dex, and cleans abandoned requests
+    -- after either screen closes. Never perform this work per eye or shadow.
+    V.require("HdPokemonPresentation").pump()
+    local r=pack(draw(self,...))
+    V.require("OverworldBattle").drawFallbackNotice(self)
+    M.draw(self)
+    return unpack(r,1,r.n)
+  end
   V.mod.hooks:wrap("input.pointer",function(next,game,p)
     if p and p.phase=="pressed" and (p.source=="touch" or p.source=="mouse")
         and (p.source~="mouse" or p.button==nil or p.button==1) and M.press(game,p.x,p.y) then return true end

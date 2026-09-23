@@ -1,0 +1,76 @@
+{
+  "portraitScale": 1.8,
+  "portraitTranslation": [-0.35, -0.8, 0],
+  "profileScale": 0.8,
+  "profileTranslation": [0, 0.52, 0.0],
+  "rootBone": "parasect",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('parasect', 'cry')",
+    "faint": "q.bedrock_primary('parasect', 'faint')"
+  },
+  "poses": {
+    "stand": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.bedrock('parasect', 'ground_idle')"
+      ]
+    },
+    "in-air": {
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.bedrock('parasect', 'ride_jump')",
+        "q.bedrock('parasect', 'ride_ground_run')"
+      ],
+      "transformTicks": 2,
+      "transformToTicks": 2
+    },
+    "walk": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.bedrock('parasect', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('parasect', 'ride_ground_run')"
+        }
+      ]
+    },
+    "run": {
+      "poseTypes": ["STAND","WALK"],
+      "isBattle": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.bedrock('parasect', 'ground_run')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('parasect', 'ride_ground_run')"
+        }
+      ],
+      "transformTicks": 5
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('parasect', 'sleep')"
+      ]
+    }
+  }
+}

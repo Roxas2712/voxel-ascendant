@@ -1,0 +1,118 @@
+{
+  "portraitScale": 1.71,
+  "portraitTranslation": [-1.11, 0.88, 0],
+  "profileScale": 0.54,
+  "profileTranslation": [0, 0.81, 0],
+  "rootBone": "dewgong",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5],
+    "seat_2": [0, 0.45, 0.5],
+    "seat_2_reverse": [0, 0.45, 0.5]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5],
+    "seat_2": [0, 0.45, 0.5],
+    "seat_2_reverse": [0, 0.45, 0.5]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('dewgong', 'cry')"
+  },
+  "poses": {
+    "water-jump": {
+      "poseTypes": ["FLOAT", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dewgong', 'water_swim')",
+        "q.bedrock('dewgong', 'ride_water_swim')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dewgong', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dewgong', 'blink')"
+      ]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'water_swim')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('dewgong', 'ride_water_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('dewgong', 'blink')"]
+    },
+    "surface-swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'water_swim')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('dewgong', 'ride_water_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('dewgong', 'blink')"]
+    },
+    "surface-float": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'water_idle')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('dewgong', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dewgong', 'blink')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('dewgong', 'water_idle')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('dewgong', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dewgong', 'blink')"
+      ]
+    }
+  }
+}

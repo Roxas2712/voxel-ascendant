@@ -1,0 +1,90 @@
+{
+  "portraitScale": 2,
+  "portraitTranslation": [-0.09, 0.2, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0.03, 0.66, 0],
+  "rootBone": "sneasel",
+  "animations": {
+    "cry": "q.bedrock_stateful('sneasel', 'cry')",
+    "recoil": "q.bedrock_stateful('sneasel', 'recoil')"
+  },
+  "poses": {
+    "portrait": {
+      "poseName": "portrait",
+      "poseTypes": ["PORTRAIT"],
+      "animations": [
+        "q.bedrock('sneasel', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('sneasel', 'blink')"
+      ]
+    },
+    "battle-idle": {
+      "poseName": "battle-idle",
+      "isBattle": true,
+      "poseTypes": ["STAND"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('sneasel', 'battle_idle')"
+
+      ],
+      "quirks": [
+        "q.bedrock_quirk('sneasel', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": ["STAND", "PROFILE", "NONE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('sneasel', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('sneasel', 'blink')"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": ["WALK"],
+      "condition": "!q.is_sprinting",
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('sneasel', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('sneasel', 'blink')"
+      ]
+    },
+    "run": {
+      "poseName": "run",
+      "poseTypes": ["WALK"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('sneasel', 'ground_run')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('sneasel', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "animations": ["q.bedrock('sneasel', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "battle-sleep": {
+      "poseName": "battle-sleep",
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "animations": ["q.bedrock('sneasel', 'battle_sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

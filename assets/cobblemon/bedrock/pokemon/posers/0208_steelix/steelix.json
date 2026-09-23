@@ -1,0 +1,54 @@
+{
+  "portraitScale": 0.72,
+  "portraitTranslation": [-1.61, 3.12, 0],
+  "profileScale": 0.21,
+  "profileTranslation": [-0.04, 1.46, 0],
+  "rootBone": "steelix",
+  "animations": {
+    "cry": "q.bedrock_stateful('steelix', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('steelix', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('steelix', 'blink')",
+        "q.bedrock_quirk('steelix', 'quirk_jawjitter')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('steelix', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('steelix', 'blink')",
+        "q.bedrock_quirk('steelix', 'quirk_jawjitter')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('steelix', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('steelix', 'blink')",
+        "q.bedrock_quirk('steelix', 'quirk_jawjitter')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('steelix', 'sleep')"]
+    }
+  }
+}

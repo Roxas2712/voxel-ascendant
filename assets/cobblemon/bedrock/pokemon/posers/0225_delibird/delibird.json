@@ -1,0 +1,53 @@
+{
+  "portraitScale": 1.61,
+  "portraitTranslation": [0, 0.74, 0],
+  "profileScale": 0.52,
+  "profileTranslation": [0, 1, 0],
+  "rootBone": "delibird",
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND", 
+        "NONE", 
+        "FLOAT", 
+        "PORTRAIT", 
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')", 
+        "q.bedrock('delibird', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('delibird', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK", 
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('delibird', 'ground_idle')",
+        "q.biped_walk(0.85, 0.75, 'leg_left', 'leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('delibird', 'blink')"
+      ]
+    },
+    "flying": {
+      "poseTypes": [
+        "FLY", 
+        "HOVER"
+      ],
+      "animations": [
+        "q.sine_wing_flap(0.7, 0.4, 25, 'z', 'arm_right3', 'arm_right')",
+        "q.look('head')",
+        "q.bedrock('delibird', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('delibird', 'blink')"
+      ]
+    }
+  }
+}

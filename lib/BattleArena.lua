@@ -349,6 +349,47 @@ BattleArena.SHAPES[4] = { id="diagonal_east", w=6, h=4,
   enemy={4.25,.75}, player={.75,2.25}, axisYaw=math.atan2(3.5,1.5) }
 BattleArena.SHAPES[5] = { id="diagonal_west", w=6, h=4,
   enemy={.75,.75}, player={4.25,2.25}, axisYaw=-math.atan2(3.5,1.5) }
+-- Complete transverse floor, including a rear/flank apron for each trainer.
+-- Only reviewed entries use this court; automatic legacy search is unchanged.
+BattleArena.SHAPES[6] = { id="court_east", w=8, h=2,
+  enemy={5,0}, player={2,0}, axisYaw=math.pi/2, authoredOnly=true,
+  trainerOffsets={player={-18,6},enemy={18,6}} }
+-- Rotate the complete four-actor court, including the trainer aprons.
+-- These are catalogue-only: a runtime search must not select an unreviewed
+-- orientation just because the two Pokemon happen to fit.
+BattleArena.SHAPES[7] = { id="court_north", w=2, h=8,
+  enemy={0,2}, player={0,5}, axisYaw=0, authoredOnly=true,
+  trainerOffsets={player={6,18},enemy={6,-18}} }
+BattleArena.SHAPES[8] = { id="court_south", w=2, h=8,
+  enemy={0,5}, player={0,2}, axisYaw=math.pi, authoredOnly=true,
+  trainerOffsets={player={-6,-18},enemy={-6,18}} }
+BattleArena.SHAPES[9] = { id="court_west", w=8, h=2,
+  enemy={2,0}, player={5,0}, axisYaw=-math.pi/2, authoredOnly=true,
+  trainerOffsets={player={18,-6},enemy={-18,-6}} }
+-- Compact clearings retain forty world units between Pokemon and explicit
+-- rear trainer seats. Runtime art/hull checks still decide whether unusually
+-- large Pokemon fit; these never replace the general-purpose search shapes.
+BattleArena.SHAPES[10] = { id="court_small_east", w=6, h=2,
+  enemy={3.75,0}, player={1.25,0}, axisYaw=math.pi/2, authoredOnly=true,
+  trainerOffsets={player={-12,6},enemy={12,6}} }
+BattleArena.SHAPES[11] = { id="court_small_north", w=2, h=6,
+  enemy={0,1.25}, player={0,3.75}, axisYaw=0, authoredOnly=true,
+  trainerOffsets={player={6,12},enemy={6,-12}} }
+BattleArena.SHAPES[12] = { id="court_small_south", w=2, h=6,
+  enemy={1,3.75}, player={1,1.25}, axisYaw=math.pi, authoredOnly=true,
+  trainerOffsets={player={-6,-12},enemy={-6,12}} }
+BattleArena.SHAPES[13] = { id="court_small_west", w=6, h=2,
+  enemy={1.25,1}, player={3.75,1}, axisYaw=-math.pi/2, authoredOnly=true,
+  trainerOffsets={player={12,-6},enemy={-12,-6}} }
+-- Five-cell indoor strips. Both trainer envelopes still pass the same
+-- floor/geometry clearance, and live actor hulls may reject oversized art.
+-- Used only by explicit room entries, never by the automatic map search.
+BattleArena.SHAPES[14] = { id="court_tight_east", w=5, h=2,
+  enemy={2.75,0}, player={1,0}, axisYaw=math.pi/2, authoredOnly=true,
+  trainerOffsets={player={-8,6},enemy={8,6}} }
+BattleArena.SHAPES[15] = { id="court_tight_west", w=5, h=2,
+  enemy={1,1}, player={2.75,1}, axisYaw=-math.pi/2, authoredOnly=true,
+  trainerOffsets={player={8,-6},enemy={-8,-6}} }
 BattleArena.SEARCH_SHAPES = { BattleArena.SHAPES[1],
   BattleArena.SHAPES[4], BattleArena.SHAPES[5], BattleArena.SHAPES[2] }
 
@@ -414,7 +455,7 @@ BattleArena.entryList = entryList
 -- The map's open cells as one flat boolean grid, so the rectangle test
 -- below is a lookup rather than a tileset walk per cell. Built once per
 -- search; a battle asks for one.
-local function openGrid(map, surfing, compact)
+local function openGrid(map, surfing, compact, surface)
   local furniture
   if compact then
     local ok, value = pcall(V.require, "VoxelFurniture")
@@ -426,6 +467,10 @@ local function openGrid(map, surfing, compact)
     local row = cy * w
     for cx = 0, w - 1 do
       local free = openCell(map, cx, cy, surfing)
+      if free and surface then
+        local water=map.isWaterCell and map:isWaterCell(cx,cy) or false
+        free=(surface=='water' and water) or (surface=='land' and not water)
+      end
       if free and compact then
         -- Native chair cells may be walkable so seated NPCs can occupy them.
         -- Their replacement seat/pedestal deck is not a spare battle aisle.
@@ -455,6 +500,7 @@ local function place(shape, x, y)
   local px, py = x + shape.player[1], y + shape.player[2]
   local arena = {
     shape = shape.id,
+    trainerOffsets = shape.trainerOffsets,
     axisYaw = shape.axisYaw or 0,
     narrow = shape.narrow == true,
     x = x, y = y, w = shape.w, h = shape.h,
@@ -565,6 +611,44 @@ local function surfaceArtAt(map, cx, cy)
   return type(shape) == "table" and shape.art or nil
 end
 
+-- An authored dollhouse room can put its camera just beyond its open front.
+-- This authorizes only the lens, never actor footing, routes or map warps.
+-- Require both the exact native dimensions and the renderer's room-panel
+-- profile so a replacement map cannot inherit an invisible-wall exception.
+local cameraAprons=setmetatable({}, {__mode="k"})
+function BattleArena.inCameraApron(map, wx, wz)
+  if type(map)~="table" then return false end
+  local cached=cameraAprons[map]
+  if not cached or cached.revision~=requestRevision or cached.id~=map.id or cached.def~=map.def
+      or cached.width~=map.widthCells or cached.height~=map.heightCells then
+    local pick=authoredFor(map.id)
+    local apron=type(pick)=="table" and pick.cameraApron
+    local valid=not (map.def and (map.def.generation==2 or map.def.outdoor==true))
+      and type(apron)=="table" and apron.edge=="south"
+      and apron.width==map.widthCells and apron.height==map.heightCells
+      and type(apron.depth)=="number" and apron.depth>0 and apron.depth<=96
+    if valid then
+      local ok,rooms=pcall(V.require,"Gen1InteriorPanoramas")
+      local profile=ok and rooms.profileFor and rooms.profileFor(map)
+      valid=profile and profile.nativeRoomPanels==true
+      if not valid then
+        local gymOK,gyms=pcall(V.require,"Gen1GymInteriors")
+        local gym=gymOK and gyms.profiles and gyms.profiles[map.id]
+        local d=map.def
+        valid=gym and d and d.generation~=2 and d.tileset==gym.tileset
+          and d.width==gym.width and d.height==gym.height
+          and next(d.connections or {})==nil
+      end
+    end
+    cached={revision=requestRevision,id=map.id,def=map.def,width=map.widthCells,height=map.heightCells,
+      depth=valid and apron.depth or false}
+    cameraAprons[map]=cached
+  end
+  return cached.depth and wx>=CELL and wx<(map.widthCells-1)*CELL
+    and wz>=(map.heightCells-1)*CELL
+    and wz<=map.heightCells*CELL+cached.depth or false
+end
+
 -- One synchronous camera solve may cast hundreds of overlapping rays.
 -- Share cell samples only within that solve; nothing survives into a new
 -- frame, option change, terrain edit or battle. Nested queries share the scope.
@@ -613,7 +697,9 @@ end
 -- of grass, flowers and collision columns; those are not another floor.
 local function heightAt(map, wx, wz)
   local cx, cy = math.floor(wx / CELL), math.floor(wz / CELL)
-  if not map:inBounds(cx, cy) then return BattleArena.BORDER_H end
+  if not map:inBounds(cx, cy) then
+    return BattleArena.inCameraApron(map,wx,wz) and 0 or BattleArena.BORDER_H
+  end
   local sample=sampleCell(map,cx,cy)
   if sample and sample.height~=nil then return sample.height end
   local h = groundAt(map, wx, wz)
@@ -690,6 +776,9 @@ function BattleArena.cameraClear(map, eye, edgeMargin)
   local margin = tonumber(edgeMargin)
   if margin == nil then margin = BattleArena.CAMERA_EDGE_MARGIN end
   margin = math.max(0, margin)
+  if BattleArena.inCameraApron(map,wx,wz) then
+    return heightAt(map,wx,wz)+3<(eye[2] or 0)
+  end
   if wx < margin or wz < margin
       or wx >= map.widthCells * CELL - margin
       or wz >= map.heightCells * CELL - margin then return false end
@@ -752,6 +841,27 @@ function BattleArena.clearance(map, arena)
   end
   for _, mark in ipairs({ arena.player, arena.enemy }) do
     if BattleArena.visibility(map, eye, mark, groundY) < 3 then return false end
+  end
+  if arena.trainerOffsets then
+    local H=V.require("BattleHeroesBridge")
+    local geometry=H.geometryForMap(map)
+    -- Reserve the full body as well as the foot. The live card/HUD check
+    -- still validates actual art, user sizing and manual camera changes.
+    for _,side in ipairs({"player","enemy"}) do
+      local mark,offset=arena[side],arena.trainerOffsets[side]
+      local x,z=mark[1]+offset[1]*1.5,mark[2]+offset[2]*1.5
+      for _,dx in ipairs({-8,0,8}) do
+        for _,dz in ipairs({-6,0,6}) do
+          if not openCell(map,math.floor((x+dx)/CELL),math.floor((z+dz)/CELL),arena.surfing==true)
+              or math.abs(groundAt(map,x+dx,z+dz)-groundY)>.5
+              or geometry(x+dx,z+dz)>groundY+.5 then return false end
+        end
+        if BattleArena.visibility(map,eye,{x+dx,z},groundY,27)<3 then return false end
+        for _,rise in ipairs({1,13.5,27}) do
+          if not H.geometryClear(geometry,eye,{x+dx,groundY+rise,z}) then return false end
+        end
+      end
+    end
   end
   return true
 end
@@ -830,19 +940,23 @@ function BattleArena.find(map, fromX, fromY, surfing)
       host = (ok and other) or nil
     end
     if shape and host and type(entry.x) == "number" and type(entry.y) == "number"
-       and entry.x == math.floor(entry.x) and entry.y == math.floor(entry.y) then
-      -- Authored water remains intentional, independent of whether the
-      -- triggering player was surfing. Cache the grid per borrowed map while
-      -- comparing multiple candidates.
-      local cached = grids[host]
+       and entry.x == math.floor(entry.x) and entry.y == math.floor(entry.y)
+       and (not entry.surface or entry.surface==(surfing and 'water' or 'land')) then
+      -- Regional entries distinguish land and surf encounters. Legacy entries
+      -- keep their original authored surface contract. Cache each grid once.
+      local surfaces=grids[host]
+      if not surfaces then surfaces={};grids[host]=surfaces end
+      local key=entry.surface or 'any'
+      local cached = surfaces[key]
       if not cached then
-        local grid, gw = openGrid(host, true)
+        local grid, gw = openGrid(host, true, nil, entry.surface)
         cached = { grid, gw }
-        grids[host] = cached
+        surfaces[key] = cached
       end
       if fits(cached[1], cached[2], entry.x, entry.y, shape.w, shape.h) then
         local arena = place(shape, entry.x, entry.y)
         arena.map, arena.cam = host, entry.cam
+        arena.surfing=surfing==true
         arena.anchorSource, arena.anchorIndex = "authored", index
         local eh = groundAt(host, arena.enemy[1], arena.enemy[2])
         local ph = groundAt(host, arena.player[1], arena.player[2])
@@ -888,6 +1002,7 @@ function BattleArena.find(map, fromX, fromY, surfing)
   if type(pick) == "table" and pick.adaptive ~= nil then
     adaptive = pick.adaptive == true
   end
+  if type(pick)=='table' and pick.fixed then adaptive=false end
   local id = tostring(map.id or "")
   local urban = id:match("_CITY$") or id:match("_TOWN$")
   if adaptive then
@@ -903,6 +1018,9 @@ function BattleArena.find(map, fromX, fromY, surfing)
     end
   end
   if authoredBest then return authoredBest end
+  -- Reviewed regional courts must not silently turn back into arbitrary
+  -- placements when a map mod blocks one. Let the caller use its 3D fallback.
+  if type(pick)=='table' and pick.fixed then return nil end
 
   local found = BattleArena.search(map, fromX, fromY, surfing, true, {
     height = originHeight, maxDistance = BattleArena.MAX_ANCHOR_DISTANCE,

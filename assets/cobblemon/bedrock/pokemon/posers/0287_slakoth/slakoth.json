@@ -1,0 +1,41 @@
+{
+  "portraitScale": 1.91,
+  "portraitTranslation": [-0.38, -1.4, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [-0.07, 0.49, 0],
+  "rootBone": "slakoth",
+  "animations": {
+    "cry": "q.bedrock_stateful('slakoth', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('slakoth', 'pose')"],
+      "quirks": ["q.bedrock_quirk('slakoth', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('slakoth', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('slakoth', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head')",
+        "q.biped_walk(1, 1, 'left_leg', 'right_leg')",
+        "q.bimanual_swing(0.66, 0.6, 'left_arm1', 'right_arm1')",
+        "q.bedrock('slakoth', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('slakoth', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('slakoth', 'sleep')"]
+    }
+  }
+}

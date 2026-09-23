@@ -253,6 +253,15 @@ return function(mod)
  mod.exports.setActive=function(value) active=value==true end
  mod.exports.isActive=function() return active and enabled('enabled') end
  mod.exports.schema='ascendant.battle-heroes/v1'
+ -- Optional pure resource preparation. Resolve current selected identities
+ -- directly; pose() would allocate animation state before the battle ticks.
+ mod.exports.preparePresentation=function(b,side,view)
+  if not b or (side~='player' and side~='enemy')
+   or not (valid(b) or standing(b)) or not staged(b)
+   or (side=='enemy' and b.kind~='trainer') then return false end
+  local player,enemy=identities(b)
+  return Art.prepareHero(side=='enemy' and enemy or player,side,view)
+ end
  mod.exports.presentation=function(b)
   local s,action,age=pose(b)
   if not s then return nil end
@@ -272,6 +281,8 @@ return function(mod)
   p.canvas,p.role,p.width,p.height=s.canvas,s.role,CharSprite.get(s.role).width or 12,CharSprite.get(s.role).height
   p.intro,p.action=b.showPlayerBack==true,action
   p.releaseHand=Art.releaseHand and Art.releaseHand(s.role,facing,view) or {.6,.5}
+  local cw=s.canvas:getWidth();p.width=p.width*cw/192
+  p.releaseHand={(p.releaseHand[1]*192+(cw-192)/2)/cw,p.releaseHand[2]}
   return p
  end
  mod.exports.enemyPresentation=function(b)
@@ -295,6 +306,8 @@ return function(mod)
   p.canvas,p.role,p.width,p.height=s.enemyCanvas,s.enemyRole,CharSprite.get(s.enemyRole).width or 12,CharSprite.get(s.enemyRole).height
   p.intro,p.action=b.showEnemyTrainer==true,action
   p.releaseHand=Art.releaseHand and Art.releaseHand(s.enemyRole,facing,view) or {.4,.5}
+  local cw=s.enemyCanvas:getWidth();p.width=p.width*cw/192
+  p.releaseHand={(p.releaseHand[1]*192+(cw-192)/2)/cw,p.releaseHand[2]}
   return p
  end
  mod.exports.trainerClasses=Trainers

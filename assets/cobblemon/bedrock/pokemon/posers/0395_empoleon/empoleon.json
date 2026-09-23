@@ -1,0 +1,125 @@
+{
+  "portraitScale": 1.65,
+  "portraitTranslation": [-0.13, 2.54, 0],
+  "profileScale": 0.44,
+  "profileTranslation": [0, 1.02, 0],
+  "rootBone": "empoleon",
+  "animations": {
+    "cry": "q.bedrock_stateful('empoleon', 'cry')",
+    "recoil": "q.bedrock_stateful('empoleon', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseName": "battle-standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('empoleon', 'battle_idle_old')"
+      ],
+      "quirks": ["q.bedrock_quirk('empoleon', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('empoleon', 'ground_idle_old')"
+      ],
+      "quirks": ["q.bedrock_quirk('empoleon', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('empoleon', 'ground_walk_old')"
+      ],
+      "quirks": ["q.bedrock_quirk('empoleon', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    },
+    "floating": {
+      "poseName": "floating",
+      "poseTypes": ["FLOAT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('empoleon', 'water_idle_old')"
+      ],
+      "quirks": ["q.bedrock_quirk('empoleon', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    },
+    "swimming": {
+      "poseName": "swimming",
+      "poseTypes": ["SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('empoleon', 'water_swim_old')"
+      ],
+      "quirks": ["q.bedrock_quirk('empoleon', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    },
+    "sleeping": {
+      "poseName": "sleeping",
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('empoleon', 'sleep_old')"],
+      "transformedParts": [
+        {
+          "part": "arm_left",
+          "rotation": [0, -12.5, 52.5]
+        },
+        {
+          "part": "arm_right",
+          "rotation": [0, 12.5, -52.5]
+        }
+      ]
+    }
+  }
+}

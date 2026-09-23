@@ -1,0 +1,54 @@
+{
+  "portraitScale": 2.14,
+  "portraitTranslation": [-0.75, -0.11, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0, 0.62, 0],
+  "rootBone": "jolteon",
+  "animations": {
+    "cry": "q.bedrock_stateful('jolteon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('jolteon', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('jolteon', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('jolteon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('jolteon', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'front_leg_left', 'front_leg_right', 'backleg_left', 'backleg_right')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('jolteon', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('jolteon', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

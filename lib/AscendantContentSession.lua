@@ -288,7 +288,14 @@ function M.new(mod,options)
     end,help)
   end
   self.model=load('SpriteDownloadMenuModel').new(catalog,self.store,{language='de',importIds=importIds,hasPartial=function(id)return ca:info('sprite-content/pending/'..id)~=nil or ca:info('sprite-content/archive-pending/'..id)~=nil end})
+  function self:cobblemon() return mod.exports and mod.exports.cobblemonContent end
+  function self:openCobblemon()
+    local c=self:cobblemon();if not c then return self:notice("Cobblemon unavailable")end
+    local menu=load("CobblemonMenu").new(mod,self.game,self.guided,self.de,c)
+    self.game.stack:push(menu);return menu
+  end
   function self:busy()
+    local c=self:cobblemon();if c and c.busy()then return true end
     if self.stadiumState then local s=self.stadiumState();if s and s.building then return true end end
     return self.maintenance and (self.maintenance.state=='checking' or self.maintenance.state=='downloading') or self.pendingDownloadIds~=nil or self.installer and self.installer.state=='downloading' or self.importer and self.importer:busy() or false
   end
@@ -323,17 +330,20 @@ function M.new(mod,options)
     return false -- keep the previous style until its replacement is installed and mounted
   end
   function self:planFor(ids)return catalog:plan(ids,self.store)end
-  function self:confirmDownload(ids)
+  function self:confirmDownload(ids,includeCobblemon)
     if self.maintenance:pending() then return self:openStatus()end
     if self.restart.phase~='idle'and self.restart.phase~='waiting'then return self:openStatus()end
     ids=load('SpriteDownloadSelection').expand(catalog,ids)
     if self.pendingDownloadIds or self.installer.state=='downloading' then return self:openStatus()end
     self.lastPackage=ids[1]
     local p=self:planFor(ids)
-    if p.ready then return self:notice('already_installed')end
+    local cb=includeCobblemon and self:cobblemon()
+    local cbMissing=cb and not cb.complete()
+    if p.ready then if cbMissing then return self:openCobblemon()end;return self:notice('already_installed')end
     if not p.canDownload then return self:notice('not_yet_available')end
     local help=(self.de and 'Alle fehlenden Pakete laufen automatisch nacheinander. Bereits installierte Inhalte werden uebersprungen. Fehlende Pakete: ' or 'All missing packages download automatically, one after another. Installed content is skipped. Missing packages: ')..#p.missing..(self.de and ' Danach wird das Spiel automatisch gespeichert und neu gestartet.' or ' When finished, the game saves and restarts automatically.')
-    local rows={{label=self.de and 'ABBRECHEN' or 'CANCEL',action='cancel'},{label=self.de and 'HERUNTERLADEN' or 'DOWNLOAD',action='start',right=string.format('%.1f MiB',p.downloadBytes/1048576)}}
+    if cbMissing then help=help..(self.de and ' Inklusive Cobblemon: 3D-Modelle und Animationen.' or ' Includes Cobblemon: 3D models and animations.')end
+    local rows={{label=self.de and 'ABBRECHEN' or 'CANCEL',action='cancel'},{label=self.de and 'HERUNTERLADEN' or 'DOWNLOAD',action='start',right=string.format('%.1f MiB',(p.downloadBytes+(cbMissing and cb.size() or 0))/1048576)}}
     self:pushMenu('vasc_content_confirm',self.de and 'DOWNLOAD BESTÄTIGEN' or 'CONFIRM DOWNLOAD',rows,function(row)
       if row.action=='start' then
         if self:busy() or self.removal:pending() then return self:notice('busy_or_restart_required')end
@@ -348,6 +358,9 @@ function M.new(mod,options)
         else
           local yes,err=self.installer:start(current,true);if not yes then return self:notice(err)end
         end
+        self.downloadIncludesCobblemon=includeCobblemon or nil
+        self.cobblemonQueued=cbMissing or nil
+        self.cobblemonBatch=cbMissing or nil
         self.activeOperation='download'
         self.downloadIds={};for i,id in ipairs(ids)do self.downloadIds[i]=id end
         self.lastPackage=current.missing[1]
@@ -467,6 +480,14 @@ function M.new(mod,options)
   end
   local last=self.installer.state
   function self:update(game,dt)
+    local cb=self:cobblemon()
+    if cb then cb.update() end
+    if self.cobblemonQueued and self.installer.state=="ready"then
+      self.cobblemonQueued=nil
+      if cb then local ok,err=cb.start();if ok then self:openCobblemon()else self:notice(err)end end
+    elseif self.cobblemonQueued and (self.installer.state=="cancelled" or self.installer.state=="error")then
+      self.cobblemonQueued=nil;self.cobblemonBatch=nil
+    end
     if self.pendingDownloadIds then
       local checked,total=self:inventoryProgress(self.pendingDownloadIds)
       if checked>=total then
@@ -521,7 +542,7 @@ function M.new(mod,options)
     end
     for _,gate in pairs(self.rewardMods or {})do gate:update()end
     self.diagnostics:update()
-    self.restart:update(self.game,dt,self.maintenance.state=='restart_required'or self.installer.state=='ready'or self.importer and self.importer.state=='ready',self:busy())
+    self.restart:update(self.game,dt,(not self.cobblemonBatch or cb and cb.status().phase=='ready') and (self.maintenance.state=='restart_required'or self.installer.state=='ready'or self.importer and self.importer.state=='ready'),self:busy() or self.cobblemonQueued~=nil)
     if self.installer.state~=last then last=self.installer.state;self.epoch=self.epoch+1 end
   end
   -- The old seen-once marker is not an explicit opt-out and must not silence this prompt.
@@ -529,6 +550,7 @@ function M.new(mod,options)
   self.promptDisabled=ca:read(PROMPT_KEY)=='1'
   self.onboardingShown=false
   function self:hasAvailableDownloads()
+    local cb=self:cobblemon();if cb and not cb.complete() then return true end
     for _,p in ipairs(catalog.data.packages)do
       if p.published==true and catalog:relevant(p) and not catalog:installed(p.id,self.store)then return true end
     end
@@ -550,7 +572,7 @@ function M.new(mod,options)
       {label=tr('PLAY WITHOUT DOWNLOAD','OHNE DOWNLOAD SPIELEN'),action='skip',help=tr('Continue without a download. Ask again next start.','Kein Download. Weiterspielen und beim naechsten Start erneut fragen.')},
       {label=tr('DOWNLOAD / UPDATE ALL','ALLES LADEN / UPDATEN'),action='all',help=tr('Download all missing sprite collections in one go: HD, Crystal, Mega and more. Installed sprites are kept. Stadium needs your own file.','Alle fehlenden Sprite-Sammlungen in einem Durchgang laden: HD, Crystal, Mega und weitere. Vorhandene Sprites bleiben. Stadium braucht deine eigene Datei.')},
       {label=tr('HD WALKING SPRITES','HD-LAUFSPRITES'),action='hd',help=tr('Animated HD Pokemon in the world and as followers. Kanto, Johto and Hoenn; download all or choose a generation.','Animierte HD-Pokemon in der Spielwelt und als Begleiter. Kanto, Johto und Hoenn; alle laden oder Generation waehlen.')},
-      {label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),action='graphics',help=tr('Complete base pack: Crystal, Mega, animations, pixel sprites and icons. One download for all normal Ascendant Pokemon graphics.','Komplettes Basispaket: Crystal, Mega, Animationen, Pixel-Sprites und Icons. Ein Download fuer alle normalen Ascendant-Pokemon-Grafiken.')},
+      {label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),action='graphics',help=tr('Complete base pack: Cobblemon models, Crystal, Mega, animations, pixel sprites and icons. One download for all normal Ascendant Pokemon graphics.','Komplettes Basispaket: Cobblemon-Modelle, Crystal, Mega, Animationen, Pixel-Sprites und Icons. Ein Download fuer alle normalen Ascendant-Pokemon-Grafiken.')},
       {label=tr('IMPORT A FILE','DATEI IMPORTIEREN'),action='import',help=tr('Choose a spritepack or vaschd file you already downloaded. The file is checked before import.','Eine geladene spritepack- oder vaschd-Datei auswaehlen. Sie wird vor dem Import geprueft.')},
       {label=tr('TURN OFF THIS PROMPT','ABFRAGE ABSCHALTEN'),action='disablePrompt',help=tr('Stop showing this choice at startup. You can turn it back on in Sprite Downloads.','Diese Startabfrage dauerhaft abschalten. Im Download-Menue kannst du sie wieder einschalten.')},
     }
@@ -567,7 +589,7 @@ function M.new(mod,options)
         self.onboardingShown=true;game.stack:pop()
         if row.action=='skip' or row.action=='disablePrompt' then return end
         local menu=self:menu(game,guided,de,rom)
-        if row.action=='graphics'then game.stack:push(menu);return self:confirmDownload(load('SpriteDownloadSelection').base(catalog))end
+        if row.action=='graphics'then game.stack:push(menu);return self:confirmDownload(load('SpriteDownloadSelection').base(catalog),true)end
         if row.action=='all' then game.stack:push(menu);return menu:downloadAll()end
         if row.action=='import' then return self:openPackageImport()end
         menu:openCategory(row.action=='hd' and 'full-hd' or 'pokemon')

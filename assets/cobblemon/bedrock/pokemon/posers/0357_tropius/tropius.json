@@ -1,0 +1,189 @@
+{
+  "portraitScale": 1.31,
+  "portraitTranslation": [ -1.23, 5.01, 0 ],
+  "profileScale": 0.28,
+  "profileTranslation": [ 0, 1.26, 0 ],
+  "rootBone": "tropius",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 1],
+    "seat_1_reverse": [0, 0.5, 1],
+    "seat_2": [0, 0.5, 1],
+    "seat_2_reverse": [0, 0.5, 1]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 1],
+    "seat_1_reverse": [0, 0.5, 1],
+    "seat_2": [0, 0.5, 1],
+    "seat_2_reverse": [0, 0.5, 1]
+  },
+   "animations": {
+     "faint": "q.bedrock_primary('tropius', 'faint', q.curve('one'))",
+     "cry": "q.bedrock_stateful('tropius', 'cry')",
+     "recoil": "q.bedrock_stateful('tropius', 'recoil')"
+   },
+   "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+        "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+        "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+        "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+        "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+        "q.bedrock('tropius', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tropius', 'blink')"
+      ]
+    },
+     "battle-standing": {
+       "poseTypes": ["STAND", "FLOAT"],
+       "isBattle": true,
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'battle_idle')"
+       ],
+       "quirks": [
+         "q.bedrock_quirk('tropius', 'blink')"
+       ]
+     },
+     "standing": {
+       "poseTypes": ["STAND", "NONE", "FLOAT"],
+       "isBattle": false,
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'ground_idle')"
+       ],
+       "quirks": [
+         "q.bedrock_quirk('tropius', 'blink')",
+         "q.bedrock_quirk('tropius', 'look_quirk')"
+       ]
+     },
+     "flying": {
+       "poseTypes": ["FLY"],
+       "condition": "!q.is_gliding",
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'air_fly')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tropius', 'ride_air_fly')"
+        }
+       ],
+       "quirks": [
+         "q.bedrock_quirk('tropius', 'blink')"
+       ]
+     },
+     "glide": {
+       "poseTypes": ["FLY"],
+       "condition": "q.is_gliding",
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'air_glide')",
+         "q.bedrock('tropius', 'ride_dive')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('tropius', 'ride_air_glide')"
+        }
+      ],
+       "quirks": [
+         "q.bedrock_quirk('tropius', 'blink')"
+       ]
+     },
+     "hovering": {
+       "poseTypes": ["HOVER"],
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'air_idle')"
+       ],
+       "quirks": [
+         "q.bedrock_quirk('tropius', 'blink')",
+         "q.bedrock_quirk('tropius', 'look_quirk')"
+       ]
+     },
+     "walking": {
+       "poseTypes": ["WALK", "SWIM"],
+       "condition": "!q.is_sprinting",
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'ground_walk')"
+       ],
+       "quirks": ["q.bedrock_quirk('tropius', 'blink')"]
+     },
+     "running": {
+       "poseTypes": ["WALK"],
+       "condition": "q.is_sprinting",
+       "animations": [
+         "q.look('neck', 0.5, 0.5, 15, -15, 25, -25)",
+         "q.look('neck2', 0.5, 0.5, 10, -10, 20, -20)",
+         "q.look('neck3', 0.5, 0.5, 10, -10, 15, -15)",
+         "q.look('neck4', 0.5, 0.5, 5, -5, 10, -10)",
+         "q.look('neck5', 0.5, 0.5, 5, -5, 5, -5)",
+         "q.bedrock('tropius', 'ground_run')"
+       ],
+       "quirks": ["q.bedrock_quirk('tropius', 'blink')"]
+     },
+     "air-sleep": {
+       "poseTypes": ["SLEEP"],
+       "condition": "q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+       },
+       "animations": [
+         "q.bedrock('tropius', 'air_sleep')"
+       ]
+     },
+     "sleeping": {
+       "poseTypes": ["SLEEP"],
+       "condition": "!q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+       },
+       "isBattle": false,
+       "animations": [
+         "q.bedrock('tropius', 'sleep')"
+       ]
+     },
+     "battle-sleep": {
+       "poseTypes": ["SLEEP"],
+       "condition": "!q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+       },
+       "isBattle": true,
+       "animations": [
+         "q.bedrock('tropius', 'battle_sleep')"
+       ]
+     }
+   }
+ }
+ 

@@ -122,6 +122,8 @@ local function blockedCell(state, p, cx, cy)
   if cx == p.cellX and cy == p.cellY then return nil end
   local map = state.map
   if not map:inBounds(cx, cy) then return "bounds" end
+  local snow = V.require("SnowRamps").permission(state, p, cx, cy)
+  if snow == true then return nil elseif snow == false then return "tile" end
   if not map:isWalkableCell(cx, cy) then
     if not (p.surfing and map:isWaterCell(cx, cy)) then return "tile" end
   end
@@ -356,10 +358,38 @@ end
 -- and nothing else. Every gate ABOVE the call (scripted moves, trainer
 -- engagement, transitions, anything on the stack) still applies to the
 -- free walk, because the wrap sits below them all.
+local function yieldToNative(state)
+  local p = state.player
+  if not p then return end
+  -- Script gates sit ABOVE handleInput, so tick's guard never runs during
+  -- Oak's escort, the Mart approach, or the Hall of Fame walk. Release the
+  -- remembered free-walk bearing at the update boundary instead. Do not
+  -- snap coordinates or change the engine's pose/animation clocks.
+  if p.moving or p.inputLocked or #(state.scriptMoves or {}) > 0
+      or (state.runner and state.runner:isRunning())
+      or (pos and (p.px ~= lastPx or p.py ~= lastPy)) then
+    FreeMove.drop()
+  end
+end
+
+local function afterNativeUpdate(state, ...)
+  yieldToNative(state)
+  return ...
+end
+
 function FreeMove.install()
+  V.require("SnowRamps").install()
   local OverworldState = require("src.world.OverworldController")
   if OverworldState.dramaticShapeFreeMoveHook then return end
   local inner = OverworldState.handleInput
+  local update = OverworldState.update
+
+  function OverworldState:update(...)
+    yieldToNative(self)
+    -- Also catch scripts started by this very update before the next draw.
+    -- Forward every native return without allocating a per-frame table.
+    return afterNativeUpdate(self, update(self, ...))
+  end
 
   function OverworldState:handleInput()
     if not FirstPerson.driving() then

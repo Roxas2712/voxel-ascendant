@@ -1,0 +1,101 @@
+{
+  "portraitScale": 1.2,
+  "portraitTranslation": [-0.85, 0.1, 0.0],
+  "profileScale": 0.55,
+  "profileTranslation": [0.0, 0.85, 0.0],
+  "rootBone": "camerupt",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0],
+    "seat_3": [0, 0.45, 0],
+    "seat_4": [0, 0.45, 0],
+    "seat_5": [0, 0.45, 0],
+    "seat_6": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0],
+    "seat_2": [0, 0.35, 0],
+    "seat_2_reverse": [0, 0.35, 0],
+    "seat_3": [0, 0.35, 0],
+    "seat_3_reverse": [0, 0.35, 0],
+    "seat_4": [0, 0.35, 0],
+    "seat_4_reverse": [0, 0.35, 0],
+    "seat_5": [0, 0.35, 0],
+    "seat_5_reverse": [0, 0.35, 0],
+    "seat_6": [0, 0.35, 0],
+    "seat_6_reverse": [0, 0.35, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0],
+    "seat_2": [0, 0.35, 0],
+    "seat_2_reverse": [0, 0.35, 0],
+    "seat_3": [0, 0.35, 0],
+    "seat_3_reverse": [0, 0.35, 0],
+    "seat_4": [0, 0.35, 0],
+    "seat_4_reverse": [0, 0.35, 0],
+    "seat_5": [0, 0.35, 0],
+    "seat_5_reverse": [0, 0.35, 0],
+    "seat_6": [0, 0.35, 0],
+    "seat_6_reverse": [0, 0.35, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('camerupt', 'cry')"
+  },
+  "poses": {
+    "jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('camerupt', 'ride_jump')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('camerupt', 'blink')"
+      ],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('camerupt', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('camerupt', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('camerupt', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('camerupt', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('camerupt', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('camerupt', 'blink')"]
+    },
+    "running": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isBattle": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('camerupt', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('camerupt', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('camerupt', 'blink')"]
+    }
+  }
+}

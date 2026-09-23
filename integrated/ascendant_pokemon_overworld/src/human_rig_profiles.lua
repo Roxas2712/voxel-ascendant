@@ -852,4 +852,55 @@ profiles["pokefan-female-gen2"]={protectHands=true,seatedCompatible=true,idleShi
 [3]={staticRegions={{.1578,.6125,.6422,.9477},{-.3685,.5654,.6843,1.0576}},centers={.38,.38},radius={.18,.18},window={.44,.63,.72,.78},pinSecond=true},
 }
 
+-- Source-specific demo profiles: keep the original HD rig profiles intact.
+for _,role in ipairs({'red','blue','green'}) do
+ profiles['voxel_'..role]={atlas='voxel-demo/'..role..'_cards_4x3.png',
+  protectHands=true,idleShiftScale=.004,legWindow={.60,.64},
+  [0]={mirrorSecondStep=true,centers={.11,.89},radius={.13,.13},window={.39,.55,.68,.73}},
+  [1]={centers={.62,-10},radius={.17,.1},window={.39,.55,.68,.73}},
+  [2]={mirrorSecondStep=true,centers={.11,.89},radius={.13,.13},window={.39,.55,.68,.73}},
+  [3]={centers={.38,-10},radius={.17,.1},window={.39,.55,.68,.73}},
+ }
+end
+
+-- Red already has opposite authored front/back steps. Reflecting B again
+-- turns it back into A and makes the same leg lift twice.
+profiles.voxel_red[0].mirrorSecondStep=false
+profiles.voxel_red[2].mirrorSecondStep=false
+profiles.voxel_blue[0].mirrorSecondStep=false
+profiles.voxel_green[0].mirrorSecondStep=false
+
+-- Voxel NPC artwork has separate landmarks; never borrow original-HD eyes/hands.
+for role,leg in pairs({['professor-oak']={.77,.80},['reds-mother']={.77,.80},['daisy-oak']={.73,.76},girl={.73,.76},fisher={.67,.70}}) do
+ profiles['voxel_npc_'..role]={protectHands=true,idleShiftScale=.004,legWindow=leg,
+ [0]={reuseFirstStep=true,mirrorSecondStep=true,centers={.11,.89},radius={.13,.13},window={.40,.56,.70,.75}},
+ [1]={centers={.64,-10},radius={.17,.1},window={.40,.56,.70,.75}},
+ [2]={reuseFirstStep=true,mirrorSecondStep=true,centers={.11,.89},radius={.13,.13},window={.40,.56,.70,.75}},
+ [3]={centers={.36,-10},radius={.17,.1},window={.40,.56,.70,.75}},
+ }
+end
+-- The converted NPC sheets preserve the authored normalized body layout.
+-- Reuse each role's clothing/equipment protection and movement gains.
+local voxelNpcProfiles={}
+local function copyProfile(value)
+ if type(value)~='table' then return value end
+ local out={};for k,v in pairs(value)do out[k]=copyProfile(v)end;return out
+end
+for role,profile in pairs(profiles)do
+ if type(profile.atlas)=='string' and profile.atlas:sub(1,5)=='npcs/'
+   and not profiles['voxel_npc_'..role] then
+  local converted=copyProfile(profile)
+  converted.atlas=profile.atlas:gsub('^npcs/','voxel-npcs/')
+  converted.variants=nil;converted.alternates=nil
+  -- Pixel-based repairs belong only to the old source atlas.
+  converted.bodyBottoms=nil;converted.trimBottomRows=nil
+  voxelNpcProfiles['voxel_npc_'..role]=converted
+ end
+end
+for key,profile in pairs(voxelNpcProfiles)do profiles[key]=profile end
+-- Authored outfit atlases already contain both alternating rear steps.
+for _,role in ipairs({'red','blue','green'})do
+ local p=copyProfile(profiles['voxel_'..role]);p[2].mirrorSecondStep=false;p[2].reuseFirstStep=false
+ profiles['voxel_wardrobe_'..role]=p
+end
 return profiles

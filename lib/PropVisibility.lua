@@ -1,13 +1,19 @@
 -- Conservative bounds against the actual draw pass, including world bend.
 -- A missing bound/matrix keeps the prop. No resource or gameplay ownership.
 local M={}
-function M.bounds(vertices)
+function M.bounds(vertices,budget)
   if not vertices or #vertices==0 then return nil end
-  local b={math.huge,math.huge,math.huge,-math.huge,-math.huge,-math.huge}
-  for _,v in ipairs(vertices)do for a=1,3 do
-    b[a]=math.min(b[a],v[a]);b[a+3]=math.max(b[a+3],v[a])
-  end end
-  return b
+  local x0,y0,z0=math.huge,math.huge,math.huge
+  local x1,y1,z1=-math.huge,-math.huge,-math.huge
+  for i=1,#vertices do
+    local v=vertices[i];local x,y,z=v[1],v[2],v[3]
+    if x<x0 then x0=x end;if y<y0 then y0=y end;if z<z0 then z0=z end
+    if x>x1 then x1=x end;if y>y1 then y1=y end;if z>z1 then z1=z end
+    -- Large authored props can exceed 400k vertices. Their bounds are part
+    -- of the asynchronous build too, not an unbudgeted final pass.
+    if budget and i%256==0 then budget.check()end
+  end
+  return {x0,y0,z0,x1,y1,z1}
 end
 local staticBounds=setmetatable({},{__mode='k'})
 -- Only call for immutable scene meshes (water from a completed terrain slot).

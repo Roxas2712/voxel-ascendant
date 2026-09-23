@@ -1,0 +1,27 @@
+{
+  "portraitScale": 2.2,
+  "portraitTranslation": [-0.07, -0.28, 0],
+  "profileScale": 0.75,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "magby",
+  "animations": {
+    "cry": "q.bedrock_stateful('magby', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head')", "q.bedrock('magby', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('magby', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bimanual_swing(0.66, 0.6, 'arm_left', 'arm_right')",
+        "q.bedrock('magby', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('magby', 'blink')"]
+    }
+  }
+}

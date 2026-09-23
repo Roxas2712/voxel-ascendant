@@ -316,12 +316,15 @@ function Player:start(moveId, attackerIsPlayer, opts)
 
   -- Capture/send-out chains use native OAM state and finalSprites. They must
   -- never be replaced even if a content mod happens to reuse one of the ids.
-  local variant = attackerIsPlayer and "move"
-                  or (entry and entry.opp and "opp" or "move")
-  -- GUST's opponent asset is already authored at the player endpoint.
-  -- Our role-based projection would mirror it twice and hit its caster.
-  -- Project the canonical target-centred program once for either attacker.
-  if moveId == "GUST" and entry and entry.move then variant = "move" end
+  -- The canonical program uses a user->target coordinate plane; mapPoint
+  -- already projects that plane onto the actual attacking side. Opponent
+  -- variants are authored in reversed screen coordinates, so selecting them
+  -- here reverses ownership twice (e.g. Growl and Poison Sting). Use the
+  -- canonical program for either side, retaining the legacy opp-only fallback
+  -- for optional providers without a canonical program. Native audio/effects
+  -- above still receive the actual attacker and their original source.
+  local variant = entry and entry.move and "move"
+    or (not attackerIsPlayer and entry and entry.opp and "opp" or "move")
   local program = entry and entry[variant]
   if not (program and type(program.frames) == "table"
           and #program.frames > 0) then
@@ -467,7 +470,8 @@ function Player:drawCustom()
     pushed = pcall(g.push, "all")
     if not pushed then pushed = pcall(g.push) end
   end
-  local effect = colorShader()
+  local activeEffect, colorKey, activeBlend
+  if g.setShader then g.setShader() end
   local drawn = 0
   for _, cel in ipairs(frame) do
     local pattern = finite(cel.p, -1)
@@ -481,30 +485,36 @@ function Player:drawCustom()
       local zoomY = finite(cel.zy, finite(cel.zx, 100)) / 100 * CELL_SCALE
       if finite(cel.m, 0) ~= 0 then zoomX = -zoomX end
       local opacity = math.max(0, math.min(255, finite(cel.o, 255))) / 255
-      if g.setBlendMode then
-        local blend = finite(cel.b, 0)
+      local blend = finite(cel.b, 0)
+      if g.setBlendMode and activeBlend ~= blend then
+        activeBlend = blend
         if blend == 1 then pcall(g.setBlendMode, "add")
         elseif blend == 2 then pcall(g.setBlendMode, "subtract")
         else pcall(g.setBlendMode, "alpha") end
       end
       if g.setColor then g.setColor(1, 1, 1, opacity) end
-      if effect and g.setShader then
-        g.setShader(effect)
-        send(effect, "hueShift", (finite(self.program.hue, 0) % 360) / 360)
-        send(effect, "overlayColor", {
-          finite(cel.cr, 0) / 255, finite(cel.cg, 0) / 255,
-          finite(cel.cb, 0) / 255, finite(cel.ca, 0) / 255,
-        })
-        send(effect, "toneAdjust", {
-          finite(cel.tr, 0) / 255, finite(cel.tg, 0) / 255,
-          finite(cel.tb, 0) / 255, finite(cel.ty, 0) / 255,
-        })
+      -- Most authored cels have no colour operation. Binding a shader and
+      -- resending three uniforms for each one flushes LÖVE's sprite batch.
+      -- Only real hue/tone/overlay changes need the effect program.
+      local hue=(finite(self.program.hue,0)%360)/360
+      local cr,cg,cb,ca=finite(cel.cr,0),finite(cel.cg,0),finite(cel.cb,0),finite(cel.ca,0)
+      local tr,tg,tb,ty=finite(cel.tr,0),finite(cel.tg,0),finite(cel.tb,0),finite(cel.ty,0)
+      local changed=hue~=0 or ca~=0 or tr~=0 or tg~=0 or tb~=0 or ty~=0
+      local effect=changed and colorShader() or nil
+      if g.setShader and activeEffect~=effect then g.setShader(effect);activeEffect=effect end
+      if effect then
+        local key=table.concat({hue,cr,cg,cb,ca,tr,tg,tb,ty},":")
+        if key~=colorKey then
+          colorKey=key
+          send(effect,"hueShift",hue)
+          send(effect,"overlayColor",{cr/255,cg/255,cb/255,ca/255})
+          send(effect,"toneAdjust",{tr/255,tg/255,tb/255,ty/255})
+        end
       end
       g.draw(image, quad, x, y,
              VascBattleAnimPlayer.mapAngle(cel, self.attackerIsPlayer),
              zoomX, zoomY, CELL / 2, CELL / 2)
       drawn = drawn + 1
-      if effect and g.setShader then g.setShader() end
     end
   end
   if pushed and g.pop then

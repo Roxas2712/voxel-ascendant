@@ -198,7 +198,7 @@ end
 local function spriteMode()
   local options = mod and mod.options
   local value = options and options.get and options:get("sprite_source")
-  if value ~= "auto" and value ~= "game" then return "kasc_crystal" end
+  if value ~= "auto" and value ~= "game" and value ~= "hd" then return "kasc_crystal" end
   return value
 end
 
@@ -250,6 +250,10 @@ end
 
 local function spriteImage(game, species)
   if not species then return nil end
+  if spriteMode()=="hd" and mod.hdPokemonPresentation then
+    local resolved=mod.hdPokemonPresentation.dex(game,species)
+    if resolved then return resolved end
+  end
   local path, trueColor, source = spritePath(game, species)
   if not path then return nil end
   local key = path .. (trueColor and "#t" or "#p")
@@ -281,6 +285,7 @@ local function drawSprite(game, species, x, y, w, h, seen)
   local iw, ih = image:getDimensions()
   local scale = math.max(1, math.floor(math.min((w - 12) / math.max(1, iw),
     (h - 12) / math.max(1, ih))))
+  if resolved.source=="hd" then scale=math.min((w-12)/iw,(h-12)/ih) end
   local dx = math.floor(x + (w - iw * scale) / 2)
   local dy = math.floor(y + h - 6 - ih * scale)
   if not resolved.trueColor then

@@ -69,13 +69,34 @@ local function attemptFailed(key)
   return nil                                    -- rebuild next frame
 end
 
+local paletteKeys = {}
 local function paletteKey(colors)
+  -- Value snapshots also detect in-place palette edits. The ordinary full
+  -- four-colour path allocates nothing on a hit; partial palettes retain the
+  -- original string-building path. No palette/table owner is retained.
+  local a,b,c,d=colors[1],colors[2],colors[3],colors[4]
+  if a and b and c and d then
+    for _,entry in ipairs(paletteKeys)do
+      if entry[1]==a[1] and entry[2]==a[2] and entry[3]==a[3]
+          and entry[4]==b[1] and entry[5]==b[2] and entry[6]==b[3]
+          and entry[7]==c[1] and entry[8]==c[2] and entry[9]==c[3]
+          and entry[10]==d[1] and entry[11]==d[2] and entry[12]==d[3] then
+        return entry.key
+      end
+    end
+  end
   local parts = {}
   for i = 1, 4 do
-    local c = colors[i]
-    parts[i] = c and (c[1] .. "," .. c[2] .. "," .. c[3]) or "-"
+    local color = colors[i]
+    parts[i] = color and (color[1] .. "," .. color[2] .. "," .. color[3]) or "-"
   end
-  return table.concat(parts, ";")
+  local key=table.concat(parts, ";")
+  if a and b and c and d then
+    paletteKeys[#paletteKeys+1]={a[1],a[2],a[3],b[1],b[2],b[3],
+      c[1],c[2],c[3],d[1],d[2],d[3],key=key}
+    if #paletteKeys>8 then table.remove(paletteKeys,1)end
+  end
+  return key
 end
 
 local NO_PALETTE_KEY = "-;-;-;-"

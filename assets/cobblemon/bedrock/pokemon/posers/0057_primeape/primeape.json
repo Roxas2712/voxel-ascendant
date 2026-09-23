@@ -1,0 +1,64 @@
+{
+  "portraitScale": 1.4,
+  "portraitTranslation": [0,0.1,0],
+  "profileScale": 1,
+  "profileTranslation": [0,0.3,0],
+  "rootBone": "primeape",
+  "animations": {
+    "faint": "q.bedrock_primary('primeape', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('primeape', 'cry')",
+    "recoil": "q.bedrock_stateful('primeape', 'recoil')",
+    "physical": "q.bedrock_primary('primeape', 'physical', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": [
+        "STAND"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('primeape', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('primeape', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('primeape', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('primeape', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('primeape', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('primeape', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "animations": [
+        "q.bedrock('primeape', 'sleep')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "portraitScale": 1.82,
+  "portraitTranslation": [-0.01, 0.64, 0],
+  "profileScale": 0.84,
+  "profileTranslation": [0, 0.51, 0],
+  "rootBone": "marowak_alolan",
+  "animations": {},
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('marowak_alolan', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('marowak_alolan', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('marowak_alolan', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('marowak_alolan', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('marowak_alolan', 'ground_idle')",
+        "q.biped_walk(1, 1, 'left_leg', 'right_leg')",
+        "q.bimanual_swing(1, 1, 'left_upper_arm')"
+      ],
+      "quirks": ["q.bedrock_quirk('marowak_alolan', 'blink')"]
+    },
+    "portrait": {
+      "poseTypes": ["PORTRAIT"],
+      "animations": ["q.bedrock('marowak_alolan', 'portrait')"]
+    }
+  }
+}

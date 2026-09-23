@@ -1,0 +1,106 @@
+{
+  "portraitScale": 1.6,
+  "portraitTranslation": [-0.2, 0.37, 0.0],
+  "profileScale": 0.7,
+  "profileTranslation": [-0.02, 0.64, 0.0],
+  "rootBone": "heracross",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {},
+  "poses": {
+    "jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.bedrock('heracross', 'ride_jump')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('heracross', 'blink')"
+      ],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "!q.in_air",
+      "animations": [
+        "q.bedrock('heracross', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('heracross', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.bedrock('heracross', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('heracross', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('heracross', 'blink')"]
+    },
+    "running": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.bedrock('heracross', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('heracross', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('heracross', 'blink')"]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('heracross', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('heracross', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "condition": "!q.is_gliding",
+      "animations": [
+        "q.bedrock('heracross', 'air_fly')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('heracross', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('heracross', 'blink')"
+      ]
+    },
+    "glide": {
+      "poseTypes": ["FLY"],
+      "condition": "q.is_gliding",
+      "animations": [
+        "q.bedrock('heracross', 'air_fly')",
+        "q.bedrock('heracross', 'ride_dive')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('heracross', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('heracross', 'blink')"
+      ]
+    }
+  }
+}

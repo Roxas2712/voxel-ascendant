@@ -9,8 +9,8 @@ Generated with the built-in `image_gen` tool, then copied unchanged into the pro
 
 Original tool outputs, retained unchanged:
 
-- `/Users/maarten/.codex/generated_images/01a0b65e-9437-7300-aca9-79670b7e4a9c/exec-06b915a5-da70-46da-a552-c6c0ab992456.png`
-- `/Users/maarten/.codex/generated_images/01a0b65e-9437-7300-aca9-79670b7e4a9c/exec-2fbcbfb1-266a-492a-894c-4c6a5f641641.png`
+- `exec-06b915a5-da70-46da-a552-c6c0ab992456.png`
+- `exec-2fbcbfb1-266a-492a-894c-4c6a5f641641.png`
 
 ### East prompt
 
@@ -24,7 +24,7 @@ Use case: stylized-concept. Asset type: actual in-game environment panorama bitm
 
 These are existing project assets copied byte-for-byte into a core scenery location so the aquarium does not depend on optional follower downloads. No image generation or editing was used for them.
 
-Source directory: `/Users/maarten/Documents/Recompile/vasc-gen1-stadium-hd-release-3015/integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/`.
+Source directory: `integrated/ascendant_pokemon_overworld/assets/pokemmo-followers/`.
 
 | Destination | Source filename | SHA-256 |
 |---|---|---|

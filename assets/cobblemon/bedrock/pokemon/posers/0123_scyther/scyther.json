@@ -1,0 +1,125 @@
+{
+  "portraitScale": 2.07,
+  "portraitTranslation": [-0.6, 2.16, 0],
+  "profileScale": 0.46,
+  "profileTranslation": [-0.04, 1.1, 0],
+  "rootBone": "scyther",
+  "transformedParts": [
+    {
+      "part": "locator_item_hat",
+      "scale": [0.9, 1, 0.9],
+      "position": [0, -2.1, 0]
+    },
+    {
+      "part": "locator_item_face",
+      "position": [0, -1, 0]
+    }
+  ],
+  "animations": {
+    "cry": "q.bedrock_stateful('scyther', 'cry')"
+  },
+  "poses": {
+    "battle-idle": {
+      "poseName": "battle-idle",
+      "isBattle": true,
+      "poseTypes": [
+        "STAND"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('scyther', 'battle_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scyther', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scyther', 'blink')",
+        "q.bedrock_quirk('scyther', 'wing_quirk', 5, 10, 1)"
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": [
+        "STAND",
+        "PORTRAIT",
+        "PROFILE",
+        "NONE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('scyther', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scyther', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scyther', 'blink')",
+        "q.bedrock_quirk('scyther', 'wing_quirk', 8, 30, 1)"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.biped_walk(0.7, 0.85, 'left_upper_leg', 'right_upper_leg')",
+        "q.bedrock('scyther', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scyther', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scyther', 'blink')",
+        "q.bedrock_quirk('scyther', 'wing_quirk', 5, 10, 1)"
+      ]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.bedrock('scyther', 'air_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scyther', 'hold_item')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('scyther', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY",
+        "SWIM"
+      ],
+      "animations": [
+        "q.bedrock('scyther', 'air_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scyther', 'hold_item')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('scyther', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "rotation": [30, -0.65, 0]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "portraitScale": 0.86,
+  "portraitTranslation": [-0.07, 0.29, 0],
+  "profileScale": 0.51,
+  "profileTranslation": [0, 0.8, 0],
+  "rootBone": "seaking",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('seaking', 'cry')",
+    "recoil": "q.bedrock_stateful('seaking', 'ground_recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": false,
+      "isBattle": true,
+      "animations": ["q.bedrock('seaking', 'ground_battle_idle')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "battle-swimming": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": true,
+      "isBattle": true,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_battle_recoil', q.curve('one'))"
+      },
+      "animations": ["q.bedrock('seaking', 'water_battle_idle')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('seaking', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('seaking', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["PORTRAIT", "PROFILE", "FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": ["q.bedrock('seaking', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": ["q.bedrock('seaking', 'water_swim')"],
+      "quirks": ["q.bedrock_quirk('seaking', 'blink')"]
+    },
+    "mount-surface_idle": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": [
+        "q.bedrock('seaking', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('seaking', 'blink')"
+      ]
+    },
+    "surface_idle": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": [
+                "q.bedrock('seaking', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('seaking', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    },
+    "mount-surface_swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": [
+        "q.bedrock('seaking', 'water_swim')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('seaking', 'blink')"
+      ]
+    },
+    "surface_swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('seaking', 'water_idle_recoil', q.curve('one'))"
+      },
+      "animations": [
+                "q.bedrock('seaking', 'water_swim')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('seaking', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    }
+  }
+}

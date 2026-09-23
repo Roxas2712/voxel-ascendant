@@ -1,0 +1,46 @@
+{
+  "portraitScale": 1.94,
+  "portraitTranslation": [-0.62, 0.3, 0],
+  "profileScale": 0.77,
+  "profileTranslation": [0, 0.59, 0],
+  "rootBone": "leafeon",
+  "animations": {
+    "cry": "q.bedrock_stateful('leafeon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('leafeon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('leafeon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('leafeon', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'front_leg_left', 'front_leg_right', 'back_leg_left', 'back_leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('leafeon', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

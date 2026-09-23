@@ -1748,6 +1748,7 @@ local ROOM_SHELL_PROFILES = {
 
 -- Native Gen1 room dimensions and materials are owned separately from Gen2.
 local Gen1GymInteriors = V.require("Gen1GymInteriors")
+local GymSkylights = V.require("GymSkylights")
 for id, profile in pairs(Gen1GymInteriors.profiles) do
   ROOM_SHELL_PROFILES[id] = profile
 end
@@ -1897,6 +1898,7 @@ function HorizonWall.classFor(map)
   local def = map and map.def or {}
   local id, tileset = tostring(map and map.id or def.id or ""), def.tileset
   if id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return 'water'end
+  if id=='KANTO_ASCENDANT_DRIFTGLASS'and V.require('KascDriftglass').matches(map)then return 'water'end
   -- Tileset semantics are authoritative for enclosed caves. This keeps future
   -- extension maps fail-safe without maintaining an ID allowlist, and prevents
   -- an outdoor/location/room profile collision from opening a real cavern.
@@ -3135,7 +3137,7 @@ local function interiorShellGeometryFor(entry, profile, cooperativeStep)
   local H, distance = profile.shellHeight, profile.wallDistance
   local wallFamily = profile.wallAsset and ("editor:" .. profile.wallAsset)
                      or "interior_shell"
-  local ceilingFamily = profile.ceiling.asset
+  local ceilingFamily = profile.ceiling.authored and "interior_ceiling" or profile.ceiling.asset
     and ("editor:" .. profile.ceiling.asset) or "interior_shell"
   local wallVerts, wallIndices = {}, {}
   local ceilingVerts, ceilingIndices = {}, {}
@@ -3417,7 +3419,9 @@ local function interiorShellGeometryFor(entry, profile, cooperativeStep)
     end
   end
 
-  if profile.ceiling.enabled then
+  if profile.ceiling.enabled and profile.ceiling.authored then
+    ceilingVerts,ceilingIndices,ceilingQuads=V.require('InteriorCeilings').geometry(entry.map,profile,checkpoint)
+  elseif profile.ceiling.enabled then
     local x0, x1 = -distance, entry.w + distance
     local z0, z1 = -distance, entry.h + distance
     local fullW, fullH = math.max(1e-9, x1 - x0),
@@ -3497,6 +3501,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   local decorationGroups = {}
   local overlayQuads, propQuads = 0, 0
   local groundVerts, groundIndices, quads = {}, {}, 0
+  local gymPlan=class=="room" and GymSkylights.layout(entry.map)
+  local arenaFloorVerts,arenaFloorIndices={},{}
   local seaVerts, seaIndices, seaQuads = {}, {}, 0
   local coastalVerts, coastalIndices, coastalQuads = {}, {}, 0
   local storyVerts, storyIndices, storyQuads = {}, {}, 0
@@ -4322,7 +4328,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                         { x + span, 0, inner }, { x, 0, inner } }
         local cap = { { x, capY, wallZ }, { x + span, capY, wallZ },
                       { x + span, capY, far }, { x, capY, far } }
-        pushQuad(groundVerts, groundIndices, apron,
+        pushQuad(gymPlan and arenaFloorVerts or groundVerts,
+        gymPlan and arenaFloorIndices or groundIndices, apron,
           { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
             groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
         pushQuad(groundVerts, groundIndices, cap,
@@ -4380,7 +4387,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                       + outdoorGroundRect(x, x + span, wallZ, far)
       end
     elseif not outdoorGround and wantsGround then
-      pushQuad(groundVerts, groundIndices, apron,
+      pushQuad(gymPlan and arenaFloorVerts or groundVerts,
+        gymPlan and arenaFloorIndices or groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
       groundAdded = 1
@@ -4433,7 +4441,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                         { inner, 0, z + span }, { inner, 0, z } }
         local cap = { { wallX, capY, z }, { wallX, capY, z + span },
                       { far, capY, z + span }, { far, capY, z } }
-        pushQuad(groundVerts, groundIndices, apron,
+        pushQuad(gymPlan and arenaFloorVerts or groundVerts,
+        gymPlan and arenaFloorIndices or groundIndices, apron,
           { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
             groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
         pushQuad(groundVerts, groundIndices, cap,
@@ -4486,7 +4495,8 @@ local function geometryFor(entry, own, rects, cooperativeStep,
                       + outdoorGroundRect(wallX, far, z, z + span)
       end
     elseif not outdoorGround and wantsGround then
-      pushQuad(groundVerts, groundIndices, apron,
+      pushQuad(gymPlan and arenaFloorVerts or groundVerts,
+        gymPlan and arenaFloorIndices or groundIndices, apron,
         { groundUV(apron[1]), groundUV(apron[2]), groundUV(apron[3]),
           groundUV(apron[4]) }, Voxel3D.FACE_SHADE[3] or 1)
       groundAdded = 1
@@ -5815,25 +5825,46 @@ local function geometryFor(entry, own, rects, cooperativeStep,
   -- shader can follow the quadratic every cell instead of turning one huge
   -- four-corner quad into a sagging chord. This adds neither a texture nor a
   -- draw call, and its CPU work is charged to the cooperative build budget.
+  -- Ground and roof must have separate owners: FULL hides the roof, never
+  -- the perimeter floor joining the native playfield to its four walls.
+  if gymPlan then
+    local function floorQuad(p,shade)
+      local uv={};for i=1,4 do uv[i]=groundUV(p[i])end
+      pushQuad(arenaFloorVerts,arenaFloorIndices,p,uv,shade or .85)
+    end
+    for _,x in ipairs({-B,entry.w})do for _,z in ipairs({-B,entry.h})do
+      floorQuad({{x,0,z},{x+B,0,z},{x+B,0,z+B},{x,0,z+B}})
+    end end
+    for _,edge in ipairs({{{-B,-B},{entry.w+B,-B}},{{entry.w+B,-B},{entry.w+B,entry.h+B}},
+      {{entry.w+B,entry.h+B},{-B,entry.h+B}},{{-B,entry.h+B},{-B,-B}}})do
+      local a,b=edge[1],edge[2]
+      floorQuad({{a[1],-4,a[2]},{b[1],-4,b[2]},{b[1],0,b[2]},{a[1],0,a[2]}},.5)
+    end
+  end
   local ceilingQuads = 0
+  local gymSkylight=class=="room" and GymSkylights.layout(entry.map)
+  local gymRoofVertices,gymRoofIndices
+  if gymSkylight then gymRoofVertices,gymRoofIndices=GymSkylights.geometry(gymSkylight) end
   if isEnclosure(class) then
     local H = enclosureH
     local x0, x1, z0, z1 = -B, entry.w + B, -B, entry.h + B
     local ceilingSinceCheckpoint = 0
     for z = z0, z1 - C, C do
       for x = x0, x1 - C, C do
-        local ceiling = {
-          { x, H, z }, { x + C, H, z },
-          { x + C, H, z + C }, { x, H, z + C },
-        }
-        local uv = {}
-        for i = 1, 4 do
-          uv[i] = groundUV(ceiling[i])
+        local function roofRect(a,b,c,d)
+          if b<=a or d<=c then return end
+          local ceiling={{a,H,c},{b,H,c},{b,H,d},{a,H,d}}
+          local uv={};for i=1,4 do uv[i]=groundUV(ceiling[i]) end
+          pushQuad(groundVerts,groundIndices,ceiling,uv,Voxel3D.FACE_SHADE[4]or .55)
+          ceilingQuads=ceilingQuads+1;quads=quads+1
         end
-        pushQuad(groundVerts, groundIndices, ceiling, uv,
-                 Voxel3D.FACE_SHADE[4] or 0.55)
-        ceilingQuads = ceilingQuads + 1
-        quads = quads + 1
+        local r=gymSkylight and gymSkylight.rect
+        if r and x<r[2] and x+C>r[1] and z<r[4] and z+C>r[3] then
+          local a,b=math.max(x,r[1]),math.min(x+C,r[2])
+          local c,d=math.max(z,r[3]),math.min(z+C,r[4])
+          roofRect(x,x+C,z,c);roofRect(x,x+C,d,z+C)
+          roofRect(x,a,c,d);roofRect(b,x+C,c,d)
+        else roofRect(x,x+C,z,z+C) end
         ceilingSinceCheckpoint = ceilingSinceCheckpoint + 1
         if ceilingSinceCheckpoint
              >= HorizonWall.CEILING_QUADS_PER_BUILD_UNIT then
@@ -6001,6 +6032,9 @@ local function geometryFor(entry, own, rects, cooperativeStep,
            fillerQuads = canopyFillerQuads,
            foregroundQuads = foregroundQuads,
            ceilingQuads = ceilingQuads,
+           arenaFloorVertices=arenaFloorVerts, arenaFloorIndices=arenaFloorIndices,
+           ceilingVertices = gymRoofVertices, ceilingIndices = gymRoofIndices,
+           ceilingFamily = gymSkylight and gymSkylight.family,
            seaVertices = seaVerts, seaIndices = seaIndices,
            seaQuads = seaQuads,
            coastalWaterFootQuads = coastalWaterFootQuads,
@@ -6720,6 +6754,12 @@ local function groundPattern(g, class, W, H)
         pixelRect(g, light, x, y, 8, 4)
       end
     end
+  elseif GymSkylights.isFamily(class) then
+    GymSkylights.paint(g,class:sub(16),W,H)
+  elseif class == "interior_ceiling" then
+    for i,c in ipairs(V.require('InteriorCeilings').palette)do
+      pixelRect(g,c,(i-1)*W/8,0,W/8,H)
+    end
   elseif class == "interior_shell" then
     local base = { 0.30, 0.32, 0.33 }
     local seam = { 0.18, 0.20, 0.22 }
@@ -6980,6 +7020,7 @@ local function gardenPrismTexture(g,W,H)
 end
 
 local function isRetainedInterior(class)
+  if class == "interior_ceiling" or GymSkylights.isFamily(class) then return true end
   return CavePanoramas.families[class] or (class=="room_door" or class=="room_security_door" or class=="room_breach_exterior" or class=="room_sign") or (type(class)=="string" and class:sub(1,12)=="room_finish:")
     or ARCHITECTURAL_MATERIALS[class] or class == "water_fish"
     or class == "water_glass" or class == "water_aquarium"
@@ -7215,7 +7256,8 @@ local function groundTexture(class)
   local key = "ground:" .. class
   if textures[key] then return textures[key] end
   local g = love.graphics
-  local W = CavePanoramas.families[class] and CavePanoramas.ceilingSize
+  local W = GymSkylights.isFamily(class) and GymSkylights.SIZE
+            or CavePanoramas.families[class] and CavePanoramas.ceilingSize
             or class == "mt_moon" and HorizonWall.MT_MOON_GROUND_PERIOD
             or ARCHITECTURAL_MATERIALS[class] and 128
             or class == "tower" and HorizonWall.TOWER_SURFACE_PERIOD
@@ -7275,6 +7317,12 @@ local function groundTexture(class)
   if not canvas then textureFailures[key] = true return nil end
   textures[key] = canvas
   return canvas
+end
+
+-- Read-only during lighting preparation: geometry preparation owns baking.
+function HorizonWall.gymSkylightTexture(map)
+  local p=GymSkylights.layout(map)
+  return p and textures["ground:"..p.family] or nil
 end
 
 local function foregroundTreeTexture(class)
@@ -7446,7 +7494,7 @@ function HorizonWall.prewarm(map)
     if profile.nativeRoomPanels and V.require('Gen1BreachExterior').source(map)
         and not skylineTexture('room_breach_exterior') then return false end
     if profile.ceiling.enabled then
-      local ceilingFamily = profile.ceiling.asset
+      local ceilingFamily = profile.ceiling.authored and "interior_ceiling" or profile.ceiling.asset
         and ("editor:" .. profile.ceiling.asset) or "interior_shell"
       local ceilingTexture = ceilingFamily:sub(1, 7) == "editor:"
         and skylineTexture(ceilingFamily) or groundTexture(ceilingFamily)
@@ -7562,6 +7610,7 @@ end
 
 local function releaseMeshes(entries)
   for _, e in ipairs(entries or {}) do
+    if e.materialMask then pcall(e.materialMask.release,e.materialMask);e.materialMask=nil end
     if e.ownsTexture and e.texture then pcall(e.texture.release,e.texture);e.texture=nil end
     if e.animationMeshes then
       for _, mesh in ipairs(e.animationMeshes) do
@@ -7661,6 +7710,24 @@ local function stateKey(state, maps, canonical)
       ":")
   end
   return table.concat(parts, "|")
+end
+
+local addressCache = V.require('HorizonAddressCache').new(function(state)
+  local maps, baseX, baseY, canonical, worldMaps = canonicalAddress(state)
+  return stateKey(state, maps, canonical), maps, baseX, baseY, canonical, worldMaps
+end, function(map)
+  return HorizonWall.classFor(map), HorizonWall.materialFor(map),
+    HorizonWall.interiorProfileFor(map) ~= nil
+end)
+
+local function addressOf(state)
+  local revision = WorldPlacement.revision and WorldPlacement.revision(state.worldMaps)
+  local scenery = V.require('Gen1OutdoorScenery')
+  return addressCache.get(state, revision, TileRenderer.voidFill or 'trees',
+    HorizonWall.enabled(), V.require('OutdoorHorizon').setting:get(),
+    V.require('Gen1LavenderTower').setting:get(), scenery.ground:get(),
+    scenery.trees:get(), V.require('Gen1PalletVillage').buildings:get(),
+    V.require('VoxelItems').setting:get())
 end
 
 local function rebasedView(entry, baseX, baseY)
@@ -7927,6 +7994,8 @@ local function newBuildJob(key, maps, worldMaps)
         end
         addPart("ground", built.class, built.groundVertices,
                 built.groundIndices, floorTexture, built.ox, built.oy)
+        addPart("arena_floor", built.class, built.arenaFloorVertices or {},
+                built.arenaFloorIndices or {}, floorTexture, built.ox, built.oy)
         -- Keep the synthetic roof in its own ground-kind batch.  It can use a
         -- ceiling-only texture and FULL's established cutaway removes exactly
         -- this batch without hiding the playable terrain body beneath it.
@@ -8065,8 +8134,7 @@ function HorizonWall.cacheStatus(state)
     return { enabled = false, ready = true, pending = false,
              failed = false, resumes = 0, maps = 0 }
   end
-  local maps, _, _, canonical = canonicalAddress(state)
-  local key = stateKey(state, maps, canonical)
+  local key, maps = addressOf(state)
   local job = pendingJobs[key]
   return {
     enabled = true,
@@ -8083,8 +8151,7 @@ function HorizonWall.meshes(state)
   if not HorizonWall.enabled() or not (state and state.map) then
     return {}, true, false
   end
-  local maps, baseX, baseY, canonical, worldMaps = canonicalAddress(state)
-  local key = stateKey(state, maps, canonical)
+  local key, maps, baseX, baseY, _, worldMaps = addressOf(state)
   local ready = readyCaches[key]
   if ready then
     lastReady = ready
@@ -8119,8 +8186,8 @@ end
 -- rebase here lets tests prove a connection re-root is cache-identical without
 -- constructing LOVE GPU resources.
 function HorizonWall._canonicalAddress(state)
-  local maps, baseX, baseY, canonical = canonicalAddress(state)
-  return stateKey(state, maps, canonical), baseX, baseY, maps, canonical
+  local key, maps, baseX, baseY, canonical = addressOf(state)
+  return key, baseX, baseY, maps, canonical
 end
 
 -- Horizon geometry does not read ordinary interior body blocks. The
@@ -8156,6 +8223,7 @@ end
 -- merely a block.
 function HorizonWall.invalidateMap(mapId)
   if mapId == nil then return false end
+  addressCache.clear()
   mapId = tostring(mapId)
   local changed = false
 
@@ -8197,6 +8265,7 @@ function HorizonWall.invalidateMap(mapId)
 end
 
 function HorizonWall.invalidate()
+  addressCache.clear()
   for _, entry in pairs(readyCaches) do releaseMeshes(entry.meshes) end
   for _, job in pairs(pendingJobs) do releaseMeshes(job.meshes) end
   readyCaches, pendingJobs, failedKeys = {}, {}, {}

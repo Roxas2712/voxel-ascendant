@@ -1,0 +1,69 @@
+{
+  "rootBone": "kadabra",
+  "portraitScale": 1.65,
+  "portraitTranslation": [-0.25, 0.45, 0.0],
+  "profileScale": 0.75,
+  "profileTranslation": [0.0, 0.6, 0.0],
+  "animations": {
+    "cry": "q.bedrock_stateful('kadabra_male', 'cry')",
+    "recoil": "q.bedrock_stateful('kadabra_male', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('kadabra_male', 'battle_idle')"
+    ],
+      "quirks": ["q.bedrock_quirk('kadabra_male', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('kadabra_male', 'ground_idle')"
+    ],
+      "quirks": ["q.bedrock_quirk('kadabra_male', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('kadabra_male', 'ground_walk')"
+    ],
+      "quirks": ["q.bedrock_quirk('kadabra_male', 'blink')"]
+    },
+    "running": {
+      "poseTypes": ["WALK"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('kadabra_male', 'ground_run')"
+    ],
+      "quirks": ["q.bedrock_quirk('kadabra_male', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "isWild": false,
+      "animations": [
+        "q.bedrock('kadabra_male', 'sleep')"
+    ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "wild_sleep": {
+      "poseTypes": ["SLEEP"],
+      "isWild": true,
+      "animations": [
+        "q.bedrock('kadabra_male', 'wild_sleep')"
+    ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

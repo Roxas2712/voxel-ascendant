@@ -1,0 +1,104 @@
+{
+  "portraitScale": 1.55,
+  "portraitTranslation": [-0.06,0.07,0],
+  "profileScale": 0.7,
+  "profileTranslation": [0,0.7,0],
+  "rootBone": "golbat",
+  "animations": {
+    "cry": "q.bedrock_stateful('golbat', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "FLOAT",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('torso', 1, 1, 70, -45, 10, -10)",
+        "q.bedrock('golbat', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": [
+        "STAND"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('torso', 1, 1, 70, -45, 10, -10)",
+        "q.bedrock('golbat', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "battle-standing-air": {
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('torso', 1, 1, 70, -45, 10, -10)",
+        "q.bedrock('golbat', 'battle_idle_air')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": [
+        "HOVER"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('torso', 1, 1, 70, -45, 10, -10)",
+        "q.bedrock('golbat', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.bedrock('golbat', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": [
+        "SWIM",
+        "FLY"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('golbat', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('golbat', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('golbat', 'sleep')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

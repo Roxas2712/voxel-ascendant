@@ -1,0 +1,632 @@
+{
+	"format_version": "1.12.0",
+	"minecraft:geometry": [
+		{
+			"description": {
+				"identifier": "geometry.koffing",
+				"texture_width": 64,
+				"texture_height": 64,
+				"visible_bounds_width": 3,
+				"visible_bounds_height": 3,
+				"visible_bounds_offset": [0, 0.5, 0]
+			},
+			"bones": [
+				{
+					"name": "koffing",
+					"pivot": [0, -3, 0]
+				},
+				{
+					"name": "body",
+					"parent": "koffing",
+					"pivot": [0, 9, 0]
+				},
+				{
+					"name": "body_inflate",
+					"parent": "body",
+					"pivot": [0, 9, 0],
+					"cubes": [
+						{"origin": [-7, 2, -7], "size": [14, 14, 14], "inflate": 0.01, "uv": [0, 0]},
+						{"origin": [3, 2.5, -7.02], "size": [1, 1, 0], "uv": [56, 14]},
+						{"origin": [3, 4.5, -7.02], "size": [1, 2, 0], "uv": [56, 15]},
+						{"origin": [-4, 2.5, -7.02], "size": [1, 1, 0], "uv": [58, 14], "mirror": true},
+						{"origin": [-4, 4.5, -7.02], "size": [1, 2, 0], "uv": [58, 15], "mirror": true},
+						{"origin": [-2, 6.5, -7.02], "size": [4, 2, 0], "uv": [56, 17], "mirror": true},
+						{"origin": [-1, 7, -7.03], "size": [2, 1, 0], "uv": [60, 16], "mirror": true}
+					]
+				},
+				{
+					"name": "craters",
+					"parent": "body_inflate",
+					"pivot": [0, 9, 0]
+				},
+				{
+					"name": "crater_front1",
+					"parent": "craters",
+					"pivot": [6.5, 8.5, -6.4],
+					"rotation": [0, -50, 0],
+					"cubes": [
+						{"origin": [5.5, 7.5, -7.4], "size": [2, 2, 2], "uv": [42, 0]}
+					]
+				},
+				{
+					"name": "fog_front1",
+					"parent": "crater_front1",
+					"pivot": [6.5, 8.5, -7.25],
+					"locators": {
+						"fog_front1": [6.5, 8.5, -7.25]
+					}
+				},
+				{
+					"name": "crater_front2",
+					"parent": "craters",
+					"pivot": [6.5, 5.5, -6.6],
+					"rotation": [0, -45, 0],
+					"cubes": [
+						{"origin": [5.5, 4.5, -7.6], "size": [2, 2, 2], "pivot": [6.5, 6.5, -6.6], "rotation": [5, 0, 0], "uv": [42, 4]}
+					]
+				},
+				{
+					"name": "fog_front2",
+					"parent": "crater_front2",
+					"pivot": [6.5, 5.5, -7.5],
+					"locators": {
+						"fog_front2": [6.5, 5.5, -7.5]
+					}
+				},
+				{
+					"name": "crater_front3",
+					"parent": "craters",
+					"pivot": [-6.5, 7.5, -6.5],
+					"rotation": [0, 35, 0],
+					"cubes": [
+						{"origin": [-7.5, 6.5, -7.5], "size": [2, 2, 2], "uv": [42, 8], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_front3",
+					"parent": "crater_front3",
+					"pivot": [-6.5, 7.5, -7.5],
+					"locators": {
+						"fog_front3": [-6.5, 7.5, -7.5]
+					}
+				},
+				{
+					"name": "crater_back1",
+					"parent": "craters",
+					"pivot": [3, 11, 7],
+					"rotation": [0, 5, 0],
+					"cubes": [
+						{"origin": [1.5, 9.5, 6.5], "size": [3, 3, 2], "uv": [50, 0], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_back1",
+					"parent": "crater_back1",
+					"pivot": [3, 11, 8.5],
+					"locators": {
+						"fog_back1": [3, 11, 8.5]
+					}
+				},
+				{
+					"name": "crater_back2",
+					"parent": "craters",
+					"pivot": [-3, 13.25, 7],
+					"rotation": [5, -10, 0],
+					"cubes": [
+						{"origin": [-4, 12.25, 6.5], "size": [2, 2, 2], "uv": [48, 10], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_back2",
+					"parent": "crater_back2",
+					"pivot": [-3, 13.25, 8.5],
+					"locators": {
+						"fog_back2": [-3, 13.25, 8.5]
+					}
+				},
+				{
+					"name": "crater_back3",
+					"parent": "craters",
+					"pivot": [-4.5, 8, 6.75],
+					"rotation": [0, -20, 0],
+					"cubes": [
+						{"origin": [-5.5, 7, 6.25], "size": [2, 2, 2], "uv": [56, 10], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_back3",
+					"parent": "crater_back3",
+					"pivot": [-4.5, 8, 8.25],
+					"locators": {
+						"fog_back3": [-4.5, 8, 8.25]
+					}
+				},
+				{
+					"name": "crater_back4",
+					"parent": "craters",
+					"pivot": [0.5, 5, 7],
+					"rotation": [-12.5, 0, 0],
+					"cubes": [
+						{"origin": [-1, 3.5, 6.5], "size": [3, 3, 2], "uv": [50, 5], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_back4",
+					"parent": "crater_back4",
+					"pivot": [0.5, 5, 8.5],
+					"locators": {
+						"fog_back4": [0.5, 5, 8.5]
+					}
+				},
+				{
+					"name": "crater_top1",
+					"parent": "craters",
+					"pivot": [0, 16, -4],
+					"rotation": [7.5, 0, 0],
+					"cubes": [
+						{"origin": [-1.5, 15.5, -5.5], "size": [3, 2, 3], "uv": [0, 28]}
+					]
+				},
+				{
+					"name": "fog_top1",
+					"parent": "crater_top1",
+					"pivot": [0, 17.5, -4],
+					"locators": {
+						"fog_top1": [0, 17.5, -4]
+					}
+				},
+				{
+					"name": "crater_top2",
+					"parent": "craters",
+					"pivot": [6.25, 15.25, 0.5],
+					"rotation": [0, 0, 45],
+					"cubes": [
+						{"origin": [5.25, 14.75, -0.5], "size": [2, 2, 2], "uv": [0, 33]}
+					]
+				},
+				{
+					"name": "fog_top2",
+					"parent": "crater_top2",
+					"pivot": [6.25, 16.75, 0.5],
+					"locators": {
+						"fog_top2": [6.25, 16.75, 0.5]
+					}
+				},
+				{
+					"name": "crater_top3",
+					"parent": "craters",
+					"pivot": [-6.5, 15.5, -3.75],
+					"rotation": [0, 0, -45],
+					"cubes": [
+						{"origin": [-8, 14.75, -5.25], "size": [3, 2, 3], "uv": [9, 30], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_top3",
+					"parent": "crater_top3",
+					"pivot": [-6.5, 16.75, -3.75],
+					"locators": {
+						"fog_top3": [-6.5, 16.75, -3.75]
+					}
+				},
+				{
+					"name": "crater_top4",
+					"parent": "craters",
+					"pivot": [3.5, 15.4, 6],
+					"rotation": [-40, 0, 0],
+					"cubes": [
+						{"origin": [2, 14.9, 4.5], "size": [3, 2, 3], "uv": [18, 28]}
+					]
+				},
+				{
+					"name": "fog_top4",
+					"parent": "crater_top4",
+					"pivot": [3.5, 16.85, 6],
+					"locators": {
+						"fog_top4": [3.5, 16.85, 6]
+					}
+				},
+				{
+					"name": "crater_top5",
+					"parent": "craters",
+					"pivot": [-6, 16.1, 4.6],
+					"rotation": [-7.5, 0, -25],
+					"cubes": [
+						{"origin": [-7.5, 15.1, 4.1], "size": [3, 2, 3], "uv": [18, 33], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_top5",
+					"parent": "crater_top5",
+					"pivot": [-6, 17.15, 5.5],
+					"locators": {
+						"fog_top5": [-6, 17.15, 5.5]
+					}
+				},
+				{
+					"name": "crater_bottom1",
+					"parent": "craters",
+					"pivot": [-3, 2, -2.5],
+					"rotation": [0, 0, 5],
+					"cubes": [
+						{"origin": [-4.5, 0.5, -4], "size": [3, 2, 3], "uv": [30, 28]}
+					]
+				},
+				{
+					"name": "fog_bottom1",
+					"parent": "crater_bottom1",
+					"pivot": [-3, 0.5, -2.5],
+					"locators": {
+						"fog_bottom1": [-3, 0.5, -2.5]
+					}
+				},
+				{
+					"name": "crater_bottom2",
+					"parent": "craters",
+					"pivot": [3, 2, 0],
+					"rotation": [0, 0, -10],
+					"cubes": [
+						{"origin": [1.5, 0.5, -1.5], "size": [3, 2, 3], "uv": [30, 33]}
+					]
+				},
+				{
+					"name": "fog_bottom2",
+					"parent": "crater_bottom2",
+					"pivot": [3, 0.5, 0],
+					"locators": {
+						"fog_bottom2": [3, 0.5, 0]
+					}
+				},
+				{
+					"name": "crater_bottom3",
+					"parent": "craters",
+					"pivot": [2.5, 2, 5.5],
+					"rotation": [10, 0, 0],
+					"cubes": [
+						{"origin": [1, 0.5, 4], "size": [3, 2, 3], "uv": [39, 30]}
+					]
+				},
+				{
+					"name": "fog_bottom3",
+					"parent": "crater_bottom3",
+					"pivot": [2.5, 0.5, 5.5],
+					"locators": {
+						"fog_bottom3": [2.5, 0.5, 5.5]
+					}
+				},
+				{
+					"name": "crater_left1",
+					"parent": "craters",
+					"pivot": [7, 10, 1.5],
+					"cubes": [
+						{"origin": [6.5, 8.5, 0], "size": [2, 3, 3], "uv": [54, 25]}
+					]
+				},
+				{
+					"name": "fog_left1",
+					"parent": "crater_left1",
+					"pivot": [8.5, 10, 1.5],
+					"locators": {
+						"fog_left1": [8.5, 10, 1.5]
+					}
+				},
+				{
+					"name": "crater_left2",
+					"parent": "craters",
+					"pivot": [7, 4.25, 0.5],
+					"rotation": [0, 0, 7.5],
+					"cubes": [
+						{"origin": [6.5, 3.25, -0.5], "size": [2, 2, 2], "uv": [48, 29]}
+					]
+				},
+				{
+					"name": "fog_left2",
+					"parent": "crater_left2",
+					"pivot": [8.5, 4.25, 0.5],
+					"locators": {
+						"fog_left2": [8.5, 4.25, 0.5]
+					}
+				},
+				{
+					"name": "crater_left3",
+					"parent": "craters",
+					"pivot": [6.25, 7.5, 6.25],
+					"rotation": [0, -45, 0],
+					"cubes": [
+						{"origin": [5.75, 6, 4.75], "size": [2, 3, 3], "uv": [53, 31]}
+					]
+				},
+				{
+					"name": "fog_left3",
+					"parent": "crater_left3",
+					"pivot": [7.7, 7.5, 6.25],
+					"locators": {
+						"fog_left3": [7.7, 7.5, 6.25]
+					}
+				},
+				{
+					"name": "crater_right1",
+					"parent": "craters",
+					"pivot": [-7, 7.5, -3],
+					"rotation": [0, -2.5, 0],
+					"cubes": [
+						{"origin": [-8.5, 6, -4.5], "size": [2, 3, 3], "uv": [46, 35], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_right1",
+					"parent": "crater_right1",
+					"pivot": [-8.5, 7.5, -3],
+					"locators": {
+						"fog_right1": [-8.5, 7.5, -3]
+					}
+				},
+				{
+					"name": "crater_right2",
+					"parent": "craters",
+					"pivot": [-7, 11.5, 2.5],
+					"cubes": [
+						{"origin": [-8.5, 10, 1], "size": [2, 3, 3], "uv": [39, 38], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_right2",
+					"parent": "crater_right2",
+					"pivot": [-8.5, 11.5, 2.5],
+					"locators": {
+						"fog_right2": [-8.5, 11.5, 2.5]
+					}
+				},
+				{
+					"name": "crater_right3",
+					"parent": "craters",
+					"pivot": [-6.25, 2.75, 1],
+					"rotation": [0, 0, -45],
+					"cubes": [
+						{"origin": [-7.75, 1.75, 0], "size": [2, 2, 2], "uv": [31, 38], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_right3",
+					"parent": "crater_right3",
+					"pivot": [-7.75, 2.75, 1],
+					"locators": {
+						"fog_right3": [-7.75, 2.75, 1]
+					}
+				},
+				{
+					"name": "crater_right4",
+					"parent": "craters",
+					"pivot": [-6.25, 4.5, 6.25],
+					"rotation": [0, 45, 0],
+					"cubes": [
+						{"origin": [-7.75, 3, 4.75], "size": [2, 3, 3], "uv": [53, 38], "mirror": true}
+					]
+				},
+				{
+					"name": "fog_right4",
+					"parent": "crater_right4",
+					"pivot": [-7.75, 4.5, 6.25],
+					"locators": {
+						"fog_right4": [-7.75, 4.5, 6.25]
+					}
+				},
+				{
+					"name": "locator_item",
+					"parent": "body_inflate",
+					"pivot": [0, 16, 1.5],
+					"locators": {
+						"item": [0, 16, 1.5]
+					}
+				},
+				{
+					"name": "locator_item_face",
+					"parent": "body_inflate",
+					"pivot": [0, 13.75, -7],
+					"locators": {
+						"item_face": [0, 13.75, -7]
+					}
+				},
+				{
+					"name": "locator_face",
+					"parent": "body_inflate",
+					"pivot": [0, 12.75, -7],
+					"locators": {
+						"face": [0, 12.75, -7]
+					}
+				},
+				{
+					"name": "locator_item_hat",
+					"parent": "body_inflate",
+					"pivot": [0, 16, 0],
+					"locators": {
+						"item_hat": [0, 16, 0]
+					}
+				},
+				{
+					"name": "locator_head",
+					"parent": "body_inflate",
+					"pivot": [0, 16.25, -2.75],
+					"locators": {
+						"head": [0, 16.25, -2.75]
+					}
+				},
+				{
+					"name": "locator_middle",
+					"parent": "body_inflate",
+					"pivot": [0, 9, 0],
+					"locators": {
+						"middle": [0, 9, 0]
+					}
+				},
+				{
+					"name": "locator_target",
+					"parent": "body_inflate",
+					"pivot": [0, 8.5, -11.25],
+					"locators": {
+						"target": [0, 8.5, -11.25]
+					}
+				},
+				{
+					"name": "face",
+					"parent": "body",
+					"pivot": [0, 13.5, -7.02]
+				},
+				{
+					"name": "eyes",
+					"parent": "face",
+					"pivot": [0, 13.5, -7.02]
+				},
+				{
+					"name": "eye_left",
+					"parent": "eyes",
+					"pivot": [3, 13.5, -7.02],
+					"cubes": [
+						{"origin": [1, 12.5, -7.02], "size": [4, 1, 0], "uv": [0, 1]},
+						{"origin": [1.5, 13.5, -7.02], "size": [3, 1, 0], "uv": [0, 0]}
+					]
+				},
+				{
+					"name": "pupil_left",
+					"parent": "eye_left",
+					"pivot": [2.75, 13.75, -7.03],
+					"cubes": [
+						{"origin": [2.25, 13.25, -7.03], "size": [1, 1, 0], "uv": [8, 0]}
+					]
+				},
+				{
+					"name": "locator_eye_left",
+					"parent": "pupil_left",
+					"pivot": [2.75, 13.75, -7],
+					"locators": {
+						"eye2": [2.75, 13.75, -7]
+					}
+				},
+				{
+					"name": "eyelid_left",
+					"parent": "eye_left",
+					"pivot": [3, 13.5, -6.43],
+					"cubes": [
+						{"origin": [1, 12.5, -6.93], "size": [4, 2, 1], "inflate": 0.01, "uv": [0, 4]}
+					]
+				},
+				{
+					"name": "eye_right",
+					"parent": "eyes",
+					"pivot": [-3, 13.5, -7.02],
+					"cubes": [
+						{"origin": [-5, 12.5, -7.02], "size": [4, 1, 0], "uv": [0, 3], "mirror": true},
+						{"origin": [-4.5, 13.5, -7.02], "size": [3, 1, 0], "uv": [0, 2], "mirror": true}
+					]
+				},
+				{
+					"name": "pupil_right",
+					"parent": "eye_right",
+					"pivot": [-2.75, 13.75, -7.03],
+					"cubes": [
+						{"origin": [-3.25, 13.25, -7.03], "size": [1, 1, 0], "uv": [8, 0], "mirror": true}
+					]
+				},
+				{
+					"name": "locator_eye_right",
+					"parent": "pupil_right",
+					"pivot": [-2.75, 13.75, -7],
+					"locators": {
+						"eye1": [-2.75, 13.75, -7]
+					}
+				},
+				{
+					"name": "eyelid_right",
+					"parent": "eye_right",
+					"pivot": [-3, 13.5, -6.43],
+					"cubes": [
+						{"origin": [-5, 12.5, -6.93], "size": [4, 2, 1], "inflate": 0.01, "uv": [0, 4], "mirror": true}
+					]
+				},
+				{
+					"name": "mouth",
+					"parent": "face",
+					"pivot": [0, 10.25, -7.02]
+				},
+				{
+					"name": "mouth_open",
+					"parent": "mouth",
+					"pivot": [0, 10, -7.02],
+					"cubes": [
+						{"origin": [-4.5, 9, -7.02], "size": [9, 2, 0], "uv": [0, 37]},
+						{"origin": [4, 10.5, -7.02], "size": [1, 1, 0], "inflate": 0.01, "uv": [8, 35]},
+						{"origin": [-5, 10.5, -7.02], "size": [1, 1, 0], "inflate": 0.01, "uv": [8, 36], "mirror": true}
+					]
+				},
+				{
+					"name": "tooth_open_left",
+					"parent": "mouth_open",
+					"pivot": [3.25, 11, -7.02],
+					"rotation": [-20, 0, 0],
+					"cubes": [
+						{"origin": [2.75, 10.5, -7.02], "size": [1, 1, 0], "pivot": [3.25, 11, -7.02], "rotation": [0, 0, 45], "uv": [10, 35]}
+					]
+				},
+				{
+					"name": "tooth_open_right",
+					"parent": "mouth_open",
+					"pivot": [-3.25, 11, -7.02],
+					"rotation": [-20, 0, 0],
+					"cubes": [
+						{"origin": [-3.75, 10.5, -7.02], "size": [1, 1, 0], "pivot": [-3.25, 11, -7.02], "rotation": [0, 0, -45], "uv": [10, 36], "mirror": true}
+					]
+				},
+				{
+					"name": "mouth_closed",
+					"parent": "mouth",
+					"pivot": [0, 10.25, -6.02],
+					"cubes": [
+						{"origin": [-4.5, 9.75, -6.02], "size": [9, 1, 0], "uv": [0, 39]}
+					]
+				},
+				{
+					"name": "tooth_closed_left",
+					"parent": "mouth_closed",
+					"pivot": [3.75, 10.75, -6.02],
+					"rotation": [-20, 0, 0],
+					"cubes": [
+						{"origin": [3.25, 10.25, -6.02], "size": [1, 1, 0], "pivot": [3.75, 10.75, -6.02], "rotation": [0, 0, 45], "uv": [12, 35]}
+					]
+				},
+				{
+					"name": "tooth_closed_right",
+					"parent": "mouth_closed",
+					"pivot": [-3.75, 10.75, -6.02],
+					"rotation": [-20, 0, 0],
+					"cubes": [
+						{"origin": [-4.25, 10.25, -6.02], "size": [1, 1, 0], "pivot": [-3.75, 10.75, -6.02], "rotation": [0, 0, -45], "uv": [12, 36], "mirror": true}
+					]
+				},
+				{
+					"name": "mouth_fog",
+					"parent": "mouth",
+					"pivot": [0, 10, -7.02],
+					"locators": {
+						"mouth_fog": [0, 10, -7.02]
+					}
+				},
+				{
+					"name": "locator_root",
+					"parent": "koffing",
+					"pivot": [0, 0, 0],
+					"locators": {
+						"root": [0, 0, 0]
+					}
+				},
+				{
+					"name": "locator_top",
+					"parent": "koffing",
+					"pivot": [0, 21, 0],
+					"locators": {
+						"top": [0, 21, 0]
+					}
+				}
+			]
+		}
+	]
+}

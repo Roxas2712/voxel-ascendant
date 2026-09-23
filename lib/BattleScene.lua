@@ -293,6 +293,20 @@ function BattleScene.prepare(state, arena)
   return true
 end
 
+-- Compile only the selected battle program during a covered transition
+-- update. This must not bind a canvas or alter the live world's light/grid
+-- state. Shader failures remain owned by the normal first-render fallback.
+function BattleScene.prepareProgram(state, arena)
+  if not (state and state.map and arena) then return false end
+  local host = arena.map or state.map
+  local lighting = V.require("BattleLights").enabled(
+    battleLayoutContext(arena, host).mode, host, arena)
+    and V.require("LocalLights").available()
+  local program = lighting and Voxel3D.shader or Voxel3D.unlitShader
+  if type(program) ~= "function" then return false end
+  return program(VoxelGrid.battleEnabled()) ~= nil
+end
+
 -- ------- the sun
 --
 -- Only has to be drawn once per battle: the arena does not move, and neither
@@ -367,11 +381,26 @@ function BattleScene.textureInkBounds(tex)
   local identity = tex.kantoAscendantMegaSource or tex.inkIdentity
   local transient = tex.inkTransient == true
   local x0, y0, x1, y1
+  -- Camera candidates and layout ask repeatedly about the same captured
+  -- grow-in pixels. Share that readback only until the next finalized capture;
+  -- never teach the permanent sprite cache an empty or partly grown shape.
+  local cached = transient and tex.vascInkCaptureReady
+    and tex.vascTransientInkBounds
+  if cached and cached.canvas == tex.canvas and cached.identity == identity then
+    return cached[1], cached[2], cached[3], cached[4]
+  end
   if identity ~= nil then
     x0, y0, x1, y1 = BattlePics.inkBounds(
       tex.canvas, identity, transient)
   end
-  if transient then return x0, y0, x1, y1 end
+  if transient then
+    if tex.vascInkCaptureReady then
+      tex.vascTransientInkBounds = {
+        x0, y0, x1, y1, canvas=tex.canvas, identity=identity,
+      }
+    end
+    return x0, y0, x1, y1
+  end
 
   local owner, modelKey = companionInkOwner(tex)
   if not owner then return x0, y0, x1, y1 end
@@ -417,6 +446,7 @@ function BattleScene.textureFlipX(side, tex)
   tex = type(tex) == "table" and tex or {}
   if type(tex.flipX) == "boolean" then return tex.flipX end
   if type(tex.vascFlipX) == "boolean" then return tex.vascFlipX end
+  if tex.vascHdDirectional then return false end
 
   local receipt = type(tex.vascEmbeddedTrainer) == "table"
     and tex.vascEmbeddedTrainer or nil
@@ -1843,6 +1873,19 @@ function BattleScene.render(state, arena, textures, token)
   cam.fov = BattleScene.letterboxFov(cam.fov, ph, s)
   cam, pitch = BattleCam.fitPortrait(cam, pitch, pw, ph, arena)
 
+  -- Choose HD source rows from the final rendered eye, once. Candidate
+  -- camera safety probes must never rotate actor art or populate view caches.
+  -- Repaint only when a quadrant changes, before any world target is bound.
+  local appearance=V.BattleSpriteControl
+  local battle=textures and textures.vascRenderBattle
+  if battle and appearance and appearance.choice(battle)=="hd" then
+    local layout=BattleScene.presentationLayout(arena,groundY,textures,host)
+    if appearance.orientWorld(battle,layout,cam.eye) then
+      local updated=V.require("OverworldBattle").textures(battle)
+      if updated then textures.player,textures.enemy=updated.player,updated.enemy end
+    end
+  end
+
   local cx, cy = arena.mid[1], arena.mid[2]
   -- the world extents the sun frustum is fitted to; the camera itself is
   -- framed by cam.fov, so these only have to describe the ground in shot
@@ -2019,22 +2062,28 @@ function BattleScene.render(state, arena, textures, token)
     Voxel3D.seams(false)
     Voxel3D.roomVisibility(roomView,true)
     local completeArenaCeiling = HorizonWall.arenaViewFor(host) ~= nil
+    local authoredCeilingVisible=V.require('InteriorCeilings').visibleFrom(
+      host,HorizonWall.interiorProfileFor(host),Voxel3D.eye)
     local outdoorHorizon=V.require('OutdoorHorizon')
     local horizonVisible=outdoorHorizon.visibility()
     for _, rim in ipairs(horizon or {}) do
       -- Native indoor walls use the same whole-panel cutaway as the world.
       -- A battle camera outside a small room must not stare at its near wall.
-      if rim.kind ~= "water" and (not rim.interiorPanel
+      if rim.kind ~= "water" and (rim.class~="interior_ceiling" or authoredCeilingVisible)
+          and (not rim.interiorPanel
           or V.require("InteriorCutaway").rimVisible(
             rim,true,Voxel3D.eye,Voxel3D.focus)) then
         Voxel3D.towerBackdrop(V.require("TowerAtmosphere").active(host))
-        local unmaskedCeiling = completeArenaCeiling and rim.kind == "ground"
+        local unmaskedCeiling = (completeArenaCeiling or rim.class=="interior_ceiling") and rim.kind == "ground" or rim.kind=="arena_floor"
         if unmaskedCeiling then Voxel3D.roomVisibility(nil) end
         if rim.class=='voxel_horizon'then
           outdoorHorizon.draw(rim,Mat4.translate(rim.ox,0,rim.oy),horizonVisible)
         elseif rim.class=='room_breach_exterior' or rim.class=='room_breach_roof' then
           V.require('Gen1BreachExterior').draw(Voxel3D,rim,
             Mat4.translate(rim.ox,0,rim.oy),DayNight,love.graphics)
+        elseif V.require('GymSkylights').isFamily(rim.class) then
+          V.require('GymSkylights').draw(Voxel3D,rim,host,DayNight,
+            weatherMode,Mat4.translate(rim.ox,0,rim.oy))
         elseif HorizonWall.architecturalRoom and HorizonWall.architecturalRoom(host) then
           ArenaScenery.draw(Voxel3D, rim, rim.texture,
             Mat4.translate(rim.ox, 0, rim.oy), {outdoor=false, surfaces=false})
@@ -2069,6 +2118,7 @@ function BattleScene.render(state, arena, textures, token)
     -- the tile art. The battle is a stage set, and stage water is painted.
     -- (No mirror also means the mons need no second draw into one -- they
     -- just composite over the water below, like everything else on the set.)
+    Voxel3D.waterReceiver(true)
     if water then Voxel3D.draw(water, atlasFor(host)) end
     for i, nb in ipairs(neighbors) do
       if nbWater and nbWater[i] then
@@ -2088,6 +2138,7 @@ function BattleScene.render(state, arena, textures, token)
     end
     Voxel3D.glass(true)
     end
+    Voxel3D.waterReceiver(false)
     Voxel3D.roomVisibility(nil) -- battle actors remain complete at room edges
     -- A full-frame painting owns the visible ground pixels and has no depth
     -- surface for ShadowMap to shade. Put the bounded soft contact ellipses

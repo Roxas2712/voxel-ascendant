@@ -1,0 +1,84 @@
+{
+ "portraitScale": 2.16,
+ "portraitTranslation": [-0.24, 0.27, 0],
+ "profileScale": 0.75,
+ "profileTranslation": [0, 0.62, 0],
+ "rootBone": "togetic",
+ "animations": {
+   "faint": "q.bedrock_primary('togetic', 'faint', q.curve('one'))",
+   "cry": "q.bedrock_stateful('togetic', 'cry_placeholder')",
+   "recoil": "q.bedrock_stateful('togetic', 'recoil')",
+   "physical": "q.bedrock_primary('togetic', 'physical', q.curve('symmetrical'))",
+   "special": "q.bedrock_primary('togetic', 'special', q.curve('symmetrical'))",
+   "status": "q.bedrock_primary('togetic', 'status', q.curve('symmetrical'))"
+ },
+ "poses": {
+   "battle-standing": {
+     "poseTypes": ["STAND"],
+     "isBattle": true,
+     "namedAnimations": {
+       "cry": "q.bedrock_primary('togetic', 'battle_cry', q.curve('symmetrical_wide'))"
+     },
+     "animations": [
+       "q.look('head')",
+       "q.bedrock('togetic', 'battle_idle')"
+     ],
+     "quirks": [
+       "q.bedrock_quirk('togetic', 'blink')"
+     ]
+   },
+   "standing": {
+     "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+     "isBattle": false,
+     "animations": [
+       "q.look('head')",
+       "q.bedrock('togetic', 'ground_idle')"
+     ],
+     "quirks": [
+       "q.bedrock_quirk('togetic', 'blink')"
+     ]
+   },
+   "walking": {
+     "poseTypes": ["WALK", "SWIM"],
+     "animations": [
+       "q.look('head')",
+       "q.bedrock('togetic', 'ground_walk')"
+     ],
+     "quirks": ["q.bedrock_quirk('togetic', 'blink')"]
+   },
+   "hover": {
+     "poseTypes": ["HOVER"],
+     "animations": [
+       "q.pitch_tilt('body')",
+       "q.look('head')",
+       "q.bedrock('togetic', 'air_idle')"
+     ],
+     "quirks": ["q.bedrock_quirk('togetic', 'blink')"]
+   },
+   "fly": {
+     "poseTypes": ["FLY"],
+     "animations": [
+       "q.pitch_tilt('body')",
+       "q.look('head')",
+       "q.bedrock('togetic', 'air_fly')"
+     ],
+     "quirks": ["q.bedrock_quirk('togetic', 'blink')"]
+   },
+   "run": {
+     "poseName": "run",
+     "poseTypes": ["WALK"],
+     "condition": "q.is_sprinting",
+     "animations": [
+       "q.look('head')",
+       "q.bedrock('togetic', 'ground_run')"
+     ],
+     "quirks": [
+       "q.bedrock_quirk('togetic', 'blink')"
+     ]
+   },
+   "sleep": {
+     "poseTypes": ["SLEEP"],
+     "animations": ["q.bedrock('togetic', 'sleep')"]
+   }
+ }
+}

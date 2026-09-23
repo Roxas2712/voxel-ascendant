@@ -1,0 +1,27 @@
+{
+  "portraitScale": 1.66,
+  "portraitTranslation": [0, 0.45, 0],
+  "profileScale": 0.72,
+  "profileTranslation": [0, 0.65, 0],
+  "rootBone": "marshtomp",
+  "animations": {
+    "cry": "q.bedrock_stateful('marshtomp', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "PORTRAIT", "PROFILE", "NONE"],
+      "animations": ["q.look('head')", "q.bedrock('marshtomp', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('marshtomp', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('marshtomp', 'ground_idle')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bimanual_swing(0.66, 0.75, 'arm_left', 'arm_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('marshtomp', 'blink')"]
+    }
+  }
+}

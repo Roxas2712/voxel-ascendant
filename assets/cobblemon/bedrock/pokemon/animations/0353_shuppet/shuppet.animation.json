@@ -1,0 +1,108 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"animation.shuppet.ground_idle_placeholder": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"rotation": [20, 0, 0],
+					"position": ["0+math.sin(q.anim_time*90*2-90)*1/2", "7+math.sin(q.anim_time*90*2)", 0]
+				},
+				"tongue": {
+					"position": [0, 0, 3.45]
+				},
+				"sheet": {
+					"rotation": ["5+math.sin(q.anim_time*90*2-90)*10", 0, "0+math.sin(q.anim_time*90*2)*10"]
+				},
+				"sheet1": {
+					"rotation": ["5+math.sin(q.anim_time*90*2-180)*12", 0, "0+math.sin(q.anim_time*90*2-90)*10"]
+				},
+				"horn": {
+					"rotation": ["0+math.sin(q.anim_time*90*2-135)*2", 0, 0]
+				},
+				"head": {
+					"rotation": ["-15+math.sin(q.anim_time*90*2-45)*5", "0+math.sin(q.anim_time*90*2+90)*2", 0]
+				}
+			}
+		},
+		"animation.shuppet.blink": {
+			"animation_length": 0.1667,
+			"bones": {
+				"eyelid_left": {
+					"position": {
+						"0.0": [0.1, 0, -0.1],
+						"0.1667": {
+							"pre": [0.1, 0, -0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				},
+				"eyelid_right": {
+					"position": {
+						"0.0": [-0.1, 0, -0.1],
+						"0.1667": {
+							"pre": [-0.1, 0, -0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				},
+				"eye_left": {
+					"position": {
+						"0.0": [-0.1, 0, 0.1],
+						"0.1667": {
+							"pre": [-0.1, 0, 0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				},
+				"eye_right": {
+					"position": {
+						"0.0": [0.1, 0, 0.1],
+						"0.1667": {
+							"pre": [0.1, 0, 0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				},
+				"eyes_ditto": {
+					"position": {
+						"0.0": [0, 0, 0.1],
+						"0.1667": {
+							"pre": [0, 0, 0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				},
+				"eyes_blink_ditto": {
+					"position": {
+						"0.0": [0, 0, -0.1],
+						"0.1667": {
+							"pre": [0, 0, -0.1],
+							"post": [0, 0, 0]
+						}
+					}
+				}
+			}
+		},
+		"animation.shuppet.ditto_face": {
+			"loop": true,
+			"bones": {
+				"face": {
+					"position": [0, 0, 0.1],
+					"scale": 0
+				},
+				"face_ditto": {
+					"position": [0, 0, -0.1]
+				}
+			}
+		},
+		"animation.shuppet.cry": {
+			"animation_length": 1.5,
+			"sound_effects": {
+				"0.0417": {
+					"effect": "pokemon.shuppet.cry"
+				}
+			}
+		}
+	}
+}

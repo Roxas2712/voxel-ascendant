@@ -20,8 +20,13 @@ local function api()return V.mod.exports and V.mod.exports.overworldPokemon end
 function M.people(game)
   local setting=M.settings.apo_hd_walking_sprites
   if not loaded(game) or not setting or not (api() and api().walkingSprites)then return false end
-  setting:cycle(game)
-  notify("[F6] PERSONEN",setting:get() and "HD" or "2D / ORIGINAL")
+  local card=V.mod.exports.voxelCharacterCard
+  if card then
+    if not card.cycle(game)then notify('[F6] PERSONEN','Nach der Aktion umschalten');return true end
+    notify('[F6] PERSONEN',card.label())
+  else
+    setting:cycle(game);notify('[F6] PERSONEN',setting:get()and'HD'or'2D / ORIGINAL')
+  end
   return true
 end
 function M.followerChoices(game)
@@ -78,7 +83,7 @@ function M.actions(game)
   local rows={{label="[0] Sprite-Auswahl",fn=M.open}}
   if top(game)==game.overworld then
     if M.settings.apo_hd_walking_sprites and api()and api().walkingSprites then
-      rows[#rows+1]={label="[F6] Personen: "..(M.settings.apo_hd_walking_sprites:get()and"HD"or"2D"),fn=M.people}
+      rows[#rows+1]={label="[F6] Personen: "..(V.mod.exports.voxelCharacterCard and V.mod.exports.voxelCharacterCard.label()or(M.settings.apo_hd_walking_sprites:get()and"HD"or"2D")),fn=M.people}
     end
     if M.settings.apo_follower_sprite_source and api()and api().pokemonWorldSprites then
       rows[#rows+1]={label="[F7] Begleiter wechseln",fn=M.followers}

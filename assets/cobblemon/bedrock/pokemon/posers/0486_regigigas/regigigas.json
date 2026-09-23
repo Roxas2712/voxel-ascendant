@@ -1,0 +1,26 @@
+{
+  "portraitScale": 0.35,
+  "portraitTranslation": [-0.09, 2.21, 0],
+  "profileScale": 0.21,
+  "profileTranslation": [-0.04, 1.44, 0],
+  "rootBone": "regigigas",
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.bedrock('regigigas', 'battle_idle')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "PORTRAIT", "PROFILE", "NONE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('regigigas', 'ground_idle')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.biped_walk(0.4, 0.7, 'leg_left', 'leg_right')",
+        "q.bedrock('regigigas', 'ground_idle')"
+      ]
+    }
+  }
+}

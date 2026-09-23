@@ -1,0 +1,223 @@
+{
+  "portraitScale": 1.83,
+  "portraitTranslation": [ -0.35, 1.05, 0],
+  "profileScale": 0.62,
+  "profileTranslation": [ 0, 0.81, 0],
+  "rootBone": "noctowl",
+  "animations": {
+    "cry": "q.bedrock_stateful('noctowl', 'cry')",
+    "recoil": "q.bedrock_stateful('noctowl', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "PORTRAIT",
+        "PROFILE",
+        "NONE"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'ground_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": false
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": true
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')",
+        "q.bedrock_quirk('noctowl', 'idle_quirk')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": [
+        "STAND",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'battle_idle')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('noctowl', 'battle_cry')"
+      },
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'ground_walk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": false
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": true
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "run": {
+      "poseTypes": ["WALK"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'ground_run')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'air_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "battle-hover": {
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('noctowl', 'air_battle_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "flying": {
+      "poseTypes": [
+        "FLY",
+        "SWIM"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head')",
+        "q.bedrock('noctowl', 'air_fly')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('noctowl', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('noctowl', 'sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": false
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": true
+        }
+      ]
+    },
+    "air-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('noctowl', 'air_sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_open",
+          "isVisible": true
+        },
+        {
+          "part": "wings_closed",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

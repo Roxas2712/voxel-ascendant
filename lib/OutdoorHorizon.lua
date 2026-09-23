@@ -244,6 +244,7 @@ function H.shoulders(maps,horizon,emit,yieldStep,depth,corridors)
 end
 -- Pure geometry callback also supports tests without a graphics context.
 function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
+ if #maps==1 and maps[1].map.id=='KANTO_ASCENDANT_DRIFTGLASS'and V.require('KascDriftglass').matches(maps[1].map)then return end
  if #maps==1 and maps[1].map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(maps[1].map)then return end
  if #maps==1 and maps[1].map.id=='KA_HEVO_RAYQUAZA_CHAMBER'and V.require('KascSkySanctum').matches(maps[1].map)then return end
  local corridors=H.connectionCorridors(maps,worldMaps)
@@ -286,8 +287,8 @@ function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
   occupied[key]=true
   local dark=profile=='lavender'
   local grass=dark and 21 or profile=='volcanic'and 5 or 2
-  local function b(dx,y,dz,w,h,d,c,lit)
-   emit(x+dx,y,z+dz,w,h,d,c,lit)
+  local function b(dx,y,dz,w,h,d,c,lit,foliage)
+   emit(x+dx,y,z+dz,w,h,d,c,lit,foliage==true)
   end
   -- Joined ground shoulders continue below the skyline instead of exposing
   -- bright gaps under trees. Every shoulder stays outside the resident union.
@@ -321,18 +322,18 @@ function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
    if (dark and seed%5<3)or seed%4==0 then
     -- Tall firs and cypress shapes among broad crowns.
     for tier=0,3 do
-     local w=40-tier*8;b(24-w/2,rise+16+tier*(h-12)/4,24-w/2,w,(h-12)/4+5,w,leaf+tier%2)
+     local w=40-tier*8;b(24-w/2,rise+16+tier*(h-12)/4,24-w/2,w,(h-12)/4+5,w,leaf+tier%2,false,true)
     end
    else
     -- Interlocking lobes and lower branches make a dense, irregular canopy.
-    b(4,rise+h*.45,10,32,h*.35,30,leaf)
-    b(12,rise+h*.55,2,30,h*.3,32,leaf+1)
-    b(10,rise+h*.8,10,26,h*.2,28,leaf+1)
-    b(16,rise+h,16,16,6,18,leaf+2)
-    b(2,rise+h*.5,18,12,10,16,leaf)
+    b(4,rise+h*.45,10,32,h*.35,30,leaf,false,true)
+    b(12,rise+h*.55,2,30,h*.3,32,leaf+1,false,true)
+    b(10,rise+h*.8,10,26,h*.2,28,leaf+1,false,true)
+    b(16,rise+h,16,16,6,18,leaf+2,false,true)
+    b(2,rise+h*.5,18,12,10,16,leaf,false,true)
    end
    if row<2 and seed%3==0 then
-    b(3,rise,3,13,8,12,leaf+1);b(29,rise,32,16,10,14,leaf)
+    b(3,rise,3,13,8,12,leaf+1,false,true);b(29,rise,32,16,10,14,leaf,false,true)
     if not dark and seed%7==0 then b(6,rise+8,6,3,3,3,28)end
    end
   end
@@ -389,15 +390,31 @@ end
 -- section's density (forest gate/tower details can share the same cell).
 H.BATCH_CELL = 256
 H.BATCH_BOXES = 256
+H.BUILD_SLICE = .002
+H.BUILD_BOXES_PER_SLICE = 128
 function H.build(maps,horizon,yieldStep,worldMaps)
  if #maps==1 and maps[1].map.id=='KA_MOLTRES_VOLCANO'and V.require('KascVolcano').openSky(maps[1].map)then return {}end
  if H.setting:get()=='off'then return {} end
  local groups,byCell={},{}
- local function emit(x,y,z,w,h,d,c,lit)
-  local key=math.floor(x/H.BATCH_CELL)..':'..math.floor(z/H.BATCH_CELL)..':'..(lit and 1 or 0)
+ local clock=love.timer and love.timer.getTime
+ local buildStart=clock and clock() or 0
+ local emitted=0
+ local function emit(x,y,z,w,h,d,c,lit,foliage)
+  -- External forest landmarks share these authored leaf palette slots.
+  if foliage==nil then foliage=(c>=1 and c<=3)or(c>=20 and c<=22)or(c>=25 and c<=27)end
+  foliage=foliage==true and not lit
+  -- Landmark helpers can emit many boxes without the terrain loop's row
+  -- checkpoints. Slice those helpers as well; geometry/order stay identical.
+  -- The count limit also bounds work when the host has no usable clock.
+  emitted=emitted+1
+  if yieldStep and (emitted>H.BUILD_BOXES_PER_SLICE
+      or (emitted%16==0 and clock and clock()-buildStart>=H.BUILD_SLICE))then
+   yieldStep();emitted=1;buildStart=clock and clock()or 0
+  end
+  local key=math.floor(x/H.BATCH_CELL)..':'..math.floor(z/H.BATCH_CELL)..':'..(lit and 1 or 0)..':'..(foliage and 1 or 0)
   local a=byCell[key]
   if not a or a.boxes>=H.BATCH_BOXES then
-   a={vertices={},indices={},boxes=0,lit=lit,
+   a={vertices={},indices={},boxes=0,lit=lit,foliage=foliage,
       bounds={x,y,z,x+w,y+h,z+d}}
    byCell[key]=a;groups[#groups+1]=a
   end
@@ -408,7 +425,7 @@ function H.build(maps,horizon,yieldStep,worldMaps)
   for face,corners in ipairs(G.FACE_CORNERS)do
    G.pushQuad(a.indices,#a.vertices/4)
    for _,p in ipairs(corners)do
-    a.vertices[#a.vertices+1]={x+p[1]*w,y+p[2]*h,z+p[3]*d,(c-.5)/#colors,.5,G.FACE_SHADE[face]}
+    a.vertices[#a.vertices+1]={x+p[1]*w,y+p[2]*h,z+p[3]*d,(c-.5)/#colors,.5,G.FACE_SHADE[face]+((face==3 and not lit)and 2 or 0)}
    end
   end
  end
@@ -419,7 +436,6 @@ function H.build(maps,horizon,yieldStep,worldMaps)
  H.landmarks(maps,worldMaps,emit)
  V.require('OceanLandmarks').geometry(maps,horizon,emit,yieldStep,worldMaps)
  local tex=palette();local out={}
- local clock=love.timer and love.timer.getTime
  local sliceStart=clock and clock() or 0
  local uploads=0
  for _,a in ipairs(groups)do
@@ -431,7 +447,7 @@ function H.build(maps,horizon,yieldStep,worldMaps)
   if not mesh then for _,part in ipairs(out)do part.mesh:release()end;error('voxel horizon allocation failed',0)end
   uploads=uploads+1
   out[#out+1]={mesh=mesh,texture=tex,ox=0,oy=0,kind='wall',class='voxel_horizon',
-   bounds=a.bounds,windowLight=a.lit==true,castsShadow=false}
+   bounds=a.bounds,windowLight=a.lit==true,seasonalFoliage=a.foliage,castsShadow=false}
   a.vertices,a.indices=nil,nil
  end
  return out
@@ -442,8 +458,14 @@ end
 function H.draw(rim,matrix,visible)
  if visible and not visible(rim.bounds,matrix)then return false end
  if rim.windowLight then G.flatten({1,.86,.6},V.require('Gen1PalletVillage').windowLight())end
- G.draw(rim.mesh,rim.texture,matrix)
+ -- Match real roofs/crowns without rebuilding geometry or changing windows.
+ if G.weatherGround then G.weatherGround(not rim.windowLight)end
+ if G.seasonFoliage then G.seasonFoliage(rim.seasonalFoliage==true)end
+ local ok,result=pcall(G.draw,rim.mesh,rim.texture,matrix)
+ if G.seasonFoliage then G.seasonFoliage(false)end
+ if G.weatherGround then G.weatherGround(false)end
  if rim.windowLight then G.flatten(nil)end
- return true
+ if not ok then error(result,0)end
+ return result~=false
 end
 return H

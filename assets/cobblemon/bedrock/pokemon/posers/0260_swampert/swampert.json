@@ -1,0 +1,30 @@
+{
+  "portraitScale": 1.39,
+  "portraitTranslation": [-0.84, 1.25, 0],
+  "profileScale": 0.48,
+  "profileTranslation": [0, 0.96, 0],
+  "rootBone": "swampert",
+  "animations": {
+    "cry": "q.bedrock_stateful('swampert', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "PORTRAIT", "PROFILE", "NONE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('swampert', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('swampert', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('swampert', 'ground_idle')",
+        "q.biped_walk(0.45, 0.66, 'leg_left2', 'leg_right2')",
+        "q.bimanual_swing(0.45, 0.25, 'arms', 'chest')"
+      ],
+      "quirks": ["q.bedrock_quirk('swampert', 'blink')"]
+    }
+  }
+}

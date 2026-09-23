@@ -1,0 +1,59 @@
+{
+  "portraitScale": 1.66,
+  "portraitTranslation": [-0.14, -0.92, 0],
+  "profileScale": 1.05,
+  "profileTranslation": [0, 0.11, 0.0],
+  "rootBone": "shellder",
+  "animations": {
+    "cry": "q.bedrock_stateful('shellder', 'cry')",
+    "recoil": "q.bedrock_stateful('shellder', 'recoil')"
+  },
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('shellder', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+        "protect": "q.bedrock_primary('shellder', 'protect', q.curve('symmetrical_wide'))"
+      },
+      "animations": ["q.bedrock('shellder', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "animations": [
+        "q.bedrock('shellder', 'ground_idle', q.curve('symmetrical_wide'))"
+      ],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.bedrock('shellder', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "animations": ["q.bedrock('shellder', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": [
+        "q.bedrock('shellder', 'water_swim', q.curve('symmetrical_wide'))"
+      ],
+      "quirks": ["q.bedrock_quirk('shellder', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('shellder', 'sleep')"]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 -- Packaged, skyless cube captures of the source-map world. Baking is an
 -- offline QA/build step; a normal phone only decodes images and near boxes.
 local V=...
-local C={REVISION=1,RADIUS=2048,NEAR=480,FACE_SIZE=1536,hits=0,misses=0}
+local C={REVISION=2,RADIUS=2048,NEAR=480,FACE_SIZE=1536,hits=0,misses=0}
 -- Right/up vectors also define texture orientation, shared by baker and draw.
 C.faces={
  {name='east',dir={1,0,0},right={0,0,1},up={0,1,0}},
@@ -46,25 +46,25 @@ function C.partition(entry,b,emit)
  end
  local xs,zs=cuts(b[1],b[4],entry.w/2),cuts(b[3],b[6],entry.h/2)
  for ix=1,#xs-1 do for iz=1,#zs-1 do
-  local p={xs[ix],b[2],zs[iz],xs[ix+1]-xs[ix],b[5],zs[iz+1]-zs[iz],b[7],b[8]}
+  local p={xs[ix],b[2],zs[iz],xs[ix+1]-xs[ix],b[5],zs[iz+1]-zs[iz],b[7],b[8],b[9]}
   emit(p,C.near(entry,p))
  end end
 end
 function C.pack(boxes)
- local parts={'RWB1',love.data.pack('string','<I4',#boxes)}
- for _,b in ipairs(boxes)do parts[#parts+1]=love.data.pack('string','<ffffffI4I4',b[1],b[2],b[3],b[4],b[5],b[6],b[7],b[8]and 1 or 0)end
+ local parts={'RWB2',love.data.pack('string','<I4',#boxes)}
+ for _,b in ipairs(boxes)do parts[#parts+1]=love.data.pack('string','<ffffffI4I4',b[1],b[2],b[3],b[4],b[5],b[6],b[7],(b[8]and 1 or 0)+(b[9]and 2 or 0))end
  return table.concat(parts)
 end
 function C.unpack(raw)
- if type(raw)~='string'or raw:sub(1,4)~='RWB1'or #raw<8 then return end
+ if type(raw)~='string'or raw:sub(1,4)~='RWB2'or #raw<8 then return end
  local count,pos=love.data.unpack('<I4',raw,5)
  if count>12000 or #raw~=8+count*32 then return end
  local out={}
  for i=1,count do
   local x,y,z,w,h,d,c,lit,nextPos=love.data.unpack('<ffffffI4I4',raw,pos);pos=nextPos
   for _,n in ipairs({x,y,z,w,h,d})do if n~=n or math.abs(n)>20000 then return end end
-  if w<=0 or h<=0 or d<=0 or c<1 or c>#V.require('VoxelItems').palette or lit>1 then return end
-  out[i]={x,y,z,w,h,d,c,lit==1}
+  if w<=0 or h<=0 or d<=0 or c<1 or c>#V.require('VoxelItems').palette or lit>3 then return end
+  out[i]={x,y,z,w,h,d,c,lit%2==1,lit>=2}
  end
  return out
 end
@@ -102,9 +102,15 @@ function C.load(entry,defs,yieldStep)
      tex=love.graphics.newImage(V.path..'/'..meta.path..'/'..name..'.png',{mipmaps=false,linear=false})
      tex:setFilter('linear','linear');tex:setWrap('clamp','clamp');newTextures[name]=tex
     end
+    local mask
+    if layer=='land' then
+     mask=love.graphics.newImage(V.path..'/'..meta.path..'/'..face.name..'-materials.png',{mipmaps=false,linear=false})
+     mask:setFilter('nearest','nearest');mask:setWrap('clamp','clamp');newTextures[name..'-materials']=mask
+     assert(mask:getWidth()==tex:getWidth() and mask:getHeight()==tex:getHeight(),'rooftop material dimensions')
+    end
     local v,i=C.faceGeometry(entry,face,layer=='lights'and C.RADIUS-.1 or C.RADIUS,meta.files[name])
     local mesh=assert(V.require('Voxel3D').newMesh(v,i),'rooftop cache mesh')
-    parts[#parts+1]={mesh=mesh,texture=tex,ox=entry.ox or 0,oy=entry.oy or 0,
+    parts[#parts+1]={mesh=mesh,texture=tex,materialMask=mask,ox=entry.ox or 0,oy=entry.oy or 0,
      kind='wall',class='rooftop_baked',windowLight=layer=='lights',ownsTexture=true,castsShadow=false}
     if yieldStep then yieldStep()end
    end
@@ -125,8 +131,12 @@ function C.draw(rim,matrix)
  -- All other palette, clock and weather presentation stays on the world path.
  if shader then pcall(shader.send,shader,'curve',{0,0,0})end
  if rim.windowLight then G.flatten({1,.86,.6},light)end
- G.draw(rim.mesh,rim.texture,matrix)
+ G.rooftopMaterials(rim.materialMask)
+ G.weatherGround(not rim.windowLight)
+ local ok,err=pcall(G.draw,rim.mesh,rim.texture,matrix)
+ G.rooftopMaterials(nil);G.weatherGround(false)
  if rim.windowLight then G.flatten(nil)end
  if shader then pcall(shader.send,shader,'curve',{G.curveX or 0,G.curveZ or 0,G.curveK or 0})end
+ if not ok then error(err,0)end
 end
 return C

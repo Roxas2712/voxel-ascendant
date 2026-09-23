@@ -43,6 +43,10 @@ function M.profile(map)
 end
 function M.material(map,profile,tile,synthetic)
   if not profile then return nil end
+  -- Hidden maze barriers need the same material as the ordinary floor,
+  -- otherwise the 3D floor finish would outline the puzzle solution.
+  if map.id=='FUCHSIA_GYM' and map.def.generation~=2
+      and map.def.tileset=='GYM' and profile==2 and tile==31 then return -130 end
   if not synthetic and profile==1 and map.def.tileset=='LAB'
       and map.id and (map.id=='CINNABAR_LAB' or map.id:match('^CINNABAR_LAB_')) then
     if tile==39 or tile==55 then return -144 end -- quiet entry mat

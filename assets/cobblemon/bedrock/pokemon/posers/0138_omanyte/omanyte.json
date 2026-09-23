@@ -1,0 +1,65 @@
+{
+  "portraitScale": 3.15,
+  "portraitTranslation": [-0.06, -3.18, 0],
+  "profileScale": 1.13,
+  "profileTranslation": [0, -0.02, 0],
+  "rootBone": "omanyte",
+  "animations": {
+    "faint": "q.bedrock_primary('omanyte', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('omanyte', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('omanyte', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('omanyte', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "PORTRAIT", "PROFILE", "NONE"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('omanyte', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('omanyte', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('omanyte', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('omanyte', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('omanyte', 'water_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('omanyte', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('omanyte', 'water_swim')"
+      ],
+      "quirks": ["q.bedrock_quirk('omanyte', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('omanyte', 'sleep')"]
+    }
+  }
+}

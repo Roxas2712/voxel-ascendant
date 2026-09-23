@@ -1,0 +1,64 @@
+{
+  "portraitScale": 1.33,
+  "portraitTranslation": [0.33, 0.25, 0],
+  "profileScale": 0.73,
+  "profileTranslation": [0.05, 0.68, 0],
+  "rootBone": "lunatone",
+  "animations": {
+    "cry": "q.bedrock_stateful('lunatone', 'cry')",
+    "recoil": "q.bedrock_stateful('lunatone', 'recoil')",
+    "physical": "q.bedrock_primary('lunatone', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('lunatone', 'special', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('lunatone', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('lunatone', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('lunatone', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER", "FLY"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('lunatone', 'battle_cry', q.curve('symmetrical_wide'))"
+      },
+      "animations": ["q.bedrock('lunatone', 'battle_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('lunatone', 'blink')",
+        "q.bedrock_quirk('lunatone', 'quirk')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "HOVER", "NONE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('lunatone', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('lunatone', 'blink')",
+        "q.bedrock_quirk('lunatone', 'quirk')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLY", "SWIM"],
+      "isBattle": false,
+      "animations": ["q.bedrock('lunatone', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('lunatone', 'blink')"]
+    },
+    "sand-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "q.is_standing_on_blocks(2, 'minecraft:sand', 'minecraft:red_sand')",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('lunatone', 'sleep')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_standing_on_blocks(2, 'minecraft:sand', 'minecraft:red_sand')",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('lunatone', 'sleep_alt')"]
+    }
+  }
+}

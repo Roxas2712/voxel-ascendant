@@ -614,7 +614,7 @@ local function drawFocusHelp(menu)
   color(C.blue)
   love.graphics.rectangle("fill", 4, 107, 152, 3)
   color(C.ink)
-  local help = focusedHelp(menu)
+  local help = question or focusedHelp(menu)
   menu.ascendantFocusedHelp = help
   drawMarquee(help, 7, 112, 146, menu.ascendantFocusTime)
 
@@ -683,6 +683,12 @@ local function drawOrasFocusHelp(menu)
     menuAccent(menu), 7)
   local skinLabel = menu.__vascHeaderLabel or (menu.__vascLanguage == "de"
     and "VASC / KASC OPTIONEN" or "VASC / KASC SETTINGS")
+  -- KASC owns the countdown; ORAS must display that live value rather
+  -- than replacing the quiz header with the generic settings label.
+  if menu.kascQuestionCountdownVisible then
+    skinLabel = (menu.__vascLanguage == "de" and "ZEIT %02ds" or "TIME %02ds")
+      :format(math.max(0, math.ceil(tonumber(menu.kascQuestionRemaining) or 0)))
+  end
   -- Even the minimum 4:3 logical surface has room for every current section
   -- title and the complete settings label.  Budget from the actual glyph
   -- widths rather than a percentage which shortened SETTINGS to SETTI.
@@ -760,8 +766,10 @@ local function drawOrasFocusHelp(menu)
 
   glassPanel(helpX, contentY, helpW, contentH, C.glassSoft,
     menuAccent(menu), 7)
-  drawText(menu.__vascLanguage == "de" and "HILFE" or "HELP",
-    helpX + 12, contentY + 10, C.glassGold)
+  local question = menu.kascQuestionPromptVisible and menu.kascQuestionPrompt
+  local panelTitle = question and (menu.__vascLanguage == "de" and "FRAGE" or "QUESTION")
+    or (menu.__vascLanguage == "de" and "HILFE" or "HELP")
+  drawText(panelTitle, helpX + 12, contentY + 10, C.glassGold)
   color(menuAccent(menu))
   love.graphics.rectangle("fill", helpX + 12, contentY + 24,
     math.max(8, helpW - 24), 2)

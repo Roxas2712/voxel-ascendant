@@ -1,0 +1,82 @@
+{
+  "portraitScale": 1.44,
+  "portraitTranslation": [-0.14, -0.63, 0],
+  "profileScale": 0.63,
+  "profileTranslation": [0, 0.64, 0],
+  "rootBone": "goldeen",
+  "animations": {
+    "cry": "q.bedrock_stateful('goldeen', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": false,
+      "isBattle": true,
+      "animations": ["q.bedrock('goldeen', 'ground_battle_idle')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')","q.bedrock_quirk('goldeen', 'quirk_ground_flip')"]
+    },
+    "battle-swimming": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": true,
+      "isBattle": true,
+      "animations": ["q.bedrock('goldeen', 'water_battle_idle')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "animations": ["q.bedrock('goldeen', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('goldeen', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["PORTRAIT", "PROFILE", "FLOAT"],
+      "isTouchingWater": true,
+      "animations": ["q.bedrock('goldeen', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "animations": ["q.bedrock('goldeen', 'water_swim')"],
+      "quirks": ["q.bedrock_quirk('goldeen', 'blink')"]
+    },
+    "surface_idle": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": true,
+      "animations": [
+                "q.bedrock('goldeen', 'water_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('goldeen', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    },
+    "surface_swim": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": true,
+      "animations": [
+                "q.bedrock('goldeen', 'water_swim')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('goldeen', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    }
+  }
+}

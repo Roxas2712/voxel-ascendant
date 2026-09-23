@@ -1,0 +1,30 @@
+{
+  "portraitScale": 1.44,
+  "portraitTranslation": [-0.15, -0.26, 0],
+  "profileScale": 0.73,
+  "profileTranslation": [0, 0.59, 0],
+  "rootBone": "spheal",
+  "animations": {
+    "cry": "q.bedrock_stateful('spheal', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "SWIM",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE",
+        "NONE"
+      ],
+      "animations": ["q.bedrock('spheal', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('spheal', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": ["q.bedrock('spheal', 'ground_walk_placeholder')"]
+    }
+  }
+}

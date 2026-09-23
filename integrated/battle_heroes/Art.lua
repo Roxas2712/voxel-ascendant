@@ -31,11 +31,19 @@ return function(mod,data)
   return mix(px,body,mask)*tint;
  }
  ]]
+ local voxelRig={
+  [0]={centers={.11,.89},radius={.13,.13},window={.39,.55,.68,.73}},
+  [1]={centers={.62,-10},radius={.17,.1},window={.39,.55,.68,.73}},
+  [2]={centers={.11,.89},radius={.13,.13},window={.39,.55,.68,.73}},
+  [3]={centers={.38,-10},radius={.17,.1},window={.39,.55,.68,.73}},
+ }
  local function hero(role,row,column)
   column=column or 0
-  local img,b=heroAtlas(role,row,column)
-  local key=role..':'..row..':'..column..':'..chars.revision
-  return img,b,key
+  local img,b,isVoxel=heroAtlas(role,row,column)
+  -- A cap or trouser silhouette may change cell bounds without changing the
+  -- animation definition. Quad geometry belongs to the resolved atlas bounds.
+  local key=role..':'..row..':'..column..':'..chars.revision..':'..table.concat(b,':')..':'..tostring(isVoxel)
+  return img,b,key,isVoxel
  end
  local function smooth(a,b,x)
   local t=math.max(0,math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)
@@ -52,10 +60,9 @@ return function(mod,data)
   side=side or 'player'
   local spec=chars.get(role)
   local column,row,authored=chars.frame(spec,action,action and age or frame,side,view)
-  local img,b,key=hero(role,row,column)
+  local img,b,key,isVoxel=hero(role,row,column)
   local l,t,r,bot,w,h=unpack(b)
-  local profile=spec.rig
-  profile=profile and profile[row]
+  local profile=isVoxel and voxelRig[row]or(spec.rig and spec.rig[row])
   local armIndex=view=="terarrium-back" and 2 or 1
   local cx=profile and (profile.centers[armIndex] or profile.centers[1]) or .5
   local radius=profile and (profile.radius[armIndex] or profile.radius[1]) or .14
@@ -95,14 +102,27 @@ return function(mod,data)
    G.pop()
   end
  end
+ -- Warm the exact idle atlas/cell without creating a pose, Canvas, sound,
+ -- queue action or held ball. Normal draws retain live identity/clip selection.
+ function A.prepareHero(role,side,view)
+  local spec=chars.get(role)
+  local column,row=chars.frame(spec,nil,0,side,view)
+  local img,b,key,isVoxel=hero(role,row,column)
+  if not quads[key] then
+   local l,t,r,bot,w,h=unpack(b)
+   quads[key]=G.newQuad(column*w+l,row*h+t,r-l,bot-t,img:getDimensions())
+  end
+  return true
+ end
  function A.hand(role,side,age,view)
   local spec=chars.get(role)
-  if age==18 and view~="terarrium-back" and view~="terarrium-front" and spec.releaseHand and spec.releaseHand[side] then return spec.releaseHand[side] end
+  local _,_,_,isVoxel=hero(role,spec.idleColumn or 0,0)
+  if not isVoxel and age==18 and view~="terarrium-back" and view~="terarrium-front" and spec.releaseHand and spec.releaseHand[side] then return spec.releaseHand[side] end
   local row=view=='terarrium-back' and spec.backRow or view=='terarrium-front' and spec.frontRow
    or (side=='enemy' and spec.leftRow or spec.rightRow)
   local _,b=hero(role,row,spec.idleColumn or 0)
   local l,t,r,bot=unpack(b)
-  local profile=spec.rig and spec.rig[row]
+  local profile=isVoxel and voxelRig[row]or(spec.rig and spec.rig[row])
   local armIndex=view=="terarrium-back" and 2 or 1
   local cx=profile and (profile.centers[armIndex] or profile.centers[1]) or .5
   local win=profile and profile.window or {.43,.61,.74,.79}
@@ -114,11 +134,14 @@ return function(mod,data)
  end
  function A.releaseHand(role,side,view)return A.hand(role,side,18,view)end
  function A.heroCanvas(role,frame,action,age,canvas,side,heldBall,view)
-  canvas=canvas or G.newCanvas(192,256)
+  local _,_,_,isVoxel=hero(role,0,0)
+  local width=isVoxel and 256 or 192
+  if canvas and canvas:getWidth()~=width then canvas:release();canvas=nil end
+  canvas=canvas or G.newCanvas(width,256)
   G.push('all')
   local ok,err=pcall(function()
    G.setCanvas(canvas);G.origin();G.setScissor();G.setShader();G.setDepthMode();G.clear(0,0,0,0)
-   G.setBlendMode('alpha');A.drawHero(role,96,246,220,frame,action,age,side,heldBall,view)
+   G.setBlendMode('alpha');A.drawHero(role,width/2,246,220,frame,action,age,side,heldBall,view)
   end)
   G.pop();if not ok then error(err) end
   return canvas

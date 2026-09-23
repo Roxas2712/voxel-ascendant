@@ -426,6 +426,9 @@ local function drawFishingFx(world, state, project, displayScale)
   if state.facing == "left" then handX = handX - 4 * scale
   elseif state.facing == "right" then handX = handX + 4 * scale end
 
+  local authoredHand=state.actorBody and state.actorBody.fieldFishingHands
+    and state.actorBody.fieldFishingHands[state.facing]
+  if authoredHand then handX,handY=psx+authoredHand[1]*scale,psy+authoredHand[2]*scale end
   local tipX, tipY
   if cast < 1 then
     tipX = lerp(handX, bsx, cast)
@@ -638,12 +641,12 @@ function M.install()
   -- fishing renderer keeps the established standing/walking fallback. Every
   -- value is restored before the engine decides between Canvas and native 2D.
   local fishingViews = setmetatable({}, { __mode = "k" })
-  local function liveFishingRenderer(player, playerFishing)
+  local function liveFishingRenderer(player, playerFishing, state)
     if not (player and playerFishing) then return nil end
     local okAppearance, appearance = pcall(V.require, "FieldActorAppearance")
     if okAppearance then
       local body = appearance.resolve(player, player.sprite)
-      if body then return body end
+      if body then if state then state.actorBody=body end;return body end
     end
     local sprite = rawget(player, "fishingSprite")
     if type(sprite) ~= "table" or type(sprite.resolveImage) ~= "function"
@@ -671,7 +674,7 @@ function M.install()
     local nativeFishing = world and rawget(world, "fishing")
     local playerFishing = player and rawget(player, "fishing")
     local playerSprite = player and rawget(player, "sprite")
-    local fishingSprite = liveFishingRenderer(player, playerFishing)
+    local fishingSprite = liveFishingRenderer(player, playerFishing, activeByWorld[world])
     if world then world.fishing = nil end
     if player then
       if fishingSprite then

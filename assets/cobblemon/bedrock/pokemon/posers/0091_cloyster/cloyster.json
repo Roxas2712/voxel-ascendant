@@ -1,0 +1,69 @@
+{
+  "portraitScale": 1.04,
+  "portraitTranslation": [-0.25, 0.51, 0],
+  "profileScale": 0.48,
+  "profileTranslation": [0, 1.0, 0.0],
+  "rootBone": "cloyster",
+  "animations": {
+    "cry": "q.bedrock_stateful('cloyster', 'cry')",
+    "recoil": "q.bedrock_stateful('cloyster', 'recoil')"
+  },
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('cloyster', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "isUnderWater": false,
+      "namedAnimations": {
+        "protect": "q.bedrock_primary('cloyster', 'protect', q.curve('symmetrical_wide'))"
+      },
+      "animations": ["q.bedrock('cloyster', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "water-battle-standing": {
+      "poseTypes": ["FLOAT", "SWIM", "STAND"],
+      "isBattle": true,
+      "isUnderWater": true,
+      "namedAnimations": {
+        "protect": "q.bedrock_primary('cloyster', 'protect', q.curve('symmetrical_wide'))"
+      },
+      "animations": ["q.bedrock('cloyster', 'water_battle_idle')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('cloyster', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.bedrock('cloyster', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "animations": ["q.bedrock('cloyster', 'water_idle')"],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "animations": [
+        "q.bedrock('cloyster', 'water_swim', q.curve('symmetrical_wide'))"
+      ],
+      "quirks": ["q.bedrock_quirk('cloyster', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('cloyster', 'sleep')"]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "portraitScale": 1.58,
+  "portraitTranslation": [-0.09,0.81, 0],
+  "profileScale": 0.61,
+  "profileTranslation": [0, 0.86, 0],
+  "rootBone": "grumpig",
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.bedrock('grumpig', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('grumpig', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('grumpig', 'ground_idle')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bimanual_swing(0.66, 0.6, 'arm_left', 'arm_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('grumpig', 'blink')"]
+    }
+  }
+}

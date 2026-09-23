@@ -1,0 +1,44 @@
+{
+  "portraitScale": 2.17,
+  "portraitTranslation": [ -0.13, 0.66, 0],
+  "profileScale": 0.54,
+  "profileTranslation": [ 0, 0.95, 0],
+  "rootBone": "combusken",
+  "animations": {
+    "cry": "q.bedrock_stateful('combusken', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('combusken', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('combusken', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('combusken', 'ground_idle')",
+        "q.biped_walk(1, 1, 'leg_left', 'leg_right')",
+        "q.bimanual_swing(1, 1, 'arm_left', 'arm_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('combusken', 'blink')"
+      ]
+    }
+  }
+}

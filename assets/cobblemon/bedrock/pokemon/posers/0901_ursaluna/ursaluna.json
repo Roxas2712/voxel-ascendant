@@ -1,0 +1,140 @@
+{
+  "portraitScale": 1.2,
+  "portraitTranslation": [-1.1, 0.4, 0],
+  "profileScale": 0.45,
+  "profileTranslation": [0, 0.9, 0],
+  "rootBone": "ursaluna",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5],
+    "seat_2": [0, 0.45, 0.5],
+    "seat_2_reverse": [0, 0.45, 0.5]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5],
+    "seat_2": [0, 0.45, 0.5],
+    "seat_2_reverse": [0, 0.45, 0.5]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('ursaluna', 'cry')",
+    "recoil": "q.bedrock_stateful('ursaluna', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "condition": "!q.in_air",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaluna', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('ursaluna', 'hold_item')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('ursaluna', 'blink')"
+      ]
+    },
+    "battle-standing": {
+      "poseName": "battle_standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaluna', 'battle_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('ursaluna', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ursaluna', 'blink')"
+      ]
+    },
+    "in-air": {
+      "poseName": "in_air",
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaluna', 'ride_jump')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('ursaluna', 'hold_item')"
+        }
+      ],
+      "transformTicks": 5,
+      "transformToTicks": 5,
+      "quirks": [
+        "q.bedrock_quirk('ursaluna', 'blink')"
+      ]
+    },
+    "sleep": {
+    "poseName": "sleep",
+    "poseTypes": ["SLEEP"],
+    "animations": [
+      "q.bedrock('ursaluna', 'sleep')",
+      {
+        "condition": "q.is_holding_item",
+        "animation": "q.bedrock('ursaluna', 'hold_item')"
+      }
+    ],
+    "transformTicks": 10
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": ["WALK", "SWIM"],
+      "isBattle": false,
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaluna', 'ground_walk')",
+       
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('ursaluna', 'hold_item')"
+        },
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('ursaluna', 'ride_ground_walk')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('ursaluna', 'blink')"
+      ]
+    },
+    "run": {
+      "poseName": "run",
+      "poseTypes": ["WALK"],
+      "isBattle": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('ursaluna', 'ground_run')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('ursaluna', 'hold_item')"
+        },
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('ursaluna', 'ride_ground_run')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('ursaluna', 'blink')"
+      ]
+    }
+  }
+}
+

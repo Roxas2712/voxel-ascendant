@@ -1,0 +1,70 @@
+{
+  "portraitScale": 1.6,
+  "portraitTranslation": [-0.4, -0.3, 0],
+  "profileScale": 0.69,
+  "profileTranslation": [0.0, 0.59, 0],
+  "rootBone": "muk",
+  "animations": {
+    "cry": "q.bedrock_stateful('muk', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "FLOAT", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('muk', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('muk', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('muk', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('muk', 'blink')"
+      ]
+    },
+    "surface_idle": {
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('muk', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('muk', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, -5, 0]
+        }
+      ]
+    },
+    "surface_swimming": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('muk', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('muk', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, -5, 0]
+        }
+      ]
+    }
+  }
+}

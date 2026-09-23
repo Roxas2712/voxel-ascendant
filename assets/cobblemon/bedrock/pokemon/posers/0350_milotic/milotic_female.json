@@ -1,0 +1,90 @@
+{
+  "portraitScale": 1.49,
+  "portraitTranslation": [-0.88, 1.4, 0],
+  "profileScale": 0.48,
+  "profileTranslation": [-0.1, 0.93, 0],
+  "rootBone": "milotic",
+  "animations": {
+    "cry": "q.bedrock_stateful('milotic', 'cry')"
+  },
+  "poses": {
+    "jump": {
+      "poseTypes": ["FLOAT", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('milotic', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('milotic', 'ride_water_swim')"
+        }
+      ],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isTouchingWater": false,
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('milotic', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('milotic', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "PORTRAIT",
+        "PROFILE",
+        "NONE"
+      ],
+      "isTouchingWater": false,
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('milotic', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('milotic', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('milotic', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('milotic', 'blink')"]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('milotic', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('milotic', 'ride_water_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('milotic', 'blink')"]
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('milotic', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('milotic', 'ride_water_swim')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('milotic', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('milotic', 'sleep_female')"]
+    }
+  }
+}

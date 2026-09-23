@@ -55,7 +55,36 @@ function M.find(P,map)
  b(48,32,42,2,10,2,c.silver);b(42,40,42,14,1,1,c.silver)
  b(44,38,40,10,1,1,c.silver)
  P.models[kind]=m
- return {{kind=kind,tx=16,ty=22,w=8,h=6,voxelOnly=true,
-  enabled=function()return V.require('VoxelItems').setting:get()end}}
+ local dock='kasc_driftglass_landing'
+ if not P.models[dock]then
+  local deck={boxes={},directBoxes=true,step=1,frameW=48,frameH=104,depth=80,offsetY=-24,
+   replacesGround=true,waterUnderlaySide='left',support=0,
+   groundAt=function(_,z)return z<16 and 35 or 20 end}
+  local function b(...)deck.boxes[#deck.boxes+1]={...}end
+  -- A flush landing at the existing sailor, with a narrow timber jetty.
+  -- Return interaction, native walkability and arrival coordinates stay owned
+  -- by KASC; the low rope rail marks the blocked end of the visual gangway.
+  for z=0,44,4 do b(0,.04,z,18,.8,3.6,c.oldBoard)end
+  for _,x in ipairs({0,16})do
+   for _,z in ipairs({12,34,46})do b(x,-5,z,2,12,2,c.oldBeam)end
+   b(x,5,14,1,1,31,c.oak)
+  end
+  b(0,6,28,18,1,1,c.oak)
+  -- Closed stepped launch hull moored alongside the pier in native water.
+  for z=32,68,4 do
+   local inset=(z==32 or z==68) and 5 or (z==36 or z==64) and 2 or 0
+   b(22+inset,-3,z,24-inset*2,4,4,c.navy)
+   b(22+inset,1,z,24-inset*2,1,4,c.oak)
+  end
+  b(22,2,40,2,5,24,c.walnut);b(44,2,40,2,5,24,c.walnut)
+  b(25,2,36,18,5,2,c.walnut);b(27,2,67,14,5,2,c.walnut)
+  for _,z in ipairs({44,58})do b(24,5,z,20,2,3,c.oldBoard)end
+  b(42,7,43,1,1,23,c.oak);b(40,7,60,3,1,8,c.oak)
+  b(17,3,39,8,1,1,c.silver)
+  P.models[dock]=deck
+ end
+ local enabled=function()return V.require('VoxelItems').setting:get()end
+ return {{kind=kind,tx=16,ty=22,w=8,h=6,voxelOnly=true,enabled=enabled},
+  {kind=dock,tx=16,ty=30,w=6,h=10,voxelOnly=true,enabled=enabled}}
 end
 return M

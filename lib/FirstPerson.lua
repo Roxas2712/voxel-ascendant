@@ -648,11 +648,10 @@ function FirstPerson.frame(me, cx, cy, vw, vh)
   if ul > 1e-6 then up[1], up[2], up[3] = up[1] / ul, up[2] / ul, up[3] / ul
   else up = { 0, 1, 0 } end
 
-  -- the world curve eases out with the blend: standing inside the world,
-  -- the bend that sells the diorama reads as the ground falling away. A
+  -- First person fades the bend; the shoulder view retains a gentler roll. A
   -- true zero (curve declined) needs the field present -- nil would let
   -- Voxel3D fall back to the setting
-  local k = WorldCurve.k(vh) * (1 - e)
+  local k = WorldCurve.freeRoamK(vh, e, ThirdPerson.extension())
 
   rig = {
     eye = mix(oEye, camEye),

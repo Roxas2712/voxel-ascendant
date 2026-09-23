@@ -2058,89 +2058,70 @@ end
 -- a portable Voxel arena. A B rung cannot fail: its stage is not something the
 -- map has to have room for, so a fight in the tightest cave in Kanto is staged
 -- as readily as one on Route 1.
+-- Strict builders never fall back themselves: the caller owns the forward-only
+-- MAP -> Terrarium -> Arena -> Discs -> native sequence.
+function OverworldBattle.portableStageFor(state, mode, camera)
+  if mode == "terarrium" then
+    return V.require("TerarriumHost").stage(state.map, camera)
+  end
+  local arenaStyle, diskStyle
+  if mode == OverworldBattle.ARENA then
+    local foundOk, found = pcall(BattleArena.find, state.map, state.player.cellX,
+      state.player.cellY, state.player.surfing)
+    if not foundOk then found = nil end
+    arenaStyle = latchArenaArt(V.require("BattleArenaStyle").resolve(state.map, found))
+  else
+    diskStyle = latchDiskArt(V.require("BattleArenaStyle").resolve(state.map, nil))
+  end
+  local arena = V.require("VoxelBattleStage").arena(state.map, arenaStyle, diskStyle)
+  if arena then
+    arena.presentationMode = mode == OverworldBattle.ARENA and "ARENA" or "DISCS"
+  end
+  return arena
+end
+
+function OverworldBattle.recoveryStageIndex(arena)
+  if arena.terarrium then return 2 end
+  if arena.presentationMode == "ARENA" then return 3 end
+  if arena.presentationMode == "DISCS" then return 4 end
+  return 1
+end
+
 function OverworldBattle.stageFor(state, plan, bypassPreflight)
   local mode = plan and plan.mode or selectedBattleMode()
-  local terrarium=plan and plan.terarrium or (not plan and OverworldBattle.setting:get()=="terarrium")
-  local key = stageRequestKey(state, terrarium and ("terarrium:"..tostring(plan and plan.terarriumCamera or (V.require("TerarriumHost").service.cameraMode and V.require("TerarriumHost").service.cameraMode()))) or mode)
+  local terrarium=plan and (plan.terarrium or plan.mode=="terarrium") or (not plan and OverworldBattle.setting:get()=="terarrium")
+  local camera=plan and plan.terarriumCamera
+  local key = stageRequestKey(state, terrarium and ("terarrium:"..tostring(camera or (V.require("TerarriumHost").service.cameraMode and V.require("TerarriumHost").service.cameraMode()))) or mode)
   if not bypassPreflight and staged.ready and staged.key == key then
     local arena = staged.arena
     staged = { key=nil, ready=false, arena=nil }
     return arena ~= false and arena or nil
   end
-  if terrarium then return V.require("TerarriumHost").stage(state.map,plan and plan.terarriumCamera) end
-  local arenaSelected = mode == OverworldBattle.ARENA
-  local discsSelected = mode == OverworldBattle.FLAT_B
-  local portableSelected = arenaSelected or discsSelected
-  -- MAP, ARENA and DISCS are user-visible architectures, not suggestions.
-  -- Camera style must never exchange one stage for another: SMART/STADIUM
-  -- directs the selected stage only. In particular, ARENA always keeps its
-  -- reviewed portable scenery instead of silently turning into MAP whenever a
-  -- physical patch happens to be available.
-  if portableSelected and Voxel3D.available() then
-    local okStage, arena = pcall(function()
-      local arenaStyle, diskStyle
-      if arenaSelected then
-        local found = BattleArena.find(state.map, state.player.cellX,
-                                       state.player.cellY,
-                                       state.player.surfing)
-        arenaStyle = latchArenaArt(
-          V.require("BattleArenaStyle").resolve(state.map, found))
-      else
-        -- DISCS are portable and do not need a map-ground search, but their
-        -- art still receives the same location family used by ARENA.
-        diskStyle = latchDiskArt(
-          V.require("BattleArenaStyle").resolve(state.map, nil))
-      end
-      return V.require("VoxelBattleStage").arena(
-        state.map, arenaStyle, diskStyle)
-    end)
-    if okStage and arena then
-      arena.presentationMode = arenaSelected and "ARENA" or "DISCS"
+  local first = terrarium and 2 or mode == OverworldBattle.ARENA and 3
+    or mode == OverworldBattle.FLAT_B and 4 or 1
+  local requested = ({"MAP", "TERRARIUM", "ARENA", "DISCS"})[first]
+  local reason = "selected-stage-unavailable"
+  if first == 1 then
+    local ok, arena = pcall(BattleArena.find, state.map,
+      state.player.cellX, state.player.cellY, state.player.surfing)
+    if ok and arena then
+      arena.presentationMode = "MAP"
+      arena.surfing = state.player.surfing == true
       return arena
     end
-    -- A selected architecture is immutable for this battle. If its portable
-    -- stage cannot be built, fail closed to the native presentation once;
-    -- never disguise a physical MAP stage as ARENA/DISCS or silently change
-    -- layouts, sprite policy and camera ownership underneath the player.
-    return nil
+    reason = ok and "no-safe-map-placement" or tostring(arena)
   end
-  local okFind, arena = pcall(BattleArena.find, state.map,
-                              state.player.cellX, state.player.cellY,
-                              state.player.surfing)
-  if okFind and arena then
-    arena.presentationMode = "MAP"
-    -- Keep the actor-foot search on the same support contract as the stage.
-    -- A sea encounter admits water; its trainer cannot require a land cell
-    -- after the introductory pose yields to the complete actor layout.
-    arena.surfing = state.player.surfing == true
-    return arena
-  end
-
-  -- Exhaust physical placement first. A portable emergency stage must
-  -- report its actual renderer, never label a painting as MAP. Preserve the
-  -- requested setting separately so key 8 and later battles can retry it.
-  if Voxel3D.available() then
-    local okFallback, fallback = pcall(function()
-      local style = latchArenaArt(
-        V.require("BattleArenaStyle").resolve(state.map, nil))
-      local Stage = V.require("VoxelBattleStage")
-      local staged = Stage.arena(state.map, style, nil)
-      -- A location can lack both a safe physical patch and reviewed ARENA
-      -- artwork (for example a Pokemon Center). Carry its ordinary 3D discs
-      -- instead of waiting forever for a painting that does not exist.
-      -- Explicit ARENA selection retains its strict artwork contract above.
-      if staged and not Stage.hasAuthoredBackdrop(staged) then
-        staged = Stage.arena(state.map, nil, latchDiskArt(style))
+  if not Voxel3D.available() then return nil end
+  local modes = { [2]="terarrium", [3]=OverworldBattle.ARENA, [4]=OverworldBattle.FLAT_B }
+  for index=math.max(2,first),4 do
+    local ok, arena = pcall(OverworldBattle.portableStageFor, state, modes[index], camera)
+    if ok and arena then
+      if index > first then
+        arena.mapFallback=true; arena.requestedMode=requested
+        arena.fallbackReason=reason
       end
-      if staged then
-        staged.mapFallback = true
-        staged.requestedMode = "MAP"
-        staged.presentationMode = staged.arenaStyle and "ARENA" or "DISCS"
-        staged.fallbackReason = okFind and "no-safe-map-placement" or tostring(arena)
-      end
-      return staged
-    end)
-    if okFallback and fallback then return fallback end
+      return arena
+    end
   end
   return nil
 end
@@ -2952,6 +2933,13 @@ function OverworldBattle.begin(state, battle)
     return false
   end
 
+  if arena.mapFallback then
+    local fallbackPlan={}
+    for k,v in pairs(plan)do fallbackPlan[k]=v end
+    plan=fallbackPlan;plan.pokemonBack=false;plan.trainerBack=false
+    OverworldBattle.setPlanStage(plan,arena.terarrium and "terarrium"
+      or arena.presentationMode == "ARENA" and OverworldBattle.ARENA or OverworldBattle.FLAT_B)
+  end
   local provider = arena.presentationMode or "MAP"
   local prepared, prepareReason = rendererSessionPrepare(
     state, battle, plan, arena)
@@ -3086,6 +3074,28 @@ end
 
 function OverworldBattle.ownsBattle(battle)
   return rendererSessionControl.owns(battle)
+end
+
+-- Keep the reason visible for this encounter; the configured MAP preference
+-- remains untouched and is tried again by begin() for the next battle.
+function OverworldBattle.drawFallbackNotice(gm)
+  local active=session
+  if not (active and active.presentationCommitted and active.arena
+      and active.arena.mapFallback and gm and gm.stack
+      and gm.stack:top()==active.battle) then return end
+  local g=love.graphics
+  local w,h=g.getDimensions()
+  local scale=math.max(.7,math.min(1.5,w/1100,h/760))
+  local label=tostring(active.arena.requestedMode or "MAP").." NOT POSSIBLE - "
+    ..(active.arena.terarrium and "TERRARIUM" or tostring(active.arena.presentationMode))
+  OverworldBattle.fallbackFont=OverworldBattle.fallbackFont or g.newFont(13)
+  local font=OverworldBattle.fallbackFont
+  local bw=(font:getWidth(label)+24)*scale
+  g.push("all");g.origin();g.setCanvas();g.setShader();g.setScissor()
+  g.setBlendMode("alpha");g.setFont(font)
+  g.setColor(.025,.045,.065,.90);g.rectangle("fill",(w-bw)/2,8*scale,bw,26*scale,5,5)
+  g.setColor(1,.83,.47,1);g.print(label,(w-bw)/2+12*scale,13*scale,0,scale,scale)
+  g.pop()
 end
 
 -- The fallback entry point: a battle that arrived without going through the
@@ -3706,10 +3716,10 @@ local function commitShot(active, shot, pendingActors)
     active.presentationCommitted = true
     if active.arena and active.arena.mapFallback and not active.mapFallbackNotified then
       active.mapFallbackNotified=true
-      V.require("ShortcutToast").notify("MAP UNAVAILABLE",
-        active.arena.presentationMode.." FALLBACK - 8 NEXT VIEW")
+      V.require("ShortcutToast").notify("MAP NOT POSSIBLE",
+        (active.arena.terarrium and "TERRARIUM" or active.arena.presentationMode).." FALLBACK - 8 NEXT VIEW")
       Diagnostics.write("battle-map-placement-fallback", {
-        requested="MAP", actual=active.arena.presentationMode,
+        requested="MAP", actual=active.arena.terarrium and "TERRARIUM" or active.arena.presentationMode,
         mapId=active.state and active.state.map and active.state.map.id,
         reason=active.arena.fallbackReason,
       })
@@ -4024,11 +4034,13 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
       active.pendingPresentation=pending
     end
   end
-  if not pending or not battle or battle.phase ~= "menu"
-      or game().stack:top() ~= battle or active.pendingSwitch
-      or not active.presentationCommitted or not textures
-      or battle.growIn or battle.sendingOut or battle.current or battle.animPlaying then return false end
-  if pending.mode == (active.plan.terarrium and "terarrium" or active.plan.mode)
+  if not pending or not battle or (not pending.emergency and battle.phase ~= "menu")
+      or game().stack:top() ~= battle
+      or (not pending.emergency and active.pendingSwitch)
+      or (not pending.emergency and not active.presentationCommitted) or not textures
+      or (not pending.emergency and (battle.growIn or battle.sendingOut))
+      or (not pending.emergency and (battle.current or battle.animPlaying)) then return false end
+  if not pending.emergency and pending.mode == (active.plan.terarrium and "terarrium" or active.plan.mode)
       and (not pending.camera or pending.camera==active.plan.terarriumCamera) then
     active.pendingPresentation=nil
     return false
@@ -4036,6 +4048,7 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
   pending.elapsed=pending.elapsed+dt
   local plan={}
   for key,value in pairs(active.plan) do plan[key]=value end
+  if pending.emergency then plan.pokemonBack=false;plan.trainerBack=false end
   OverworldBattle.setPlanStage(plan,pending.mode)
   if not pending.arena then
     local ok,arena=pcall(OverworldBattle.stageFor,active.state,plan,true)
@@ -4046,6 +4059,11 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     active.pendingPresentation=nil
     V.require("ShortcutToast").notify("BATTLE VIEW","STAGE UNAVAILABLE")
     return false
+  end
+  if arena.mapFallback then
+    plan.pokemonBack=false;plan.trainerBack=false
+    OverworldBattle.setPlanStage(plan,arena.terarrium and "terarrium"
+      or arena.presentationMode == "ARENA" and OverworldBattle.ARENA or OverworldBattle.FLAT_B)
   end
   local prepared=pcall(function()
     BattleScene.prepare(active.state,arena)
@@ -4082,7 +4100,7 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     return BattleScene.render(active.state,arena,textures,active.token)
   end)
   local complete=ok and shot and shotMatchesTextures(shot,textures)
-    and replacementFramePending(active,shot,textures)==false
+    and replacementFramePending(active,shot,textures)~=nil
   if complete then
     active.rendererProvider=arena.presentationMode
     local changed=lifecycle("changePresentation",battle,oldProvider,arena.presentationMode)
@@ -4096,9 +4114,11 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     if changed then
       active.pendingPresentation=nil
       if publishRenderedShot(active,shot,textures) then
-        OverworldBattle.setting:setValue(plan.terarrium and "terarrium" or plan.mode,game(),true)
+        if not pending.emergency then
+          OverworldBattle.setting:setValue(pending.mode,game(),true)
+        end
         V.require("ShortcutToast").notify("BATTLE VIEW",arena.mapFallback
-          and ("MAP UNAVAILABLE - "..arena.presentationMode) or arena.terarrium and "TERRARIUM" or arena.presentationMode)
+          and ("MAP UNAVAILABLE - "..(arena.terarrium and "TERRARIUM" or arena.presentationMode)) or arena.terarrium and "TERRARIUM" or arena.presentationMode)
         return true
       end
       -- The HUD could not commit. Return the exact lifecycle to the old stage
@@ -4116,6 +4136,59 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
   -- Candidate rendering may reuse a canvas. The caller always repaints the
   -- old stage before returning to draw; no partial candidate is presented.
   return false
+end
+
+-- Recovery budgets belong to this encounter. Never move backwards after a
+-- fallback has failed or committed, and never persist an emergency selection.
+function OverworldBattle.tryPortableRecovery(active, textures, reason, first, last)
+  if not active or active.pendingPresentation or not active.arena
+      or active.rendererOwnerKind ~= "legacy" or not textures then return false end
+  first, last = first or 2, last or 2
+  local current = OverworldBattle.recoveryStageIndex(active.arena)
+  local minimum = math.max(current, active.recoveryStageIndex or 1)
+  -- A fresh Terrarium may retry once with owned sprites. Arena/Discs proceed
+  -- to the next stage when their committed renderer fails.
+  if current >= 3 then minimum = math.max(minimum, current + 1) end
+  active.recoveryAttempts = active.recoveryAttempts or {}
+  local modes = { [2]="terarrium", [3]=OverworldBattle.ARENA, [4]=OverworldBattle.FLAT_B }
+  for index=math.max(first,minimum),last do
+    local budget = index == 2 and (active.forceBaseTextures and "terrariumBase" or "terrarium") or index
+    if not active.recoveryAttempts[budget] then
+      active.recoveryAttempts[budget] = true
+      active.recoveryStageIndex = index
+      local ok,arena=pcall(OverworldBattle.portableStageFor,active.state,modes[index])
+      if ok and arena then
+        arena.mapFallback=true
+        arena.requestedMode=active.arena.requestedMode or active.arena.presentationMode
+        arena.fallbackReason=reason
+        active.pendingPresentation={mode=modes[index],arena=arena,elapsed=0,emergency=true}
+        if OverworldBattle.applyPendingPresentation(active,0,textures) then return true end
+        active.pendingPresentation=nil
+      end
+      if not rawequal(session,active) then return false end
+    end
+  end
+  return false
+end
+
+function OverworldBattle.tryFaultRecovery(active, reason)
+  if not active then return false end
+  if not active.faultRecoveryTried then
+    active.faultRecoveryTried=true
+    active.forceBaseTextures=true
+    V.require("BattleSpriteControl").recover(active.battle)
+  end
+  local ok,textures=pcall(OverworldBattle.textures,active.battle)
+  if not ok or not textures then return false end
+  if OverworldBattle.tryPortableRecovery(active,textures,reason) then return true end
+  if not rawequal(session,active) then return false end
+  return OverworldBattle.tryPortableRecovery(active,textures,reason,3,4)
+end
+
+function OverworldBattle.trySceneRecovery(active, textures, reason)
+  if OverworldBattle.tryPortableRecovery(active,textures,reason) then return true end
+  if not rawequal(session,active) then return false end
+  return OverworldBattle.tryFaultRecovery(active,reason)
 end
 
 -- ------- per-frame
@@ -4168,6 +4241,40 @@ local function updateBattleFrame(dt)
   -- unchanged and still fail closed if the scene genuinely is unavailable.
   if session.battle ~= nil and not sameBattle(top, session.battle)
       and session.presentationCommitted ~= true then
+    -- Keep a cold battle-grid/light program out of the first actor/camera
+    -- frame, and give it its own covered update rather than stacking a shader
+    -- compile on top of mesh uploads. The actual render still owns fallback.
+    if not session.programPrepared
+        and type(BattleScene.prepareProgram) == "function" then
+      session.programPrepared = true
+      pcall(BattleScene.prepareProgram, session.state, session.arena)
+      return
+    end
+    -- Decode each exact trainer atlas in its own covered frame. This only
+    -- warms resources on an opt-in provider, never creates a throw/pose state.
+    -- Failed or unavailable preparation leaves normal visible rendering in
+    -- charge and cannot prolong the engine transition.
+    local heroStep = session.heroPreparationStep or 0
+    if heroStep < 2 then
+      session.heroPreparationStep = heroStep + 1
+      local ok, prepared = pcall(function()
+        return V.require("BattleHeroesBridge").prepare(session.battle,
+          heroStep == 0 and "player" or "enemy", session.arena)
+      end)
+      if ok and prepared then return end
+    end
+    -- HD sheets otherwise decode/bake in the first visible actor capture.
+    -- One exact view per covered update; native transition timing is unchanged.
+    local spriteStep = session.spritePreparationStep or 0
+    if spriteStep < 3 then
+      local ok, prepared, status = pcall(function()
+        return V.require("BattleSpriteControl").prepare(session.battle,
+          spriteStep == 0 and "enemy" or "player",
+          spriteStep == 2 and "back" or "front")
+      end)
+      if not ok or status ~= "pending" then session.spritePreparationStep = spriteStep + 1 end
+      if ok and (prepared or status == "pending") then return end
+    end
     pcall(BattleScene.prepare, session.state, session.arena)
     ChunkMesher.pump(true)
     return
@@ -4204,6 +4311,8 @@ local function updateBattleFrame(dt)
     -- This is a renderer fallback, not battle.ended.  Retire only the exact
     -- staged session; lifecycle/content/music remain live until the real engine
     -- end event arrives.  An unrelated request is inert.
+    if sameBattle(legacyFinish,session.battle)
+        and OverworldBattle.tryFaultRecovery(session,"legacy-side-texture-failed") then return end
     pcall(retireRendererSessionToNative, legacyFinish,
       "legacy-side-texture-native-fallback")
     return
@@ -4224,6 +4333,7 @@ local function updateBattleFrame(dt)
       error(reason, 0)
     end
     if not retryAfterTextureFailure(session, reason) then
+      if OverworldBattle.tryFaultRecovery(session,"texture-resolution-timeout") then return end
       session.shot = nil
       session.actorFreeCover = nil
       session.actorFreeCoverOwner = nil
@@ -4259,7 +4369,15 @@ local function updateBattleFrame(dt)
     BattleCam.setPresentationFit(
       BattleScene.presentationFitDistance(session.arena, textures, host))
   end
-  BattleCam.update(dt, session.arena, session.battle, groundY)
+  -- The attack compositor already owns the most expensive part of the frame.
+  -- Keep the last proven battle seat while a move is playing instead of
+  -- re-solving the cinematic camera and its complete terrain/HUD safety
+  -- corridor on every animation tick.  The normal menu update resumes the
+  -- director immediately after the move, so this is presentation-only and
+  -- cannot alter battle timing or actor placement.
+  if not (session.battle and session.battle.animPlaying == true) then
+    BattleCam.update(dt, session.arena, session.battle, groundY)
+  end
   -- the world pass is hidden behind the battle, so mesh builds get the wide
   -- slice: nothing visible can hitch on them
   ChunkMesher.pump(true)
@@ -4297,6 +4415,7 @@ local function updateBattleFrame(dt)
     -- this runs inside keeps rendering the overworld, and the next battle
     -- tries again. Rethrowing would hand the whole voxel mode to Pipelines'
     -- guard, which retires a pipeline for the session.
+    if OverworldBattle.trySceneRecovery(session,textures,"scene-render-failed") then return end
     session.shot = nil
     session.actorFreeCover = nil
     session.actorFreeCoverOwner = nil
@@ -4358,6 +4477,7 @@ local function updateBattleFrame(dt)
       -- fail once and stay native. Retrying from a visible native frame and
       -- entering Voxel later would itself be a mode switch; this applies to a
       -- cold battle just as strictly as to a mid-battle replacement.
+      if OverworldBattle.trySceneRecovery(session,textures,"scene-cover-unavailable") then return end
       session.shot = nil
       session.actorFreeCover = nil
       session.actorFreeCoverOwner = nil
@@ -4372,6 +4492,7 @@ local function updateBattleFrame(dt)
         .. "atomically stays native")
       return
     end
+    if OverworldBattle.trySceneRecovery(session, textures, BattleScene.lastDeclineReason) then return end
     session.shot = nil
     session.actorFreeCover = nil
     session.actorFreeCoverOwner = nil
@@ -4431,6 +4552,8 @@ function OverworldBattle.update(dt)
   -- A callback is allowed to end/replace a battle. Never apply the failed
   -- frame's fallback to a different session that appeared before it returned.
   if rawequal(session, active) then
+    local recovered, result=pcall(OverworldBattle.tryFaultRecovery,active,"battle-update-failed: "..tostring(reason))
+    if recovered and result then return true end
     active.shot = nil
     active.actorFreeCover = nil
     active.actorFreeCoverOwner = nil
@@ -4603,17 +4726,20 @@ local innerHUDs = nil                   -- likewise, for the snapped HUD layer
 local innerText = nil                   -- and the edge-docked command panes
 local innerAnim = nil                   -- move-animation layer
 
-local function texCanvasFor(side)
-  local c = texCanvas[side]
+local function texCanvasFor(side, density)
+  density = density or 1
+  local key=side..":"..density
+  local c = texCanvas[key]
   if c then return c end
   local ok, made = pcall(love.graphics.newCanvas, BattleScene.GB_W,
-                         BattleScene.GB_H, { dpiscale = 1 })
+                         BattleScene.GB_H, { dpiscale = density })
   if not ok or not made then
     error(("Gen-1 %s battle-pic Canvas allocation failed: %s")
       :format(tostring(side), tostring(made)), 0)
   end
-  made:setFilter("nearest", "nearest")
-  texCanvas[side] = made
+  local filter=density>1 and "linear" or "nearest"
+  made:setFilter(filter, filter)
+  texCanvas[key] = made
   return made
 end
 
@@ -4796,6 +4922,11 @@ end
 -- Mega/Gorochu cards unambiguously monster art with canonical physical size.
 function OverworldBattle.finalizeSideTexture(battle, side, texture)
   if type(texture) ~= "table" then return texture end
+  -- The complete provider chain has just captured this canvas. Transient
+  -- bounds may be reused within this capture, never across the next repaint
+  -- (including providers that reuse the texture receipt itself).
+  texture.vascInkCaptureReady = true
+  texture.vascTransientInkBounds = nil
   local battler = battle and battle[side] or nil
   local mon = battler and battler.mon or nil
   local grow = battle and battle.growIn
@@ -5027,6 +5158,8 @@ end
 -- The companion publishes image extents, not mutable animation state.
 function OverworldBattle.sourceSpriteExtent(image)
   if not image then return nil end
+  local hdExtent=V.require("HdPokemonPresentation").extent(image)
+  if hdExtent then return hdExtent,true end
   local owner = V.mod
   if owner and type(owner.find) == "function" then
     local ok, handle = pcall(owner.find, "kanto_ascendant")
@@ -5051,7 +5184,6 @@ end
 local function baseSideTexture(battle, side)
   if not (innerPics and battle) then return nil end
   if not sideVisible(battle, side) then return nil end
-  local canvas = texCanvasFor(side)
 
   -- Resolve the private player-front before mutating any BattleState or LÖVE
   -- graphics state. The live battler intentionally retains its native rear as
@@ -5059,7 +5191,12 @@ local function baseSideTexture(battle, side)
   -- when the private resolver fails.
   local appearance = V.BattleSpriteControl
   local selectedSprite = appearance and appearance.manual(battle)
-    and appearance.imageFor(battle, side, "front", appearance.choice(battle)) or nil
+    and appearance.imageFor(battle, side,
+      appearance.choice(battle)=="hd" and appearance.worldView(battle,side) or "front",
+      appearance.choice(battle)) or nil
+  -- Preserve HD pixels through the side capture without changing its logical
+  -- coordinates, anchor, grow/shrink effects or the resulting world size.
+  local canvas = texCanvasFor(side, V.require("HdPokemonPresentation").density(selectedSprite))
   local requestedPlayerFront = nil
   if side == "player" and battle.player and battle.player.sprite
       and not battle.showPlayerBack
@@ -5137,6 +5274,10 @@ local function baseSideTexture(battle, side)
   if not trainerArt then reference, complete = OverworldBattle.sourceSpriteExtent(inkIdentity) end
   return { canvas = canvas, ax = ax, ay = ay, trainer = trainer,
            vascReferenceExtent=reference, vascReferenceComplete=complete,
+           -- Authored HD directions already face their opponent; legacy
+           -- player-front mirroring would turn the selected side away again.
+           vascHdDirectional=not trainerArt and selectedSprite
+             and appearance.choice(battle)=="hd" or nil,
            trainerArt = trainerArt, heightIn = heightIn,
            vascVisualSpecies = side == "player" and battle.player
              and (battle._vascWorldVisualBattler == battle.player
@@ -5194,10 +5335,12 @@ end
 -- billboard and one shadow policy.
 function OverworldBattle.textures(battle)
   if not battle then return nil end
-  local out = {}
+  local out = {vascRenderBattle=battle}
   local manual = V.BattleSpriteControl and V.BattleSpriteControl.manual(battle)
   local function selectedTexture(side)
-    if manual then return baseSideTexture(battle, side) end
+    if manual or (session and session.battle==battle and session.forceBaseTextures) then
+      return baseSideTexture(battle, side)
+    end
     return legacyPresentation("sideTexture", battle, side)
   end
   local okE, enemy = pcall(selectedTexture, "enemy")
@@ -5481,15 +5624,18 @@ function OverworldBattle.install()
   -- still gets the bigger or smaller mon it asked for, on the pixel grid.
   local innerScale = BattleState.resolveBattleScale
   function BattleState.resolveBattleScale(data, side, path, species, ...)
+    -- Capturing the artwork always uses its original pixels. The registry
+    -- lookup is pure and its answer would be discarded below; large companion
+    -- sprite registries made that needless linear scan costly for both cards
+    -- on every frame. Final world size still belongs to the billboard/camera.
+    if texturing then return 1 end
     local results = packValues(innerScale(data, side, path, species, ...))
     local base = results[1]
     -- 1:1 into the billboard texture: the artwork's own pixels, with the
     -- quad's world size doing every bit of the scaling. Anything else would
     -- resample the sprite twice -- once into the texture and again on the way
     -- to the screen -- and a twice-resampled Gen 1 pic is mush.
-    if texturing then
-      results[1] = 1
-    elseif pinnedTrainerBackSprite and side == "back" and species == nil then
+    if pinnedTrainerBackSprite and side == "back" and species == nil then
       results[1] = OverworldBattle.classicBackCardScale(
         pinnedTrainerBackSprite, base)
     elseif OverworldBattle.shot() then
@@ -5511,7 +5657,7 @@ function OverworldBattle.install()
   local innerPic = BattleState.picImage
   function BattleState:picImage(img, ...)
     local results = packValues(innerPic(self, img, ...))
-    if OverworldBattle.shot() then
+    if OverworldBattle.shot() and not V.require("HdPokemonPresentation").extent(results[1]) then
       results[1] = BattlePics.filled(results[1],
                                      OverworldBattle.pinnedPic(self, img))
     end

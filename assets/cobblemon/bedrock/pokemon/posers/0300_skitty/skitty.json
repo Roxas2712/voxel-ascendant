@@ -1,0 +1,82 @@
+{
+  "portraitScale": 1.9,
+  "portraitTranslation": [-0.14, -0.72, 0],
+  "profileScale": 1,
+  "profileTranslation": [0, 0.2, 0],
+  "rootBone": "skitty",
+  "animations": {
+    "faint": "q.bedrock_primary('skitty', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('skitty', 'cry')",
+    "recoil": "q.bedrock_stateful('skitty', 'recoil')",
+    "physical": "q.bedrock_primary('skitty', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('skitty', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('skitty', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "PORTRAIT", "PROFILE", "NONE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('skitty', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('skitty', 'blink')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('skitty', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('skitty', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('skitty', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('skitty', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('skitty', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('skitty', 'sleep')"]
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": ["q.look('head_ai')", "q.bedrock('skitty', 'shoulder_left')"],
+      "quirks": ["q.bedrock_quirk('skitty', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [5, 0, 3]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": ["q.look('head_ai')", "q.bedrock('skitty', 'shoulder_right')"],
+      "quirks": ["q.bedrock_quirk('skitty', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-5, 0, 3]
+        }
+      ]
+    }
+  }
+}

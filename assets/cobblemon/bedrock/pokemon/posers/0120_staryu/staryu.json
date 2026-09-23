@@ -1,0 +1,61 @@
+{
+  "portraitScale": 2.02,
+  "portraitTranslation": [-0.09, -1, 0.0],
+  "profileScale": 0.92,
+  "profileTranslation": [0.0, 0.39, 0.0],
+  "rootBone": "staryu",
+  "animations": {
+    "cry": "q.bedrock_stateful('staryu', 'cry')",
+    "physical": "q.bedrock_primary('staryu', 'physical', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('body', 0, 1)",
+        "q.bedrock('staryu', 'ground_idle')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('staryu', 'ground_walk')"
+      ]
+    },
+    "run": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.bedrock('staryu', 'ground_run')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('staryu', 'sleep')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('body')",
+        "q.bedrock('staryu', 'water_idle')"
+      ]
+    },
+    "swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": true,
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.bedrock('staryu', 'water_swim')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "portraitScale": 1.09,
+  "portraitTranslation": [-0.23, 0.33, 0],
+  "profileScale": 0.44,
+  "profileTranslation": [0, 0.99, 0],
+  "rootBone": "kingler",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0],
+    "seat_1_reverse": [0, 0.45, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('kingler', 'cry')",
+    "recoil": "q.bedrock_stateful('kingler', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head_ai')", "q.bedrock('kingler', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('kingler', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "isDusk": false,
+      "animations": ["q.look('head_ai')", "q.bedrock('kingler', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('kingler', 'blink')"]
+    },
+    "standing_bubbles": {
+      "poseTypes": ["STAND"],
+      "isBattle": false,
+      "isInWaterOrRain": false,
+      "isDusk": true,
+      "animations": ["q.look('head_ai')", "q.bedrock('kingler', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('kingler', 'blink')",
+        "q.bedrock_quirk('kingler', 'quirk_bubble')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head_ai')", "q.bedrock('kingler', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('kingler', 'blink')"]
+    }
+  }
+}

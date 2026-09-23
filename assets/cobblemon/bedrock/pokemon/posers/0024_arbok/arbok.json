@@ -1,0 +1,50 @@
+{
+  "portraitScale": 1.83,
+  "portraitTranslation": [-0.67, 1.92, 0],
+  "profileScale": 0.67,
+  "profileTranslation": [0, 0.81, 0],
+  "rootBone": "arbok",
+  "animations": {
+    "faint": "q.bedrock_primary('arbok', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('arbok', 'cry')"
+  },
+  "poses": {
+    "profile": {
+      "poseTypes": ["PROFILE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('arbok', 'summary_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('arbok', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "PORTRAIT", "FLOAT", "NONE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('arbok', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('arbok', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('arbok', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('arbok', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {"cry": "q.bedrock_stateful('dummy', 'cry')"},
+      "animations": [
+        "q.bedrock('arbok', 'sleep')"
+      ]
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "portraitScale": 0.65,
+  "portraitTranslation": [-0.65, 1.48, 0],
+  "profileScale": 0.33,
+  "profileTranslation": [-0.05, 1.16, 0],
+  "rootBone": "mamoswine",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0],
+    "seat_3": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 1],
+    "seat_1_reverse": [0, 0.4, 1],
+    "seat_2": [0, 0.4, 1],
+    "seat_2_reverse": [0, 0.4, 1],
+    "seat_3": [0, 0.4, 1],
+    "seat_3_reverse": [0, 0.4, 1]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 1],
+    "seat_1_reverse": [0, 0.4, 1],
+    "seat_2": [0, 0.4, 1],
+    "seat_2_reverse": [0, 0.4, 1],
+    "seat_3": [0, 0.4, 1],
+    "seat_3_reverse": [0, 0.4, 1]
+  },
+  "animations": {
+    "faint": "q.bedrock_primary('mamoswine', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('mamoswine', 'cry')",
+    "recoil": "q.bedrock_stateful('mamoswine', 'recoil')",
+    "physical": "q.bedrock_primary('mamoswine', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('mamoswine', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('mamoswine', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('mamoswine', 'battle_cry')"
+      },
+      "animations": ["q.look('head')", "q.bedrock('mamoswine', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('mamoswine', 'blink')"]
+    },
+    "in-air": {
+      "poseTypes": ["STAND", "WALK", "FLOAT"],
+      "isBattle": false,
+      "condition": "q.in_air && q.is_ridden && q.has_entity",
+      "animations": ["q.look('head')", "q.bedrock('mamoswine', 'ride_jump')"],
+      "quirks": ["q.bedrock_quirk('mamoswine', 'blink')"],
+      "transformTicks": 2,
+      "transformToTicks": 2
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "animations": ["q.look('head')", "q.bedrock('mamoswine', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('mamoswine', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mamoswine', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mamoswine', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('mamoswine', 'blink')"]
+    },
+    "running": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('mamoswine', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('mamoswine', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('mamoswine', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('mamoswine', 'sleep')"]
+    }
+  }
+}

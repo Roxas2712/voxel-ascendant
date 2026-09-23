@@ -7,9 +7,9 @@ local WeatherFootsteps = {}
 local AmbientAudio = V.require("AmbientAudio")
 
 local RATE, VARIANTS = 22050, 3
-local DURATION = { snow=.18, splash=.15 }
-local banks = { snow = {}, splash = {} }
-local cursor = { snow = 0, splash = 0 }
+local DURATION = { snow=.18, splash=.15, snowBike=.24, splashBike=.22 }
+local banks = { snow = {}, splash = {}, snowBike={}, splashBike={} }
+local cursor = { snow = 0, splash = 0, snowBike=0, splashBike=0 }
 
 local function clamp(n)
   return math.max(-1, math.min(1, n))
@@ -19,17 +19,20 @@ local function build(kind, variant)
   if not (love and love.sound and love.sound.newSoundData
           and love.audio and love.audio.newSource) then return nil end
   local count = math.floor(RATE * DURATION[kind])
-  local ok, data = pcall(love.sound.newSoundData, count, RATE, 16, 1)
+  local ok, data = pcall(love.sound.newSoundData, count, RATE, 16, 2)
   if not ok or not data then return nil end
-  local seed = 9137 + variant * 7919 + (kind == "snow" and 337 or 977)
+  local snow = kind == 'snow' or kind == 'snowBike'
+  local bike = kind == 'snowBike' or kind == 'splashBike'
+  local seed = 9137 + variant * 7919 + (snow and 337 or 977)
   local previous, filtered = 0, 0
   for i = 0, count - 1 do
     seed = (seed * 1103515245 + 12345) % 2147483647
     local noise = seed / 1073741823.5 - 1
     local t = i / RATE
-    local envelope = math.exp(-t * (kind == "snow" and 24 or 30))
+    local envelope = bike and math.sin(math.pi*t/DURATION[kind])^2
+                     or math.exp(-t * (snow and 24 or 30))
     local sample
-    if kind == "snow" then
+    if snow then
       -- Three close granular compressions make a dry, soft crunch rather
       -- than a generic white-noise hiss.
       local grains = math.max(0, math.sin(t * math.pi * (34 + variant * 2)))
@@ -41,10 +44,12 @@ local function build(kind, variant)
       filtered = filtered * .72 + noise * .28
       local plop = math.sin(t * math.pi * 2 * (145 + variant * 17))
                    * math.exp(-t * 38)
-      sample = filtered * envelope * .34 + plop * .30
+      sample = filtered * envelope * (bike and .9 or .48)
+               + plop * (bike and .06 or .30)
     end
     previous = noise
-    pcall(data.setSample, data, i, clamp(sample))
+    pcall(data.setSample, data, i, 1, clamp(sample))
+    pcall(data.setSample, data, i, 2, clamp(sample))
   end
   local sourceOK, source = pcall(love.audio.newSource, data, "static")
   if not sourceOK then return nil end
@@ -62,12 +67,16 @@ function WeatherFootsteps.onStep(game, mode, surfaceAmount)
   local world = game and (game.overworld or game.world)
   if not (world and world.player) then return false end
   local player = world.player
-  if (game.save and game.save.onBike) or player.surfing then return false end
+  if player.surfing then return false end
+  local scale = sfxScale(game)
+  if scale <= 0 then return false end
   surfaceAmount = tonumber(surfaceAmount)
   local kind = mode == "snow" and (surfaceAmount == nil or surfaceAmount > .08)
                and "snow"
                or ((mode == "rain" or mode == "storm") and "splash" or nil)
   if not kind then return false end
+  local snow, bike = kind == 'snow', game.save and game.save.onBike
+  if bike then kind = kind .. 'Bike' end
   cursor[kind] = cursor[kind] % VARIANTS + 1
   local source = banks[kind][cursor[kind]]
   if not source then
@@ -75,12 +84,11 @@ function WeatherFootsteps.onStep(game, mode, surfaceAmount)
     banks[kind][cursor[kind]] = source or false
   end
   if not source then return false end
-  local scale = sfxScale(game)
-  if scale <= 0 then return false end
-  local coat = kind == "snow"
+  local coat = snow
                and (.65 + .35 * math.max(0, math.min(1, surfaceAmount or 1)))
                or 1
-  local volume = (kind == "snow" and .34 or .24) * scale * coat
+  local volume = (snow and .68 or .58) * scale * coat
+  if bike then volume=volume*.85 end
   if source.stop then pcall(source.stop, source) end
   if source.setVolume then pcall(source.setVolume, source, volume) end
   if source.setPitch then
@@ -89,8 +97,8 @@ function WeatherFootsteps.onStep(game, mode, surfaceAmount)
   if source.play then
     local ok = pcall(source.play, source)
     if ok and AmbientAudio and type(AmbientAudio.duck) == "function" then
-      AmbientAudio.duck(kind == "snow" and .52 or .60,
-                        kind == "snow" and .30 or .24)
+      AmbientAudio.duck(bike and .78 or (snow and .60 or .66),
+                        bike and .16 or (snow and .30 or .24))
     end
     return ok
   end

@@ -2,6 +2,7 @@
 -- remain session-owned. A changed model/palette/mesher signature is a miss.
 local V=...
 local B=V.require('BuildBudget')
+local Digest=V.require('GeometryDigest')
 local C={hits=0,packagedHits=0,misses=0,writes=0}
 local MAX_BYTES=16*1024*1024
 local REVISION='authored-box-faces-v1'
@@ -10,9 +11,7 @@ local function api()
  if d and d.hash and d.pack and d.unpack then return d,store end
 end
 local function hash(d,raw)
- local bytes=d.hash('sha256',raw)
- if type(bytes)~='string' or #bytes~=32 then return nil end
- return (bytes:gsub('.',function(c)return ('%02x'):format(c:byte())end))
+ return Digest.hex(d,raw)
 end
 local function names(d,kind,signature,paletteSize)
  return 'voxel-geometry-v1/'..assert(hash(d,kind))..'.bin',

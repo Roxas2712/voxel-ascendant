@@ -1,0 +1,29 @@
+{
+  "portraitScale": 1.31,
+  "portraitTranslation": [-0.44, 0.03, 0],
+  "profileScale": 0.59,
+  "profileTranslation": [-0.01, 0.84, 0],
+  "rootBone": "shelgon",
+  "animations": {
+    "cry": "q.bedrock_stateful('shelgon', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.bedrock('shelgon', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('shelgon', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('shelgon', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('shelgon', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('shelgon', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('shelgon', 'blink')"]
+    }
+  }
+}

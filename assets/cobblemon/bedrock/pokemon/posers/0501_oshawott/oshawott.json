@@ -1,0 +1,90 @@
+{
+  "portraitScale": 2.0,
+  "portraitTranslation": [-0.2, -0.15, 0],
+  "profileScale": 0.7,
+  "profileTranslation": [0, 0.69, 0],
+  "rootBone": "oshawott",
+  "animations": {
+    "cry": "q.bedrock_stateful('oshawott', 'cry')"
+  },
+  "poses": {
+    "battle_idle": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('oshawott', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('oshawott', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "scalchop_torso",
+          "isVisible": false
+        },
+        {
+          "part": "scalchop_hand",
+          "isVisible": true
+        }
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('oshawott', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('oshawott', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "scalchop_torso",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand",
+          "isVisible": false
+        }
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+      "q.look('head')",
+      "q.bedrock('oshawott', 'ground_idle')",
+      "q.biped_walk(0.66, 1.4, 'leg_left', 'leg_right')"
+    ],
+      "quirks": ["q.bedrock_quirk('oshawott', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "scalchop_torso",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand",
+          "isVisible": false
+        }
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('oshawott', 'sleep')"],
+      "transformedParts": [
+        {
+          "part": "scalchop_torso",
+          "isVisible": true
+        },
+        {
+          "part": "scalchop_hand",
+          "isVisible": false
+        },
+        {
+          "part": "body",
+          "position": [0, -7, 0]
+        }
+      ]
+    }
+  }
+}

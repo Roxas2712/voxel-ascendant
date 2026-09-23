@@ -1,0 +1,60 @@
+{
+  "portraitScale": 1.8,
+  "portraitTranslation": [-0.06, -0.86, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0.0, 0.35, 0],
+  "rootBone": "diglett",
+  "animations": {
+    "faint": "q.bedrock_primary('diglett', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('diglett', 'cry')",
+    "recoil": "q.bedrock_stateful('diglett', 'recoil')",
+    "physical": "q.bedrock_primary('diglett', 'physical', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('body2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body', 1, 1, 0, 0, 45, -45)",
+        "q.bedrock('diglett', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('diglett', 'blink')",
+        "q.bedrock_quirk('diglett', 'quirk_idle')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('body2', 1, 1, 10, -10, 0, 0)",
+        "q.look('body', 1, 1, 0, 0, 45, -45)",
+        "q.bedrock('diglett', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('diglett', 'blink')",
+        "q.bedrock_quirk('diglett', 'quirk_idle')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('body2', 1, 1, 10, -10, 0, 0)",
+        "q.bedrock('diglett', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('diglett', 'blink')",
+        "q.bedrock_quirk('diglett', 'quirk_idle')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('diglett', 'sleep')"],
+      "quirks": ["q.bedrock_quirk('diglett', 'quirk_idle')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

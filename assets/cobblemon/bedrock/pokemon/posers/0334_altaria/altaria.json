@@ -1,0 +1,145 @@
+{
+  "portraitScale": 2.19,
+  "portraitTranslation": [-0.49,1.13,0],
+  "profileScale": 0.66,
+  "profileTranslation": [0,0.77,0],
+  "rootBone": "altaria",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 0],
+    "seat_1_reverse": [0, 0.5, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('altaria', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.look('head_feathers', -1, 1, 30, -60, 0, 0)",
+        "q.bedrock('altaria', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('altaria', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.look('head_feathers', -1, 1, 30, -60, 0, 0)",
+        "q.bedrock('altaria', 'ground_walk')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('altaria', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.pitch_tilt('body', 0.22)",
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.look('head_feathers', -1, 1, 30, -60, 0, 0)",
+        "q.bedrock('altaria', 'air_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('altaria', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "condition": "!q.is_gliding",
+      "animations": [
+        "q.pitch_tilt('body', 0.22)",
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.look('head_feathers', -1, 1, 30, -60, 0, 0)",
+        "q.bedrock('altaria', 'air_fly')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        },
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('altaria', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('altaria', 'blink')"
+      ]
+    },
+    "glide": {
+      "poseTypes": ["FLY"],
+      "condition": "q.is_gliding",
+      "animations": [
+        "q.pitch_tilt('body', 0.22)",
+        "q.look('neck', 1, 1, 70, -10, 20, -20)",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.look('head_feathers', -1, 1, 30, -60, 0, 0)",
+        "q.bedrock('altaria', 'air_glide')",
+        "q.bedrock('altaria', 'ride_dive')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        },
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('altaria', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('altaria', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('altaria', 'wild_sleep')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        }
+      ]
+    },
+    "battle-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('altaria', 'sleep')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('altaria', 'hold_item')"
+        }
+      ]
+    }
+  }
+}

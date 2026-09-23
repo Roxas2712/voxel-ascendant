@@ -1,0 +1,41 @@
+{
+  "portraitScale": 2.18,
+  "portraitTranslation": [-0.37, 3.84, 0],
+  "profileScale": 0.37,
+  "profileTranslation": [0, 1.22, 0],
+  "rootBone": "delphox",
+  "animations": {
+    "cry": "q.bedrock_stateful('delphox', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseName": "battle-standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('delphox', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('delphox', 'blink')"]
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('delphox', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('delphox', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('delphox', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('delphox', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wand",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

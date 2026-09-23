@@ -1,0 +1,71 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"animation.voltorb_hisuian.ground_idle": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"rotation": [
+						"5-math.clamp(math.sin(q.anim_time*90*3+90)*8,-6,8)",
+						"math.sin(q.anim_time*90*45)*1*math.sin(q.anim_time*90*20)*1",
+						"math.sin(q.anim_time*90*3)*2"
+					],
+					"position": ["math.sin(q.anim_time*90*3)*0.2", 0.25, "math.sin(q.anim_time*90*3+90)*0.5"]
+				}
+			}
+		},
+		"animation.voltorb_hisuian.ground_walk": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"rotation": ["q.anim_time*90*2.5", 0, 0],
+					"position": [0, "math.clamp((math.sin(q.anim_time*90*4*2.5-90)*1+1)*5,0,0.7)+math.clamp((math.sin(q.anim_time*90*4*2.5-90)*1+1)*0.5,0,2)", 0]
+				}
+			}
+		},
+		"animation.voltorb_hisuian.blink": {
+			"animation_length": 0.1667,
+			"bones": {
+				"eyelid_right": {
+					"position": {
+						"0.0": [0, 0, -0.1],
+						"0.125": [0, 0, -0.1],
+						"0.1667": [0, 0, 0]
+					}
+				},
+				"pupil_left": {
+					"position": [0, 0, 0]
+				},
+				"eyelid_left": {
+					"position": {
+						"0.0": [0, 0, -0.1],
+						"0.125": [0, 0, -0.1],
+						"0.1667": [0, 0, 0]
+					}
+				},
+				"eyebrow_left": {
+					"position": {
+						"0.0": [0, -1.25, 0],
+						"0.125": [0, -1.25, 0],
+						"0.1667": [0, 0, 0]
+					}
+				},
+				"eyebrow_right": {
+					"position": {
+						"0.0": [0, -1.25, 0],
+						"0.125": [0, -1.25, 0],
+						"0.1667": [0, 0, 0]
+					}
+				}
+			}
+		},
+		"animation.voltorb_hisuian.cry": {
+			"animation_length": 1.33333,
+			"sound_effects": {
+				"0.0417": {
+					"effect": "pokemon.voltorb_hisuian.cry"
+				}
+			}
+		}
+	}
+}

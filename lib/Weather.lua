@@ -29,7 +29,10 @@ Weather.AUTO_BUCKETS = 64
 -- Four fronts make a compressed 16-minute season. The resulting 64-minute
 -- year does not phase-lock with the independent 20-minute day/night cycle.
 Weather.SEASON_SECONDS = 960
-Weather.SEASONS = { "normal", "heat", "normal", "snow" }
+Weather.SEASONS = { "spring", "summer", "autumn", "winter" }
+Weather.SEASON_BLEND_SECONDS = 120
+-- Four years also complete all 64 weather buckets; wrap without a season jump.
+Weather.CLOCK_SECONDS = 15360
 
 -- `visit` remains persisted for save/hot-reload compatibility, but AUTO no
 -- longer consumes it. Map observation still owns outdoor transitions and the
@@ -110,12 +113,12 @@ end
 -- Deterministic clock control for save restoration and QA.  update() remains
 -- the ordinary runtime path; neither entry point consults an OS clock.
 function Weather.setClock(value)
-  Weather.clock = finite(value, 0) % 65521
+  Weather.clock = finite(value, 0) % Weather.CLOCK_SECONDS
 end
 
 function Weather.update(dt, map)
   dt = finite(dt, 0)
-  if dt > 0 then Weather.clock = (Weather.clock + dt) % 65521 end
+  if dt > 0 then Weather.clock = (Weather.clock + dt) % Weather.CLOCK_SECONDS end
   if map then return Weather.mode(map) end
   return "clear"
 end
@@ -132,6 +135,29 @@ function Weather.seasonAt(clock)
   local slot = math.floor(finite(clock, Weather.clock)
                           / Weather.SEASON_SECONDS)
   return Weather.SEASONS[(slot % #Weather.SEASONS) + 1]
+end
+
+-- Continuous foliage weights, including the winter -> spring year boundary.
+-- Pure clock math; no palettes, models or particle histories are allocated.
+function Weather.foliageAt(clock)
+  clock = finite(clock, Weather.clock)
+  local slot = math.floor(clock / Weather.SEASON_SECONDS)
+  local current = slot % 4
+  local previous = (slot - 1) % 4
+  local t = math.min(1, (clock % Weather.SEASON_SECONDS) / Weather.SEASON_BLEND_SECONDS)
+  t = t * t * (3 - 2 * t)
+  return (previous == 0 and 1-t or 0) + (current == 0 and t or 0),
+         (previous == 2 and 1-t or 0) + (current == 2 and t or 0)
+end
+
+function Weather.autumnLeafGust(map, selected, clock)
+  if selected ~= "auto" or not Weather.isOutdoor(map) or (Weather.isLavender and Weather.isLavender(map))
+      or tostring(mapId(map)):match("^KA_MOLTRES_VOLCANO") then return nil end
+  local _, autumn = Weather.foliageAt(clock)
+  if autumn <= .01 then return nil end
+  local phase = finite(clock, Weather.clock) % 18
+  if phase >= 5 then return nil end
+  return phase / 5, autumn
 end
 
 function Weather.modeAt(map, selected, clock, visit)
@@ -165,17 +191,22 @@ function Weather.modeAt(map, selected, clock, visit)
   -- them. Rain and calm remain the backbone in every part of the year.
   if roll == 0 then return "storm" end
   if roll <= 4 then return "fog" end
-  if season == "snow" then
+  if season == "winter" then
     if roll <= (COLD[id] and 38 or 30) then return "snow" end
     if roll <= (COLD[id] and 44 or 37) then return "rain" end
     return "clear"
   end
-  if season == "heat" then
-    if roll <= 14 then return "rain" end
-    if roll <= 34 and Weather.heatAllowed() then return "heat" end
+  if season == "summer" then
+    if roll <= 12 then return "rain" end
+    if roll <= 30 and Weather.heatAllowed() then return "heat" end
     return "clear"
   end
-  if roll <= 22 then return "rain" end
+  if season == "spring" then
+    if roll <= 34 then return "rain" end
+  elseif season == "autumn" then
+    if roll <= 9 then return "fog" end
+    if roll <= 28 then return "rain" end
+  end
   return "clear"
 end
 
@@ -427,11 +458,14 @@ local STORM_LEAF_COLORS = {
   { .58, .42, .12, .78 }, { .72, .50, .14, .74 },
 }
 
-local function paintStormLeaves(g, w, h, cell, battle)
-  local gust = Weather.stormLeafGust(Weather.clock)
+local AUTUMN_LEAF_COLORS = {
+  { .76,.21,.07,.78 }, { .86,.43,.08,.78 }, { .49,.26,.09,.75 },
+}
+local function paintStormLeaves(g, w, h, cell, battle, autumnGust, autumnAmount)
+  local gust = autumnGust or Weather.stormLeafGust(Weather.clock)
   if not gust then return 0 end
   local step = math.max(1, cell)
-  local count = battle and 4 or 7
+  local count = autumnGust and (battle and 3 or 5) or (battle and 4 or 7)
   local drawn = 0
   for i = 1, count do
     local seed = i * 43 + 17
@@ -444,8 +478,10 @@ local function paintStormLeaves(g, w, h, cell, battle)
     local width = step * (.55 + (seed % 3) * .14)
     local dx, dy = math.cos(angle) * length, math.sin(angle) * length
     local px, py = -math.sin(angle) * width, math.cos(angle) * width
-    local leaf = STORM_LEAF_COLORS[(i - 1) % #STORM_LEAF_COLORS + 1]
-    g.setColor(leaf[1], leaf[2], leaf[3], leaf[4])
+    local colors = autumnGust and AUTUMN_LEAF_COLORS or STORM_LEAF_COLORS
+    local leaf = colors[(i - 1) % #colors + 1]
+    local fade = autumnGust and math.sin(gust * math.pi) * (autumnAmount or 1) or 1
+    g.setColor(leaf[1], leaf[2], leaf[3], leaf[4] * fade)
     if g.polygon then
       g.polygon("fill",
         x - dx, y - dy, x + px, y + py,
@@ -718,7 +754,11 @@ local function apply(canvas, w, h, map, cell, resolvedMode, battle)
   local mode = volcanic and 'volcanic'or resolvedMode or Weather.mode(map)
   local rainbow = not battle and SkyEvents.rainbowProgress(mapId(map)) or nil
   if not canvas then return canvas, false end
-  if (mode == "clear" or mode == "off") and not rainbow then
+  local autumnGust, autumnAmount
+  if mode == "clear" or mode == "rain" then
+    autumnGust, autumnAmount = Weather.autumnLeafGust(map, Weather.setting:get(), Weather.clock)
+  end
+  if (mode == "clear" or mode == "off") and not rainbow and not autumnGust then
     return canvas, true
   end
   if mode ~= "clear" and mode ~= "off" and mode ~= "rain"
@@ -769,6 +809,9 @@ local function apply(canvas, w, h, map, cell, resolvedMode, battle)
         paintStormLeaves(g, w, h, cell, false)
         paintLightning(g, w, h, map, cell, flash, occurrence)
       end
+    end
+    if autumnGust then
+      paintStormLeaves(g,w,h,cell,battle,autumnGust,autumnAmount)
     end
     if rainbow and mode ~= "fog" and mode ~= "storm" then
       paintRainbowReflections(g, w, h, rainbow, map)

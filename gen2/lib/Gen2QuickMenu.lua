@@ -20,6 +20,14 @@ function M.ready(g)
   if context=='battle'then return t.phase~='done' and t.phase~='evolving' end
   return context=='world'and g.world:acceptsMenuInput()
 end
+-- A moving player may open menus only at a step boundary, but the launcher
+-- must stay visible throughout the step instead of flashing at each landing.
+function M.launcherReady(g)
+  if not(g and g.save and g.world and g.stack)then return false end
+  local context,t=M.context(g)
+  if context=="battle"then return t.phase~="done" and t.phase~="evolving" end
+  return context=="world" and not g.world.battleActive and not g.world:busy()
+end
 local presentationKeys={battle3dWorld=true,battleSmartCamera=true,stadium3dSprites=true,battleHudStyle=true,terarriumBehindRed=true}
 local function specFor(key)
   for _,s in ipairs(mod._vascGen2Schema or{})do if s.key==key then return s end end

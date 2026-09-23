@@ -311,6 +311,11 @@ end
 -- Whether the sun pass can run at all. False headless, without shaders, or
 -- where the canvas cannot be made -- VoxelScene then keeps the flat decal
 -- shadows, which need nothing but a quad.
+-- Update-only first-use preparation: compile without selecting a canvas,
+-- changing sun matrices or invalidating the currently displayed depth map.
+function ShadowMap.programPrepared() return shader ~= nil end
+function ShadowMap.prepareProgram() return getShader() ~= nil end
+
 function ShadowMap.available()
   if not (love.graphics and love.graphics.newCanvas
           and love.graphics.setDepthMode) then
@@ -523,11 +528,24 @@ ShadowMap.SNUG = 0.9
 -- Valid between begin() and the next begin(): `slack` and the sun hold
 -- still between redraws of the map, so a lit frame that reuses last
 -- frame's map computes the same displacement it was stored with.
+local snugKX, snugKZ, snugSlack, snugAmount, snugX, snugY, snugZ
 function ShadowMap.snug(model)
-  local f = sunDir()
-  local s = -ShadowMap.slack * ShadowMap.SNUG
-  return Mat4.mul(Mat4.translate(f[1] * s, f[2] * s, f[3] * s),
-                  model or IDENTITY)
+  if snugKX ~= ShadowMap.KX or snugKZ ~= ShadowMap.KZ
+      or snugSlack ~= ShadowMap.slack or snugAmount ~= ShadowMap.SNUG then
+    snugKX, snugKZ = ShadowMap.KX, ShadowMap.KZ
+    snugSlack, snugAmount = ShadowMap.slack, ShadowMap.SNUG
+    local length = math.sqrt(snugKX * snugKX + 1 + snugKZ * snugKZ)
+    local s = -snugSlack * snugAmount
+    snugX, snugY, snugZ = (snugKX / length) * s, (-1 / length) * s, (snugKZ / length) * s
+  end
+  -- Left-multiply by a translation directly. Preserve the general bottom
+  -- row as well as ordinary affine cards; never mutate the caller's matrix.
+  -- The public sunDir() still returns a fresh vector for its other callers.
+  local m, x, y, z = model or IDENTITY, snugX, snugY, snugZ
+  return { m[1]+x*m[13], m[2]+x*m[14], m[3]+x*m[15], m[4]+x*m[16],
+           m[5]+y*m[13], m[6]+y*m[14], m[7]+y*m[15], m[8]+y*m[16],
+           m[9]+z*m[13], m[10]+z*m[14], m[11]+z*m[15], m[12]+z*m[16],
+           m[13], m[14], m[15], m[16] }
 end
 
 -- Whether the map has to be redrawn for `sig` -- a caller-built stamp of

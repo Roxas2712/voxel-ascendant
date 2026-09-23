@@ -1,0 +1,33 @@
+{
+  "portraitScale": 2.17,
+  "portraitTranslation": [0.15, -1.5, 0],
+  "profileScale": 1.06,
+  "profileTranslation": [0.01, 0.14, 0],
+  "rootBone": "sunkern",
+  "animations": {
+    "cry": "q.bedrock_stateful('sunkern', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('sunkern', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('sunkern', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('sunkern', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('sunkern', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head')", "q.bedrock('sunkern', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('sunkern', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('sunkern', 'sleep')"]
+    }
+  }
+}

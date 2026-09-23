@@ -308,11 +308,11 @@ function PokemonWorldSprites:_bindLiveCard(game, entity, context, species,
   -- Stadium remains authoritative whenever the user/policy selects it.  A
   -- card existing somewhere in the provider catalogue is not permission to
   -- overwrite the live Stadium renderer.
-  if selected.id == "stadium2" or type(cardRecord) ~= "table"
+  if (selected.id == "stadium2" or selected.id == "cobblemon") or type(cardRecord) ~= "table"
       or type(cardDef) ~= "table" or type(liveDef) ~= "table"
       or type(entity.sprite) ~= "table" then
     restoreLiveDef(entity, original)
-    return nil, selected.id == "stadium2" and "stadium2_selected"
+    return nil, (selected.id == "stadium2" or selected.id == "cobblemon") and "stadium2_selected"
       or reason or "live_renderer_unavailable"
   end
 
@@ -388,7 +388,7 @@ function PokemonWorldSprites:_rememberModel(entity, context, boundDef)
     and sourceDef.ascendantPokemonWalksheet == true
     and sourceDef.ascendantAtlasImage == cardDef.ascendantAtlasImage
     and tonumber(sourceDef.pokemonDex) == tonumber(cardDef.pokemonDex)
-  local suppressModels = selected.id ~= "stadium2" and cardBound
+  local suppressModels = (selected.id ~= "stadium2" and selected.id ~= "cobblemon") and cardBound
   if suppressModels then
     entity.pokemonModel = false
     entity.stadiumModel = false
@@ -396,14 +396,14 @@ function PokemonWorldSprites:_rememberModel(entity, context, boundDef)
     entity.pokemonModel = original.pokemonModel
     entity.stadiumModel = original.stadiumModel
   end
-  if selected.id ~= "stadium2" and not cardBound then
+  if (selected.id ~= "stadium2" and selected.id ~= "cobblemon") and not cardBound then
     entity.ascendantPokemonModelSource = original.modelSource
   end
   entity.ascendantPokemonSpriteMode = suppressModels and "walksheet_3x4"
-    or selected.id == "stadium2" and (selected.id .. "_preferred")
+    or (selected.id == "stadium2" or selected.id == "cobblemon") and (selected.id .. "_preferred")
     or original.mode
   entity.ascendantPokemonSpriteContext = context
-  local effectiveSource = selected.id == "stadium2" and "stadium2"
+  local effectiveSource = (selected.id == "stadium2" or selected.id == "cobblemon") and selected.id
     or cardBound and cardRecord.source or "owner_original"
   if effectiveSource == "pokemon_go_legacy"
       or effectiveSource == "pokemon_go_549" then
@@ -417,10 +417,10 @@ function PokemonWorldSprites:_rememberModel(entity, context, boundDef)
       pcall(self.debugLog.event, self.debugLog, "SOURCE", {
         entity=entity, species=mon.species, context=context,
         source=effectiveSource,
-        provider=selected.id == "stadium2" and "VOXEL_ASCENDANT"
+        provider=(selected.id == "stadium2" or selected.id == "cobblemon") and "VOXEL_ASCENDANT"
           or cardBound and "ascendant_walksheets" or "original_owner",
         decision=suppressModels and "card_owns_body"
-          or selected.id == "stadium2" and "stadium2_owns_body"
+          or (selected.id == "stadium2" or selected.id == "cobblemon") and "stadium2_owns_body"
           or "card_unavailable_owner_retained",
         reason=cardBound and (sourceDef.ascendantPokemonSourceFallbackReason
           or cardDef.ascendantPokemonSourceFallbackReason)
@@ -570,7 +570,7 @@ function PokemonWorldSprites:_bindCity(game, entity)
   if type(source) ~= "table" then return false end
   local original = self:_captureOriginal(entity, "city")
   local _, selected, def, record = self:_presentation(game, entity, "city")
-  if selected.id == "stadium2" or type(record) ~= "table"
+  if (selected.id == "stadium2" or selected.id == "cobblemon") or type(record) ~= "table"
       or type(def) ~= "table" then
     self:_rememberModel(entity, "city")
     return false
@@ -629,7 +629,7 @@ function PokemonWorldSprites:apply(game)
               and original.replacement ~= nil then
             local _, selected, _, record = self:_presentation(game, entity,
               "city")
-            if selected.id == "stadium2" or type(record) ~= "table" then
+            if (selected.id == "stadium2" or selected.id == "cobblemon") or type(record) ~= "table" then
               self:_restoreEntity(entity, original)
               original = nil
             end
@@ -697,7 +697,7 @@ function PokemonWorldSprites:_installWilds(source)
         local game = context and context.game
         local _, selected, _, record = bridge:_presentation(game, entity,
           "grass", species, variant)
-        if selected.id ~= "stadium2" and type(record) == "table" then
+        if (selected.id ~= "stadium2" and selected.id ~= "cobblemon") and type(record) == "table" then
           local result = bridge:_result(game, entity, species, variant,
             "grass", base)
           if result then return result end
@@ -739,7 +739,7 @@ function PokemonWorldSprites:_installWilds(source)
         local probe = { ambientSpecies=species, wildsAmbientPokemon=true }
         local _, selected, def, record = bridge:_presentation(game, probe,
           "wilds_town", species)
-        if selected.id ~= "stadium2" and type(record) == "table" and def then
+        if (selected.id ~= "stadium2" and selected.id ~= "cobblemon") and type(record) == "table" and def then
           def.id = "SPRITE_WILDS_AMBIENT"
           return def
         end

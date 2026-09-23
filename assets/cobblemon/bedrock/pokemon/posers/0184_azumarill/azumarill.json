@@ -1,0 +1,42 @@
+{
+  "portraitScale": 1.92,
+  "portraitTranslation": [-0.41, -0.11, 0],
+  "profileScale": 0.79,
+  "profileTranslation": [0.0, 0.54, 0.0],
+  "rootBone": "azumarill",
+  "animations": {},
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.look('head_ai')", "q.bedrock('azumarill', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('azumarill', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bedrock('azumarill', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('azumarill', 'blink')"]
+    },
+    "swimming": {
+      "poseName": "swimming",
+      "poseTypes": ["SWIM", "FLOAT"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('azumarill', 'water_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('azumarill', 'blink')"]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('azumarill', 'sleep')"
+      ]
+    }
+  }
+}

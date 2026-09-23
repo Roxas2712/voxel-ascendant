@@ -151,10 +151,15 @@ local SETTING_HELP_DE = {
     .. "nativen Pokédex- und Datenseiten wieder her. Spielstand, Gesehen-/"
     .. "Gefangen-Bits, Rufe, forceOwned-Vorschauen und Startmenü-Rückkehr "
     .. "bleiben immer beim Spiel. Jeder Darstellungsfehler fällt nativ zurück.",
+  battleHdSprites = "Neue Kämpfe mit installierten animierten HD-Pokémon "
+    .. "starten. Fehlende Varianten behalten ihre bisherigen Sprites. AUS "
+    .. "nutzt den bisherigen Grafikstil. V/F3 oder 0 überschreibt die Wahl "
+    .. "nur für den laufenden Kampf.",
   modernDexSpriteSource = "Bildquelle ausschließlich im ModernDex: KASC "
     .. "CRYSTAL (AUTO) nutzt KASCs öffentlichen Crystal-Provider mit sicherem "
     .. "Rückfall, ACTIVE folgt dem aktiven Sprite-Stil und GAME ORIGINAL dem "
-    .. "Cartridge-Bild. Kampf, Team, Box und Oberwelt werden nicht verändert.",
+    .. "Cartridge-Bild. HD ANIMATED nutzt installierte Animationen mit "
+    .. "Rückfall auf das normale Bild. Kampf, Team, Box und Oberwelt bleiben unverändert.",
   ascBoxDensity = "Raster des VASC-eigenen ASC-BOX-Skins. 5 X 4 zeigt die "
     .. "echten zwanzig Gen-I-Plätze mit größeren Bildern; 6 X 5 zeigt das "
     .. "dichtere ORAS-Raster und sperrt Plätze oberhalb der Host-Kapazität.",
@@ -252,6 +257,10 @@ local SECTION_DEFS = {
     de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
     keys={terarriumLighting=true,terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
       terarriumBallStyle=true,terarriumBackground=true,terarriumDome=true}},
+  wardrobe={title='WARDROBE',help={
+    en='Outfits at the wardrobe in the player bedroom, in HD or 2D. Works standalone; uses the existing KASC wardrobe when available.',
+    de='Outfits am Schrank im Spielerzimmer, in HD oder 2D. Funktioniert auch allein; mit KASC wird dessen vorhandener Schrank genutzt.'},
+    keys={wardrobeEnabled=true}},
   battleHeroes={title="BALL THROWS",help={
     en="Ascendant Battle Heroes: Johto throws in Gen1, trainers and gestures. The separate Battle Heroes mod takes precedence when installed.",
     de="Ascendant Battle Heroes: Johto-Ballwuerfe in Gen1, Trainer und Gesten. Ist die separate Battle-Heroes-Mod installiert, hat diese Vorrang."},
@@ -329,7 +338,7 @@ local SECTION_DEFS = {
         .. "Team-, PC-, Bank-, Taschen- und Menüskins: SKINS & OVERLAYS.",
     },
     keys = {
-      trainerBack=true, battleBack=true, modernDexSpriteSource=true,
+      trainerBack=true, battleBack=true, modernDexSpriteSource=true, battleHdSprites=true,
       pokemonModelSkin=true,
     },
     actions = {
@@ -461,7 +470,7 @@ local SECTION_DEFS = {
 }
 
 local DEFAULT_SECTION_ORDER = {
-  "world", "weather", "pallet", "horizon", "battle", "terarrium", "battleHeroes", "skins", "pokemon",
+  "world", "weather", "pallet", "horizon", "battle", "terarrium", "battleHeroes", "wardrobe", "skins", "pokemon",
   "wilds", "performance", "liveDisplay", "user", "advanced",
 }
 
@@ -634,7 +643,7 @@ local SETTING_LABEL_DE = {
   weatherMusic="WETTERMUSIK", weatherTweak="WETTER-EFFEKTE",
   scenery="KULISSE", outdoorHorizon="AUSSENHORIZONT", desktopNeighborRing="PC-KARTENRING", preload="VORLADEN", grid="VOXEL-GITTER",
   terrainHeights="GELÄNDEHÖHEN", battleGrid="KAMPF-GITTER",
-  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",lavenderTowerStyle="POKÉMON-TURM",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",localLights="DYNAMISCHES LICHT",battleLights="KAMPFLICHT",
+  outdoorSigns="ORTSSCHILDER",outdoorGround="AUSSENBODEN",outdoorTrees="BÄUME + BLUMEN",outdoorStone="STEINE + ZÄUNE",lavenderTowerStyle="POKéMON-TURM",palletBuildings="GEBÄUDE", palletSurrounds="ALABASTIA-DEKOR", palletWindowLights="FENSTERLICHT",localLights="DYNAMISCHES LICHT",battleLights="KAMPFLICHT",
   voxelItems="Voxel Items", currentRoom="NUR AKTUELLER RAUM", interiorFloors="INNENRAUMBÖDEN", shadows="SCHATTEN", curve="WELTKRÜMMUNG", water="WASSER", waterActors="SCHWIMMEN", voxelStairs="TREPPEN", towerAtmosphere="TURM-ATMOSPHÄRE", caveTorches="WANDFACKELN",
   battles="3D-KÄMPFE", arenaArt="ARENA-GRAFIK",
   diskArt="DISK-GRAFIK", qol_ui_skin="MENÜ-DESIGN",
@@ -646,7 +655,7 @@ local SETTING_LABEL_DE = {
   pokemonUiPartyMenu="TEAM-DESIGN",
   pokemonUiBattleParty="KAMPFTEAM-DESIGN",
   pokedexStyle="POKéDEX-DESIGN",
-  modernDexSpriteSource="DEX-BILDQUELLE", ascBoxDensity="BOX-DICHTE",
+  modernDexSpriteSource="DEX-BILDQUELLE", battleHdSprites="HD-KAMPFSPRITES", ascBoxDensity="BOX-DICHTE",
   battleHudStyle="KAMPF-HUD", hud_language="HUD-SPRACHE",
   battle_textbox_x="TEXTBOX X", battle_textbox_y="TEXTBOX Y",
   battle_controls_scale="BUTTON-GRÖSSE", battle_controls_x="BUTTONS X",

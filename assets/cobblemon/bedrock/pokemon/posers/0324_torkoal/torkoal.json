@@ -1,0 +1,37 @@
+{
+  "portraitScale": 2.15,
+  "portraitTranslation": [-1.09, -0.38, 0],
+  "profileScale": 0.73,
+  "profileTranslation": [0, 0.53, 0],
+  "rootBone": "torkoal",
+  "animations": {
+    "faint": "q.bedrock_primary('torkoal', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('torkoal', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('torkoal', 'battle_idle')"],
+      "quirks": []
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('torkoal', 'ground_idle')"],
+      "quirks": []
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('torkoal', 'ground_walk')"],
+      "quirks": []
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('torkoal', 'sleep')"]
+    }
+  }
+}

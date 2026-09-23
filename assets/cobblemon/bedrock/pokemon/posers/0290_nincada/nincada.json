@@ -1,0 +1,53 @@
+{
+  "portraitScale": 2.15,
+  "portraitTranslation": [-0.3, -1.13, 0],
+  "profileScale": 0.7,
+  "profileTranslation": [0, 0.6, 0],
+  "rootBone": "nincada",
+  "animations": {
+    "faint": "q.bedrock_primary('nincada', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('nincada', 'cry')",
+    "recoil": "q.bedrock_stateful('nincada', 'recoil')",
+    "physical": "q.bedrock_primary('nincada', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('nincada', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('nincada', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('nincada', 'battle_cry')"
+      },
+      "animations": ["q.look('head')", "q.bedrock('nincada', 'battle_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('nincada', 'blink')",
+        "q.bedrock_quirk('nincada', 'quirk_wingflutter')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('nincada', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('nincada', 'blink')",
+        "q.bedrock_quirk('nincada', 'quirk_wingflutter')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('nincada', 'ground_walk')"],
+      "quirks": [
+        "q.bedrock_quirk('nincada', 'blink')",
+        "q.bedrock_quirk('nincada', 'quirk_wingflutter')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('nincada', 'sleep')"]
+    }
+  }
+}

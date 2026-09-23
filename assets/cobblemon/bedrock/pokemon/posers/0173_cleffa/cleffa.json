@@ -1,0 +1,75 @@
+{
+  "portraitScale": 1.87,
+  "portraitTranslation": [-0.14,-0.76,0],
+  "profileScale": 0.76,
+  "profileTranslation": [0,0.59,0],
+  "rootBone": "cleffa",
+  "animations": {
+    "faint": "q.bedrock_primary('cleffa', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('cleffa', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": [
+        "STAND",
+        "FLOAT",
+        "HOVER",
+        "NONE",
+        "PROFILE",
+        "PORTRAIT"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 7, -5, 0, 0)",
+        "q.look('torso', 1, 1, 3, -12, 3, -3)",
+        "q.bedrock('cleffa', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('cleffa', 'blink')"]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK",
+        "SWIM",
+        "FLY"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 7, -5, 0, 0)",
+        "q.look('torso', 1, 1, 3, -12, 3, -3)",
+        "q.bedrock('cleffa', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('cleffa', 'blink')"]
+    },
+    "shoulder_left": {
+      "poseName": "shoulder_left",
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": [
+        "q.look('head', 1, 1, 7, -5, 0, 0)",
+        "q.look('torso', 1, 1, 3, -12, 3, -3)",
+        "q.bedrock('cleffa', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('cleffa', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [4, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseName": "shoulder_right",
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": [
+        "q.look('head', 1, 1, 7, -5, 0, 0)",
+        "q.look('torso', 1, 1, 3, -12, 3, -3)",
+        "q.bedrock('cleffa', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('cleffa', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-4, 0, 0]
+        }
+      ]
+    }
+  }
+}

@@ -15,6 +15,12 @@ WalkingSprites.SCHEMA = "ascendant.walking-sprite-replacements/v1"
 -- their identity remains authoritative while our animated card remains the
 -- final visible renderer.
 local PRESENTATION_PRIORITY = -1000
+local function wardrobe()
+  local game=require('src.core.Game')
+  local exports=game.mods and game.mods.exports
+  return exports and ((exports.kanto_ascendant and exports.kanto_ascendant.wardrobe)
+    or(exports.VOXEL_ASCENDANT and exports.VOXEL_ASCENDANT.wardrobe))
+end
 
 local unpackValues = table.unpack or unpack
 local function packValues(...)
@@ -469,12 +475,47 @@ function WalkingSprites:_npcVisual(mapId,entity,kascActive)
   return atlas or self.atlasByRole[role],role
 end
 
+-- All surfaces (field, wardrobe and battle) use the same style/garments.
+function WalkingSprites:appearance(path,role,action,selection)
+  role=tostring(role):lower()
+  local clothes=wardrobe()
+  local owned=role=='red'or role=='blue'or role=='green'
+  local selected=selection or (clothes and clothes.get(role))
+  if self.generation==1 and self:voxelEnabled() and not(selected and selected.style=='native')then
+    local relative=path:sub(1,#self.mod.path+1)==self.mod.path..'/' and path:sub(#self.mod.path+2) or nil
+    local candidate
+    if owned then
+      if action=="fishing"then action=nil end -- Shared dressed body; holding pose comes from the field rig.
+      candidate=action and 'assets/characters/voxel-actions/'..role..'/'..action..'_4x3.png'
+        or 'assets/characters/voxel-demo/'..role..'_cards_4x3.png'
+    elseif relative then
+      candidate=relative:gsub('assets/characters/actions/','assets/characters/voxel-actions/')
+        :gsub('assets/characters/npcs/','assets/characters/voxel-npcs/')
+    end
+    if candidate and self.mod:info(candidate)then
+      local result=self.mod.path..'/'..candidate
+      if owned and clothes and clothes.isActive()and not clothes.plain(selected)then
+        result=self.mod.voxelWardrobe.resolve(role,action,clothes,selected)
+      end
+      return result,true
+    end
+  end
+  return clothes and owned and clothes.resolve(path,role,selected)or path,false
+end
+
 function WalkingSprites:_bind(entity, atlas, role, identityOwner, action)
   if type(entity) ~= "table" or not atlas then return false end
   local runtime = self.runtimeByAtlas[atlas]
   if not runtime then return false end
+  local clothes=wardrobe()
+  local ownedRole=role=='red'or role=='blue'or role=='green'
+  local fullAtlas=self.mod.path..'/'..atlas
+  local fullRuntime=self.mod.path..'/'..runtime
+  local voxelDemo
+  fullAtlas,voxelDemo=self:appearance(fullAtlas,role,action)
+  if clothes and ownedRole then fullRuntime=clothes.resolve(fullRuntime,role)end
   if entity.sprite and entity.sprite.def
-      and entity.sprite.def.ascendantAtlasImage == self.mod.path .. "/" .. atlas then
+      and entity.sprite.def.ascendantAtlasImage == fullAtlas then
     return false
   end
   local current = entity.sprite
@@ -495,13 +536,14 @@ function WalkingSprites:_bind(entity, atlas, role, identityOwner, action)
     self.originals[entity] = original
   end
   local def = clone(source)
-  def.image = self.mod.path .. "/" .. runtime
+  def.image = fullRuntime
   def.frames, def.walker, def.trueColor = 6, true, true
   -- Every native fallback here is 16x96, including actions. Do not retain
   -- unrelated source-sheet frame dimensions when replacing its image.
   def.frameWidth, def.frameHeight = 16, 16
   def.anchorX, def.anchorY = 8, 16
-  def.ascendantAtlasImage = self.mod.path .. "/" .. atlas
+  def.voxelSpriteDemo = voxelDemo or nil
+  def.ascendantAtlasImage = fullAtlas
   def.ascendantAtlasRelative = atlas
   def.ascendantRole = role or roleFromPath(atlas)
   def.ascendantScaleClass = scaleClass(def.ascendantRole)
@@ -648,6 +690,8 @@ end
 -- from playerState. Bind both actual seams without changing selection, physics
 -- or the original Player classes; wrappers belong only to this live player.
 function WalkingSprites:_bindPlayer(game, player, role)
+  local clothes=wardrobe()
+  if clothes and (role=='red'or role=='blue'or role=='green')and clothes.native(role)then return 0 end
   local bridge = self.playerBridges[player]
   if not bridge then
     bridge = {}
@@ -698,6 +742,10 @@ function WalkingSprites:install()
   self.installed = true
   if self.mod.events and type(self.mod.events.on) == "function" then
     local binder = self
+    self.mod.events:on('wardrobe.changed',function(ev)
+      binder.fieldSprites={}
+      binder:apply(ev and ev.game or binder.activeGame,'kasc-event')
+    end,PRESENTATION_PRIORITY)
     for _, event in ipairs({ "save.loaded", "save.created" }) do
       self.mod.events:on(event, function(ev)
         local game = ev and ev.game or binder.activeGame
@@ -718,6 +766,21 @@ function WalkingSprites:install()
         binder:apply(ev and ev.game or binder.activeGame, false)
       end, PRESENTATION_PRIORITY)
     end
+    -- Runtime NPCs (for example the Driftglass boatman) can appear after
+    -- map.entered. The engine publishes the pool entry before this event,
+    -- but adds it to world.npcs afterwards: bind that one pooled actor.
+    self.mod.events:on("world.npc_spawned", function(ev)
+      if binder.generation ~= 1 or not ev or ev.runtime ~= true
+          or not binder:enabled() then return end
+      local world = worldFor(ev.game or binder.activeGame)
+      if not (world and world.map and world.map.id == ev.mapId) then return end
+      local entity = world.npcPool and world.npcPool[ev.npcId]
+      if type(entity) ~= "table" or entity == world.player then return end
+      local atlas,role,action=binder:_npcVisual(ev.mapId,entity,binder:_kasc()~=nil)
+      if binder:_bind(entity,atlas,role,nil,action) then
+        binder.applied = binder.applied + 1
+      end
+    end, PRESENTATION_PRIORITY)
     self.mod.events:on("character.selected", function(ev)
       -- JASC currently also emits this seam while rebuilding the player on
       -- the first movement tick.  Its current() value can be Gold/Ethan for
@@ -772,20 +835,26 @@ end
 function WalkingSprites:fieldSprite(player)
   if not self:enabled() or not player then return nil end
   local role = self:_playerRole(false, player)
+  local clothes=wardrobe()
+  if clothes and (role=='red'or role=='blue'or role=='green')and clothes.native(role)then return nil end
   local current = player.sprite
   local def = current and current.def or {}
-  local atlas = def.ascendantAtlasRelative
-  if def.ascendantCharacterAction or def.ascendantRole ~= role or not atlas then
+  local voxelHold = player.fishing and self:voxelEnabled() and (role=="red"or role=="blue"or role=="green")
+  local action = player.fishing and not voxelHold and "fishing" or nil
+  local atlas = action and self.characterActions
+    and self.characterActions.relative(role, action) or def.ascendantAtlasRelative
+  if not action and (def.ascendantCharacterAction or def.ascendantRole ~= role or not atlas) then
     atlas = self.atlasByRole[role]
   end
   if not atlas or not self.runtimeByAtlas[atlas] then return current end
   self.fieldSprites = self.fieldSprites or {}
-  local key = tostring(role) .. ":" .. atlas
+  local key = tostring(role) .. ":" .. atlas..':'..tostring(self:voxelEnabled())..':'..tostring(voxelHold)..':'..(clothes and clothes.token(role)or'original')
   if not self.fieldSprites[key] then
     local actor = {sprite=current, spriteDef=def, id="player"}
-    if not self:_bind(actor, atlas, role, self:_playerIdentityOwner()) then
+    if not self:_bind(actor, atlas, role, self:_playerIdentityOwner(), action) then
       if not (actor.sprite and actor.sprite.def.ascendantAtlasImage) then return nil end
     end
+    if voxelHold then actor.sprite.def.ascendantVoxelFieldPose="fishing"end
     self.fieldSprites[key] = actor.sprite
   end
   return self.fieldSprites[key]
@@ -813,10 +882,20 @@ function WalkingSprites:fieldNativeDef(player, world)
   return names[1] and world.sprites[names[1]] or nil
 end
 
+function WalkingSprites:voxelEnabled()
+  return self:enabled() and self.mod.options and self.mod.options:get("human_art_style") == "voxel"
+end
+
 function WalkingSprites:public()
   local binder = self
   return {
     schema=WalkingSprites.SCHEMA,
+    resolveAppearance=function(path,role,action,selection)return binder:appearance(path,role,action,selection)end,
+    voxelDemoEnabled=function() return binder:voxelEnabled() end,
+    setVoxelDemo=function(enabled,game)
+      binder.mod.options:setHumanArtStyle(enabled and "voxel" or "hd",game or binder.activeGame)
+      return binder:apply(game or binder.activeGame)
+    end,
     enabled=function() return binder:enabled() end,
     fieldSprite=function(player) return binder:fieldSprite(player) end,
     fieldNativeDef=function(player, world) return binder:fieldNativeDef(player, world) end,

@@ -240,14 +240,27 @@ end
 -- asked is "did somebody run the packer here", not "is every one of the 151
 -- present"; a genuinely half-written folder is a case for the marker file,
 -- which is what catches an interrupted RUNTIME build.
+local shippedCache, shippedCount, shippedMod, shippedRead, shippedDir
 local function shipped()
   local mod = V.mod
   if not (mod and mod.read) then return false end
-  for _, dex in ipairs({ 1, targetCount() }) do
+  local wanted = targetCount()
+  -- Model selection asks this several times per rendered frame. In released
+  -- builds these optional files are absent; retrying mod.read also repeatedly
+  -- constructs the sandbox's missing-file error. Like ready(), retain only the
+  -- availability result until import/reset, never the model bytes themselves.
+  if shippedCache ~= nil and shippedCount == wanted and shippedMod == mod
+      and shippedRead == mod.read and shippedDir == StadiumPack.DIR then
+    return shippedCache
+  end
+  shippedCount, shippedMod, shippedRead, shippedDir = wanted, mod, mod.read, StadiumPack.DIR
+  shippedCache = false
+  for _, dex in ipairs({ 1, wanted }) do
     local ok, bytes = pcall(mod.read, mod,
                             ("%s/%03d.dsm"):format(StadiumPack.DIR, dex))
     if not (ok and type(bytes) == "string" and #bytes > 4) then return false end
   end
+  shippedCache = true
   return true
 end
 
@@ -273,6 +286,7 @@ end
 function StadiumInstall.forget()
   readyCache = nil
   readyCount = nil
+  shippedCache, shippedCount, shippedMod, shippedRead, shippedDir = nil, nil, nil, nil, nil
 end
 
 -- ------- building

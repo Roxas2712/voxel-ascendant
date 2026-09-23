@@ -1,0 +1,51 @@
+{
+  "portraitScale": 2.4,
+  "portraitTranslation": [ 0, -1.34, 0],
+  "profileScale": 1,
+  "profileTranslation": [0, 0.2, 0],
+  "rootBone": "ditto",
+  "animations": {
+    "faint": "q.bedrock_primary('ditto', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('ditto', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 10, -7, 10, -10)",
+        "q.look('torso2', 1, 1, 20, -15, 2, -2)",
+        "q.bedrock('ditto', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ditto', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 10, -7, 10, -10)",
+        "q.look('torso2', 1, 1, 20, -15, 2, -2)",
+        "q.bedrock('ditto', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('ditto', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {"cry": "q.bedrock_stateful('dummy', 'cry')"},
+      "animations": [
+        "q.bedrock('ditto', 'sleep')"
+      ]
+    }
+  }
+}

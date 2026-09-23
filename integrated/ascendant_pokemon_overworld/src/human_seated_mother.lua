@@ -5,7 +5,7 @@ local path='assets/characters/acting/mother/'
 local original='assets/characters/npcs/reds-mother-kasc-hd-4x3-walk-sheet-v2.png'
 function M.new(options)
  local mod=assert(options.mod);local api={angle=0,loads=0,selected=0}
- local blinkState={}
+ local blinkState={};local voxelMode=false
  local breathStarted
  local resources={};local pose,source,attempted,last,actorIdentity,spriteIdentity,pending,sliceStart
  local function own(resource)
@@ -35,6 +35,24 @@ function M.new(options)
     assert(data and data:getWidth()==w and data:getHeight()==h,'seated atlas dimensions')
     return own(love.graphics.newImage(data))
    end
+   if voxelMode then
+    local texture=own(love.graphics.newImage(mod.path..'/assets/characters/voxel-actions/mother/seated.png'))
+    local canvas=own(love.graphics.newCanvas(512,768));local quads={}
+    for row=0,1 do quads[row]={};for col=0,2 do
+     quads[row][col]=own(love.graphics.newQuad(col*512,row*768,512,768,1536,1536))
+    end end
+    local built={texture=canvas,updates=0}
+    function built:updateVoxel(angle,blink)
+     local col=angle<-.35 and 0 or angle>.35 and 2 or 1
+     local row=blink>.45 and 1 or 0
+     if self.row==row and self.col==col then return end
+     local g=love.graphics;g.push('all');g.setCanvas(canvas);g.origin();g.clear(0,0,0,0)
+     g.setShader();g.setScissor();g.setDepthMode();g.setColor(1,1,1,1)
+     g.setBlendMode('alpha','alphamultiply');g.draw(texture,quads[row][col]);g.pop()
+     self.row,self.col=row,col;self.updates=self.updates+1
+    end
+    built:updateVoxel(0,0);return built
+   end
    local heads=image('heads.png',1536,1024)
    local layers=options.headLayers.new(heads,options.frames,own,true)
    local morph=options.headMorph.new(layers,function(name)return mod:read(path..name)end,own)
@@ -47,7 +65,8 @@ function M.new(options)
   if not ok then api.error=tostring(result);release();return end
   pose=result;api.loads=api.loads+1
   local b={left=112,right=400,top=30,bottom=665,imageWidth=512,imageHeight=768}
-  source={id=mod.path..'/'..path..'seated-v1',texture=pose.texture,bounds={},worldHeight=18,offsetY=-3,offsetZ=0}
+  source={id=mod.path..'/'..path..(voxelMode and 'voxel-seated-v1' or 'seated-v1'),voxelArtwork=voxelMode,texture=pose.texture,bounds={},worldHeight=18,offsetY=-3,offsetZ=0}
+  if voxelMode then b.left,b.right=70,442 end
   for r=0,3 do source.bounds[r]={};for c=0,2 do source.bounds[r][c]=b end end
  end
  function api:queue()
@@ -74,9 +93,11 @@ function M.new(options)
    end
   end
   local def=mother and mother.sprite and mother.sprite.def
-  if not def or def.ascendantAtlasImage~=mod.path..'/'..original
+  local isVoxel=def and def.voxelSpriteDemo and def.ascendantRole=='reds-mother'
+  if not def or (not isVoxel and def.ascendantAtlasImage~=mod.path..'/'..original)
    or def.ascendantCharacterAction~=nil or mother.cellX~=5 or mother.cellY~=4
    or mother.px~=80 or mother.py~=64 or mother.moving or mother.scriptedMoving then self:reset();return end
+  if voxelMode~=(isVoxel==true) then self:restore();voxelMode=isVoxel==true end
   self:load();if not pose then return end
   if actorIdentity~=mother or spriteIdentity~=mother.sprite then
    self:reset();actorIdentity,spriteIdentity=mother,mother.sprite
@@ -107,7 +128,8 @@ function M.new(options)
   source.seatedBreath=self.breathAmount
   self.blinkAmount=options.idle and options.idle.blink(blinkState,now,eligible,.37)or 0
   local u=math.abs(self.angle);local middle,final=self.angle<0 and 5 or 2,self.angle<0 and 6 or 3
-  if u<=.5 then pose:update(1,middle,u*2,self.blinkAmount)else pose:update(middle,final,(u-.5)*2,self.blinkAmount)end
+  if voxelMode then pose:updateVoxel(self.angle,self.blinkAmount)
+  elseif u<=.5 then pose:update(1,middle,u*2,self.blinkAmount)else pose:update(middle,final,(u-.5)*2,self.blinkAmount)end
   self.updates=pose.updates;self.selected=self.selected+1
   return mother.sprite,source
  end

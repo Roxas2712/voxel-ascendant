@@ -1,0 +1,33 @@
+{
+  "portraitScale": 1.9,
+  "portraitTranslation": [-0.2, 0.09, 0],
+  "profileScale": 0.65,
+  "profileTranslation": [0.0, 0.75, 0.0],
+  "rootBone": "raichu",
+  "animations": {
+    "cry": "q.bedrock_stateful('raichu', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head_ai', 1, 1, 10, -30, 30, -30)", "q.bedrock('raichu', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('raichu', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head_ai', 1, 1, 10, -30, 30, -30)", "q.bedrock('raichu', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('raichu', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head_ai', 1, 1, 10, -30, 30, -30)", "q.bedrock('raichu', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('raichu', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('raichu', 'sleep')"]
+    }
+  }
+}

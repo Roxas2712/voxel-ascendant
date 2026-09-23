@@ -79,6 +79,32 @@ local BattleCam = {}
 -- Named for the LENS, because that is what an author is choosing between
 -- when they look at a shot and decide it wants more room in it.
 BattleCam.RIGS = {
+  -- A diagonal seat along a narrow indoor aisle keeps all four actors in
+  -- frame without the extreme lens of a camera directly against the graves.
+  court_aisle = {
+    side = 48, back = -48, height = 32,
+    lookX = 0, lookY = 8, frameH = 55,
+  },
+  court_aisle_reverse = {
+    side = 48, back = 48, height = 32,
+    lookX = 0, lookY = 8, frameH = 55,
+  },
+  court_tight = {
+    side = 48, back = -32, height = 24,
+    lookX = 0, lookY = 8, frameH = 44,
+  },
+  -- A reviewed transverse court: low side view with room for both trainers.
+  -- Small cutaway rooms explicitly authorize a bounded external camera apron.
+  court = {
+    side = 100, back = 0, height = 32,
+    lookX = 0, lookY = 8, frameH = 55,
+  },
+  -- A transverse outdoor clearing can have a ledge behind the camera.
+  -- Keep its eye inside the open apron while retaining all four actors.
+  court_close = {
+    side = 64, back = 0, height = 32,
+    lookX = 0, lookY = 8, frameH = 55,
+  },
   -- the default: a long 11.5-degree lens from five blocks back, which is
   -- what makes one tile big enough to stand a 56-pixel mon on
   tele = {
@@ -324,6 +350,8 @@ function BattleCam.setScreenSafetyEvaluator(evaluator)
   lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
+  BattleCam.manualZoomSeat = nil
+  BattleCam.manualAngularSeat = nil
   pendingScreenProbe = nil
   return true
 end
@@ -359,6 +387,8 @@ function BattleCam.noteViewport(w, h, frameSpan)
   lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
+  BattleCam.manualZoomSeat = nil
+  BattleCam.manualAngularSeat = nil
   BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
   BattleCam.directorPathArena = nil
   BattleCam.directorPathProven = false
@@ -371,7 +401,8 @@ end
 
 function BattleCam.arenaDirectorEnabled(arena)
   local physical = arena and arena.map and not arena.discs
-  return arena and (not arena.discs or authoredArena(arena))
+  return arena and not arena.trainerOffsets
+         and (not arena.discs or authoredArena(arena))
          and BattleCam.arenaDirectorSelected()
          and not (BattleCam.staticSafetySeat
                   and rawequal(BattleCam.staticSafetyArena, arena))
@@ -399,6 +430,8 @@ function BattleCam.applyDistanceSetting(force)
   BattleCam.directorManualUntil = 0
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
+  BattleCam.manualZoomSeat = nil
+  BattleCam.manualAngularSeat = nil
   return true
 end
 
@@ -545,7 +578,8 @@ function BattleCam.reset()
   BattleCam.directorRecoveryNext = nil
   BattleCam.viewportW, BattleCam.viewportH = nil, nil
   BattleCam.viewportFovScale = 1
-  local leftAuthoredArena = authoredArena(activeArena)
+  local leftAuthoredArena = activeArena and activeArena.trainerOffsets
+                            or authoredArena(activeArena)
                             or activeArena and activeArena.stadiumDirector
   BattleCam.t = 0
   BattleCam.directorClock = 0
@@ -584,6 +618,8 @@ function BattleCam.reset()
   lastRetreatCut = nil
   portableFovFloor = nil
   BattleCam.mapRescueLens = nil
+  BattleCam.manualZoomSeat = nil
+  BattleCam.manualAngularSeat = nil
   pendingScreenProbe = nil
   pendingManualRollback = nil
   BattleCam.presentationFit = 1
@@ -615,6 +651,7 @@ end
 -- it starts at, so the bearing it starts on is atan2(side, back) and what
 -- is left to a quarter turn is the room the player has.
 function BattleCam.orbitRange(arena)
+  if arena and arena.trainerOffsets then return math.pi/2 end
   local R = BattleCam.rigFor(arena)
   return math.max(0, math.pi / 2 - math.atan2(R.side, R.back))
 end
@@ -624,6 +661,29 @@ end
 -- All four take a signed amount and clamp; positive is RIGHTWARD, toward
 -- the side-on stop. Returning whether the goal actually moved lets a
 -- caller tell "steered" from "already against the stop".
+
+-- Fixed courts start manual rotation from the exact displayed composition.
+-- A repaired lens may differ from the nominal rig: discarding it on the first
+-- pitch frame falsely places both trainers outside the viewport and rolls the
+-- whole gesture back. World travel and live HUD checks still validate output.
+function BattleCam.angularCamera(arena)
+  local seat=BattleCam.manualAngularSeat
+  if not (seat and arena and arena.trainerOffsets
+      and rawequal(seat.arena,arena) and rawequal(seat.battle,activeBattle)) then return nil end
+  local source=seat.camera;local focus={unpack(source.focus)}
+  local x,y,z=source.eye[1]-focus[1],source.eye[2]-focus[2],source.eye[3]-focus[3]
+  local flat=math.sqrt(x*x+z*z)
+  if flat<1e-6 then return nil end
+  local radius=math.sqrt(flat*flat+y*y)
+  local yaw=-(BattleCam.orbit-seat.orbit)*BattleCam.orbitRange(arena)
+  local c,s=math.cos(yaw),math.sin(yaw)
+  local rx,rz=x*c-z*s,x*s+z*c
+  local elevation=math.atan2(y,flat)+(BattleCam.pitch-seat.pitch)*BattleCam.PITCH_RANGE
+  elevation=math.max(math.rad(5),math.min(math.rad(85),elevation))
+  local reach=radius*math.cos(elevation)
+  return {eye={focus[1]+rx/flat*reach,focus[2]+radius*math.sin(elevation),focus[3]+rz/flat*reach},
+    focus=focus,fov=source.fov,curve=0}
+end
 
 -- Both axes go through here, so the "nothing while a BACK row holds the
 -- composition" rule and the two stops live in one place each.
@@ -637,6 +697,14 @@ local function setAxis(key, goal)
   local nextValue = math.max(lower, math.min(1, goal))
   local changed = nextValue ~= was
   if changed then
+    BattleCam.manualZoomSeat = nil
+    if activeArena and activeArena.trainerOffsets and lastScreenSafe
+        and rawequal(lastScreenSafe.arena,activeArena)
+        and rawequal(lastScreenSafe.battle,activeBattle)
+        and not BattleCam.manualAngularSeat then
+      BattleCam.manualAngularSeat={arena=activeArena,battle=activeBattle,
+        camera=lastScreenSafe.camera,orbit=BattleCam.orbit,pitch=BattleCam.pitch}
+    end
     if not pendingManualRollback then
       pendingManualRollback = {
         orbit=BattleCam.orbit, orbitGoal=BattleCam.orbitGoal,
@@ -700,14 +768,35 @@ end
 
 -- The zoom, in notches (positive pulls OUT, like every other zoom here).
 function BattleCam.stepZoom(notches, arena)
-  if not BattleCam.steerable then return false end
+  if not BattleCam.steerable or not notches or notches == 0 then return false end
   BattleCam.applyDistanceSetting(false)
-  local was = BattleCam.zoomGoal
-  local nextValue = math.max(BattleCam.ZOOM_MIN,
+  -- Large cards may already display a wider lens than the stored 1X goal.
+  -- Start gestures at that visible floor; otherwise several wheel/pinch
+  -- steps only change an invisible value and appear to do nothing. Do not
+  -- accumulate hidden inward zoom below the same floor either.
+  local floor = authoredArena(arena) and BattleCam.ZOOM_MIN
+    or math.max(BattleCam.ZOOM_MIN, BattleCam.presentationFit)
+  local was = math.max(BattleCam.zoomGoal, floor)
+  local nextValue = math.max(floor,
                     math.min(BattleCam.ZOOM_MAX,
                       was * (BattleCam.ZOOM_STEP ^ (notches or 0))))
   local changed = nextValue ~= was
   if changed then
+    -- A recovery may have left the real view at a different eye/focus from
+    -- the nominal rig. Zoom the view the player is actually looking at;
+    -- retrying that old rig makes every otherwise harmless notch roll back.
+    local seat = BattleCam.manualZoomSeat
+    if arena and arena.map and not arena.discs and not authoredArena(arena)
+        and lastScreenSafe and rawequal(lastScreenSafe.arena, arena)
+        and rawequal(lastScreenSafe.battle, activeBattle)
+        and (not seat or not rawequal(seat.arena, arena)
+          or not rawequal(seat.battle, activeBattle)
+          or BattleCam.directorClock >= BattleCam.directorManualUntil) then
+      BattleCam.manualZoomSeat = {
+        arena=arena, battle=activeBattle, camera=lastScreenSafe.camera,
+        pitch=lastScreenSafe.pitch, zoom=BattleCam.presentationDistance(arena),
+      }
+    end
     if not pendingManualRollback then
       pendingManualRollback = {
         orbit=BattleCam.orbit, orbitGoal=BattleCam.orbitGoal,
@@ -716,6 +805,7 @@ function BattleCam.stepZoom(notches, arena)
         manualUntil=BattleCam.directorManualUntil,
       }
     end
+    BattleCam.manualAngularSeat = nil
     BattleCam.zoomGoal = nextValue
     BattleCam.directorManualUntil = BattleCam.directorClock
                                     + BattleCam.DIRECTOR_MANUAL_HOLD
@@ -1564,6 +1654,17 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
     subject=BattleCam.directorSubject, actual=true,
     manual=BattleCam.directorClock < BattleCam.directorManualUntil,
   }
+  -- Keep the complete rendered camera as the optical gesture's origin. The
+  -- ordinary live actor/HUD guard below still validates every eased frame.
+  local zoomSeat=BattleCam.manualZoomSeat
+  local zooming=context.manual and zoomSeat
+    and sameScreenOwner(zoomSeat,arena,activeBattle)
+  if zooming then
+    camera=copyCamera(zoomSeat.camera)
+    camera.fov=2*math.atan(math.tan(camera.fov*.5)
+      *BattleCam.presentationDistance(arena)/zoomSeat.zoom)
+    pitch=zoomSeat.pitch
+  end
   local uncorrectedCamera, uncorrectedPitch = camera, pitch
   if context.manual then portableFovFloor = nil end
   local holdPortableLens = arena.discs and not authoredArena(arena)
@@ -1577,7 +1678,7 @@ local function guardRenderedCamera(arena, groundY, camera, pitch, canonical)
   -- remains the same. Moving eyes still receive a NEW full HUD/actor verdict;
   -- no safety result is cached. A raised eye also rechecks its world route.
   -- This avoids replaying rejected lenses for every tiny camera drift.
-  local hint = BattleCam.mapRescueLens
+  local hint = not zooming and not BattleCam.angularCamera(arena) and BattleCam.mapRescueLens
   local retreatTravelBlocked = false
   if hint and hint.arena == arena and hint.battle == activeBattle
       and (hint.retreat or (hint.shot == BattleCam.directorShot
@@ -1863,6 +1964,12 @@ local function inspectStaticSafety(arena, groundY, battle)
   if not (arena and arena.map and not arena.discs
           and arena.player and arena.enemy) then return end
 
+  -- Reviewed four-actor courts have no automatic director or orbit path.
+  -- Their canonical opening and each manual move still pass the rendered
+  -- camera guard. Searching automatic alternatives here adds a second
+  -- placement solve and can substitute a different opening unnecessarily.
+  if arena.trainerOffsets then return end
+
   local okArena, BattleArena = pcall(V.require, "BattleArena")
   if not (okArena and BattleArena
           and type(BattleArena.cameraClear) == "function"
@@ -1881,10 +1988,15 @@ local function inspectStaticSafety(arena, groundY, battle)
     local eye, focus = staticSeatEye(arena, groundY, seat)
     local _, readable = visibilityScore(
       BattleArena, arena.map, arena, eye, groundY, "both")
-    local safe, reason = screenSafe(battle, arena, groundY, eye, focus, {
-      phase="orbit-seat", shot="orbit-seat", subject="both",
-      absoluteYaw=yaw, absoluteLift=0, directorFrame=.80, safetyFrame=1,
-    })
+    -- A world-obstructed seat cannot join the route, regardless of its HUD
+    -- projection. Avoid rebuilding trainer placements for a rejected eye.
+    local safe, reason = false, nil
+    if readable then
+      safe, reason = screenSafe(battle, arena, groundY, eye, focus, {
+        phase="orbit-seat", shot="orbit-seat", subject="both",
+        absoluteYaw=yaw, absoluteLift=0, directorFrame=.80, safetyFrame=1,
+      })
+    end
     -- VASC's per-battle owner cards are latched from the first real render,
     -- which happens immediately after this update. Do not cache that single
     -- pre-render frame as an unknown-provider static arena; retry next update.
@@ -1902,6 +2014,9 @@ local function inspectStaticSafety(arena, groundY, battle)
     routeSeats[index] = {
       yaw=yaw, eye=eye, readable=readable, screenSafe=safe == true,
     }
+    -- Both clockwise and anticlockwise arcs must start at home. Once home
+    -- fails, the other eight orbit seats cannot authorize either path.
+    if index == 1 and not (readable and safe == true) then break end
   end
   local narrow = arena.narrow == true or arena.shape == "narrow"
   -- Find the longest connected, readable, HUD-safe arc from home. It can run
@@ -1963,16 +2078,24 @@ local function inspectStaticSafety(arena, groundY, battle)
     local eye, focus = staticSeatEye(arena, groundY, seat)
     local score, readable = visibilityScore(
       BattleArena, arena.map, arena, eye, groundY, "both")
-    local safe = screenSafe(battle, arena, groundY, eye, focus, {
-      phase="static-seat", shot="static-seat", subject="both",
-      absoluteYaw=seat.yaw, absoluteLift=seat.lift,
-      directorFrame=1, safetyFrame=seat.frame or 1, staticSeat=true,
-    })
-    -- Unknown provider geometry cannot rank screen positions. Keep the best
-    -- world-readable deterministic seat and hold it; guessing dynamically is
-    -- the dangerous operation, not this fixed fallback.
-    if readable and (safe == true or boundsUnknown) and score > bestScore then
-      best, bestScore = seat, score
+    if readable and score > bestScore then
+      local safe, reason = screenSafe(battle, arena, groundY, eye, focus, {
+        phase="static-seat", shot="static-seat", subject="both",
+        absoluteYaw=seat.yaw, absoluteLift=seat.lift,
+        directorFrame=1, safetyFrame=seat.frame or 1, staticSeat=true,
+      })
+      if safe == nil and (reason == "owner-latch-pending"
+          or reason == "owner-render-pending") then
+        BattleCam.staticSafetyArena, BattleCam.staticSafetySeat = nil, nil
+        BattleCam.screenSafetyOK = false
+        BattleCam.screenSafetyReason = reason
+        return
+      end
+      -- Unknown provider geometry cannot rank screen positions. Keep the
+      -- best world-readable deterministic seat, subject to the final guard.
+      if safe == true or boundsUnknown then
+        best, bestScore = seat, score
+      end
     end
   end
   if best then
@@ -2084,6 +2207,10 @@ local function updateAuthoredSafety(arena, groundY, shotChanged, battle)
 end
 
 local function updateSafety(arena, groundY, shotChanged, battle)
+  -- Fixed courts do not consume automatic director offsets in rig(). Avoid
+  -- solving discarded escape shots during send-out. The rendered-camera
+  -- guard still validates the actual opening and every manual move below.
+  if arena and arena.trainerOffsets then return end
   if authoredArena(arena) then
     updateAuthoredSafety(arena, groundY, shotChanged, battle)
     return
@@ -2175,11 +2302,11 @@ local function updateSafety(arena, groundY, shotChanged, battle)
     { math.pi, math.rad(40), .76, .62 },
   }
   local best, bestScore = nil, rawScore
-  -- The final guard continues validating every frame. Once a safe menu shot
-  -- exists, distribute speculative camera seats over probes instead of
-  -- blocking one frame with seventeen complete terrain/HUD searches.
-  local budgeted = battle and battle.phase == "menu"
-    and sameScreenOwner(lastScreenSafe, arena, battle)
+  -- The final guard continues validating every frame. Once this encounter
+  -- has a rendered safe seat, distribute speculative alternatives over probes
+  -- in every phase. Send-out/grow-in also changes actor bounds; doing all
+  -- seventeen terrain/HUD searches there stalled the reveal itself.
+  local budgeted = sameScreenOwner(lastScreenSafe, arena, battle)
   local first = budgeted and not shotChanged and BattleCam.directorRecoveryNext or 1
   local last = budgeted and math.min(#candidates, first) or #candidates
   for candidateIndex=first,last do
@@ -2282,13 +2409,23 @@ function BattleCam.update(dt, arena, battle, groundY)
     and not (authoredArena(activeArena)
              or activeArena and activeArena.stadiumDirector)
   if not rawequal(activeArena, arena) or not rawequal(activeBattle, battle) then
+    -- A fixed court owns the opening shot, not the user's camera thereafter.
+    -- Do this only for a new arena/battle pair; input survives menus/attacks.
+    if arena and arena.trainerOffsets then
+      BattleCam.orbit, BattleCam.orbitGoal = 0, 0
+      BattleCam.pitch, BattleCam.pitchGoal = 0, 0
+      BattleCam.zoom, BattleCam.zoomGoal = 1, 1
+      BattleCam.directorManualUntil = 0
+    end
     -- A safe camera or a spent provisional budget belongs only to this exact
     -- arena/BattleState pair. In particular, A -> B -> A must not resurrect an
     -- old A receipt, and a BattleState __eq alias is still a different owner.
     lastScreenSafe = nil
     lastRetreatCut = nil
     portableFovFloor = nil
-  BattleCam.mapRescueLens = nil
+    BattleCam.mapRescueLens = nil
+    BattleCam.manualZoomSeat = nil
+    BattleCam.manualAngularSeat = nil
     pendingScreenProbe = nil
     pendingManualRollback = nil
     BattleCam.screenSafetyFallbackUsed = false
@@ -2530,6 +2667,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local mx, mz = arena.mid[1], arena.mid[2]
   -- VR asks for the same stillness for its own reason (see BattleCam.still)
   local fixed = BattleCam.still or canonical
+  local fixedCourt = arena and arena.trainerOffsets ~= nil
   local staticSafety = not canonical and BattleCam.staticSafetySeat
                        and rawequal(BattleCam.staticSafetyArena, arena)
   -- and the steer is withheld a second way, on its own: a BACK row holds
@@ -2552,7 +2690,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local yaw = steer + (staticSafety and BattleCam.staticSafetySeat.yaw
               or (directed and (BattleCam.directorYaw
                                         + BattleCam.directorSafetyYaw) or 0)
-              + ((fixed or staticSafety or isAuthored or directed) and 0
+              + ((fixed or fixedCourt or staticSafety or isAuthored or directed) and 0
                  or BattleCam.PAN_YAW * phase(
                       BattleCam.t, BattleCam.PAN_PERIOD)))
   local c, s = math.cos(yaw), math.sin(yaw)
@@ -2561,7 +2699,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local k = staticSafety and BattleCam.staticSafetySeat.dolly
             or directed and (BattleCam.directorDolly
                              * BattleCam.directorSafetyDolly)
-            or (fixed or isAuthored) and 1
+            or (fixed or fixedCourt or isAuthored) and 1
             or 1 + BattleCam.PAN_DOLLY
                    * phase(BattleCam.t, BattleCam.DOLLY_PERIOD)
   local dx, dz = arenaVector(arena,
@@ -2605,6 +2743,9 @@ function BattleCam.rig(arena, groundY, canonical)
       eye[2] = focus[2] + r * math.sin(a)
     end
   end
+
+  local angular = not canonical and playerSteer and BattleCam.angularCamera(arena)
+  if angular then eye,focus=angular.eye,angular.focus end
 
   -- Last line of defence for physical MAP travel. The visibility solver above
   -- chooses readable destinations; this guard additionally checks every small
@@ -2661,7 +2802,7 @@ function BattleCam.rig(arena, groundY, canonical)
   local camera = {
     eye = eye,
     focus = focus,
-    fov = 2 * math.atan((frameH / 2) / dist),
+    fov = angular and angular.fov or 2 * math.atan((frameH / 2) / dist),
     -- the world curve is a free-roam flourish that bends the horizon away
     -- from the player; a fixed camera on a staged shot has no player to bend
     -- around, and the bend would tip the arena floor out from under the mons

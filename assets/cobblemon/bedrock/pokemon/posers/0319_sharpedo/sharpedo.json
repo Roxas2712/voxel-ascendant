@@ -1,0 +1,88 @@
+{
+  "portraitScale": 1.5,
+  "portraitTranslation": [-0.24, -0.9, 0],
+  "profileScale": 0.6,
+  "profileTranslation": [0, 0.61, 0],
+  "rootBone": "sharpedo",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {},
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('sharpedo', 'water_idle')"]
+    },
+    "jump": {
+      "poseTypes": ["FLOAT", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('sharpedo', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('sharpedo', 'ride_water_swim')"
+        }
+      ],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('sharpedo', 'ground_idle')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('sharpedo', 'ground_walk')"]
+    },
+    "surface-floating": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "!q.is_ridden",
+      "animations": ["q.bedrock('sharpedo', 'surfacewater_idle')"]
+    },
+    "surface-swimming": {
+      "poseTypes": ["WALK", "SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "condition": "!q.is_ridden",
+      "animations": ["q.bedrock('sharpedo', 'surfacewater_swim')"],
+      "quirks": ["q.bedrock_quirk('sharpedo', 'quirk_surfacewater_swim')"]
+    },
+    "floating": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.bedrock('sharpedo', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('sharpedo', 'ride_water_swim')"
+        }
+      ]
+    },
+    "swimming": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.bedrock('sharpedo', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('sharpedo', 'ride_water_swim')"
+        }
+      ]
+    }
+  }
+}

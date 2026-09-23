@@ -43,6 +43,17 @@ function B.expired()
   return clock() > deadline
 end
 
+-- A background result can suspend only the mesher's own coroutine. Direct
+-- callers retain their synchronous contract even inside another coroutine.
+function B.canYield()
+  return buildCo~=nil and coroutine.running()==buildCo
+end
+
+function B.suspend()
+  if B.canYield() then coroutine.yield("budget");return true end
+  return false
+end
+
 -- Cheap enough to sprinkle through inner loops: one modulo most calls,
 -- a clock read every 32nd.
 function B.tick()

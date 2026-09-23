@@ -1,0 +1,50 @@
+{
+  "portraitScale": 2.41,
+  "portraitTranslation": [-0.23, -0.63, 0],
+  "profileScale": 0.89,
+  "profileTranslation": [0.0, 0.39, 0.0],
+  "rootBone": "azurill",
+  "animations": {},
+  "poses": {
+    "battle-standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "PORTRAIT", "PROFILE"],
+      "isBattle": true,
+      "animations": ["q.look('head_ai')", "q.bedrock('azurill', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('azurill', 'blink')"]
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE"],
+      "isBattle": false,
+      "animations": ["q.look('head_ai')", "q.bedrock('azurill', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('azurill', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.biped_walk(0.66, 0.6, 'leg_left', 'leg_right')",
+        "q.bedrock('azurill', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('azurill', 'blink')"]
+    },
+    "swimming": {
+      "poseName": "swimming",
+      "poseTypes": ["SWIM", "FLOAT"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('azurill', 'water_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('azurill', 'blink')"]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('azurill', 'sleep')"
+      ]
+    }
+  }
+}

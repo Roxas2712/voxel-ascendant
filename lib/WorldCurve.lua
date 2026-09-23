@@ -79,6 +79,15 @@ function WorldCurve.k(vh)
   return amount / vh
 end
 
+-- The shoulder camera used to fade the option all the way to zero together
+-- with first person. Retain a gentler roll behind the player, while the
+-- actual first-person eye keeps its flat nearby floor.
+function WorldCurve.freeRoamK(vh, blend, shoulder)
+  blend=math.max(0,math.min(1,tonumber(blend) or 0))
+  shoulder=math.max(0,math.min(1,tonumber(shoulder) or 0))
+  return WorldCurve.k(vh) * (1-blend + blend*shoulder*.35)
+end
+
 -- The same displacement the vertex shader applies, for the callers that
 -- have to agree with it on the CPU -- Voxel3D.project, which anchors the
 -- overworld's 2D field FX (the "!" bubble, the fishing rod, the Fly bird)

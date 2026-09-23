@@ -83,7 +83,22 @@ local PROCEDURAL_SHADER=[=[
  }
  vec4 effect(vec4 c,Image t,vec2 uv,vec2 sc){vec4 p=sourceRim(t,uv,Texel(t,uv));p=blink(t,uv,p,eye0,reverse,lidStart0,clipA0,clipB0,clipC0,clipD0,skinSample0);p=blink(t,uv,p,eye1,-1.0,lidStart1,clipA1,clipB1,clipC1,clipD1,skinSample1);return p*c;}
  ]=]
+-- Authored voxel eyelids preserve the face's actual facets and lighting.
+local VOXEL_LID_SHADER=[=[
+ extern Image lids;extern vec4 eye0;extern vec4 eye1;extern float amount;
+ vec4 effect(vec4 color,Image tex,vec2 uv,vec2 sc){
+  vec4 original=Texel(tex,uv);vec4 lid=Texel(lids,uv);
+  if(lid.a<=0.0 || amount<=0.0)return original*color;
+  vec4 eye=abs(uv.x-(eye0.x+eye0.z)*.5)<abs(uv.x-(eye1.x+eye1.z)*.5) || eye1.z<=eye1.x?eye0:eye1;
+  float y=(uv.y-eye.y)/max(eye.w-eye.y,.00001);
+  float sweep=amount>=.995?1.0:1.0-smoothstep(amount*1.3-.12,amount*1.3+.02,y);
+  return vec4(mix(original.rgb,lid.rgb,lid.a*sweep),original.a)*color;
+ }
+]=]
 function Blink.profileFor(profiles,role,path)
+ if type(path)=='string' and path:find('/voxel-demo/',1,true) then
+  return profiles['voxel_'..tostring(role)]
+ end
  local base=profiles[role]
  if not base or type(path)~='string' then return nil end
  local function matches(p)return path==p.path or path:sub(-#p.path-1)=='/'..p.path end
@@ -100,7 +115,7 @@ function Blink.new(Assets,root,profiles)
  -- Retain at most 32 owners until eviction so every GPU object has an
  -- explicit release path, even when an actor leaves the world.
  local states={}
- local resources={};local serial=0;local proceduralShader;local shaders={}
+ local resources={};local serial=0;local proceduralShader,packedShader,voxelShader;local shaders={}
  local warmFrame,warmCount
  local metrics={draws=0,renders=0,warmups=0,deferredWarmups=0,evictions=0,reuses=0}
  local api={metrics=metrics}
@@ -109,18 +124,26 @@ function Blink.new(Assets,root,profiles)
   if state.canvas then state.canvas:release();state.canvas=nil end
   for key,quad in pairs(state.quads or {})do quad:release();state.quads[key]=nil end
  end
+ -- Exactly two program variants. Per-profile eyelid images and uniforms
+ -- remain separate; source-identical packed GLSL is not recompiled per NPC.
+ local function program(procedural,voxel)
+  local value
+  if voxel then value=voxelShader elseif procedural then value=proceduralShader else value=packedShader end
+  if value==nil then
+   local ok,result=pcall(graphics.newShader,voxel and VOXEL_LID_SHADER or rimShader..(procedural and PROCEDURAL_SHADER or PACKED_SHADER))
+   value=ok and result or false
+   if ok then shaders[value]=true else api.error=result end
+   if voxel then voxelShader=value elseif procedural then proceduralShader=value else packedShader=value end
+  end
+  return value or nil
+ end
  local function resource(role,profile)
   if resources[profile]==nil then
-   local packedShader
    local ok,result=pcall(function()
-    local r={}
-    if profile.procedural then
-     if not proceduralShader then
-      proceduralShader=graphics.newShader(rimShader..PROCEDURAL_SHADER);shaders[proceduralShader]=true
-     end
-     r.shader=proceduralShader
-    else
-     packedShader=graphics.newShader(rimShader..PACKED_SHADER);shaders[packedShader]=true;r.shader=packedShader
+    local r={shader=assert(program(profile.procedural,profile.voxelLids),'eyelid shader unavailable')}
+    if profile.voxelLids then
+     r.image=assert(Assets.image(root..'/assets/characters/voxel-demo/'..role..'_lids.png'))
+     r.image:setFilter('linear','linear')
     end
     if profile.packed then
      r.image=assert(Assets.image(root..'/assets/characters/expressions/'..role..'-eyelids.png'))
@@ -130,12 +153,20 @@ function Blink.new(Assets,root,profiles)
     return r
    end)
    resources[profile]=ok and result or false
-   if not ok then
-    api.error=result
-    if packedShader then packedShader:release();shaders[packedShader]=nil end
-   end
+   if not ok then api.error=result end
   end
   return resources[profile] or nil
+ end
+ -- A covered update consumes only one actual resource: a shader OR the
+ -- exact actor's eyelid image. No pose, timer, canvas or uniform is changed.
+ function api:prewarm(role,path)
+  local profile=Blink.profileFor(profiles,role,path)
+  if not profile or not (profile.procedural or profile.packed)
+      or resources[profile]~=nil then return false end
+  local shader
+  if profile.voxelLids then shader=voxelShader elseif profile.procedural then shader=proceduralShader else shader=packedShader end
+  if shader==nil then program(profile.procedural,profile.voxelLids);return true end
+  resource(role,profile);return true
  end
  function api:prepare(record,source,row,column)
   if not record or not record.humanMotion or not source then return nil end
@@ -210,13 +241,15 @@ function Blink.new(Assets,root,profiles)
      shader:send('closed',r.image);shader:send('closedSize',profile.packed.size)
      shader:send('cleanUpper',role=='blue' and row==0 and 1 or 0)
     end
-    if profile.procedural then shader:send('coloredIris',profile.coloredIris and 1 or 0)end
-    if rim then rim.send(shader,w,h,profile)end
-    shader:send('pixel',{1/w,1/h});shader:send('amount',renderAmount);shader:send('reverse',row==3 and -1 or 1)
+    if profile.procedural and not profile.voxelLids then shader:send('coloredIris',profile.coloredIris and 1 or 0)end
+    if rim and not profile.voxelLids then rim.send(shader,w,h,profile)end
+    shader:send('amount',renderAmount)
+    if profile.voxelLids then shader:send('lids',r.image)
+    else shader:send('pixel',{1/w,1/h});shader:send('reverse',row==3 and -1 or 1)end
     for i=1,2 do
      local e=profile.rows[profileRow][i]
      shader:send('eye'..(i-1),e and {e[1]/w,e[2]/h,e[3]/w,e[4]/h} or {0,0,0,0})
-     if profile.procedural then
+     if profile.procedural and not profile.voxelLids then
       local starts=profile.lidStarts and profile.lidStarts[profileRow]
       shader:send('lidStart'..(i-1),starts and starts[i] or {0,0})
       local clip=profile.eyeClips and profile.eyeClips[profileRow] and profile.eyeClips[profileRow][i]
@@ -250,7 +283,7 @@ function Blink.new(Assets,root,profiles)
   for key,state in pairs(states)do release(state);states[key]=nil end
   for shader in pairs(shaders)do shader:release();shaders[shader]=nil end
   -- Assets.image returns shared textures; their lifetime belongs to Assets.
-  resources={};proceduralShader=nil;serial=0;warmFrame,warmCount=nil,nil
+  resources={};proceduralShader,packedShader,voxelShader=nil,nil,nil;serial=0;warmFrame,warmCount=nil,nil
  end
  return api
 end

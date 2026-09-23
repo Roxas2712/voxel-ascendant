@@ -1,0 +1,69 @@
+{
+  "portraitScale": 1.96,
+  "portraitTranslation": [-0.31, 2.82, 0],
+  "profileScale": 0.51,
+  "profileTranslation": [0.02, 1, 0],
+  "rootBone": "mewtwo",
+  "animations": {},
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": [
+        "PORTRAIT",
+        "PROFILE",
+        "STAND",
+        "NONE"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.bedrock('mewtwo', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mewtwo', 'blink')"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.bedrock('mewtwo', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mewtwo', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.bedrock('mewtwo', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mewtwo', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY",
+        "SWIM"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('head', 1, 1, 20, -90, 60, -37)",
+        "q.bedrock('mewtwo', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('mewtwo', 'blink')"
+      ]
+    }
+  }
+}

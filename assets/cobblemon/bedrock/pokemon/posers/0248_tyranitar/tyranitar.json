@@ -1,0 +1,47 @@
+{
+  "portraitScale": 1.37,
+  "portraitTranslation": [ -0.09, 2.82, 0],
+  "profileScale": 0.42,
+  "profileTranslation": [0, 1.12, 0],
+  "rootBone": "tyranitar",
+  "animations": {
+    "cry": "q.bedrock_stateful('tyranitar', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 0, -45, 0, 0)",
+        "q.look('neck2', 1, 1, 5, -5, 11, -11)",
+        "q.look('neck', 1, 1, 9, -5, 17, -17)",
+        "q.look('torso', 1, 1, 5, -5, 0, 0)",
+        "q.bedrock('tyranitar', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tyranitar', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 0, -45, 0, 0)",
+        "q.look('neck2', 1, 1, 5, -5, 11, -11)",
+        "q.look('neck', 1, 1, 9, -5, 17, -17)",
+        "q.look('torso', 1, 1, 5, -5, 0, 0)",
+        "q.bedrock('tyranitar', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('tyranitar', 'blink')"
+      ]
+    }
+  }
+}

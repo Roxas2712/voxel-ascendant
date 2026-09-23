@@ -1,0 +1,32 @@
+{
+  "portraitScale": 2.12,
+  "portraitTranslation": [-0.69, 0.3, 0],
+  "profileScale": 0.71,
+  "profileTranslation": [-0.05, 0.66, 0],
+  "rootBone": "delcatty",
+  "animations": {},
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "PORTRAIT", "PROFILE", "NONE"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('delcatty', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('delcatty', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('delcatty', 'ground_idle')",
+        "q.quadruped_walk(1, 1, 'leg_front_left', 'leg_front_right', 'leg_back_left', 'leg_back_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('delcatty', 'blink')"
+      ]
+    }
+  }
+}

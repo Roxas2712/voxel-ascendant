@@ -1,0 +1,59 @@
+{
+  "portraitScale": 1.9,
+  "portraitTranslation": [ -0.4, -0.2, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [ 0, 0.6, 0],
+  "rootBone": "koffing",
+  "animations": {
+    "faint": "q.bedrock_primary('koffing', 'faint')",
+    "cry": "q.bedrock_stateful('koffing', 'cry')",
+    "recoil": "q.bedrock_stateful('koffing', 'recoil')",
+    "physical": "q.bedrock_primary('koffing', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('koffing', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('koffing', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER", "FLOAT"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('koffing', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('koffing', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('koffing', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "HOVER", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('koffing', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('koffing', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('koffing', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('koffing', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('koffing', 'sleep')"]
+    }
+  }
+}

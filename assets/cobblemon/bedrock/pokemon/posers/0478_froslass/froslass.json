@@ -1,0 +1,38 @@
+{
+  "portraitScale": 1.43,
+  "portraitTranslation": [-0.06, 1.07, 0],
+  "profileScale": 0.54,
+  "profileTranslation": [0, 0.86, 0],
+  "rootBone": "froslass",
+  "animations": {
+    "cry": "q.bedrock_stateful('froslass', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND", "HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')", 
+        "q.bedrock('froslass', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('froslass', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "HOVER", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')", 
+        "q.bedrock('froslass', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('froslass', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLY"],
+      "animations": [
+        "q.look('head')", 
+        "q.bedrock('froslass', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('froslass', 'blink')"]
+    }
+  }
+}

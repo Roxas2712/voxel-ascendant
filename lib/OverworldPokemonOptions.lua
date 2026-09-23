@@ -2,6 +2,10 @@
 -- its adapter; battle model keys are deliberately never written here.
 local M = { PREFIX="apo_" }
 local rows = {
+  {"human_art_style", "PEOPLE STYLE", "FIGURENSTIL", "pokemon", "hd",
+    "Choose original HD artwork or the voxel character pack. Characters without a voxel asset retain their original HD artwork. Requires HD PEOPLE.",
+    "Original-HD oder Voxel-Figuren wählen. Figuren ohne Voxel-Grafik behalten ihre HD-Grafik. Benötigt HD-MENSCHEN.",
+    {{"ORIGINAL-HD", "hd"}, {"VOXEL", "voxel"}}},
   {"card_animation_mode", "CARD ANIMATION", "KARTENANIMATION", "pokemon", "natural",
     "Natural enables the new human gait and idle motion. Classic restores the previous animation for every card immediately. Vanilla artwork is controlled by HD PEOPLE.",
     "Natürlich aktiviert den neuen Gang und Ruhebewegungen. Klassisch stellt sofort die bisherige Animation aller Karten wieder her. Originalgrafiken wählt HD-MENSCHEN.",
@@ -13,10 +17,10 @@ local rows = {
     "Enable the integrated APO RC32 snapshot. Changing this master switch requires a game reload.",
     "Integrierten APO-RC32-Stand aktivieren. Dieser Hauptschalter benötigt einen Spielneustart."},
   {"hd_walking_sprites", "HD PEOPLE", "HD-MENSCHEN", "pokemon", true,
-    "F6 switches HD people / original 2D immediately. Use bundled HD player/NPC artwork. Requires OVERWORLD CARD enabled at game start; after enabling that master switch, reload the game. Pokemon downloads and model sources do not control HD people. Character selection stays with the game, KASC or JASC."},
+    "F6 cycles original 2D / HD / optional Voxel Card. Use bundled HD player/NPC artwork. Requires OVERWORLD CARD enabled at game start; after enabling that master switch, reload the game. Pokemon downloads and model sources do not control HD people. Character selection stays with the game, KASC or JASC."},
   {"pokemon_model_source", "OVERWORLD MODELS", "OVERWORLD-MODELLE", "pokemon", "auto",
     "Overworld only: Stadium 2 models, Full HD render sprites, then original sprites. Shiny Pokemon use their available Full HD/MMO colours because Stadium provides normal models only. Explicit MMO choices take precedence.", nil,
-    {{"AUTO: MODELS > FULL HD", "auto"}, {"STADIUM 2 > SPRITES", "stadium_only"}, {"FULL HD > MODELS", "go_first"}, {"FULL HD SPRITES", "go_only"}, {"SPRITES ONLY", "sprite_only"}}},
+    {{"AUTO: MODELS > FULL HD", "auto"}, {"COBBLEMON", "cobblemon"}, {"STADIUM 2 > SPRITES", "stadium_only"}, {"FULL HD > MODELS", "go_first"}, {"FULL HD SPRITES", "go_only"}, {"SPRITES ONLY", "sprite_only"}}},
   {"hd_pokemon_followers", "HD FOLLOWERS", "HD-BEGLEITER", "wilds", true, "Replace follower artwork only; the existing provider keeps selection and movement."},
   {"follower_sprite_source", "FOLLOWER SOURCE", "BEGLEITER-QUELLE", "pokemon", "hd", "F7 cycles available follower sources including original 2D. Follow model priority, prefer Stadium 2, or force Full HD/MMO sprites for followers. Missing assets keep a safe source. Stadium requires the existing overworld model switch and a usable imported model."},
   {"hd_pokemon_grass", "HD WILD POKEMON", "HD-WILDE POKEMON", "wilds", true, "Replace existing grass/cave Pokemon artwork without changing spawns or encounters."},
@@ -40,11 +44,11 @@ local rows = {
     {{"NORMAL", "normal"}, {"PASSABLE", "passable"}}},
   {"atmospheric_sprite_shading", "ACTOR SCENE LIGHT", "FIGUREN-SZENENLICHT", "weather", false, "Tint supported HD figures with VASC time and weather. OFF preserves their authored colours. Panorama lighting is independent."},
 }
-local sourceChoices = {{"FOLLOW MODEL PRIORITY", "hd"}, {"STADIUM 2 > FULL HD", "stadium2"}, {"FULL HD SPRITES", "full_hd"}, {"MMO SPRITES", "pokemmo"}}
+local sourceChoices = {{"FOLLOW MODEL PRIORITY", "hd"}, {"COBBLEMON", "cobblemon"}, {"STADIUM 2 > FULL HD", "stadium2"}, {"FULL HD SPRITES", "full_hd"}, {"MMO SPRITES", "pokemmo"}}
 -- Translate only presentation text; option ids, defaults and provider priority
 -- remain identical in both languages and both generations.
 local descriptionsDe = {
-  hd_walking_sprites="F6 wechselt sofort zwischen HD-Menschen und Original-2D. Mitgelieferte HD-Grafiken für Spieler und Menschen nutzen. OVERWORLD-CARD muss beim Spielstart AN sein; nach Aktivierung dieses Hauptschalters das Spiel neu laden. Pokémon-Downloads und Modellquellen steuern HD-Menschen nicht. Die Charakterauswahl bleibt beim Spiel, KASC oder JASC.",
+  hd_walking_sprites="F6 wechselt zwischen Original-2D, HD und der optionalen Voxel-Card. Mitgelieferte HD-Grafiken für Spieler und Menschen nutzen. OVERWORLD-CARD muss beim Spielstart AN sein; nach Aktivierung dieses Hauptschalters das Spiel neu laden. Pokémon-Downloads und Modellquellen steuern HD-Menschen nicht. Die Charakterauswahl bleibt beim Spiel, KASC oder JASC.",
   pokemon_model_source="Nur Oberwelt: Stadium-2-Modelle, Full-HD-Sprites, dann Originalgrafiken. Shiny-Pokémon nutzen vorhandene Full-HD-/MMO-Farben, da Stadium nur normale Modelle liefert. Ausdrückliche MMO-Auswahl hat Vorrang.",
   hd_pokemon_followers="Nur Begleitergrafiken ersetzen. Auswahl und Bewegung bleiben beim bisherigen Anbieter.",
   follower_sprite_source="F7 wechselt verfügbare Begleiterquellen einschließlich Original-2D. Modellreihenfolge nutzen, Stadium 2 bevorzugen oder Full-HD-/MMO-Sprites wählen. Fehlende Grafiken nutzen Ersatz. Stadium benötigt aktivierte Oberweltmodelle und einen nutzbaren Modellimport.",
@@ -135,7 +139,7 @@ end
 -- Native VASC pages always have a two-stop ladder. Preserve the stored SOFT
 -- intent and display its blocked state, but never cycle back into it.
 function M.decorateSetting(mod, setting)
-  if (setting.key == "apo_hd_walking_sprites" or pokemonRefreshKeys[setting.key])
+  if (setting.key == "apo_hd_walking_sprites" or setting.key == "apo_human_art_style" or pokemonRefreshKeys[setting.key])
       and not setting._apoLivePeople then
     -- VASC's own ModSetting writes do not emit the Manager's option event.
     -- Refresh bound people and Pokemon sources immediately, while still.
@@ -178,6 +182,7 @@ function M.decorateSetting(mod, setting)
     local original=setting.allows
     setting.allows=function(self,i)
       local v=self.values[i]
+      if v=="cobblemon"then local c=mod.exports and mod.exports.cobblemonContent;if not c or not c.available()then return false end end
       if not hdReady(mod) and (v=="full_hd" or v=="go_only" or v=="go_first")then return false end
       return original(self,i)
     end

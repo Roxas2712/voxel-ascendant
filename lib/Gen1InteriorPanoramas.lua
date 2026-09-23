@@ -19,7 +19,7 @@ local function room(id, tileset, width, height, theme, wallHeight)
     wallAsset='kanto_'..theme,
     nativeRoomPanels=true,
     wallEdges={north=true,south=true,west=true,east=true},
-    ceiling={enabled=false}, doors={},
+    ceiling={enabled=true,authored=true}, doors={},
   }
 end
 room('OAKS_LAB','DOJO',5,6,'lab',72)
@@ -64,7 +64,24 @@ room('CINNABAR_LAB','LAB',9,4,'lab',72)
 for _,kind in ipairs({'FOSSIL','METRONOME','TRADE'}) do
   room('CINNABAR_LAB_'..kind..'_ROOM','LAB',4,4,'lab')
 end
--- The MS Anne deliberately retains its original interior rendering.
+-- Closed ship decks/cabins reuse the coastal wall material. Bow stays open.
+for _,entry in ipairs({{'1F',20,9},{'2F',20,9},{'3F',10,3},{'B1F',15,4},
+ {'1F_ROOMS',12,8},{'2F_ROOMS',12,8},{'B1F_ROOMS',12,8},
+ {'CAPTAINS_ROOM',3,4},{'KITCHEN',7,8}})do
+ local id='SS_ANNE_'..entry[1]
+ room(id,'SHIP',entry[2],entry[3],'coastal_home')
+ M.profiles[id].ceiling.style='ship'
+end
+-- Registered KASC building interiors only; cave habitats and open islands
+-- remain with their existing scenery owners. Exact dimensions gate each map.
+room('KA_NGPLUS_LEGACY_WORKSHOP','FACILITY',8,9,'workshop',80)
+for _,id in ipairs({'KA_ROCKET_SILPH_COMMAND_1F','KA_ROCKET_SILPH_RELAY_1F'})do
+ room(id,'FACILITY',15,9,'rocket',80)
+end
+room('KA_JOHTO_GOLD_FINALE','GYM',4,4,'champion_hall',80)
+room('KA_JOHTO_SILVER_FINALE','GYM',5,6,'stone_hall',80)
+room('KA_JOHTO_KRIS_FINALE','CEMETERY',5,6,'spirit_hall',80)
+room('KA_ROCKET_TOWER_RELAY_1F','CEMETERY',10,9,'spirit_hall',80)
 room('INDIGO_PLATEAU_LOBBY','MART',8,6,'center',80)
 room('FUCHSIA_MEETING_ROOM','LAB',7,4,'traditional_home')
 room('GAME_CORNER','LOBBY',10,9,'casino',80)
@@ -78,13 +95,24 @@ for _,id in ipairs({'POKEMON_MANSION_1F','POKEMON_MANSION_2F',
  'POKEMON_MANSION_3F','POKEMON_MANSION_B1F','POWER_PLANT'})do
  M.profiles[id].cutawayPlan=true
 end
-for floor=1,4 do room('ROCKET_HIDEOUT_B'..floor..'F','FACILITY',15,floor==4 and 12 or 14,'rocket',80) end
+for floor=1,4 do
+ local id='ROCKET_HIDEOUT_B'..floor..'F'
+ room(id,'FACILITY',15,floor==4 and 12 or 14,'rocket',80)
+ -- As in the Mansion: authored partitions own occlusion. Flood-masking an
+ -- adjoining room leaves black floor gaps and slices the dungeon from above.
+ M.profiles[id].cutawayPlan=true
+end
 room('ROCKET_HIDEOUT_ELEVATOR','LOBBY',3,4,'elevator')
 for floor=1,10 do
   local width=({[6]=13,[7]=13,[8]=13,[9]=13,[10]=8})[floor] or 15
   room('SILPH_CO_'..floor..'F','FACILITY',width,9,'corporate',80)
 end
 room('SILPH_CO_11F','INTERIOR',9,9,'corporate',80)
+-- Silph's authored partitions already close each office. The chamber flood
+-- mask otherwise erases neighbouring native floor cells and slices walls
+-- to black, just as in the Mansion and Rocket Hideout. Keep the complete
+-- native footprint; depth and the camera-side cutaway still own occlusion.
+for floor=1,11 do M.profiles['SILPH_CO_'..floor..'F'].cutawayPlan=true end
 room('SILPH_CO_ELEVATOR','LOBBY',2,2,'elevator')
 room('CELADON_MART_ELEVATOR','LOBBY',2,2,'elevator')
 for _,route in ipairs({11,12,15,16,18}) do
@@ -107,6 +135,11 @@ room('HALL_OF_FAME','GYM',5,4,'champion_hall',80)
 room('UNDERGROUND_PATH_NORTH_SOUTH','UNDERGROUND',4,24,'underground')
 room('UNDERGROUND_PATH_WEST_EAST','UNDERGROUND',25,4,'underground')
 for _,bearing in ipairs({'NORTH','SOUTH'}) do room('VIRIDIAN_FOREST_'..bearing..'_GATE','FOREST_GATE',5,4,'gate') end
+-- Authored ceilings share the shell's existing orbit cutaway.
+for _,id in ipairs({'OAKS_LAB','GAME_CORNER','CELADON_MART_1F','CELADON_MART_2F',
+ 'CELADON_MART_3F','CELADON_MART_4F','CELADON_MART_5F'})do
+ M.profiles[id].ceiling={enabled=true,authored=true}
+end
 -- Native north-edge warps stay visible through the decorative backing,
 -- including the story-critical breach in Cerulean's trashed house.
 function M.profileFor(map)

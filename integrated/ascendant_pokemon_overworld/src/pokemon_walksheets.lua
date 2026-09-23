@@ -628,7 +628,7 @@ end
 function PokemonWalksheets:sourceForContext(context)
   local key = CONTEXT_SOURCE_OPTION[context]
   local source = key and optionValue(self.mod, key, "hd") or "hd"
-  if self.mod._vascIntegrated and (source=="stadium2" or source=="full_hd") then return source end
+  if self.mod._vascIntegrated and (source=="stadium2" or source=="full_hd" or source=="cobblemon") then return source end
   return source == "pokemmo" and "pokemmo" or "hd"
 end
 

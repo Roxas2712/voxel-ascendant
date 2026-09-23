@@ -1,0 +1,42 @@
+{
+  "portraitScale": 2.41,
+  "portraitTranslation": [-0.23, 0.99, 0],
+  "profileScale": 0.66,
+  "profileTranslation": [0.02, 0.75, 0],
+  "rootBone": "zangoose",
+  "animations": {
+    "cry": "q.bedrock_stateful('zangoose', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('zangoose', 'quad')"
+      ],
+      "quirks": ["q.bedrock_quirk('zangoose', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('zangoose', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('zangoose', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('zangoose', 'ground_idle')",
+        "q.biped_walk(1, 1, 'leg_left', 'leg_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('zangoose', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('zangoose', 'sleep')"],
+      "namedAnimations": {"cry": "q.bedrock_stateful('dummy', 'cry')"}
+    }
+  }
+}

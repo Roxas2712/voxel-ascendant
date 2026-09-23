@@ -1,0 +1,46 @@
+{
+  "portraitScale": 2.08,
+  "portraitTranslation": [-0.7, -0.37, 0],
+  "profileScale": 0.85,
+  "profileTranslation": [0, 0.45, 0],
+  "rootBone": "vaporeon",
+  "animations": {
+    "cry": "q.bedrock_stateful('vaporeon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('vaporeon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vaporeon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('vaporeon', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'frontleg_left', 'frontleg_right', 'back_leg_left', 'back_leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vaporeon', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

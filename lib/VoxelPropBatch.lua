@@ -8,7 +8,7 @@ local B={}
 -- World registries retain visited maps: a map-keyed cache otherwise clones
 -- the same tree/building geometry at every seam and keeps all copies alive.
 local cache=setmetatable({},{__mode='k'})
-local scratch=setmetatable({},{__mode='k'})
+local scratch={}
 local disabled=false
 local function release(group)
   if group.mesh then group.mesh:release()end
@@ -17,7 +17,7 @@ local function release(group)
 end
 function B.clear()
   for _,passes in pairs(cache)do for _,group in pairs(passes)do release(group)end end
-  cache=setmetatable({},{__mode='k'});scratch=setmetatable({},{__mode='k'});disabled=false
+  cache=setmetatable({},{__mode='k'});scratch={};disabled=false
 end
 local function translated(m)
   return m and m[1]==1 and m[2]==0 and m[3]==0
@@ -56,12 +56,20 @@ local function prepare(group,entries)
 end
 function B.draw(state,each,draw,pass)
   if disabled or not state.map or not G.canInstance or not G.canInstance()then return each(state,draw)end
-  -- Reuse CPU staging tables by map/pass; GPU streams are shared by template.
+  -- Staging is consumed synchronously and contains no map-specific result.
+  -- Keep one workspace per pass, not per visited map: the world registry
+  -- retains those map keys, so a weak map table still grows across a journey.
   -- Steady scenery otherwise allocates two tables per prop every frame.
   pass=pass or 'color'
-  local pool=scratch[state.map];if not pool then pool={};scratch[state.map]=pool end
-  local s=pool[pass]
-  if not s then s={byMesh={},order={},groups={},entries={}};pool[pass]=s end
+  -- MAP battles draw the same immutable templates as the overworld. Reuse
+  -- their GPU clones/streams rather than copying every vertex at send-out.
+  -- Each draw consumes its offsets before the next caller streams new ones;
+  -- colour and shadow still require independent buffers. Keep staging and
+  -- pass-specific filtering separate below.
+  local cachePass=pass=='battle-color' and 'color'
+    or pass=='battle-shadow' and 'shadow' or pass
+  local s=scratch[pass]
+  if not s then s={byMesh={},order={},groups={},entries={}};scratch[pass]=s end
   local byMesh,order=s.byMesh,s.order
   for k in pairs(byMesh)do byMesh[k]=nil end
   for i=#order,1,-1 do order[i]=nil end
@@ -82,17 +90,23 @@ function B.draw(state,each,draw,pass)
       p.window=p.window or {batchWindow=true};p.window.glow=windowGlow;p.window.glowColor=windowColor;extra=p.window
     end
     p[1],p[2],p[3],p[4],p[5]=mesh,tex,mat,shade,extra
-    if (extra and not extra.batchWindow)or not translated(mat)then newGroup(p);return end
+    if (extra and not extra.batchWindow and not extra.frost and not extra.seasonalFoliage)or not translated(mat)then newGroup(p);return end
     local group=byMesh[mesh]
     if not group then group=newGroup();byMesh[mesh]=group end
     -- A template normally uses one palette and shade. Never merge a caller
     -- that explicitly overrides either property.
     if #group>0 and (group[1][2]~=tex or group[1][4]~=shade
+      or ((group[1][5]and group[1][5].seasonalFoliage)~=(extra and extra.seasonalFoliage))
+      or ((group[1][5]and group[1][5].frost)~=(extra and extra.frost))
       or ((group[1][5]and group[1][5].glow)~=(extra and extra.glow))
       or ((group[1][5]and group[1][5].glowColor)~=(extra and extra.glowColor)))then newGroup(p)
     else group[#group+1]=p end
   end
   each(state,function(mesh,tex,mat,shade,extra)
+    if extra and extra.winterMesh and extra.mesh and extra.tex and pass~='shadow'
+        and G.weatherKind==2 and (G.weatherAmount or 0)>.2 then
+      add(extra.winterMesh,extra.winterTex,mat,shade,nil)
+    end
     -- Window geometry uses an opaque palette, not alpha compositing. Split
     -- the two passes so repeated buildings can instance both their body and
     -- their lit panes. Emission differences remain separate groups.
@@ -101,6 +115,17 @@ function B.draw(state,each,draw,pass)
       add(extra.mesh,extra.tex,mat,shade,nil,extra.glow or 0,extra.glowColor)
     else add(mesh,tex,mat,shade,extra)end
   end)
+  -- Reuse empty table capacity, but do not pin resources from a larger old
+  -- scene in slots that this frame no longer uses.
+  for i=entryCount+1,s.entryCount or 0 do
+    local p=s.entries[i]
+    for j=1,5 do p[j]=nil end
+    if p.window then p.window.glowColor=nil end
+  end
+  for i=groupCount+1,s.groupCount or 0 do
+    local group=s.groups[i];for j=#group,1,-1 do group[j]=nil end
+  end
+  s.entryCount,s.groupCount=entryCount,groupCount
   -- Eye and sun see different instance sets. Sharing their streaming buffer
   -- overwrote it twice per frame, even with an entirely stationary camera.
   -- Every draw is consumed before the next map's offsets are streamed.
@@ -110,15 +135,15 @@ function B.draw(state,each,draw,pass)
     if #entries>1 and not disabled then
       local original=entries[1][1]
       local passes=cache[original];if not passes then passes={};cache[original]=passes end
-      local group=passes[pass]
-      if not group then group={};passes[pass]=group end
+      local group=passes[cachePass]
+      if not group then group={};passes[cachePass]=group end
       local ok,bundle=pcall(prepare,group,entries)
       if ok then
         local rendered,result=pcall(draw,bundle,entries[1][2],nil,entries[1][4],entries[1][5])
         batched=rendered and result~=false
         if not batched then B.lastError=tostring(result)end
       else B.lastError=tostring(bundle)end
-      if not batched then release(group);passes[pass]=nil;disabled=true end
+      if not batched then release(group);passes[cachePass]=nil;disabled=true end
     end
     if not batched then for _,p in ipairs(entries)do draw(unpack(p))end end
   end

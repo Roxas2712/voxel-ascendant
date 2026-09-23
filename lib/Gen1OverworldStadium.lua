@@ -11,7 +11,7 @@ local baseKeep = tonumber(Pack.KEEP) or 4
 local stats = {prepared=0, drawn=0, failed=0, active=0}
 local function dexNumber(value)
   local n=tonumber(value)
-  if n and n==math.floor(n) and n>=1 and n<=251 then return n end
+  if n and n==math.floor(n) and n>=1 and n<=1026 then return n end
 end
 function M.available(dex)
   dex=dexNumber(dex)
@@ -29,20 +29,28 @@ function M.releaseAll()
 end
 local function selected(p)
   local e=p.entity
-  if p.isPlayer or not e or e.ascendantPokemonModelSource~="stadium2"
+  if p.isPlayer or not e or (e.ascendantPokemonModelSource~="stadium2" and e.ascendantPokemonModelSource~="cobblemon")
       or e.pokemonModel==false or e.stadiumModel==false then return nil end
   return dexNumber(e.ascendantPokemonModelDex)
 end
 local function prepareOne(p,dex,dt)
+  local provider=p.entity.ascendantPokemonModelSource=="cobblemon" and V.require("CobblemonPack") or nil
   local slot=slots[p.entity]
-  if not slot then slot={mon=Mon.new("overworld")};slots[p.entity]=slot end
+  if slot and slot.mon.provider~=provider then release(p.entity);slot=nil end
+  if not slot then slot={mon=Mon.new("overworld",provider)};slots[p.entity]=slot end
   local mon=slot.mon
-  if not mon:setSpecies(dex,true) or not mon.rig then return false end
+  if not mon:setSpecies(dex,true,p.entity.ascendantPokemonModelAppearance) or not mon.rig then return false end
   if Pack.keep then Pack.keep(dex) end
   -- Reuse the imported model's established sizing and bind-pose safety.
   -- Keep low-profile species readable above Gen-1 grass.
   local height=mon:worldHeight()
-  mon.scale=height>0 and math.max(1,12/height) or 1
+  mon.scale=height>0 and math.max(1,(provider and 7 or 12)/height) or 1
+  if mon.model and mon.model.actions then
+    local moved=slot.x and (math.abs(p.px-slot.x)+math.abs(p.py-slot.y)>.01)
+    local clip=moved and mon.model.actions.walk or mon.model.actions.idle
+    if clip and mon.anim~=clip then mon:play("idle",clip) end
+    slot.x,slot.y=p.px,p.py
+  end
   mon:update(dt)
   local fx,fz=0,1
   if p.facing=="up" then fz=-1

@@ -1,0 +1,73 @@
+{
+  "rootBone": "spinarak",
+  "portraitScale": 2.8,
+  "portraitTranslation": [-0.35, -2.65, 0],
+  "profileScale": 1.1,
+  "profileTranslation": [-0.1, 0, 0],
+    "animations": {
+      "cry": "q.bedrock_stateful('spinarak', 'cry')",
+      "recoil": "q.bedrock_stateful('spinarak', 'recoil')"
+    },
+  "poses": {          
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('spinarak', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('spinarak', 'blink')","q.bedrock_quirk('spinarak', 'fang_quirk')"],
+        "namedAnimations": {
+          "sleep": "q.bedrock_primary('spinarak', 'battle_sleep')"
+        }
+      },
+    "standing": {
+      "poseTypes": [
+        "STAND","PORTRAIT","PROFILE","NONE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('spinarak', 'ground_idle')"
+      ],
+        "quirks": ["q.bedrock_quirk('spinarak', 'blink')","q.bedrock_quirk('spinarak', 'fang_quirk')","q.bedrock_quirk('spinarak', 'look_quirk')"],
+      "transformTicks": 10
+    },
+    "walk": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('spinarak', 'ground_walk')"
+      ],
+        "quirks": ["q.bedrock_quirk('spinarak', 'blink')"],
+      "transformTicks": 5
+    },
+      "sleep": {
+        "poseTypes": ["SLEEP"],
+        "animations": ["q.bedrock('spinarak', 'sleep')"]
+      },    
+      "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": ["q.look('head')", "q.bedrock('spinarak', 'shoulder_left')"],
+      "quirks": ["q.bedrock_quirk('spinarak', 'blink')"],
+        "transformedParts": [
+          {
+            "part": "body",
+            "position": [6, 0, 0]
+          }
+        ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": ["q.look('head')", "q.bedrock('spinarak', 'shoulder_right')"],
+      "quirks": ["q.bedrock_quirk('spinarak', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-6, 0, 0]
+        }
+      ]
+    }
+  }
+}

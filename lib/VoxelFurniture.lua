@@ -253,7 +253,16 @@ local function find(map,buildingsOnly)
   end
   if buildingsOnly then return result end
   if map.id=='KANTO_ASCENDANT_DRIFTGLASS'then
-   for _,p in ipairs(V.require('KascDriftglass').find(P,map))do result[#result+1]=p end
+   local drift=V.require('KascDriftglass')
+   if drift.matches(map)then
+    -- The exact return landing replaces its old bank decorations as one
+    -- footprint. Avoid leaving a tree/reef inside the new wooden jetty.
+    for i=#result,1,-1 do
+     local p=result[i]
+     if p.tx<22 and p.tx+p.w>16 and p.ty<40 and p.ty+p.h>30 then table.remove(result,i)end
+    end
+   end
+   for _,p in ipairs(drift.find(P,map))do result[#result+1]=p end
   end
   if map.id=='KA_HOENN_BIRTH_ISLAND'then
    for _,p in ipairs(V.require('KascBirthIsland').find(P,map))do result[#result+1]=p end
@@ -483,6 +492,14 @@ function F.each(state,draw,lightsOnly)
         extra.glow=model.windowLight and model.windowLight()or 1
         extra.glowColor=model.glowColor
       end
+      if model and not lightsOnly and (model.winterKind or model.frost or model.seasonalFoliage) then
+        p.drawExtra=p.drawExtra or {};extra=extra or p.drawExtra
+        extra.frost=model.frost
+        extra.seasonalFoliage=model.seasonalFoliage
+        if model.winterKind then
+          extra.winterMesh,extra.winterTex=P.resolveKind(model.winterKind)
+        end
+      end
       if mesh then
         local base=0
         if decoration then
@@ -520,10 +537,24 @@ end
 -- prepared descriptors while checking live visibility/claims and resource
 -- ownership. Moving harbor props and healing animations use ordinary each().
 local snapshots=setmetatable({},{__mode='k'})
+local snapshotClock=0
+local function trimSnapshots()
+  local count,oldest,oldMap=0,math.huge
+  for map,entry in pairs(snapshots)do
+    count=count+1
+    if entry.used<oldest then oldest,oldMap=entry.used,map end
+  end
+  -- Map objects themselves remain in the engine registry. Weak keys alone
+  -- therefore do not bound descriptors from every previous MAP battle.
+  -- Dropping our reference is safe for a caller still using an old snapshot;
+  -- it neither releases borrowed GPU resources nor edits the descriptor.
+  if count>16 then snapshots[oldMap]=nil end
+end
 function F.snapshot(state)
   if not state or not state.map or state.sightFurniture or state.healAnim
       or V.require('Gen1Harbor').kind(state.map) then return nil end
   local map=state.map
+  snapshotClock=snapshotClock+1
   local props=F.find(map)
   local elevation=V.require('LedgeElevation')
   local heights=type(elevation.map)=='function' and elevation.map(map) or nil
@@ -566,9 +597,11 @@ function F.snapshot(state)
       end
     end
     previous={props=props,heights=heights,version=P.resourceVersion,
-      source=F.each,stamps=stamps,entries=entries,lights=lights}
+      source=F.each,stamps=stamps,entries=entries,lights=lights,used=snapshotClock}
     snapshots[map]=previous
+    trimSnapshots()
   else
+    previous.used=snapshotClock
     -- Pane intensity and candle flicker stay live; neither changes geometry.
     for _,light in ipairs(previous.lights)do
       light.extra.glow=light.model.windowLight and light.model.windowLight() or (light.model.lightSource and 1 or 0)
@@ -619,17 +652,30 @@ end
 function F.drawProp(mesh,tex,mat,shade,extra)
   local light=shade or 1;love.graphics.setColor(light,light,light,1)
   if extra and extra.batchWindow then
+    G.weatherGround(false)
+    G.weatherGrass(false)
     if extra.glow>0 then G.flatten(extra.glowColor or {1,.78,.38},extra.glow)end
     local drawn=G.draw(mesh,tex,mat,0)
     if extra.glow>0 then G.flatten(nil)end
     return drawn
   end
+  -- Replaced roofs and trees draw separately from the terrain. They need
+  -- the same upward-face coat; otherwise only vanilla surfaces turn white.
+  G.weatherGround(true)
+  G.weatherGrass(extra and extra.frost==true)
+  if G.seasonFoliage then G.seasonFoliage(extra and extra.seasonalFoliage==true) end
   local drawn=G.draw(mesh,tex,mat,0)
+  if G.seasonFoliage then G.seasonFoliage(false) end
+  G.weatherGround(false)
+  G.weatherGrass(false)
   if drawn==false then return false end
   if extra and extra.mesh then
     if extra.glow>0 then G.flatten(extra.glowColor or {1,.78,.38},extra.glow)end
     G.draw(extra.mesh,extra.tex,mat,0)
     if extra.glow>0 then G.flatten(nil)end
+  end
+  if extra and extra.winterMesh and G.weatherKind==2 and (G.weatherAmount or 0)>.2 then
+    G.draw(extra.winterMesh,extra.winterTex,mat,0)
   end
   return drawn
 end

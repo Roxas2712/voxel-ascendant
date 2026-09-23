@@ -1,0 +1,109 @@
+{
+  "portraitScale": 2.19,
+  "portraitTranslation": [ -0.25, -1.47, 0],
+  "profileScale": 0.89,
+  "profileTranslation": [ 0, 0.43, 0],
+  "rootBone": "skiploom",
+  "animations": {
+    "cry": "q.bedrock_stateful('skiploom', 'cry')"
+  },
+  "poses": {
+	"battle-standing": {
+     "poseTypes": [
+		"STAND"
+	  ],
+     "isBattle": true,
+     "animations": [
+        "q.bedrock('skiploom', 'battle_idle')"
+      ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('skiploom', 'blink')"
+	  ]
+    },
+    "standing": {
+      "poseTypes": [
+		"STAND",
+		"PORTRAIT",
+        "PROFILE"
+	  ],
+	  "isBattle": false,
+      "animations": [
+        "q.bedrock('skiploom', 'ground_idle')"
+      ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('skiploom', 'blink')"
+	  ]
+    },
+	"walking": {
+      "poseTypes": [
+		"WALK",
+		"SWIM"
+	  ],
+      "animations": [
+	  "q.bedrock('skiploom', 'ground_walk')"
+	  ],
+	  "transformTicks": 10,
+      "quirks": [
+	  "q.bedrock_quirk('skiploom', 'blink')"
+	  ]
+    },
+	"air-sleep": {
+      "poseTypes": [
+	    "SLEEP"
+	  ],
+      "condition": "q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('skiploom', 'air_sleep')",
+		"q.bedrock('skiploom', 'fly_overlay')"
+      ]
+    },
+    "sleep": {
+      "poseName": "sleep",
+      "poseTypes": [
+        "SLEEP"
+      ],
+	  "condition": "!q.is_flying",
+       "namedAnimations": {
+         "cry": "q.bedrock_stateful('dummy', 'cry')"
+       },
+      "animations": [
+        "q.bedrock('skiploom', 'sleep')"
+      ]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "FLOAT",
+        "HOVER",
+        "NONE"
+      ],
+      "animations": [
+        "q.bedrock('skiploom', 'air_idle')",
+		"q.bedrock('skiploom', 'fly_overlay')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('skiploom', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY"
+      ],
+      "animations": [
+        "q.bedrock('skiploom', 'air_fly')",
+		"q.bedrock('skiploom', 'fly_overlay')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('skiploom', 'blink')"
+      ]
+    }
+  }
+}

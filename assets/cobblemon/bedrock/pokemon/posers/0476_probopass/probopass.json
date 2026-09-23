@@ -1,0 +1,55 @@
+{
+ "portraitScale": 1,
+ "portraitTranslation": [ 0, 0.425, 0 ],
+ "profileScale": 0.75,
+ "profileTranslation": [ 0, 0.7, 0 ],
+ "rootBone": "probopass",
+  "animations": {
+    "faint": "q.bedrock_primary('probopass', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('probopass', 'cry')",
+    "recoil": "q.bedrock_stateful('probopass', 'recoil')",
+    "physical": "q.bedrock_primary('probopass', 'physical', 'look', q.curve('symmetrical'))",
+    "special": "q.bedrock_primary('probopass', 'special', 'look', q.curve('symmetrical'))",
+    "status": "q.bedrock_primary('probopass', 'status', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "namedAnimations": {
+      "cry": "q.bedrock_primary('probopass', 'battle_cry', q.curve('symmetrical'))"
+    },
+      "animations": [
+        "q.bedrock('probopass', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('probopass', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": [
+        "q.bedrock('probopass', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('probopass', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('probopass', 'ground_walk')"
+      ]
+    },
+    "sleeping": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('probopass', 'sleep')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('probopass', 'blink')"
+      ]
+    }
+  }
+}

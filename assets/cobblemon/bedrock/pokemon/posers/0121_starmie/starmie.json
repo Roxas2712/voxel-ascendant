@@ -1,0 +1,107 @@
+{
+  "portraitScale": 1.24,
+  "portraitTranslation": [-0.16, 0.12, 0],
+  "profileScale": 0.73,
+  "profileTranslation": [0, 0.72, 0],
+  "rootBone": "starmie",
+  "animations": {
+    "cry": "q.bedrock_stateful('starmie', 'cry')",
+    "faint": "q.bedrock_primary('starmie', 'faint', q.curve('one'))",
+    "special": "q.bedrock_primary('starmie', 'special', q.curve('symmetrical'))",
+    "recoil": "q.bedrock_stateful('starmie', 'recoil')"
+  },
+  "poses": {
+    "battle_standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE"
+      ],
+      "isBattle": true,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('body', 0, 1)",
+        "q.bedrock('starmie', 'battle_idle')"
+      ]
+    },
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('body', 0, 1)",
+        "q.bedrock('starmie', 'ground_idle')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('body', 0, 1)",
+        "q.bedrock('starmie', 'ground_walk')"
+      ]
+    },
+    "sprinting": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "isTouchingWater": false,
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('body', 0, 1)",
+        "q.bedrock('starmie', 'ground_run')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": [
+        "SLEEP"
+      ],
+      "isTouchingWater": false,
+      "animations": [
+        "q.bedrock('starmie', 'sleep')"
+      ]
+    },
+    "surface_swim": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.bedrock('starmie', 'surfacewater_swim')"
+      ]
+    },
+    "float": {
+      "poseTypes": [
+        "STAND",
+        "FLOAT"
+      ],
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "special": "q.bedrock_primary('starmie', 'water_special', q.curve('symmetrical_wide'))"
+      },
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.look('body')",
+        "q.bedrock('starmie', 'water_idle')"
+      ]
+    },
+    "swim": {
+      "poseTypes": [
+        "SWIM"
+      ],
+      "isUnderWater": true,
+      "animations": [
+        "q.pitch_tilt('body', 1)",
+        "q.bedrock('starmie', 'water_swim')"
+      ]
+    }
+  }
+}

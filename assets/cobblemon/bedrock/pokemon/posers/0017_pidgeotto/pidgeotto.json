@@ -1,0 +1,174 @@
+{
+  "portraitScale": 3.09,
+  "portraitTranslation": [-0.64, -1.03, 0],
+  "profileScale": 0.76,
+  "profileTranslation": [0, 0.62, 0.0],
+  "rootBone": "pidgeotto",
+  "animations": {
+    "cry": "q.bedrock_stateful('pidgeotto', 'cry')",
+    "recoil": "q.bedrock_stateful('pidgeotto', 'recoil')"
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 1.5, 1],
+    "seat_1_reverse": [0, 1.5, 1],
+    "seat_2": [0, 1.5, 1],
+    "seat_2_reverse": [0, 1.5, 1]
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["PORTRAIT", "PROFILE", "STAND", "NONE"],
+      "animations": [
+        "q.look('neck_ai', 1, 1, 30, -20, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 3.5, -7.5, 1.5, -1.5)",
+        "q.bedrock('pidgeotto', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgeotto', 'blink')",
+        "q.bedrock_primary_quirk('pidgeotto', 'ground_quirk', 10, 30, 1, q.curve('symmetrical'))"
+      ]
+    },
+    "walk": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('neck_ai', 1, 1, 30, -20, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 3.5, -7.5, 1.5, -1.5)",
+        "q.bedrock('pidgeotto', 'ground_walk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgeotto', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER", "FLOAT"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('neck_ai', 1, 1, 30, -20, 7.5, -7.5)",
+        "q.look('head_ai', 1, 1, 3.5, -7.5, 1.5, -1.5)",
+        "q.bedrock('pidgeotto', 'air_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgeotto', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY", "SWIM"],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('pidgeotto', 'air_fly')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('pidgeotto', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('pidgeotto', 'sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": true
+        }
+      ]
+    },
+    "air-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "q.is_flying",
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('pidgeotto', 'air_sleep')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wing_open_left",
+          "isVisible": true
+        },
+        {
+          "part": "wing_open_right",
+          "isVisible": true
+        },
+        {
+          "part": "wing_closed_left",
+          "isVisible": false
+        },
+        {
+          "part": "wing_closed_right",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

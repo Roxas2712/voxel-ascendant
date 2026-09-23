@@ -1,0 +1,257 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"animation.poliwag.ground_idle": {
+			"loop": true,
+			"bones": {
+				"tail1": {
+					"rotation": [30, 0, 0]
+				},
+				"tail2": {
+					"rotation": [15, 0, 0]
+				},
+				"tail3": {
+					"rotation": [15, 0, 0]
+				}
+			}
+		},
+		"animation.poliwag.ground_walk": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"position": [0, "0 - (6/11) + math.abs(math.sin(((query.anim_time) - (1/3)) * 90 * 3) * (6/11))", 0]
+				},
+				"head": {
+					"rotation": ["0 - (0 * 1.5)", "math.sin(((query.anim_time) - (0.5/3)) * 90 * 3) * (4 * 1.5)", 0],
+					"position": [0, 0, "0 - (0 / 10)"]
+				},
+				"arm_left": {
+					"rotation": [0, "0 - math.sin(((query.anim_time) - (0.5/3)) * 90 * 3) * 28", "0 - -48"]
+				},
+				"arm_left2": {
+					"rotation": [0, "math.clamp(math.sin(((query.anim_time) + (0.75/3)) * 90 * 3) * 28, 0, 28)", 0]
+				},
+				"arm_right": {
+					"rotation": [0, "0 - math.sin(((query.anim_time) - (0.5/3)) * 90 * 3) * 28", -48]
+				},
+				"arm_right2": {
+					"rotation": [0, "0 - math.clamp(math.sin(((query.anim_time) - (0.75/3)) * 90 * 3) * 28, 0, 28)", 0]
+				},
+				"torso2": {
+					"rotation": [0, "0 - math.sin(((query.anim_time) - (0.5/3)) * 90 * 3) * 4", 0]
+				},
+				"leg_left": {
+					"rotation": [
+						"0 -math.sin((query.anim_time) * 90 * 3) * 6",
+						0,
+						"0 - 0 + (math.clamp((math.sin(((query.anim_time - (1.75 / 3))) * 180 * 3) * 1) - math.clamp((math.sin(((query.anim_time - (1.75 / 3))) * 90 * 3) * 2), 0, 1), 0, 1)) * 0"
+					],
+					"position": [0, "math.clamp(math.sin(((query.anim_time) + (1/3)) * 90 * 3) * 1, 0, 1)", 0]
+				},
+				"leg_left2": {
+					"rotation": ["0 - math.clamp(math.sin(((query.anim_time) - (0.75/3)) * 90 * 3) * 0, -0, 0)", 0, 0]
+				},
+				"leg_right": {
+					"rotation": [
+						"math.sin((query.anim_time) * 90 * 3) * 6",
+						0,
+						"0 - (math.clamp((math.sin(((query.anim_time + (0.25 / 3))) * 180 * 3) * 1) - math.clamp((math.sin(((query.anim_time + (0.25 / 3))) * 90 * 3) * 2), 0, 1), 0, 1)) * 0"
+					],
+					"position": [0, "math.clamp(math.sin(((query.anim_time) - (1/3)) * 90 * 3) * 1, 0, 1)", 0]
+				},
+				"leg_right2": {
+					"rotation": ["math.clamp(math.sin(((query.anim_time) - (0.75/3)) * 90 * 3) * 0, 0, 0)", 0, 0]
+				},
+				"foot_left": {
+					"rotation": ["0 - math.clamp(math.sin(((query.anim_time) - (0.75/3)) * 90 * 3) * v.foot, -v.foot, 0)", 0, 0]
+				},
+				"foot_right": {
+					"rotation": ["math.clamp(math.sin(((query.anim_time) - (0.75/3)) * 90 * 3) * v.foot, 0, v.foot)", 0, 0]
+				},
+				"hand_right": {
+					"rotation": [0, -70, 0]
+				},
+				"hand_left": {
+					"rotation": [0, 70, 0]
+				},
+				"tail1": {
+					"rotation": [30, 0, 0]
+				},
+				"tail2": {
+					"rotation": [15, 0, 0]
+				},
+				"tail3": {
+					"rotation": [15, 0, 0]
+				},
+				"torso": {
+					"rotation": [0, "0 - math.sin(((query.anim_time) - (0.25/3)) * 90 * 3) * 4", 0]
+				}
+			}
+		},
+		"animation.poliwag.water_idle": {
+			"loop": true,
+			"bones": {
+				"tail1": {
+					"rotation": [-15, 0, 0]
+				},
+				"tail2": {
+					"rotation": [15, 0, 0]
+				},
+				"tail3": {
+					"rotation": [15, 0, 0]
+				},
+				"body": {
+					"rotation": [15, 0, 0]
+				},
+				"leg_right": {
+					"rotation": [15, 0, 0]
+				},
+				"foot_right1": {
+					"rotation": [15, 0, 0]
+				},
+				"leg_left": {
+					"rotation": [15, 0, 0]
+				},
+				"foot_left1": {
+					"rotation": [15, 0, 0]
+				}
+			}
+		},
+		"animation.poliwag.water_swim": {
+			"loop": true,
+			"bones": {
+				"tail1": {
+					"rotation": [-45, 0, 0]
+				},
+				"tail2": {
+					"rotation": [5, 0, 0]
+				},
+				"tail3": {
+					"rotation": [5, 0, 0]
+				},
+				"body": {
+					"rotation": [45, 0, 0]
+				},
+				"leg_right": {
+					"rotation": [15, 0, 0]
+				},
+				"leg_left": {
+					"rotation": [15, 0, 0]
+				},
+				"foot_right1": {
+					"rotation": [15, 0, 0]
+				},
+				"foot_left1": {
+					"rotation": [15, 0, 0]
+				}
+			}
+		},
+		"animation.poliwag.blink": {
+			"animation_length": 0.16667,
+			"bones": {
+				"eyelid_left": {
+					"position": {
+						"0.0": [0, 0, -0.1],
+						"0.125": [0, 0, -0.1],
+						"0.1667": [0, 0, 0]
+					}
+				},
+				"eyelid_right": {
+					"position": {
+						"0.0": [0, 0, -0.1],
+						"0.125": [0, 0, -0.1],
+						"0.1667": [0, 0, 0]
+					}
+				}
+			}
+		},
+		"animation.poliwag.sleep": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"rotation": [-5, 0, 0],
+					"position": [0, -1.75, 0]
+				},
+				"eyelids": {
+					"position": [0, 0, -0.1]
+				},
+				"leg_right": {
+					"rotation": [-56.86824, 13.96782, -1.24205],
+					"position": [0, 0.25, -0.75]
+				},
+				"foot_right1": {
+					"rotation": [45, 0, 0]
+				},
+				"foot_right2": {
+					"rotation": [10, 0, 0]
+				},
+				"leg_left": {
+					"rotation": [-27.43103, -15.68951, 1.9062],
+					"position": [0, 0.5, -0.75]
+				},
+				"foot_left1": {
+					"rotation": [12.5, 0, 0]
+				},
+				"foot_left2": {
+					"rotation": [10, 0, 0]
+				},
+				"tail1": {
+					"rotation": [-0.16127, 25.11621, 5.5184]
+				},
+				"tail2": {
+					"rotation": [12.30936, 7.61658, -1.09051],
+					"position": [0, 0, -0.35]
+				},
+				"tail3": {
+					"rotation": [10, 7.5, 0],
+					"position": [0, 0, -0.5]
+				},
+				"eyelid_left": {
+					"position": [0, 0, -0.1]
+				},
+				"eyelid_right": {
+					"position": [0, 0, -0.1]
+				}
+			}
+		},
+		"animation.poliwag.render": {
+			"loop": true,
+			"bones": {
+				"body": {
+					"rotation": [-5, 0, -10],
+					"position": [0, 6, 0]
+				},
+				"leg_right": {
+					"rotation": [24.26391, -14.269, 7.17267]
+				},
+				"foot_right2": {
+					"rotation": [12.5, 0, 0]
+				},
+				"leg_left": {
+					"rotation": [17.44401, 5.64135, -19.34918]
+				},
+				"foot_left2": {
+					"rotation": [-7.5, 0, 0]
+				},
+				"tail1": {
+					"rotation": [-63.87343, -4.37224, -50.6695]
+				},
+				"tail2": {
+					"rotation": [0, 7.5, 0],
+					"position": [0, 0, -0.3]
+				},
+				"tail3": {
+					"rotation": [0, 0, 0]
+				}
+			}
+		},
+        "animation.poliwag.cry": {
+        "animation_length": 1.25,
+        "sound_effects": {
+          "0.0417": {
+            "effect": "pokemon.poliwag.cry"
+          }
+        }
+      }
+	}
+}

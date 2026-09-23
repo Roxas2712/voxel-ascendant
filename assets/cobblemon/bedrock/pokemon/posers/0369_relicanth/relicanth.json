@@ -1,0 +1,98 @@
+{
+  "portraitScale": 1.07,
+  "portraitTranslation": [-0.19, 0.23, 0],
+  "profileScale": 0.54,
+  "profileTranslation": [-0.04, 0.85, 0],
+  "rootBone": "relicanth",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.4, 0],
+    "seat_1_reverse": [0, 0.4, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('relicanth', 'cry')"
+  },
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('relicanth', 'water_idle')"]
+    },
+    "jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air",
+      "animations": [
+        "q.bedrock('relicanth', 'water_swim')"
+      ],
+      "transformTicks": 3,
+      "transformToTicks": 3
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('relicanth', 'ground_idle')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": ["q.bedrock('relicanth', 'ground_walk')"]
+    },
+    "mount-surface-floating": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": ["q.bedrock('relicanth', 'water_idle')"]
+    },
+    "surface-floating": {
+      "poseTypes": ["STAND"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": ["q.bedrock('relicanth', 'water_idle')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    },
+    "mount-surface-swimming": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": ["q.bedrock('relicanth', 'water_swim')"]
+    },
+    "surface-swimming": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": ["q.bedrock('relicanth', 'water_swim')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 6, 0]
+        }
+      ]
+    },
+    "floating": {
+      "poseTypes": ["FLOAT"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": ["q.bedrock('relicanth', 'water_idle')"]
+    },
+    "swimming": {
+      "poseTypes": ["SWIM"],
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": ["q.bedrock('relicanth', 'water_swim')"]
+    }
+  }
+}

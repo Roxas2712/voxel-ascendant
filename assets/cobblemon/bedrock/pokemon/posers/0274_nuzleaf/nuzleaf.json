@@ -1,0 +1,44 @@
+{
+  "portraitScale": 2.36,
+  "portraitTranslation": [ -0.27, -0.25, 0],
+  "profileScale": 0.68,
+  "profileTranslation": [ 0, 0.71, 0],
+  "rootBone": "nuzleaf",
+  "animations": {},
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nuzleaf', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('nuzleaf', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nuzleaf', 'ground_idle')",
+        "q.biped_walk(1, 1, 'leg_left', 'leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('nuzleaf', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('nuzleaf', 'sleep')"]
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "portraitScale": 2.19,
+  "portraitTranslation": [-0.42, -0.55, 0],
+  "profileScale": 0.71,
+  "profileTranslation": [0, 0.65, 0],
+  "rootBone": "vulpix",
+  "animations": {
+    "cry": "q.bedrock_stateful('vulpix', 'cry')",
+    "recoil": "q.bedrock_stateful('vulpix', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('vulpix', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vulpix', 'blink')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": [
+        "STAND",
+        "FLOAT"
+      ],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('vulpix', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vulpix', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('vulpix', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vulpix', 'blink')"
+      ]
+    },
+    "run": {
+      "poseName": "run",
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('vulpix', 'ground_run')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('vulpix', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": [
+        "q.bedrock('vulpix', 'sleep')"
+      ]
+    }
+  }
+}
+   
+   
+   

@@ -1,0 +1,41 @@
+{
+  "portraitScale": 1.98,
+  "portraitTranslation": [-0.14, 1.96, 0],
+  "profileScale": 0.42,
+  "profileTranslation": [0.02, 1.17, 0],
+  "rootBone": "braixen",
+  "animations": {
+    "cry": "q.bedrock_stateful('braixen', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseName": "battle-standing",
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('braixen', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('braixen', 'blink')"]
+    },
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('braixen', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('braixen', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('braixen', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('braixen', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "wand",
+          "isVisible": false
+        }
+      ]
+    }
+  }
+}

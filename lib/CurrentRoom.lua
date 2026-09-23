@@ -5,6 +5,9 @@ M.setting=V.require('ModSetting').new('currentRoom','ROOM VIEW',{true,false},{'O
 local function key(x,y)return(y+64)*4096+x+64 end
 local dirs={{1,0},{-1,0},{0,1},{0,-1}}
 local cache
+local function wholeFootprint(map,profile)
+ return (profile and profile.cutawayPlan) or tostring(map.id):match('^CELADON_MANSION_[123]F$')~=nil
+end
 function M.release()
  if cache then
   if cache.image then cache.image:release()end
@@ -16,6 +19,9 @@ end
 function M.enabled(map)
  if M.setting:get()~=true or not map then return false end
  local H=V.require('HorizonWall');if H.isOutdoorMap(map)then return false end
+ -- Gym walls already close their authored floor plan. Treating their puzzle
+ -- rooms as cave chambers erased every disconnected room down to the sky.
+ if type(H.arenaViewFor)=='function' and H.arenaViewFor(map)then return false end
  local c=H.classFor(map)
  return c=='cave'or c=='interior'or c=='room'or c=='tower'
 end
@@ -27,7 +33,7 @@ function M.plan(map,S,ox,oy,panels)
  -- player-centred flood mask invents walls in native passages and clips
  -- real wall faces to black from oblique eye-level cameras. Preserve the
  -- native footprint at every camera level; only orbit cutaway lowers walls.
- if (profile and profile.cutawayPlan) or tostring(map.id):match('^CELADON_MANSION_[123]F$') then
+ if wholeFootprint(map,profile) then
   local visible={}
   for y=0,h-1 do for x=0,w-1 do
    local block=map.def.blocks[math.floor(y/4)*map.def.width+math.floor(x/4)+1]
@@ -165,7 +171,12 @@ function M.prepare(state)
  local S=V.require('Structures').forMap(map)
  local H=V.require('HorizonWall');local profile=H.interiorProfileFor(map)
  local cutaway=profile and profile.cutawayPlan and V.require('InteriorCutaway').active(map) or false
- if cache and cache.map==map and cache.S==S and cache.ox==ox and cache.oy==oy
+ local complete=wholeFootprint(map,profile)
+ -- A complete native dungeon footprint is independent of the player's cell.
+ -- Preserve its mask and boundary mesh while walking; native geometry changes
+ -- still invalidate S, and ordinary room/cave masks still follow the player.
+ if cache and cache.map==map and cache.S==S and cache.complete==complete
+   and (complete or (cache.ox==ox and cache.oy==oy))
    and cache.cutaway==cutaway then return cache end
  -- Reuse the mask texture while walking: uploading into the same tiny
  -- image avoids GPU allocation/deletion on every half-cell crossing.
@@ -177,7 +188,7 @@ function M.prepare(state)
   cache=nil
  else M.release()end
  local panels=profile and V.require('Gen1InteriorLayout').panelsFor(map,profile)or nil
- local view=M.plan(map,S,ox,oy,panels);view.S=S;view.cutaway=cutaway
+ local view=M.plan(map,S,ox,oy,panels);view.S=S;view.cutaway=cutaway;view.complete=complete
  local g=love.graphics
  if view.w>g.getSystemLimits().texturesize or view.h>g.getSystemLimits().texturesize then return nil,'room-mask-too-large' end
  local data=reuse and reuse.data or love.image.newImageData(view.w,view.h)

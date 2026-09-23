@@ -1,0 +1,50 @@
+{
+  "portraitScale": 2.04,
+  "portraitTranslation": [ -0.9, 1.52, 0],
+  "profileScale": 0.56,
+  "profileTranslation": [ 0, 0.89, 0],
+  "animations": {
+    "cry": "q.bedrock_stateful('houndoom', 'cry')"
+  },
+  "rootBone": "houndoom",
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "FLOAT",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('houndoom', 'ground_idle')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('houndoom', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('houndoom', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('houndoom', 'ground_idle')",
+        "q.quadruped_walk(1, 1, 'leg_front_left', 'leg_front_right', 'leg_back_left', 'leg_back_right')",
+       {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('houndoom', 'hold_item')"
+       }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('houndoom', 'blink')"
+      ]
+    }
+  }
+}

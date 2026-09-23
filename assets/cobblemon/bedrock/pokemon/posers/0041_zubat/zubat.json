@@ -1,0 +1,162 @@
+{
+  "portraitScale": 2.18,
+  "portraitTranslation": [-0.07,0.08,0],
+  "profileScale": 0.7,
+  "profileTranslation": [0,0.7,0],
+  "rootBone": "zubat",
+  "animations": {
+    "cry": "q.bedrock_stateful('zubat', 'cry')",
+    "physical": "q.bedrock_primary('zubat', 'physical', q.curve('symmetrical'))"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('body')",
+        "q.bedrock('zubat', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('zubat', 'eartwitch')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": false
+        },
+        {
+          "part": "wings_open",
+          "isVisible": true
+        }
+      ]
+    },
+    "hover": {
+      "poseTypes": [
+        "HOVER",
+        "FLOAT"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.look('body')",
+        "q.bedrock('zubat', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('zubat', 'eartwitch')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": false
+        },
+        {
+          "part": "wings_open",
+          "isVisible": true
+        }
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.bedrock('zubat', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('zubat', 'eartwitch')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": false
+        },
+        {
+          "part": "wings_open",
+          "isVisible": true
+        }
+      ]
+    },
+    "fly": {
+      "poseTypes": [
+        "SWIM",
+        "FLY"
+      ],
+      "animations": [
+        "q.pitch_tilt('body')",
+        "q.bedrock('zubat', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('zubat', 'eartwitch')"
+      ],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": false
+        },
+        {
+          "part": "wings_open",
+          "isVisible": true
+        }
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('zubat', 'sleep')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": false
+        },
+        {
+          "part": "wings_open",
+          "isVisible": true
+        }
+      ]
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": [
+        "q.look('body')",
+        "q.bedrock('zubat', 'shoulder_left')"
+      ],
+      "quirks": ["q.bedrock_quirk('zubat', 'eartwitch')"],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": true
+        },
+        {
+          "part": "wings_open",
+          "isVisible": false
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": [
+        "q.look('body')",
+        "q.bedrock('zubat', 'shoulder_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('zubat', 'eartwitch')"],
+      "transformedParts": [
+        {
+          "part": "wings_folded",
+          "isVisible": true
+        },
+        {
+          "part": "wings_open",
+          "isVisible": false
+        }
+      ]
+    } 
+  }
+}

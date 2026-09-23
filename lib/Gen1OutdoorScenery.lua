@@ -16,6 +16,7 @@ M.stone=S.new('outdoorStone','ROCKS + FENCES',{true,false},{'ON','OFF'})
 function M.profile(map)
  local d=map and map.def
  if not d or not M.ground:get()then return nil end
+ if map.id=='KANTO_ASCENDANT_DRIFTGLASS' and V.require('KascDriftglass').matches(map)then return 'kasc_driftglass' end
  if map.id=='KA_HOENN_BIRTH_ISLAND'and V.require('KascBirthIsland').matches(map)then return 'kasc_birth'end
  if map.id=='KA_HEVO_RAYQUAZA_CHAMBER'and V.require('KascSkySanctum').matches(map)then return 'kasc_sky'end
  if d.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(map)then return 'kasc_habitat'end
@@ -72,6 +73,7 @@ local function checkerPaving(map,x,y)
 end
 function M.material(map,profile,tile,x,y)
  if not profile then return nil end
+ if profile=='kasc_driftglass' and (tile==35 or tile==44 or tile==48 or tile==57)then return -160 end
  if profile=='kasc_legend'then return V.require('KascLegendAtmosphere').material(map,x,y)end
  if profile=='kasc_birth'then return V.require('KascBirthIsland').material(map,x,y)end
  if profile=='kasc_volcano'then return -177 end
@@ -335,6 +337,11 @@ function M.register(P,F)
  local C=P.decorColors
  local function make(kind,w,d)
   local a={terrain=true,boxes={},step=1,frameW=w,frameH=d+40,depth=d,offsetY=-40};P.models[kind]=a
+  -- Only authored deciduous foliage receives the seasonal palette. Trunks
+  -- retain their non-green texels; conifers (variant 3) remain evergreen.
+  a.seasonalFoliage=(kind:match('^kanto_tree_') and not kind:match('_3$'))
+    or kind:match('^kanto_cut_tree_') or (kind:match('^kanto_pillar_tree_') and not kind:match('_3$'))
+  a.seasonalFoliage=a.seasonalFoliage and true or false
   return function(x,y,z,bw,bh,bd,c)
    assert(x>=0 and z>=0 and x+bw<=w and z+bd<=d,'outdoor footprint '..kind)
    a.boxes[#a.boxes+1]={x,y,z,bw,bh,bd,c}
@@ -495,6 +502,15 @@ function M.register(P,F)
   b(5,3,21,1,20,1,C.oldBoard)
   for _,y in ipairs({8,16})do b(4,y,20,8,2,8,C.oldBeam)end
   b(3,23,19,10,2,10,C.oldBoard);b(5,25,21,6,1,6,C.oldTimber)
+  -- Restore the native animal-topped Safari posts: weathered stone head
+  -- above the fence, entirely within the already blocked 16px footprint.
+  b(4,26,20,8,6,8,C.looseRock2)
+  b(3,30,21,10,3,7,C.looseRock1)
+  b(5,27,28,6,3,3,C.looseRock2)
+  b(4,33,21,2,3,2,C.looseRock1);b(10,33,21,2,3,2,C.looseRock1)
+  b(7,30,29,2,3,2,C.silver);b(7,33,29,1,2,1,C.silver)
+  b(4,30,27,1,1,1,C.oldBeam);b(11,30,27,1,1,1,C.oldBeam)
+  b(3,30,21,2,1,2,C.leafDark);b(4,28,20,1,3,1,C.leafDark)
   for _,y in ipairs({8,16})do
    for _,part in ipairs({{sides%2==1,0},{sides>=2,11}})do
     if part[1]then
@@ -555,12 +571,17 @@ function M.register(P,F)
   b(2,0,6,4,9,4,C.oak);b(1,9,5,6,2,6,C.walnut);b(2,11,6,4,1,4,14)
  end
  local petals={4,11,C.purple,15,7,1}
+ local clusters={
+  {{2,2,4},{5,5,3}}, {{4,3,4}}, {{2,5,3},{5,2,5}},
+  {{2,2,3},{5,4,4},{2,6,2}}, {{3,5,4},{6,2,3}}, {{3,2,5},{5,6,3}},
+ }
  for variant=1,#petals do
   local b=make('kanto_flower_'..variant,8,8)
   local model=P.models['kanto_flower_'..variant]
+  model.frost=true
   model.groundParts={}
   local stem=C.leafDark or 10;local petal=petals[variant]
-  for _,at in ipairs({{2,3,4},{5,5,3}})do
+  for _,at in ipairs(clusters[variant])do
    local x,z,h=at[1],at[2],at[3]
    local first=#model.boxes+1
    b(x,0,z,1,h,1,stem);b(x-1,1,z,3,1,1,C.leaf or 12)
@@ -575,10 +596,11 @@ function M.register(P,F)
    -- Occasional warm pink, blue and red patches among the original beds.
    -- Select by position once at placement; no per-frame colour or geometry work.
    local patch=(math.floor(x/8)*7+math.floor(y/8)*11)%11
-   local shade=1+(math.floor(x/2)+math.floor(y/2))%3
+   local shade=1+(x*17+y*31+x*y*7)%3
    return 'kanto_flower_'..(patch<3 and 4+patch or shade)
   end}
  local function region(id)
+  if id=='KANTO_ASCENDANT_DRIFTGLASS'then return 'rock' end
   if id=='ROUTE_8'then return 'hedge' end
   if id=='CINNABAR_ISLAND' or id=='ROUTE_19' or id=='ROUTE_20' or id=='ROUTE_21'then return 'rock' end
   return 'tree'
@@ -588,7 +610,8 @@ function M.register(P,F)
    groundTile=function(map,x,y)return V.require('Gen1Harbor').quayAt(map,x,y)and 20 or set=='FOREST'and 0 or 44 end,
    guard=function(map,x,y)
     if map.def.generation==2 or map.id=='PALLET_TOWN' or map.id=='ROUTE_20' then return false end
-    if region(map.id)=='rock' and (x<8 or y<8 or x>=map.def.width*4-8 or y>=map.def.height*4-8)then
+    if region(map.id)=='rock' and map.id~='KANTO_ASCENDANT_DRIFTGLASS'
+       and (x<8 or y<8 or x>=map.def.width*4-8 or y>=map.def.height*4-8)then
      -- Only the short shore entrances below Pallet/Fuchsia get visible
      -- stone props. The outer sea boundary stays open toward the horizon.
      local shore = (map.id=='ROUTE_21' and y<6)

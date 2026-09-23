@@ -1,0 +1,89 @@
+{
+  "portraitScale": 1.59,
+  "portraitTranslation": [-0.33, -0.09, 0],
+  "profileScale": 0.69,
+  "profileTranslation": [0, 0.69, 0],
+  "rootBone": "litten",
+  "animations": {
+    "cry": "q.bedrock_stateful('litten', 'cry')",
+    "recoil": "q.bedrock_stateful('litten', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('litten', 'battle_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'blink')",
+        "q.bedrock_quirk('litten', 'look_quirk')",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('litten', 'ground_idle')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'blink')",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('look_quirk', 'lick_quirk'), 20, 50, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('litten', 'ground_walk')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'blink')",
+        "q.bedrock_quirk('litten', 'look_quirk')",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('litten', 'sleep')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'yawn_quirk', 45, 120, 1)",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ]
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": ["q.look('head')", "q.bedrock('litten', 'shoulder_left')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'blink')",
+        "q.bedrock_quirk('litten', 'look_quirk')",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-5, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": ["q.look('head')", "q.bedrock('litten', 'shoulder_right')"],
+      "quirks": [
+        "q.bedrock_quirk('litten', 'blink')",
+        "q.bedrock_quirk('litten', 'look_quirk')",
+        "q.bedrock_quirk('litten', 'tailtwitch_quirk', 10, 25, 1)",
+        "q.bedrock_quirk('litten', q.array('lefteartwitch_quirk', 'righteartwitch_quirk'), 6, 20, 1)"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [5, 0, 0]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "portraitScale": 1.1,
+  "portraitTranslation": [-0.45, 0.279, 0],
+  "profileScale": 0.4,
+  "profileTranslation": [0, 1, 0],
+  "rootBone": "metagross",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0],
+    "seat_3": [0, 0.45, 0],
+    "seat_4": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.5, 1],
+    "seat_1_reverse": [0, 0.5, 1],
+    "seat_2": [0, 0.5, 1],
+    "seat_2_reverse": [0, 0.5, 1],
+    "seat_3": [0, 0.5, 1],
+    "seat_3_reverse": [0, 0.5, 1],
+    "seat_4": [0, 0.5, 1],
+    "seat_4_reverse": [0, 0.5, 1]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.5, 1],
+    "seat_1_reverse": [0, 0.5, 1],
+    "seat_2": [0, 0.5, 1],
+    "seat_2_reverse": [0, 0.5, 1],
+    "seat_3": [0, 0.5, 1],
+    "seat_3_reverse": [0, 0.5, 1],
+    "seat_4": [0, 0.5, 1],
+    "seat_4_reverse": [0, 0.5, 1]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('metagross', 'cry')",
+    "recoil": "q.bedrock_stateful('metagross', 'recoil')",
+    "physical": "q.bedrock_primary('metagross', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('metagross', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('metagross', 'status', q.curve('symmetrical_wide'))",
+    "air_physical": "q.bedrock_primary('metagross', 'air_physical', q.curve('symmetrical_wide'))",
+    "air_special": "q.bedrock_primary('metagross', 'air_special', q.curve('symmetrical_wide'))",
+    "air_status": "q.bedrock_primary('metagross', 'air_status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "mount-hover": {
+      "poseTypes": ["STAND", "HOVER"],
+      "isBattle": false,
+      "condition": "q.has_entity ? q.is_ridden && q.riding_style == 'AIR' : 0.0",
+      "transformTicks": 5,
+      "isRideStyle": ["AIR"],
+      "animations": [
+        "q.bedrock('metagross', 'air_idle')",
+        "q.bedrock('metagross', 'ride_air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+    "mount-fly": {
+      "isBattle": false,
+      "condition": "q.has_entity ? q.is_ridden && q.riding_style == 'AIR' : 0.0",
+      "poseTypes": ["WALK", "FLY"],
+      "animations": [
+        "q.bedrock('metagross', 'air_fly')",
+        "q.bedrock('metagross', 'ride_air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+    "stand": {
+      "isBattle": false,
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.bedrock('metagross', 'ground_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+    "battle_idle": {
+      "isBattle": true,
+      "poseTypes": ["STAND"],
+      "animations": [
+        "q.bedrock('metagross', 'battle_idle')"
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('metagross', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "battle-flying": {
+      "poseTypes": ["HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.bedrock('metagross', 'air_battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_primary('metagross', 'air_battle_cry', q.curve('symmetrical_wide'))",
+        "physical": "q.bedrock_primary('metagross', 'air_physical', q.curve('symmetrical'))",
+        "special": "q.bedrock_primary('metagross', 'air_special', q.curve('symmetrical_wide'))",
+        "status": "q.bedrock_primary('metagross', 'air_status', q.curve('symmetrical_wide'))"
+      }
+    },
+    "walk": {
+      "poseTypes": ["WALK"],
+      "condition": "!q.in_air && !q.is_sprinting && q.riding_style != 'AIR': 1.0 ? 0.0",
+      "animations": [
+        "q.bedrock('metagross', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.riding_style == 'LAND'",
+          "animation": "q.bedrock('metagross', 'ride_ground_walk')"
+        }
+      ],
+      "transformTicks": 5,
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+    "hover": {
+      "isBattle": false,
+      "poseTypes": ["HOVER", "FLOAT"],
+      "animations": [
+        "q.bedrock('metagross', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY", "SWIM"],
+      "animations": [
+        "q.bedrock('metagross', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('metagross', 'blink')"
+      ]
+    },
+      "in-air": {
+        "poseTypes": ["STAND", "WALK", "NONE"],
+        "isBattle": false,
+        "condition": "q.in_air && q.is_ridden",
+        "animations": ["q.look('head')", "q.bedrock('metagross', 'ride_jump')"
+      ],
+        "transformTicks": 2,
+        "transformToTicks": 2
+      },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('metagross', 'sleep')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+      "run": {
+        "poseTypes": ["STAND","WALK"],
+        "isBattle": false,
+        "condition": "!q.in_air && q.is_sprinting",
+        "animations": [
+          "q.bedrock('metagross', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('metagross', 'ride_ground_run')"
+        }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('metagross', 'blink')"
+        ],
+        "transformTicks": 10
+      }
+  }
+}

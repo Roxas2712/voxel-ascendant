@@ -1,0 +1,110 @@
+{
+  "portraitScale": 1.1,
+  "portraitTranslation": [-0.8, -0.009, 0],
+  "profileScale": 0.5,
+  "profileTranslation": [0, 0.96, 0],
+  "rootBone": "dudunsparce",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0],
+    "seat_2": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.34, 0],
+    "seat_1_reverse": [0, 0.34, 0],
+    "seat_2": [0, 0.34, 0],
+    "seat_2_reverse": [0, 0.34, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.34, 0],
+    "seat_1_reverse": [0, 0.34, 0],
+    "seat_2": [0, 0.34, 0],
+    "seat_2_reverse": [0, 0.34, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('dudunsparce_two_segment', 'cry')",
+    "recoil": "q.bedrock_stateful('dudunsparce_two_segment', 'recoil')"
+  },
+ "poses": {
+      "battle-standing": {
+      "isBattle": true,
+      "poseTypes": ["STAND"],
+      "animations": [
+        "q.bedrock('dudunsparce_two_segment', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dudunsparce_two_segment', 'blink')","q.bedrock_quirk('dudunsparce_two_segment', 'wingflap_quirk')"
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dudunsparce_two_segment', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('dudunsparce_two_segment', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dudunsparce_two_segment', 'blink')","q.bedrock_quirk('dudunsparce_two_segment', 'wingflap_quirk')"
+      ]
+    },
+   "in_air": {
+     "poseName": "in_air",
+     "poseTypes": ["WALK","STAND"],
+     "isBattle": false,
+     "condition": "q.in_air",
+     "animations": [
+       "q.look('head')",
+       "q.bedrock('dudunsparce_two_segment', 'ride_jump')"
+     ],
+     "quirks": [
+       "q.bedrock_quirk('dudunsparce_two_segment', 'blink')"
+     ],
+     "transformTicks": 2,
+     "transformToTicks": 2
+   },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dudunsparce_two_segment', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('dudunsparce_two_segment', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dudunsparce_two_segment', 'blink')"
+      ]
+    },
+    "run": {
+      "poseTypes": ["WALK","STAND"],
+      "isBattle": false,
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('dudunsparce_two_segment', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('dudunsparce_two_segment', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('dudunsparce_two_segment', 'blink')"
+      ],
+      "transformTicks": 10
+      },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('dudunsparce_two_segment', 'sleep')"
+      ]
+    }
+  }
+}

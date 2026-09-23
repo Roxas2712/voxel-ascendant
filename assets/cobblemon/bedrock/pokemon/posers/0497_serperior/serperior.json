@@ -1,0 +1,107 @@
+{
+  "portraitScale": 1.81,
+  "portraitTranslation": [-0.59, 1.3, 0],
+  "profileScale": 0.6,
+  "profileTranslation": [0.15, 0.87, 0],
+  "rootBone": "serperior",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.45, 0.5],
+    "seat_1_reverse": [0, 0.45, 0.5]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('serperior', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "isBattle": false,
+      "animations": [
+        "q.look('neck3', 0.5, 0.5, 5, -20, 12.5, -12.5)",
+        "q.look('neck4', 0.75, 0.75, 25, 0, 10, -10)",
+        "q.look('head', 1, 1, 17.5, -45, 30, -30)",
+        "q.bedrock('serperior', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('serperior', 'blink')",
+        "q.bedrock_quirk('serperior', q.array('idle_quirk1', 'idle_quirk2'), 20, 40, 1))"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('neck3', 0.5, 0.5, 5, -20, 12.5, -12.5)",
+        "q.look('neck4', 0.75, 0.75, 25, 0, 10, -10)",
+        "q.look('head', 1, 1, 17.5, -45, 30, -30)",
+        "q.bedrock('serperior', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('serperior', 'blink')",
+        "q.bedrock_quirk('serperior', 'idle_quirk1', 20, 40, 1)"
+      ]
+    },
+    "ride-jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "isBattle": false,
+      "condition": "q.in_air",
+      "animations": [
+        "q.look('neck3', 0.5, 0.5, 5, -20, 12.5, -12.5)",
+        "q.look('neck4', 0.75, 0.75, 25, 0, 10, -10)",
+        "q.look('head', 1, 1, 17.5, -45, 30, -30)",
+        "q.bedrock('serperior', 'ride_jump')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('serperior', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('serperior', 'blink')"],
+      "transformTicks": 5,
+      "transformToTicks": 10
+    },
+    "walking": {
+      "poseTypes": ["WALK", "FLOAT", "SWIM"],
+      "condition": "!q.in_air && !q.is_sprinting",
+      "animations": [
+        "q.look('neck3', 0.5, 0.5, 5, -20, 12.5, -12.5)",
+        "q.look('neck4', 0.75, 0.75, 25, 0, 10, -10)",
+        "q.look('head', 1, 1, 17.5, -45, 30, -30)",
+        "q.bedrock('serperior', 'ground_walk')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('serperior', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('serperior', 'blink')"]
+    },
+    "sprinting": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.in_air && q.is_sprinting",
+      "animations": [
+        "q.look('neck3', 0.5, 0.5, 5, -20, 12.5, -12.5)",
+        "q.look('neck4', 0.75, 0.75, 25, 0, 10, -10)",
+        "q.look('head', 1, 1, 17.5, -45, 30, -30)",
+        "q.bedrock('serperior', 'ground_run')",
+        {
+          "condition": "q.is_ridden && q.has_entity",
+          "animation": "q.bedrock('serperior', 'ride_ground_run')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('serperior', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('serperior', 'sleep')"]
+    }
+  }
+}

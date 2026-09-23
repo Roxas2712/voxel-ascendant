@@ -157,6 +157,7 @@ if MobileDiagnostic and type(MobileDiagnostic.setGeneration) == "function" then
   })
 end
 mod.exports = mod.exports or {}
+mod.exports.wardrobeSourceRoot=mod.path..'/integrated/ascendant_pokemon_overworld/assets/characters/'
 mod.exports.packageVersion = PACKAGE_VERSION
 mod.exports.generation = generation
 mod.exports.dispatcher = true

@@ -541,6 +541,7 @@ local function solidWhiteImage(model)
 end
 
 function StadiumPack.image(model, index)
+  if model.assetProvider then return model.assetProvider.image(model,index) end
   local slot = model.textures and model.textures[index]
   if not slot then
     if tonumber(index) == 65536 then return solidWhiteImage(model) end

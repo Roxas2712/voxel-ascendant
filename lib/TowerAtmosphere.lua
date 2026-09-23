@@ -20,7 +20,7 @@ function M.uniforms(map)
 end
 function M.candleLight()
  local t=V.require('Sky').clock or 0
- return .70+.06*math.sin(t*7.3)+.025*math.sin(t*13.7)
+ return .84+.04*math.sin(t*7.3)+.02*math.sin(t*13.7)
 end
 -- One coarse, cached light field for all candles on a floor. Each candle
 -- touches at most 64 samples; no loop over lights runs in the pixel shader.
@@ -95,7 +95,7 @@ vec3 towerMist(vec3 rgb, vec3 world) {
  if(towerLightSize.x>0.0) {
    float pool=Texel(towerLight,world.xz/towerLightSize).r;
    float height=max(0.0,1.0-abs(world.y-7.0)/18.0);
-   rgb+=vec3(0.24,0.12,0.035)*pool*height;
+   rgb+=vec3(0.31,0.16,0.05)*pool*height;
  }
 
  return rgb;

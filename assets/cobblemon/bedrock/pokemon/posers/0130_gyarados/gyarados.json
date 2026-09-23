@@ -1,0 +1,373 @@
+{
+  "portraitScale": 1.26,
+  "portraitTranslation": [-0.74, 1.88, 0],
+  "profileScale": 0.32,
+  "profileTranslation": [0, 1.26, -10],
+  "rootBone": "gyarados",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 1, 1],
+    "seat_1_reverse": [0, 1, 1]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 1, 1],
+    "seat_1_reverse": [0, 1, 1]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('gyarados', 'cry')",
+    "recoil": "q.bedrock_stateful('gyarados', 'recoil')"
+  },
+  "poses": {
+    "profile": {
+      "poseTypes": ["PROFILE"],
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'tail_slap_battle_quirk')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'battle_cry')"
+      }
+    },
+    "battle-surface-swimming": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'surface_water_battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 9, 0]
+        }
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'battle_cry')"
+      }
+    },
+    "battle-swimming": {
+      "poseTypes": ["FLOAT"],
+      "isBattle": true,
+      "isTouchingWater": true,
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'water_battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'water_cry')"
+      }
+    },
+    "battle-flying": {
+      "poseTypes": ["HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'air_battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'battle_cry')"
+      }
+    },
+    "ground-jump": {
+      "poseTypes": ["STAND", "WALK"],
+      "condition": "q.in_air && q.is_ridden",
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'ride_ground_jump')"
+      ],
+      "transformTicks": 2,
+      "transformToTicks": 2
+    },
+    "water-jump": {
+      "poseTypes": ["FLOAT", "SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'ride_surface_water_jump')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'idle_quirk')",
+        "q.bedrock_quirk('gyarados', 'look_quirk')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "isTouchingWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ]
+    },
+    "float": {
+      "poseTypes": ["FLOAT"],
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'look_quirk')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'water_cry')"
+      }
+    },
+    "swim": {
+      "poseTypes": ["SWIM"],
+      "isUnderWater": true,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_water_swim')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('gyarados', 'water_cry')"
+      }
+    },
+    "mount-surface-idle": {
+      "poseTypes": ["FLOAT"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'surface_water_idle')",
+        "q.bedrock('gyarados', 'ride_surface_water')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 9, 0]
+        }
+      ]
+    },
+    "mount-surface-swim": {
+      "poseTypes": ["SWIM"],
+      "condition": "q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'surface_water_swim')",
+        "q.bedrock('gyarados', 'ride_surface_water')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "transformToTicks": 2,
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 9, 0]
+        }
+      ]
+    },
+    "surface-idle": {
+      "poseTypes": ["STAND", "FLOAT"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'surface_water_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_surface_water')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'look_quirk')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 9, 0]
+        }
+      ]
+    },
+    "surface-swim": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "!q.is_ridden",
+      "isTouchingWater": true,
+      "isUnderWater": false,
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'surface_water_swim')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_surface_water')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [0, 9, 0]
+        }
+      ]
+    },
+    "hovering": {
+      "poseTypes": ["HOVER"],
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'air_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ]
+    },
+    "flying": {
+      "poseTypes": ["FLY"],
+      "animations": [
+        "q.look('head', 1, 0.25, 10, -15, 5, -5)",
+        "q.bedrock('gyarados', 'air_fly')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('gyarados', 'ride_air_fly')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('gyarados', 'blink')",
+        "q.bedrock_quirk('gyarados', 'fin_quirk')",
+        "q.bedrock_quirk('gyarados', 'mouth_quirk')"
+      ]
+    },
+    "battle-ground-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "isTouchingWater": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('gyarados', 'sleep')"]
+    },
+    "ground-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "isTouchingWater": false,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('gyarados', 'wild_sleep')"]
+    },
+    "battle-water-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": true,
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('gyarados', 'sleep')"]
+    },
+    "water-sleep": {
+      "poseTypes": ["SLEEP"],
+      "isBattle": false,
+      "isTouchingWater": true,
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      },
+      "animations": ["q.bedrock('gyarados', 'wild_sleep')"]
+    }
+  }
+}

@@ -201,7 +201,9 @@ function BattlePics.inkBounds(img, identity, transient)
   -- become the permanent bounds for the deployed Pokemon.
   local slot = not transient and boundsCache[img] or nil
   if not transient and not slot then
-    slot = {}
+    -- Reused side canvases outlive encounters. Their bounds must not pin
+    -- every old HD animation frame after its bounded bank has been evicted.
+    slot = setmetatable({}, { __mode = "k" })
     boundsCache[img] = slot
   end
   local key = identity or false

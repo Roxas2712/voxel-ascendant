@@ -6,6 +6,16 @@ local G = V.require('Voxel3D')
 local Mat4 = V.require('Mat4')
 local Budget = V.require('BuildBudget')
 local P = {models={}}
+-- The same KASC object owns 2D collision/talk and this solid voxel cabinet.
+-- Palette indices use the existing room-furniture material palette.
+P.models.kasc_wardrobe={boxes={
+  {-7,0,-5,14,2,10,3},{-7,2,-5,14,22,10,14},
+  {-8,24,-6,16,2,12,2},{-7,2,5,14,21,1,3},
+  {-6,3,6,5.5,19,1,2},{.5,3,6,5.5,19,1,2},
+  {-5,5,7,3.5,14,.5,14},{1.5,5,7,3.5,14,.5,14},
+  {-2,12,7.5,1,2,1,11},{1,12,7.5,1,2,1,11},
+  {-6,0,-4,3,2,8,3},{3,0,-4,3,2,8,3},
+}}
 P.setting = V.require('ModSetting').new('voxelItems', 'Voxel Items', {true,false}, {'ON','OFF'})
 local cache, texture = {}, nil
 local sharedGeometry={}
@@ -109,6 +119,7 @@ function P.kind(def,seed)
       if map and volcano.profile({id=id,def=map})then return volcano.boulder(P,index)end
     end
   end
+  if def.id=='SPRITE_KA_WARDROBE'and def.kaWardrobe then return'kasc_wardrobe'end
   if def.id == 'SPRITE_OLD_AMBER' then return 'old_amber' end
   if def.id == 'SPRITE_POKE_BALL' or def.id == 'SPRITE_FOSSIL' then
     if type(seed)=='string' then
@@ -340,7 +351,14 @@ function P.resolveKind(kind)
         verts,indices=P.geometry(kind)
         if GeometryCache then GeometryCache.put(kind,signature,#palette,verts,indices) end
       end
-      local bounds=V.require('PropVisibility').bounds(verts)
+      -- Tag upward faces just like terrain. Keep the disk cache in its raw
+      -- form so existing packaged geometry receives the tag on upload too.
+      -- The shader decodes the original shade even when weather is disabled.
+      for _,vertex in ipairs(verts) do
+        Budget.tick()
+        if vertex[6]==G.FACE_SHADE[3] then vertex[6]=vertex[6]+2 end
+      end
+      local bounds=V.require('PropVisibility').bounds(verts,Budget)
       -- Furniture claims run inside ChunkMesher's build coroutine. Honour
       -- its frame budget through model construction, including before the
       -- indivisible GPU upload. Direct draw/test callers remain synchronous.
@@ -349,7 +367,19 @@ function P.resolveKind(kind)
       -- alias) while this build is suspended. Reuse its completed upload.
       local existing=cache[kind] or (signature and sharedGeometry[signature])
       if existing then return existing end
-      local mesh=G.newMesh(verts,indices)
+      local mesh
+      if #verts>=16384 then
+        local upload=V.require('PagedPropUpload')
+        if upload.available() then mesh=upload.create(G.FORMAT,verts,indices)
+        else mesh=G.newMesh(verts,indices) end
+      else mesh=G.newMesh(verts,indices) end
+      -- Upload pages may yield too. If a foreground request completed this
+      -- prop meanwhile, retire our redundant allocation and share that mesh.
+      existing=cache[kind] or (signature and sharedGeometry[signature])
+      if existing then
+        if mesh and mesh~=existing and mesh.release then pcall(mesh.release,mesh)end
+        return existing
+      end
       if mesh then meshBounds[mesh]=bounds end
       return mesh
     end)

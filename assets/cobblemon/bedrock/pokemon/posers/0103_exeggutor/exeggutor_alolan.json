@@ -1,0 +1,65 @@
+{
+  "portraitScale": 0.86,
+  "portraitTranslation": [-0.89, 7.81, 0],
+  "profileScale": 0.45,
+  "profileTranslation": [0, 1, -30],
+  "rootBone": "exeggutor_alolan",
+  "animations": {
+    "cry": "q.bedrock_stateful('exeggutor_alolan', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.look('head2')",
+        "q.look('head3')",
+        "q.bedrock('exeggutor_alolan', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('exeggutor_alolan', 'blink')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink2')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink3')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink4')"
+      ]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PROFILE", "PORTRAIT", "FLOAT"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.look('head2')",
+        "q.look('head3')",
+        "q.bedrock('exeggutor_alolan', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('exeggutor_alolan', 'blink')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink2')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink3')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink4')"
+      ]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.look('head2')",
+        "q.look('head3')",
+        "q.bedrock('exeggutor_alolan', 'ground_walk')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('exeggutor_alolan', 'blink')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink2')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink3')",
+        "q.bedrock_quirk('exeggutor_alolan', 'blink4')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('exeggutor_alolan', 'sleep')"
+      ]
+    }
+  }
+}

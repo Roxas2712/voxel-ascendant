@@ -1,0 +1,29 @@
+{
+  "portraitScale": 2.52,
+  "portraitTranslation": [-0.18, -0.82, 0],
+  "profileScale": 0.87,
+  "profileTranslation": [-0.04, 0.48, 0],
+  "rootBone": "bagon",
+  "animations": {
+    "cry": "q.bedrock_stateful('bagon', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.bedrock('bagon', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('bagon', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('bagon', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('bagon', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('bagon', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('bagon', 'blink')"]
+    }
+  }
+}

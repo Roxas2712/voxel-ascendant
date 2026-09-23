@@ -184,7 +184,10 @@ end
 local function emit(key, event, fields)
   if not state.active then return false end
   key = clean(key or event, 160)
-  fields = commonFields(fields)
+  -- Callers hand us a fresh eventFields record. Keep recovery sampling and
+  -- live counters on every call, but build the verbose log envelope only
+  -- when this event will actually be written. Most render events are repeats.
+  fields = fields or {}
   state.phase = clean(event or "checkpoint", 64)
   fields.phase = state.phase
   if not state.loggerReady then
@@ -210,11 +213,9 @@ local function emit(key, event, fields)
   local riskBoundary = event == "mobile-checkpoint"
     and tostring(fields.status or "") == "BOUNDARY"
     and unfinishedCheckpoint(fields.checkpoint)
-  local snapshotState = table.concat({
-    tostring(fields.code or "D00"),
-    tostring(fields.status or "BOUNDARY"),
-    tostring(fields.checkpoint or "unknown"),
-  }, ":")
+  local snapshotState = tostring(fields.code or "D00") .. ":"
+    .. tostring(fields.status or "BOUNDARY") .. ":"
+    .. tostring(fields.checkpoint or "unknown")
   local shouldPersist = state.occurrence <= Diagnostic.SNAPSHOT_BURST
     or state.occurrence % Diagnostic.SNAPSHOT_INTERVAL == 0
     or snapshotRetry[key] == true
@@ -242,7 +243,7 @@ local function emit(key, event, fields)
   end
   if duplicate then return false end
 
-  local written = write(event, fields)
+  local written = write(event, commonFields(fields))
   if written and (not attempted or persisted) then
     seen[key] = true
   else

@@ -1,0 +1,46 @@
+{
+  "portraitScale": 2.18,
+  "portraitTranslation": [-0.71, 0.13, 0],
+  "profileScale": 0.8,
+  "profileTranslation": [0, 0.55, 0],
+  "rootBone": "umbreon",
+  "animations": {
+    "cry": "q.bedrock_stateful('umbreon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('umbreon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('umbreon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('umbreon', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'front_leg_left', 'front_leg_right', 'back_leg_left', 'back_leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('umbreon', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

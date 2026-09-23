@@ -1,0 +1,209 @@
+{
+  "portraitScale": 1.33,
+  "portraitTranslation": [-1.43, 0.6, 0.0],
+  "profileScale": 0.39,
+  "profileTranslation": [-0.06, 1.06, 0],
+  "rootBone": "aerodactyl",
+  "firstPersonCameraOffset": {
+    "seat_1": [0, 0.45, 0]
+  },
+  "thirdPersonCameraOffset": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "thirdPersonCameraOffsetNoViewBobbing": {
+    "seat_1": [0, 0.35, 0],
+    "seat_1_reverse": [0, 0.35, 0]
+  },
+  "animations": {
+    "cry": "q.bedrock_stateful('aerodactyl', 'cry')",
+    "recoil": "q.bedrock_stateful('aerodactyl', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'battle_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('aerodactyl', 'battle_cry', q.curve('symmetrical_wide'))"
+      }
+    },
+    "battle-flying": {
+      "poseTypes": ["HOVER"],
+      "isBattle": true,
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'battle_air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ],
+      "namedAnimations": {
+        "recoil": "q.bedrock_stateful('aerodactyl', 'air_recoil')"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "condition": "q.has_entity ? !q.in_air : 1.0",
+      "isBattle": false,
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'ground_idle')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('aerodactyl', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ]
+    },
+    "in-air": {
+      "poseTypes": ["STAND", "WALK", "NONE"],
+      "condition": "q.has_entity ? q.in_air && q.is_ridden : 0.0",
+      "animations": [
+        "q.bedrock('aerodactyl', 'ride_jump')"
+      ],
+      "transformTicks": 2,
+      "transformToTicks": 2
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.has_entity ? !q.in_air && !q.is_sprinting : 1.0",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'ground_walk')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('aerodactyl', 'ride_ground_walk')"
+        }
+      ],
+      "quirks": ["q.bedrock_quirk('aerodactyl', 'blink')"]
+    },
+    "running": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.has_entity ? !q.in_air && q.is_sprinting : 0.0",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'ground_run')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('aerodactyl', 'ride_ground_run')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseTypes": ["HOVER"],
+      "isBattle": false,
+      "condition": "!q.is_ridden",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ]
+    },
+    "mount-hover": {
+      "poseTypes": ["HOVER"],
+      "isBattle": false,
+      "condition": "q.is_ridden",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'air_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')",
+        "q.bedrock_quirk('aerodactyl', q.array('rider_quirk_right', 'rider_quirk_left'), 20, 50, 1)"
+      ]
+    },
+    "fly": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "!q.is_gliding && !q.is_ridden",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ]
+    },
+    "mount-fly": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "!q.is_gliding && q.is_ridden",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'air_fly')",
+        "q.bedrock('aerodactyl', 'ride_air_fly')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')",
+        "q.bedrock_quirk('aerodactyl', q.array('rider_quirk_right', 'rider_quirk_left'), 20, 50, 1)"
+      ]
+    },
+    "glide": {
+      "poseTypes": ["FLY"],
+      "isBattle": false,
+      "condition": "q.is_gliding",
+      "animations": [
+        "q.look('neck', 1, 1, 25, -20, 20, -20)",
+        "q.look('head', 1, 1, 22.5, -10, 15, -15)",
+        "q.bedrock('aerodactyl', 'air_glide')",
+        "q.bedrock('aerodactyl', 'air_dive')",
+        {
+          "condition": "q.is_ridden",
+          "animation": "q.bedrock('aerodactyl', 'ride_air_glide')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('aerodactyl', 'blink')"
+      ]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_flying",
+      "isBattle": false,
+      "animations": ["q.bedrock('aerodactyl', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "battle-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "!q.is_flying",
+      "isBattle": true,
+      "animations": ["q.bedrock('aerodactyl', 'battle_sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "air-sleep": {
+      "poseTypes": ["SLEEP"],
+      "condition": "q.is_flying",
+      "animations": ["q.bedrock('aerodactyl', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    }
+  }
+}

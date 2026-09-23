@@ -1,0 +1,46 @@
+{
+  "portraitScale": 2.06,
+  "portraitTranslation": [-0.69, 0.2, 0],
+  "profileScale": 0.77,
+  "profileTranslation": [0, 0.58, 0],
+  "rootBone": "glaceon",
+  "animations": {
+    "cry": "q.bedrock_stateful('glaceon', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": [
+        "STAND",
+        "NONE",
+        "PORTRAIT",
+        "PROFILE",
+        "FLOAT"
+      ],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('glaceon', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('glaceon', 'blink')"
+      ]
+    },
+    "walking": {
+      "poseTypes": [
+        "WALK",
+        "SWIM"
+      ],
+      "animations": [
+        "q.look('head', 1, 1, 70, -45, 45, -45)",
+        "q.bedrock('glaceon', 'ground_idle')",
+        "q.quadruped_walk(0.66, 1.4, 'front_leg_left', 'front_leg_right', 'back_leg_left', 'back_leg_right')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('glaceon', 'blink')"
+      ]
+    }
+  }
+}
+   
+   
+   

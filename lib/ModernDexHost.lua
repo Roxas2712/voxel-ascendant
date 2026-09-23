@@ -24,8 +24,8 @@ ModernDexHost.styleSetting:aliasLegacy("default", "game")
 
 ModernDexHost.spriteSetting = ModSetting.new(
   "modernDexSpriteSource", "DEX SPRITES",
-  { "kasc_crystal", "active", "game" },
-  { "KASC CRYSTAL (AUTO)", "ACTIVE SPRITE STYLE", "GAME ORIGINAL" },
+  { "kasc_crystal", "active", "game", "hd" },
+  { "KASC CRYSTAL (AUTO)", "ACTIVE SPRITE STYLE", "GAME ORIGINAL", "HD ANIMATED" },
   "kasc_crystal")
 ModernDexHost.spriteSetting:aliasLegacy("auto", "active")
 ModernDexHost.spriteSetting:aliasLegacy("original", "game")
@@ -83,6 +83,7 @@ local function featureMod(root)
     id="VOXEL_ASCENDANT",
     path=root.path,
     log=root.log,
+    hdPokemonPresentation=V.require("HdPokemonPresentation"),
   }, { __index=root })
   feature.options = {
     get=function(_, key)

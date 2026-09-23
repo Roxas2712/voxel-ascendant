@@ -86,7 +86,7 @@ function M.new(game,session,Text)
    local a=self.items[self.index].action
    if a=='back'then game.stack:pop()
    elseif a=='cancel'then if session.maintenance and session.maintenance:pending()then session.maintenance:pause()end;session.pendingDownloadIds=nil;session.installer:cancel();if session.importer then session.importer:cancel()end;self.index=1;self:refresh()
-   elseif a=='retry'then if session.maintenance and session.maintenance:pending()then session.maintenance:resume()else session:confirmDownload(session.downloadIds)end
+   elseif a=='retry'then if session.maintenance and session.maintenance:pending()then session.maintenance:resume()else session:confirmDownload(session.downloadIds,session.downloadIncludesCobblemon)end
    elseif a=='import'then session:openPackageImport(session.lastPackage)
    elseif a=='manual'and session.lastPackage then session:openManual(session.lastPackage,session.de)end
   end

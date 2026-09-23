@@ -10,7 +10,7 @@ PresentationPolicy.__index = PresentationPolicy
 PresentationPolicy.SCHEMA = "ascendant.pokemon-presentation/v1"
 
 local VALID_SOURCE = {
-  auto=true, stadium_only=true, go_first=true, go_only=true, sprite_only=true,
+  auto=true, cobblemon=true, stadium_only=true, go_first=true, go_only=true, sprite_only=true,
 }
 local VALID_GRID = { off=true, characters=true, pokemon=true, both=true }
 
@@ -56,6 +56,7 @@ end
 function PresentationPolicy:order(dex, mode)
   mode = VALID_SOURCE[mode] and mode or self:mode()
   dex = tonumber(dex)
+  if mode == "cobblemon" then return {"cobblemon","pokemon_go","sprite"} end
   if mode == "sprite_only" then return { "sprite" } end
   if mode == "stadium_only" then return { "stadium2", "sprite" } end
   if mode == "go_only" then return { "pokemon_go", "sprite" } end
@@ -144,7 +145,8 @@ function PresentationPolicy:select(dex, context)
   end
   local mode = self:mode()
   if self.mod._vascIntegrated and type(context)=="table" then
-    if context.spriteSource=="stadium2" then mode="stadium_only"
+    if context.spriteSource=="cobblemon" then mode="cobblemon"
+    elseif context.spriteSource=="stadium2" then mode="stadium_only"
     elseif context.spriteSource=="full_hd" then mode="go_only" end
   end
   for _, id in ipairs(self:order(dex, mode)) do
@@ -152,6 +154,9 @@ function PresentationPolicy:select(dex, context)
       self.selections, self.lastSource = self.selections + 1, id
       self.lastReason = self:_needsShinyCard(context) and "shiny_variant_card_fallback" or "packaged_hd_fallback"
       return { id=id, provider=nil, reason=self.lastReason }
+    elseif id=="cobblemon" and self.mod._vascCobblemonAvailable and self.mod._vascCobblemonAvailable(dex,context and context.mon) then
+      local exact=self.mod._vascCobblemonDex and self.mod._vascCobblemonDex(context and context.mon)
+      return {id=id,dex=exact or dex,reason="cobblemon_installed"}
     elseif id == "stadium2" and self:_stadiumAvailable(dex, context)
         and (self.mod._vascIntegrated or mode ~= "auto" or self:_animated(id, dex, context)) then
       self.selections, self.lastSource = self.selections + 1, id
@@ -171,7 +176,8 @@ function PresentationPolicy:decorate(entity, dex, context)
   local selected = self:select(dex, context)
   if type(entity) == "table" then
     entity.ascendantPokemonModelSource = selected.id
-    entity.ascendantPokemonModelDex = selected.id == "stadium2" and tonumber(dex) or nil
+    entity.ascendantPokemonModelDex = (selected.id == "stadium2" or selected.id=="cobblemon") and tonumber(selected.dex or dex) or nil
+    entity.ascendantPokemonModelAppearance = selected.id=="cobblemon" and context and context.mon or nil
     entity.ascendantActorVoxelGrid = self:gridEnabled("pokemon")
     if selected.provider and type(selected.provider.apply) == "function" then
       pcall(selected.provider.apply, entity, dex, context)

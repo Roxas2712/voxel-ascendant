@@ -1,0 +1,31 @@
+{
+  "portraitScale": 2.05,
+  "portraitTranslation": [0.02, -0.76, 0],
+  "profileScale": 0.89,
+  "profileTranslation": [0, 0.37, 0],
+  "rootBone": "wynaut",
+  "animations": {
+    "cry": "q.bedrock_stateful('wynaut', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT", "HOVER"],
+      "animations": [
+        "q.look('head', 0.85, 0.85)",
+        "q.bedrock('wynaut', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('wynaut', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "animations": [
+        "q.look('head', 0.85, 0.85)",
+        "q.bedrock('wynaut', 'ground_idle')",
+        "q.biped_walk(1,1,'leg_front_left','leg_front_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('wynaut', 'blink')"]
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "portraitScale": 1.06,
+  "portraitTranslation": [-0.25, 2.36, 0],
+  "profileScale": 0.41,
+  "profileTranslation": [-0.01, 1.16, 0],
+  "rootBone": "snorlax",
+  "animations": {
+    "cry": "q.bedrock_stateful('snorlax', 'cry')",
+    "recoil": "q.bedrock_stateful('snorlax', 'recoil', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('snorlax', 'battle_idle')"
+      ],
+      "transformedParts": [
+        {
+          "part": "coolhat",
+          "isVisible": false
+        }
+      ],
+      "transitions": {
+        "sleep": "q.bedrock_primary('snorlax', 'sleep_intro')"
+      }
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('snorlax', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('snorlax', 'quirk_idle')"],
+      "transformedParts": [
+        {
+          "part": "coolhat",
+          "isVisible": false
+        }
+      ],
+      "transitions": {
+        "sleep": "q.bedrock_primary('snorlax', 'sleep_intro')"
+      }
+      },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM", "FLY"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('snorlax', 'ground_walk')"
+      ],
+      "transformedParts": [
+        {
+          "part": "coolhat",
+          "isVisible": false
+        }
+      ],
+      "transitions": {
+        "sleep": "q.bedrock_primary('snorlax', 'sleep_intro')"
+      }
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('snorlax', 'sleep')"]
+    }
+  }
+}

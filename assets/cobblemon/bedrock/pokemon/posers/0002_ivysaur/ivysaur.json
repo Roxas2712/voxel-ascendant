@@ -1,0 +1,44 @@
+{
+  "portraitScale": 1.45,
+  "portraitTranslation": [-0.23, -0.47, 0],
+  "profileScale": 0.9,
+  "profileTranslation": [0.0, 0.37, 0.0],
+  "rootBone": "ivysaur",
+  "animations": {
+    "faint": "q.bedrock_primary('ivysaur', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('ivysaur', 'cry')",
+    "recoil": "q.bedrock_stateful('ivysaur', 'recoil')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head', 1, 1, 10, -20)",
+        "q.look('leaf_front', 1, 0, 3, -13)",
+        "q.bedrock('ivysaur', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('ivysaur', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head', 1, 1, 10, -20)",
+        "q.look('leaf_front', 1, 0, 3, -13)",
+        "q.bedrock('ivysaur', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('ivysaur', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head', 1, 1, 10, -20)",
+        "q.look('leaf_front', 1, 0, 3, -13)",
+        "q.bedrock('ivysaur', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('ivysaur', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('ivysaur', 'sleep')"]
+    }
+  }
+}

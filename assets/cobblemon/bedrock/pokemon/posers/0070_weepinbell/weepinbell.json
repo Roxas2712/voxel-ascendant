@@ -1,0 +1,41 @@
+{
+  "portraitScale": 1.58,
+  "portraitTranslation": [-0.03, -0.53, 0],
+  "profileScale": 0.94,
+  "profileTranslation": [0, 0.29, 0],
+  "animations": {
+    "cry": "q.bedrock_stateful('weepinbell', 'cry')"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weepinbell', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('weepinbell', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weepinbell', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('weepinbell', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.look('head_ai')",
+        "q.bedrock('weepinbell', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('weepinbell', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('weepinbell', 'sleep')"]
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+    "portraitScale": 1.88,
+    "portraitTranslation": [-0.16,1.56,1],
+    "profileScale": 0.52,
+    "profileTranslation": [0,0.97,1],
+    "rootBone": "medicham",
+    "animations": {},
+    "poses": {
+      "battle-standing": {
+        "poseTypes": ["STAND"],
+        "isBattle": true,
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('medicham', 'battle_idle')",
+          {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('medicham', 'item_hold')"
+          }
+        ],
+        "quirks": ["q.bedrock_quirk('medicham', 'blink')"]
+      },
+      "standing": {
+        "poseTypes": [
+          "STAND",
+          "FLOAT",
+          "NONE",
+          "PORTRAIT",
+          "PROFILE"
+        ],
+        "animations": [
+          "q.look('head')",
+          "q.bedrock('medicham', 'ground_idle')",
+          {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('medicham', 'item_hold')"
+          }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('medicham', 'blink')"
+        ]
+      },
+      "walking": {
+        "poseTypes": [
+          "WALK",
+          "SWIM",
+          "FLY"
+        ],
+        "animations": [
+          "q.look('head')",
+          "q.bimanual_swing(0.66, 1.4, 'arm_left', 'arm_right')",
+          "q.biped_walk(0.66, 1.4, 'leg_left', 'leg_right')",
+          "q.bedrock('medicham', 'ground_idle')",
+          {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('medicham', 'item_hold')"
+          }
+        ],
+        "quirks": [
+          "q.bedrock_quirk('medicham', 'blink')"
+        ]
+      },
+      "sleep": {
+        "poseTypes": ["SLEEP"],
+        "animations": ["q.bedrock('medicham', 'sleep')"]
+      }
+    }
+  }

@@ -1,0 +1,35 @@
+{
+  "portraitScale": 2.22,
+  "portraitTranslation": [-1.4, 1.31, 0],
+  "profileScale": 0.58,
+  "profileTranslation": [0.01, 0.81, 0],
+  "animations": {
+    "recoil": "q.bedrock_stateful('kleavor', 'recoil')",
+    "physical": "q.bedrock_primary('kleavor', 'physical', q.curve('symmetrical_wide'))",
+    "special": "q.bedrock_primary('kleavor', 'special', q.curve('symmetrical_wide'))",
+    "status": "q.bedrock_primary('kleavor', 'status', q.curve('symmetrical_wide'))"
+  },
+  "poses": {
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": ["q.look('head')", "q.bedrock('kleavor', 'battle_idle')"],
+      "quirks": ["q.bedrock_quirk('kleavor', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": ["q.look('head')", "q.bedrock('kleavor', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('kleavor', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": ["q.look('head')", "q.bedrock('kleavor', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('kleavor', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('kleavor', 'sleep')"]
+    }
+  }
+}

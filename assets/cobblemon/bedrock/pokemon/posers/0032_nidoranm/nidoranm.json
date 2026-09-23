@@ -1,0 +1,83 @@
+{
+  "portraitScale": 1.97,
+  "portraitTranslation": [-0.19, -1.08, 0],
+  "profileScale": 1.05,
+  "profileTranslation": [0, 0.11, 0],
+  "rootBone": "nidoranm",
+  "animations": {
+    "cry": "q.bedrock_stateful('nidoranm', 'cry')",
+    "recoil": "q.bedrock_stateful('nidoranm', 'recoil')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE", "PORTRAIT", "PROFILE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'ground_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'battle_idle')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'ground_walk')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"]
+    },
+    "run": {
+      "poseTypes": ["WALK", "SWIM"],
+      "condition": "q.is_sprinting",
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'ground_run')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": ["q.bedrock('nidoranm', 'sleep')"],
+      "namedAnimations": {
+        "cry": "q.bedrock_stateful('dummy', 'cry')"
+      }
+    },
+    "shoulder_left": {
+      "poseTypes": ["SHOULDER_LEFT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'shoulder_left')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [-5, 0, 0]
+        }
+      ]
+    },
+    "shoulder_right": {
+      "poseTypes": ["SHOULDER_RIGHT"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('nidoranm', 'shoulder_right')"
+      ],
+      "quirks": ["q.bedrock_quirk('nidoranm', 'blink')"],
+      "transformedParts": [
+        {
+          "part": "body",
+          "position": [5, 0, 0]
+        }
+      ]
+    }
+  }
+}

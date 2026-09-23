@@ -253,6 +253,8 @@ local OverworldBattlePublic =
   V.require("adapters/gen1/OverworldBattlePublic")
 local OverworldBattle = V.require("OverworldBattle")
 V.PokemonModelProvider = V.require("PokemonModelProvider")
+mod.exports.cobblemonContent=V.require("CobblemonContent")
+mod.exports.cobblemonModels=V.require("CobblemonPack")
 V.StadiumRomMenu = V.require("StadiumRomMenu")
 function V.modelsEnabled()
   local predicate = V.PokemonModelProvider.builtInModelsEnabled
@@ -311,6 +313,7 @@ local Weather = V.require("Weather")
 local WeatherTweak = V.require("WeatherTweak")
 local AmbientAudio = V.require("AmbientAudio")
 local WeatherFootsteps = V.require("WeatherFootsteps")
+Weather.setThunderHook(V.require("WeatherThunder").onLightning)
 local WeatherMusicPlayback = nil
 local Water = V.require("Water")
 local AntiAlias = V.require("AntiAlias")
@@ -506,6 +509,7 @@ local voxelPipeline = {
     local weatherMode = Weather.update(dt,
       weatherGame and weatherGame.overworld
         and weatherGame.overworld.map or nil)
+    V.require("WeatherThunder").update(dt, weatherGame, weatherMode)
     if WeatherMusicPlayback
         and type(WeatherMusicPlayback.observe) == "function" then
       WeatherMusicPlayback.observe(weatherGame, weatherMode, DayNight.tod())
@@ -557,7 +561,14 @@ local voxelPipeline = {
       -- Warm a single actual actor while a transition/menu covers the world
       -- or its initial mesh is still pending. No pose(), camera probing or
       -- imagined future trainers: draw consumes the same canonical cache.
-      if (covered or not Voxel.ready) and type(Voxel3D.prewarmWorldCards) == "function" then
+      local programWorked=false
+      if configuredVoxel and type(VoxelScene.preparePrograms)=="function" then
+        local okProgram,worked=pcall(VoxelScene.preparePrograms,ow)
+        programWorked=okProgram and worked==true
+        if not okProgram then updateBoundary("program-preload","failed",{error=tostring(worked)}) end
+      end
+      if not programWorked and (covered or not Voxel.ready)
+          and type(Voxel3D.prewarmWorldCards) == "function" then
         local okCards, cardError = pcall(Voxel3D.prewarmWorldCards, ow)
         if not okCards then
           updateBoundary("card-preload", "failed", {error=tostring(cardError)})
@@ -664,10 +675,13 @@ local voxelPipeline = {
     })
     local canvas = VoxelScene.render(ctx.state, rw, rh,
                                      ctx.vw, ctx.vh, ctx.paletteFor)
-    local held = not canvas and V.require('WorldSceneHold').pending(ctx.state, sw, sh)
+    local held,holdReason
+    if not canvas then
+      held,holdReason=V.require('WorldSceneHold').pending(ctx.state, sw, sh, VoxelScene.pendingReason)
+    end
     V.require('WorldCanvasTrace').observe(Diagnostics,
       ctx.state and ctx.state.map and ctx.state.map.id, canvas or held,
-      VoxelScene.pendingReason, love.timer and love.timer.getTime)
+      VoxelScene.pendingReason, love.timer and love.timer.getTime, holdReason)
     if not canvas then
       return held
     end   -- a rebuild keeps its captured world; unrelated failures may decline
@@ -677,7 +691,7 @@ local voxelPipeline = {
       -- else -- so the scale goes up with it, or the "!" bubble lands the
       -- right place at half the size.  project() already answers in canvas
       -- pixels, so only the scale needs saying.
-      ctx.drawFx(function(wx, wy)
+      V.require('TrainerAlert').draw(ctx,function(wx, wy)
         return Voxel3D.project(wx, VoxelScene.fieldEffectGround(ctx.state,wx,wy), wy)
       end,
                  ctx.scale * AntiAlias.factor())
@@ -790,9 +804,7 @@ applyFull = function(level)
   -- tilt-shift is most of what makes it read as a model
   Pipelines.setLevel("tiltshift", Pipelines.maxLevel("tiltshift"))
   Pipelines.syncOptions(opts)
-  -- the horizon flat. The curve bends the world away from a walking player,
-  -- which fights a fixed diorama framing
-  WorldCurve.setting:setIndex(1, Game)
+  -- Preserve the separately selected world curvature when entering FULL.
   -- and the water reflecting everything it can: FULL is the diorama at its
   -- most photographed, and a lake with the sky and the shoreline in it is
   -- most of what makes the model read as being outdoors
@@ -1076,11 +1088,18 @@ local SETTINGS = {
     .. "Any Modern Pokedex install, construction or rendering failure returns "
     .. "to that same native screen without changing save data.",
     full = true },
+  { V.require("BattleSpriteControl").setting,
+    "Start battles with installed animated HD Pokemon cards. Missing HD "
+    .. "variants keep their normal sprites. OFF preserves the current sprite "
+    .. "provider. During battle, V/F3 or 0 overrides the style for that "
+    .. "encounter only; this default applies to the next battle.",
+    full = true },
   { ModernDexHost.spriteSetting,
     "Choose only the Modern Pokedex portrait source. KASC CRYSTAL (AUTO) "
     .. "uses KASC's public Crystal provider when available and otherwise the "
     .. "active game provider; ACTIVE SPRITE STYLE follows the current provider; "
-    .. "GAME ORIGINAL reads the cartridge species front picture. This setting "
+    .. "GAME ORIGINAL reads the cartridge species front picture; HD ANIMATED "
+    .. "uses installed idle cards, with the normal portrait as fallback. This setting "
     .. "does not change battle, Box, Party or overworld sprites.",
     full = true },
   { OrasBattleHudSettings.uiSkinSetting,
@@ -1434,6 +1453,11 @@ if mod._vascOverworldCard then
 end
 V.battleHeroes = V.require("cards/battle_heroes/Gen1BattleHeroesCard")
 for _, entry in ipairs(V.battleHeroes.entries()) do SETTINGS[#SETTINGS+1] = entry end
+V.wardrobeCard = V.require('cards/wardrobe/Gen1WardrobeCard')
+for _,entry in ipairs(V.wardrobeCard.entries())do SETTINGS[#SETTINGS+1]=entry end
+V.voxelCharacterCard=V.require('cards/characters/Gen1VoxelCharactersCard')
+for _,entry in ipairs(V.voxelCharacterCard.entries())do SETTINGS[#SETTINGS+1]=entry end
+VascMenu.sections.pokemon.keys.voxelCharacterCardEnabled=true
 V.terarrium = V.require("IntegratedTerarrium")
 for _, entry in ipairs(V.terarrium.entries()) do SETTINGS[#SETTINGS+1] = entry end
 for _, entry in ipairs(V.PerformanceOverlay.entries()) do SETTINGS[#SETTINGS+1] = entry end
@@ -1472,8 +1496,18 @@ end
 -- draw-only Bag adapters. GAME/KASC is the Bag default; all unsupported values,
 -- missing assets and draw failures return to the exact captured owner renderer.
 -- KASC remains an optional public claimant; no private module is imported.
+V.require("GlassUiComposite").install()
+V.require("LevelUpPresentation").install(mod)
 local uiSkinInstalled, uiSkinReason = OrasUiSkin.install({
   mod=mod,
+  levelStats=V.require("LevelUpPresentation"),
+  forceWorldBoxes=function(state, game)
+    if Voxel.active() then return true end
+    for _, screen in ipairs(game and game.stack and game.stack.states or {}) do
+      if screen.voxelAscendantShot then return true end
+    end
+    return false
+  end,
   bagSkin=OrasBagSkin,
   frlgBagSkin=OrasFrlgBagSkin,
   manualBagSort=ManualBagSort,
@@ -2490,6 +2524,8 @@ mod.events:once("mods.loaded", function()
       local factory = chunkFor("battle_hud_oras.lua")()
       return factory(mod, {
         MessageLayout=V.require("OrasBattleMessageLayout"),
+        ExperiencePresentation=V.require("BattleExperiencePresentation"),
+        SoundPreparation=V.require("BattleSoundPreparation"),
         CompletedBattleButtons=V.require("CompletedBattleButtons"),
         ReportHud=function(receipt)
           return PerformanceDiagnostics.reportHud(receipt)
@@ -2667,7 +2703,7 @@ end)
 
 -- The engine emits one receipt per completed logical cell, including VASC's
 -- free movement path. Weather sound therefore follows actual footsteps and
--- never a frame timer; bikes and Surf are rejected by WeatherFootsteps.
+-- never a frame timer; cycling has a rolling variant and Surf stays separate.
 mod.events:on("world.stepped", function()
   local Game = require("src.core.Game")
   local map = Game and Game.overworld and Game.overworld.map
@@ -3050,6 +3086,7 @@ local publicModules = {
   VoxelState = Voxel,
   -- Pure planner only: the integrated renderer cannot access our private loader.
   HdResidencyPlan = V.require("HdResidencyPlan"),
+  HdImageDecode = V.require("HdImageDecode"),
   WallDecals = WallDecals,
 }
 mod.exports.lib = PublicFacade.new(publicModules)
@@ -3161,6 +3198,9 @@ end
 
 -- Install after native battle adapters; settings already own persisted values.
 V.battleHeroes.boot()
+V.wardrobeCard.boot()
+V.voxelCharacterCard.bind(SETTINGS)
+V.voxelCharacterCard.boot()
 
 -- Live, encounter-local Pokemon appearance button and keyboard shortcut.
 V.require("BattleSpriteControl").install()

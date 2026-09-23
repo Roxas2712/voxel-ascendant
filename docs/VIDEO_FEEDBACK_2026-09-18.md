@@ -88,8 +88,8 @@ Das Video zeigt bei 23:17 das Torhaus an Route 18, mit einer leuchtenden Fenster
 - LuaJIT-Syntax aller veränderten/neuen Laufzeitdateien und `git diff --check` geprüft.
 - Ein älterer Test (`follower_bootstrap_sprite_test.lua`) verlangt noch ein fest mitgeliefertes Pikachu-MMO-Bild, das in der unveränderten Releasebasis bereits als optionaler Inhalt fehlt. Er stoppt an dieser Vorbedingung. Die neuen nativen Followerprüfungen laufen erfolgreich mit dem vorhandenen Original-Fallback und den geprüften HD-Dateien.
 - Der zusätzliche ältere `battle_hud_battle_owner_latch_test.lua` scheitert bei seiner isolierten Quelltextextraktion an einem fehlenden `OverworldBattle`-Stub (Zeile 156). Derselbe Fehler wurde mit unverändertem HEAD-HUD bestätigt. Die gezielten neuen Referenz-/Wechsel-/Kollisionsprüfungen und die nativen Fluganimationen bestehen.
-- Private QA: `/Users/maarten/Documents/Recompile/.codex-private/vasc-video-feedback-20260918`.
-- Native Screenshots: `/Users/maarten/Library/Application Support/LOVE/vasc-video-feedback-20260918`.
+- Private QA evidence retained by the maintainer.
+- Native screenshot evidence retained by the maintainer.
 - Wichtige Proben: `survey-panorama.lua`, `survey-tower-final.lua`, `survey-tower-overview.lua`, `survey-menu.lua`, `survey-followers.lua`, `survey-followers-large.lua`, `survey-silph.lua`, `survey-shiny-model.lua`, `survey-safari.lua`, `survey-safari-fence.lua`, `survey-rim.lua`, `survey-hud.lua`, `survey-hud-models.lua`, `survey-cycling.lua`, `survey-setup.lua`, `survey-dex-final.lua`, `survey-crystal-battle.lua`, `survey-camera-final.lua`, `survey-portrait-final.lua`, `survey-flymap-hd.lua`, `survey-flymap-hd-de.lua`, `survey-lavender-source.lua`, `survey-cave-final.lua`, `survey-final-scenery.lua`, `survey-gym-floors.lua`, `survey-hud-stable.lua`, `regression.lua`.
 - Alle Spielproben verwenden eine separate LOVE-Identität; persönliche Spielstände wurden nicht bearbeitet.
 

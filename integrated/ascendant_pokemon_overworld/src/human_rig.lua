@@ -3,11 +3,37 @@
 local HumanRig={}
 -- Share only bit-identical Lua vertex attributes; UV/shade seams stay split.
 local function compactVertices(vertices,indices)
- local unique,lookup,remap={},{},{}
+ local unique,lookup,remap,collisions={},{},{},{}
+ local function same(a,b)
+  for n=1,6 do
+   if a[n]~=b[n] or a[n]==0 and 1/a[n]~=1/b[n] then return false end
+  end
+  return true
+ end
  for i,v in ipairs(vertices)do
-  local key=string.format('%.17g,%.17g,%.17g,%.17g,%.17g,%.17g',v[1],v[2],v[3],v[4],v[5],v[6])
-  local index=lookup[key]
-  if not index then index=#unique+1;unique[index]=v;lookup[key]=index end
+  -- UV coordinates identify grid intersections without formatting six
+  -- floating-point strings per duplicated corner. Full attributes still
+  -- decide equality, preserving relief, UV and shade seams exactly.
+  local u,w=v[4],v[5]
+  local row=lookup[u];if not row then row={};lookup[u]=row end
+  local first=row[w];local index
+  if first then
+   if same(unique[first],v) then index=first
+   else
+    for _,candidate in ipairs(collisions[first] or {})do
+     if same(unique[candidate],v)then index=candidate;break end
+    end
+   end
+  end
+  if not index then
+   index=#unique+1;unique[index]=v
+   if not first then row[w]=index
+   else
+    local bucket=collisions[first]
+    if not bucket then bucket={};collisions[first]=bucket end
+    bucket[#bucket+1]=index
+   end
+  end
   remap[i]=index
  end
  for i,index in ipairs(indices)do indices[i]=remap[index]end
@@ -16,6 +42,13 @@ end
 -- A role can have distinct original artworks; sharing the role is not
 -- permission to use another atlas's hand landmarks.
 function HumanRig.profileFor(profiles,role,atlas)
+ if type(atlas)=='string' and atlas:find('/voxel-demo/',1,true) then
+  if atlas:find('/wardrobe/voxel-demo/',1,true) then return profiles['voxel_wardrobe_'..tostring(role)] end
+  return profiles['voxel_'..tostring(role)]
+ end
+ if type(atlas)=='string' and atlas:find('/voxel-npcs/',1,true) then
+  return profiles['voxel_npc_'..tostring(role)]
+ end
  local base=profiles[role]
  if not base or type(atlas)~='string' then return nil end
  local function suffix(path)return atlas==path or atlas:sub(-#path-1)=='/'..path end

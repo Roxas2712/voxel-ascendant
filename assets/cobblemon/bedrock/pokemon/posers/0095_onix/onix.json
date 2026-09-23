@@ -1,0 +1,57 @@
+{
+  "portraitScale": 0.83,
+  "portraitTranslation": [-1.2, 2.49, 0],
+  "profileScale": 0.24,
+  "profileTranslation": [0, 1.23, 0],
+  "rootBone": "onix",
+  "animations": {
+    "faint": "q.bedrock_primary('onix', 'faint', q.curve('one'))",
+    "cry": "q.bedrock_stateful('onix', 'cry')"
+  },
+  "poses": {
+    "portrait": {
+      "poseTypes": ["PORTRAIT", "PROFILE"],
+      "animations": [
+        "q.bedrock('onix', 'summary_idle')",
+        "q.bedrock('onix', 'boulder_rotation', q.curve('one'))"
+      ],
+      "quirks": ["q.bedrock_quirk('onix', 'blink')"]
+    },
+    "battle-standing": {
+      "poseTypes": ["STAND"],
+      "isBattle": true,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('onix', 'battle_idle')",
+        "q.bedrock('onix', 'boulder_rotation', q.curve('one'))"
+      ],
+      "quirks": ["q.bedrock_quirk('onix', 'blink')"]
+    },
+    "standing": {
+      "poseTypes": ["STAND", "FLOAT", "NONE"],
+      "isBattle": false,
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('onix', 'ground_idle', q.curve('one'))",
+        "q.bedrock('onix', 'boulder_rotation')"
+      ],
+      "quirks": ["q.bedrock_quirk('onix', 'blink')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('onix', 'ground_walk')",
+        "q.bedrock('onix', 'boulder_rotation', q.curve('one'))"
+      ],
+      "quirks": ["q.bedrock_quirk('onix', 'blink')"]
+    },
+    "sleep": {
+      "poseTypes": ["SLEEP"],
+      "animations": [
+        "q.bedrock('onix', 'sleep')",
+        "q.bedrock('onix', 'slow_boulder_rotation', q.curve('one'))"
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "portraitScale": 1.8,
+  "portraitTranslation": [-0.42, 0.06, 0],
+  "profileScale": 0.59,
+  "profileTranslation": [0, 0.88, 0],
+  "rootBone": "fennekin",
+  "animations": {
+    "cry": "q.bedrock_stateful('fennekin', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseName": "standing",
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE", "FLOAT"],
+      "animations": ["q.look('head')", "q.bedrock('fennekin', 'ground_idle')"],
+      "quirks": ["q.bedrock_quirk('fennekin', 'blink')"]
+    },
+    "walking": {
+      "poseName": "walking",
+      "poseTypes": ["WALK", "SWIM"],
+      "animations": ["q.look('head')", "q.bedrock('fennekin', 'ground_walk')"],
+      "quirks": ["q.bedrock_quirk('fennekin', 'blink')"]
+    }
+  }
+}

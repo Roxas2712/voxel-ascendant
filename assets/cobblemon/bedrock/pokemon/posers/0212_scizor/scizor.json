@@ -1,0 +1,139 @@
+{
+  "portraitScale": 2,
+  "portraitTranslation": [-0.19, 2.21, 0],
+  "profileScale": 0.52,
+  "profileTranslation": [0.03, 0.96, 0],
+  "rootBone": "scizor",
+  "properties": {
+    "item_display_context": "THIRD_PERSON_RIGHT_HAND"
+  },
+  "transformedParts": [
+    {
+      "part": "locator_head",
+      "scale": [0.9, 1, 0.9],
+      "position": [0, -3, 3.5]
+    },
+    {
+      "part": "locator_face",
+      "position": [0, -1, 0]
+    },
+    {
+      "part": "locator_item",
+      "position": [-1, 1, -2]
+    }
+  ],
+  "animations": {
+    "cry": "q.bedrock_stateful('scizor', 'cry')"
+  },
+  "poses": {
+    "portrait": {
+      "poseName": "portrait",
+      "poseTypes": [
+        "PORTRAIT"
+      ],
+      "animations": [
+        "q.bedrock('scizor', 'ground_idle')"
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ],
+      "transformedParts": [
+        {
+          "part": "body",
+          "rotation": [0, 0, 0],
+          "comment": "future frank the values were -5 32 0 wink emoji"
+        }
+      ]
+    },
+    "battle-idle": {
+      "poseName": "battle-idle",
+      "isBattle": true,
+      "poseTypes": [
+        "STAND"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('scizor', 'battle_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scizor', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ]
+    },
+    "standing": {
+      "poseName": "standing",
+      "isBattle": false,
+      "poseTypes": [
+        "STAND",
+        "PROFILE",
+        "NONE"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.bedrock('scizor', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scizor', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ]
+    },
+    "walk": {
+      "poseName": "walk",
+      "poseTypes": [
+        "WALK"
+      ],
+      "animations": [
+        "q.look('head')",
+        "q.biped_walk(0.7, 0.85, 'left_upper_leg', 'right_upper_leg')",
+        "q.bedrock('scizor', 'ground_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scizor', 'hold_item')"
+        }
+      ],
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ]
+    },
+    "hover": {
+      "poseName": "hover",
+      "poseTypes": [
+        "HOVER"
+      ],
+      "animations": [
+        "q.bedrock('scizor', 'air_idle')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scizor', 'hold_item')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ]
+    },
+    "fly": {
+      "poseName": "fly",
+      "poseTypes": [
+        "FLY"
+      ],
+      "animations": [
+        "q.bedrock('scizor', 'air_fly')",
+        {
+          "condition": "q.is_holding_item",
+          "animation": "q.bedrock('scizor', 'hold_item')"
+        }
+      ],
+      "transformTicks": 10,
+      "quirks": [
+        "q.bedrock_quirk('scizor', 'blink')"
+      ]
+    }
+  }
+}

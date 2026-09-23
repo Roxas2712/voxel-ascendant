@@ -13,6 +13,10 @@ M.apertures={
 }
 local cool={lab=true,center=true,corporate=true,museum=true,workshop=true,power_plant=true,elevator=true}
 local underground={rocket=true,underground=true}
+-- Public interiors must remain readable without exterior sunlight. Keep
+-- their palette, but do not multiply already dark artwork by home-night tint.
+local roomAmbient={lab={.72,.76,.80},mart={.78,.76,.72},
+ casino={.64,.59,.66},rocket={.64,.67,.71}}
 local function horizontal(p)return p.edge=='north' or p.edge=='south'end
 local function point(p,along,y,inset)
  local sign=(p.edge=='north' or p.edge=='west')and 1 or -1
@@ -34,6 +38,7 @@ function M.layout(map)
  local profile=H.interiorProfileFor(map)
  if not profile or not profile.nativeRoomPanels then return nil end
  local signature=table.concat(map.def.blocks or {},',')..':'..tostring(profile.shellHeight)..':'..tostring(profile.theme)
+   ..':'..tostring(profile.ceiling and profile.ceiling.enabled)..':'..tostring(profile.ceiling and profile.ceiling.authored)
  local old=cache[map];if old and old.signature==signature then return old end
  local panels=V.require('Gen1InteriorLayout').panelsFor(map,profile)
  local out={signature=signature,profile=profile,panels=panels,portals={},lamps={},blockers={}}
@@ -85,9 +90,21 @@ function M.layout(map)
     if free then
      local color=cool[profile.theme]and {.66,.84,1}or profile.theme=='casino'and {1,.35,.64}or {1,.68,.32}
      out.lamps[#out.lamps+1]={position=point(p,a,height*.76,2),normal=normal(p),
-      radius=92,power=cool[profile.theme]and 1.35 or 1.25,color=color,panel=p,kind='sconce'}
+      radius=92,power=cool[profile.theme]and 1.35 or 1.25,color=color,panel=p,kind='sconce',
+      constant=underground[profile.theme]or profile.theme=='casino'or profile.theme=='mart'}
     end
    end
+  end
+ end
+ local ceiling=profile.ceiling and profile.ceiling.authored
+   and V.require('InteriorCeilings').layout(map,profile)
+ if ceiling then
+  for _,l in ipairs(ceiling.lamps)do out.lamps[#out.lamps+1]=l end
+  local s=ceiling.skylight
+  if s then
+   -- Keep the central opening within the two-portal mobile budget too.
+   table.insert(out.portals,1,{position={(s[1]+s[2])/2,ceiling.h,(s[3]+s[4])/2},
+    normal={0,-1,0},rect={s[1],s[2],s[3],s[4]},axis=2})
   end
  end
  cache[map]=out;return out
@@ -96,7 +113,7 @@ function M.prepare(map)
  local out=M.layout(map);if not out then return nil end
  local D=V.require('DayNight');local night=D.windowLight()
  local cold=cool[out.profile.theme]
- local tint=cold and {.56,.60,.65}or {.58-night*.17,.56-night*.14,.53+night*.015}
+ local tint=roomAmbient[out.profile.theme] or cold and {.56,.60,.65}or {.58-night*.17,.56-night*.14,.53+night*.015}
  return out,tint
 end
 local mesh,tex,current
@@ -104,7 +121,7 @@ function M.draw(layout,lights,eye,focus,map)
  if not layout then return end
  local G=V.require('Voxel3D');local Cut=V.require('InteriorCutaway')
  local visible={}
- for _,l in ipairs(lights)do if l.fixture then
+ for _,l in ipairs(lights)do if l.fixture and l.fixture.kind~='ceiling' then
   local p=l.fixture.panel
   if Cut.rimVisible({kind='wall',interiorPanel=p},Cut.active(map),eye,focus)then visible[#visible+1]=l end
  end end

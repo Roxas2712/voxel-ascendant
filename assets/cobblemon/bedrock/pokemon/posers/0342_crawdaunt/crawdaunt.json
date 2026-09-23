@@ -1,0 +1,30 @@
+{
+  "portraitScale": 1.64,
+  "portraitTranslation": [-0.42, 0.65, 0],
+  "profileScale": 0.8,
+  "profileTranslation": [-0.08, 0.55, 0],
+  "rootBone": "crawdaunt",
+  "animations": {
+    "cry": "q.bedrock_stateful('crawdaunt', 'cry')"
+  },
+  "poses": {
+    "standing": {
+      "poseTypes": ["STAND", "NONE", "PORTRAIT", "PROFILE"],
+      "animations": ["q.bedrock('crawdaunt', 'ground_idle_placeholder')"]
+    },
+    "walking": {
+      "poseTypes": ["WALK"],
+      "animations": [
+        "q.bedrock('crawdaunt', 'ground_walk_placeholder')"
+      ]
+    },
+    "seafloor-standing": {
+      "poseTypes": ["FLOAT"],
+      "animations": ["q.bedrock('crawdaunt', 'ground_idle_placeholder')"]
+    },
+    "seafloor-swimming": {
+      "poseTypes": ["SWIM"],
+      "animations": ["q.bedrock('crawdaunt', 'ground_walk_placeholder')"]
+    }
+  }
+}
