@@ -42,9 +42,10 @@ local function prepareOne(p,dex,dt)
   if not mon:setSpecies(dex,true,p.entity.ascendantPokemonModelAppearance) or not mon.rig then return false end
   if Pack.keep then Pack.keep(dex) end
   -- Reuse the imported model's established sizing and bind-pose safety.
-  -- Keep low-profile species readable above Gen-1 grass.
+  -- Gen-1 grass is eight world units tall. Use the same readable minimum
+  -- for both imported providers; a seven-unit Cobblemon body disappears in it.
   local height=mon:worldHeight()
-  mon.scale=height>0 and math.max(1,(provider and 7 or 12)/height) or 1
+  mon.scale=height>0 and math.max(1,12/height) or 1
   if mon.model and mon.model.actions then
     local moved=slot.x and (math.abs(p.px-slot.x)+math.abs(p.py-slot.y)>.01)
     local clip=moved and mon.model.actions.walk or mon.model.actions.idle
@@ -128,13 +129,16 @@ local function upload(p)
   slot.builtRig,slot.builtYaw=p.stadiumMon.rig,p.stadiumMon.yaw
   return true
 end
-function M.draw(p,visible)
+function M.draw(p,visible,pull)
   if not (p.stadiumMon and p.stadiumMatrix) then return false end
   -- A culled imported model is still the owner: never draw its sprite
   -- fallback, release its rig, or interrupt its animation clock here.
   if visible and not visible(p.stadiumBounds,identity)then return true end
   if not upload(p)then return false end
-  local ok,result=pcall(p.stadiumMon.rig.draw,p.stadiumMon.rig,p.stadiumMatrix,nil)
+  -- Grass and sprite actors share this camera-depth correction. Imported
+  -- bodies need it too, or even grass behind them wins the depth test.
+  -- Shadows keep the physical matrix with no camera pull.
+  local ok,result=pcall(p.stadiumMon.rig.draw,p.stadiumMon.rig,p.stadiumMatrix,pull)
   -- StadiumRig restores atlas state. The following actors still need the
   -- billboard state until VoxelScene finishes the complete actor pass.
   local renderer=V.require("Voxel3D")

@@ -2147,7 +2147,7 @@ local function drawCast(state, posed, atlasFor, ghostPose)
     end
     if not hidden then
       Voxel3D.waterline(p.waterline)
-      if not OverworldStadium.draw(p,actorVisible) then
+      if not OverworldStadium.draw(p,actorVisible,billboardPull()) then
         drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
                    p.colors, p.lift)
       end
