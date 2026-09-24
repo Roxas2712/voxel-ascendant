@@ -27,7 +27,7 @@ function M.prepare(state,outdoor,focus,dark,weather)
   if glow<=0 then return f end
   local sources,buildings={},{}
   windows.append(state,sources,buildings,glow,focus)
-  f.lights=M.select(sources,focus,M.MAX_LIGHTS)
+  M.assign(sources,buildings,focus,false)
   -- Stable nearest relevant occluders, including each emitter's owner.
   for i,b in ipairs(buildings)do
     b.order=i;b.score=math.huge

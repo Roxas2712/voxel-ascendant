@@ -295,6 +295,11 @@ function StadiumMon:setSpecies(dex, allowStatic, appearance)
     return false
   end
   self.model, self.rig = model, rig
+  if self.side=='player' or self.side=='enemy' then
+    local ok,d=pcall(V.require,'Diagnostics')
+    if ok and d.write then pcall(d.write,'battle-model-ready',{speciesId=dex,source=self.side,
+      actual=model.source or 'stadium',status='ready',caller='StadiumMon.setSpecies'})end
+  end
   self.staticPose = model.staticPose and true or false
   -- A static-safe overworld model intentionally has no animation selected:
   -- StadiumMon:build() already treats nil anim as the bind pose.

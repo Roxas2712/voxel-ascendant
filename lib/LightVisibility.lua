@@ -3,7 +3,7 @@
 -- Light colour/flicker, diffuse response and water glints stay per pixel.
 local V=...
 local M={SIZE=32,LAYERS=8,STEP=8}
-local atlas,shader,key,lastFrame
+local atlas,shader,key,lastFrame,atlasW,atlasH
 local function signature(frame)
  local parts={tostring(frame.wall and frame.wall.texture)}
  local function n(x)parts[#parts+1]=string.format('%.4f',x or 0)end
@@ -40,7 +40,7 @@ function M.prepare(frame,lights,blank)
    uniform float visibilityBase;
    vec4 effect(vec4 color,Image tex,vec2 tc,vec2 sc) {
     vec2 cell=mod(sc,32.0)/32.0;
-    float layer=floor(sc.y/32.0);
+    float layer=floor(mod(sc.y,256.0)/32.0);
     vec3 world=vec3(visibilityArea.x+cell.x*visibilityArea.z,
       visibilityBase+layer*8.0,visibilityArea.y+cell.y*visibilityArea.w);
     vec3 origin=visibilityOrigin.xyz;
@@ -56,8 +56,12 @@ function M.prepare(frame,lights,blank)
    }
   ]])
  end
+ local slots=lights.MAX_LIGHTS+lights.MAX_PORTALS
+ local columns=math.min(64,slots);local rows=math.ceil(slots/columns)
+ local width,height=columns*M.SIZE,rows*M.SIZE*M.LAYERS
+ if atlas and (atlasW~=width or atlasH~=height)then atlas:release();atlas=nil end
  if not atlas then
-  atlas=g.newCanvas((lights.MAX_LIGHTS+lights.MAX_PORTALS)*M.SIZE,M.SIZE*M.LAYERS,{dpiscale=1})
+  atlas=g.newCanvas(width,height,{dpiscale=1});atlasW,atlasH=width,height
   atlas:setFilter('linear','linear')
  end
  g.push('all')
@@ -66,14 +70,28 @@ function M.prepare(frame,lights,blank)
  g.setMeshCullMode('none');g.setBlendMode('replace');g.setShader(shader);g.setColor(1,1,1,1);g.clear(1,1,1,1)
  shader:send('localWallSize',frame.wall and frame.wall.size or {0,0})
  shader:send('localWallMask',frame.wall and frame.wall.texture or blank)
+ if not frame.perLightBlockers then
  shader:send('localBlockCount',#frame.blockers)
  for i,b in ipairs(frame.blockers)do shader:send('localLo'..(i-1),b.lo);shader:send('localHi'..(i-1),b.hi)end
+ end
  shader:send('visibilitySun',frame.portalSky and {unpack(frame.portalSky.direction,1,3)} or {0,1,0})
  for i,l in ipairs(frame.lights)do
-  shader:send('visibilityPortal',0);shader:send('visibilityOrigin',{l.x,l.y,l.z,l.owner.index or 0})
+  if frame.perLightBlockers then
+   local relevant={}
+   for _,b in ipairs(frame.blockers)do
+    local d=0;for axis,p in ipairs({l.x,l.y,l.z})do local q=p-math.max(b.lo[axis],math.min(b.hi[axis],p));d=d+q*q end
+    if d<l.radius*l.radius then relevant[#relevant+1]={b=b,d=d}end
+   end
+   table.sort(relevant,function(a,b)return a.d<b.d end)
+   local count=math.min(#relevant,lights.MAX_BLOCKERS);local owner=0
+   shader:send('localBlockCount',count)
+   for j=1,count do local b=relevant[j].b;if b==l.owner then owner=j end;shader:send('localLo'..(j-1),b.lo);shader:send('localHi'..(j-1),b.hi)end
+   shader:send('visibilityOrigin',{l.x,l.y,l.z,owner})
+  end
+  shader:send('visibilityPortal',0);if not frame.perLightBlockers then shader:send('visibilityOrigin',{l.x,l.y,l.z,l.owner.index or 0})end
   shader:send('visibilityNormal',{0,1,0});shader:send('visibilityBase',l.y-24)
   shader:send('visibilityArea',{l.x-l.radius,l.z-l.radius,l.radius*2,l.radius*2})
-  g.rectangle('fill',(i-1)*M.SIZE,0,M.SIZE,M.SIZE*M.LAYERS)
+  g.rectangle('fill',((i-1)%columns)*M.SIZE,math.floor((i-1)/columns)*M.SIZE*M.LAYERS,M.SIZE,M.SIZE*M.LAYERS)
  end
  for i,p in ipairs(frame.portals or {})do
   shader:send('visibilityPortal',1);shader:send('visibilityOrigin',{p.position[1],p.position[2],p.position[3],0})

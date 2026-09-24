@@ -1622,6 +1622,8 @@ end
 
 local function newHub(mod, game)
   local rows = {}
+  local errors=mod.exports and mod.exports.errors
+  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -1764,6 +1766,11 @@ function VascMenu.install(mod, opts)
   config.settings = config.settings or {}
   local screens = mod and mod.content and mod.content.screens
   if not screens or type(screens.register) ~= "function" then return false end
+  local inbox=config.diagnostics and config.diagnostics.errorInbox and config.diagnostics.errorInbox()
+  if inbox then
+    local errors=V.require("ErrorsMenu").install(mod,inbox,{Game=require("src.core.Game2"),language=function()return languageCode(mod)end,session=config.diagnostics.sessionId,notify=function(code)V.require("ShortcutToast").notify("ASCENDANT ERRORS",code.." - open Errors")end})
+    screens:register("VascErrors",{new=function(game) return setmetatable({game=game,index=1},errors.Screen) end})
+  end
   screens:register("VascMenu", {
     new=function(game) return newHub(mod, game) end,
   })

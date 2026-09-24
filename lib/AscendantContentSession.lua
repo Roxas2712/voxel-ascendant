@@ -510,7 +510,7 @@ function M.new(mod,options)
     end
     local safeOk,safe=pcall(load('HdContentOffer').safe,game)
     self.offerStable=safeOk and safe and (self.offerStable or 0)+math.min(dt or 0,0.25) or 0
-    if not self.promptDisabled and not self.onboardingShown and not self.offerRequested and self.offerStable>=0.5 and self:hasAvailableDownloads() then
+    if not self.promptDisabled and not self.onboardingShown and not self.offerRequested and self.offerStable>=0.5 and self.startupPrompts:due('downloads') then
       self.offerRequested=true
       local ok,Screens=pcall(require,'src.ui.Screens')
       local pushed,screen=false,nil
@@ -550,10 +550,19 @@ function M.new(mod,options)
     self.restart:update(self.game,dt,(not self.cobblemonBatch or cb and cb.status().phase=='ready') and (self.maintenance.state=='restart_required'or self.installer.state=='ready'or self.importer and self.importer.state=='ready'),self:busy() or self.cobblemonQueued~=nil)
     if self.installer.state~=last then last=self.installer.state;self.epoch=self.epoch+1 end
   end
-  -- The old seen-once marker is not an explicit opt-out and must not silence this prompt.
-  local PROMPT_KEY='sprite-content/startup-prompt-disabled-v1'
-  self.promptDisabled=ca:read(PROMPT_KEY)=='1'
-  self.onboardingShown=false
+  self.startupPrompts=load('StartupPrompts').new(ca)
+  local legacyDisabled=ca:read('sprite-content/startup-prompt-disabled-v1')=='1'
+  self.promptDisabled=not self.startupPrompts:due('downloads',legacyDisabled)
+  self.onboardingShown=self.promptDisabled
+  function self:markStartupOffer()
+    self.onboardingShown=true
+    self.promptDisabled=true
+    if not self.startupPrompts:mark('downloads')then
+      if mod.log then mod.log:warn('Could not persist the one-time download introduction')end
+      return false,'cache_write_failed'
+    end
+    return true
+  end
   function self:hasAvailableDownloads()
     if self:needsCobblemonDownload()then return true end
     for _,p in ipairs(catalog.data.packages)do
@@ -561,25 +570,22 @@ function M.new(mod,options)
     end
     return false
   end
+  -- Compatibility for existing callers. A UI toggle must never rearm
+  -- every-start prompts; only StartupPrompts.REVISIONS can reissue them.
   function self:setStartupPrompt(enabled)
-    local value=enabled and '0' or '1'
-    if ca:write(PROMPT_KEY,value)~=true or ca:read(PROMPT_KEY)~=value then return false,'cache_write_failed'end
-    self.promptDisabled=not enabled;self.epoch=self.epoch+1
-    -- Re-enabling applies from the next start; never interrupt the settings screen.
-    if enabled then self.onboardingShown=true end
-    return true
+    if enabled then return true end
+    return self:markStartupOffer()
   end
   function self:offer(game,guided,de,rom)
     self.game=game;self.guided=guided;self.de=de
     local function tr(en,german)return de and german or en end
-    local later=tr('More graphics: Ascendant - DLC / Sprites. This prompt appears each start until you explicitly turn it off.','Weitere Grafiken: Ascendant - DLC / Sprites. Diese Abfrage erscheint bei jedem Start, bis du sie ausdruecklich abschaltest.')
+    local later=tr('This introduction appears once. Downloads remain available in Ascendant - DLC / Sprites.','Diese Einfuehrung erscheint einmalig. Downloads bleiben unter Ascendant - DLC / Sprites erreichbar.')
     local rows={
-      {label=tr('PLAY WITHOUT DOWNLOAD','OHNE DOWNLOAD SPIELEN'),action='skip',help=tr('Continue without a download. Ask again next start.','Kein Download. Weiterspielen und beim naechsten Start erneut fragen.')},
+      {label=tr('PLAY WITHOUT DOWNLOAD','OHNE DOWNLOAD SPIELEN'),action='skip',help=tr('Continue without downloading. Open downloads later from the Ascendant menu.','Ohne Download weiterspielen. Downloads spaeter im Ascendant-Menue oeffnen.')},
       {label=tr('DOWNLOAD / UPDATE ALL','ALLES LADEN / UPDATEN'),action='all',help=tr('Download all missing sprite collections in one go: HD, Crystal, Mega and more. Installed sprites are kept. Stadium needs your own file.','Alle fehlenden Sprite-Sammlungen in einem Durchgang laden: HD, Crystal, Mega und weitere. Vorhandene Sprites bleiben. Stadium braucht deine eigene Datei.')},
       {label=tr('HD WALKING SPRITES','HD-LAUFSPRITES'),action='hd',help=tr('Animated HD Pokemon in the world and as followers. Kanto, Johto and Hoenn; download all or choose a generation.','Animierte HD-Pokemon in der Spielwelt und als Begleiter. Kanto, Johto und Hoenn; alle laden oder Generation waehlen.')},
       {label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),action='graphics',help=tr('Downloadable base sprites: Crystal, Mega, animations, pixel sprites and icons. Cobblemon is already bundled with VASC.','Ladbare Basis-Sprites: Crystal, Mega, Animationen, Pixel-Sprites und Icons. Cobblemon wird bereits mit VASC geliefert.')},
       {label=tr('IMPORT A FILE','DATEI IMPORTIEREN'),action='import',help=tr('Choose a spritepack or vaschd file you already downloaded. The file is checked before import.','Eine geladene spritepack- oder vaschd-Datei auswaehlen. Sie wird vor dem Import geprueft.')},
-      {label=tr('TURN OFF THIS PROMPT','ABFRAGE ABSCHALTEN'),action='disablePrompt',help=tr('Stop showing this choice at startup. You can turn it back on in Sprite Downloads.','Diese Startabfrage dauerhaft abschalten. Im Download-Menue kannst du sie wieder einschalten.')},
     }
     local baseRow=table.remove(rows,4);table.insert(rows,1,baseRow)
     if options.includeHd==false then table.remove(rows,4)end
@@ -600,6 +606,7 @@ function M.new(mod,options)
         menu:openCategory(row.action=='hd' and 'full-hd' or 'pokemon')
       end})
     menu.showFirstGuide=function()return false end
+    self:markStartupOffer()
     return menu
   end
   if fs.newFileData and love.graphics and love.image then

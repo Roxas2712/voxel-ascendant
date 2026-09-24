@@ -2188,6 +2188,7 @@ OverworldBattle.setNativeBattlePreflight(
 -- remove every event/hook token deterministically.
 AscendantCards = AscendantCardRegistry.new({
   onHookError=function(event, failure)
+    Diagnostics.write("hook-error",{caller=event,owner=failure and failure.owner,error=failure and failure.error,status="error"})
     if mod.log and type(mod.log.warn) == "function" then
       mod.log:warn("Ascendant hook %s owner %s failed open: %s",
         tostring(event), tostring(failure and failure.owner),
@@ -2264,6 +2265,7 @@ end
 -- terminal playback adapter after all four data/UI providers are active.
 local WeatherMusicCards = AscendantCardRegistry.new({
   onHookError=function(event, failure)
+    Diagnostics.write("hook-error",{caller=event,owner=failure and failure.owner,error=failure and failure.error,status="error"})
     if mod.log and type(mod.log.warn) == "function" then
       mod.log:warn("Weather Music Card hook %s owner %s failed open: %s",
         tostring(event), tostring(failure and failure.owner),

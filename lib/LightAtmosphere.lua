@@ -63,7 +63,7 @@ function M.sample(frame,focus,now,night,elevation)
    end
   end end
  end
- for _,l in ipairs(frame.lights or {})do
+ for _,l in ipairs(frame.allLights or frame.lights or {})do
   if (l.kind=='torch' or l.kind=='candle') and (l.weight or 1)>.01 and l.power>0 then
    local candle=l.radius<=30;local seed=hash(l.x,l.z)
    local amount=candle and 1 or 3

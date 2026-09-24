@@ -197,6 +197,9 @@ local function emit(key, event, fields)
   state.phase = clean(event or "checkpoint", 64)
   fields.phase = state.phase
   if not state.loggerReady then
+    if type(mod)=="table" and mod._vascErrorInbox then
+      pcall(mod._vascErrorInbox.observe,mod._vascErrorInbox,event,fields)
+    end
     if seen[key] then return false end
     local accepted = buffer(key, event, fields)
     if accepted then seen[key] = true end

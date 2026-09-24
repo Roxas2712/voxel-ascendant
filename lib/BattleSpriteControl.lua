@@ -42,6 +42,8 @@ local function state(b)
     local choice=M.styleSetting:get();if choice=="current" and hd then choice="hd" end
     s={choice=choice,label=string.upper(choice),cache={}}
     states[b]=s
+    local ok,d=pcall(V.require,"Diagnostics")
+    if ok and d.write then pcall(d.write,"battle-sprite-selection",{requested=choice,source="saved-preference",status="selected"}) end
   end
   return s
 end
@@ -227,20 +229,24 @@ function M.select(game,id)
   for _,row in ipairs(M.choices(b))do
     if row.id==id then
       local s=state(b);s.choice=id;s.label=row.label
+      local ok,d=pcall(V.require,"Diagnostics")
+      if ok and d.write then pcall(d.write,"battle-sprite-selection",{requested=id,source="battle-controls",status="selected"}) end
       V.require("ShortcutToast").notify("POKEMON SPRITES",row.label)
       return true
     end
   end
-  V.require("ShortcutToast").notify("POKEMON SPRITES","Source unavailable for this battle")
+  local ok,d=pcall(V.require,"Diagnostics")
+  if ok and d.write then pcall(d.write,"battle-sprite-unavailable",{requested=id,actual=state(b).choice,
+    reason=b.voxelAscendantShot==nil and "3d-stage-unavailable" or "source-unavailable",caller="BattleSpriteControl.select"}) end
+  V.require("ShortcutToast").notify("POKEMON SPRITES","Source unavailable - see Errors")
   return false
 end
 function M.cycle(game)
   local b=active(game);if not b then return false end
   local rows=M.choices(b);local s=state(b);local at=0
   for i,r in ipairs(rows)do if r.id==s.choice then at=i end end
-  local row=rows[at%#rows+1];s.choice=row.id;s.label=row.label
-  V.require("ShortcutToast").notify("POKEMON SPRITES",row.label)
-  return true
+  local row=rows[at%#rows+1]
+  return M.select(game,row.id)
 end
 -- Used by the existing model owner; selection expires with this encounter.
 function M.modelRequest()

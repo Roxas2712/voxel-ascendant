@@ -349,7 +349,6 @@ function M.new(mod,game,guided,de,session)
     result[#result+1]={label=tr('SPRITE MAINTENANCE','SPRITES VERWALTEN'),action='maintenance',help=tr('Check, repair, reinstall or clear downloaded sprite packs.','Geladene Sprite-Pakete pruefen, reparieren, neu installieren oder leeren.')}
     result[#result+1]={label=tr('IMPORT FILE','DATEI IMPORTIEREN'),action='packageImport'}
     result[#result+1]={label=tr('DOWNLOAD STATUS','DOWNLOAD-STATUS'),action='status'}
-    result[#result+1]={label=tr('STARTUP PROMPT','STARTABFRAGE'),right=session.promptDisabled and tr('OFF','AUS') or tr('ON','AN'),action='startupPrompt',help=tr('Show the graphics choice at startup while packs are missing. Select to turn this on or off.','Grafikauswahl beim Start zeigen, solange Pakete fehlen. Hier die Abfrage an- oder abschalten.')}
     result[#result+1]={label=tr('LOGS & REPORTS','LOGS & BERICHTE'),action='diagnostics'}
     for _,row in ipairs(result)do
       row.help=row.help or tr('Download Pokemon sprites or import a downloaded package. Installed packages show their status and can be deleted. More sprites can be added here later.','Pokémon-Sprites herunterladen oder eine Paketdatei importieren. Installierte Pakete zeigen ihren Status und lassen sich löschen. Weitere Sprites kannst du hier später hinzufügen.')
@@ -365,10 +364,6 @@ function M.new(mod,game,guided,de,session)
     if row.action=="packageImport" then
       if busy() then return notice("busy_or_restart_required") end
       return session:openPackageImport()
-    end
-    if row.action=='startupPrompt' then
-      local ok,err=session:setStartupPrompt(session.promptDisabled);if not ok then return notice(err)end
-      return
     end
     if row.action=="status" then return session:openStatus() end
     if row.action=="diagnostics" then return session:openDiagnostics() end

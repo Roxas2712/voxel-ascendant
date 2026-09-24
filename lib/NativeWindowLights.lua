@@ -87,7 +87,7 @@ function M.append(state,sources,blockers,glow,focus)
     blockers[#blockers+1]=owner
     for _,p in ipairs(shape.panes)do
      local px,py,pz=p.x+x,p.y+y,p.z+z
-     if (px-focus[1])^2+(py-focus[2])^2+(pz-focus[3])^2<384^2 then
+     do
       sources[#sources+1]={x=px,y=py,z=pz,normal=p.normal,radius=56,power=.9*glow,
         color={1,.67,.30},owner=owner,kind='window'}
      end

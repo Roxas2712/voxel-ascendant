@@ -1,5 +1,11 @@
 local V=...;local Content=V.require('CobblemonContent');local Geometry=V.require('CobblemonGeometry')
-local M={};local models=setmetatable({},{__mode='v'})
+local M={}
+local function failure(dex,reason)
+ local ok,d=pcall(V.require,'Diagnostics')
+ if ok and d.write then pcall(d.write,'battle-sprite-unavailable',{requested='cobblemon',actual='sprite',
+  reason=tostring(dex)..': '..tostring(reason),caller='CobblemonPack'})end
+end
+local models=setmetatable({},{__mode='v'})
 function M.variant(mon)
  if type(mon)~='table'then return 'normal'end
  if mon._ascMegaForm or mon.ascMegaForm then return nil end
@@ -20,9 +26,9 @@ function M.dex(mon)return national(nil,mon)end
 function M.available(dex,mon)local variant=M.variant(mon);return variant~=nil and Content.available(national(dex,mon),variant)end
 function M.load(dex,mon)
  dex=national(dex,mon)
- local variant=M.variant(mon);if not variant or not Content.available(dex,variant)then return nil end
+ local variant=M.variant(mon);if not variant or not Content.available(dex,variant)then failure(dex,'variant-unavailable/'..tostring(variant));return nil end
  local key=tostring(Content.epoch or 0)..':'..tostring(dex)..':'..variant;local model=models[key];if model then return model end
- model=Content.record(dex,variant);if not model then return nil end
+ model=Content.record(dex,variant);if not model then failure(dex,'prepared-model-missing-or-invalid/'..variant);return nil end
  model.crystalDex=dex
  model.assetProvider=M;model.textures={{}};models[key]=model;return model
 end
@@ -52,6 +58,7 @@ function M.image(model,index)
   end
   local image=love.graphics.newImage(base);base:release();image:setFilter('nearest','nearest');return image
  end)
+ if not ok then failure(model.crystalDex,'texture-upload: '..tostring(img))end
  slot.image=ok and img or false;return slot.image or nil
 end
 return M

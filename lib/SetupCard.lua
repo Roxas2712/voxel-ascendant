@@ -42,7 +42,7 @@ function M.new(game,settings,opts)
  page('welcome',L("Your adventure. Your look.",'Dein Abenteuer. Dein Look.'),L("Nine clear steps: characters, Pokémon, Pokédex, battles and the world. Choose on the left; see previews and explanations on the right. Everything stays a draft until you apply it.",'Neun klare Schritte: Figuren, Pokémon, Pokédex, Kampf und Spielwelt. Links wählst du, rechts siehst du Vorschau und Erklärung. Bis zum Abschluss bleibt alles ein Entwurf.'),{
   {label=L("Start setup",'Einrichtung beginnen'),action='next',help=L("Walk through all active areas. Your existing settings are preselected.",'Alle aktiven Bereiche gemeinsam durchgehen. Bestehende Einstellungen sind vorausgewählt.')},
   {label=L("Keep current settings",'Aktuelle Einstellungen behalten'),action='keep',help=L("Finishes setup without changing graphics. Reopen it any time in the main VASC menu.",'Beendet die Einrichtung ohne Grafikänderung. Später jederzeit im großen VASC-Menü erneut öffnen.')},
-  {label=L("Later / save draft",'Später / Entwurf speichern'),action='later',help=L("Resume here the next time you start the game. No graphics settings are applied.",'Beim nächsten Spielstart an dieser Stelle fortsetzen. Es werden keine Grafikoptionen übernommen.')}},'welcome')
+  {label=L("Later / save draft",'Später / Entwurf speichern'),action='later',help=L("Resume later from the Ascendant menu. No graphics settings are applied.",'Später im Ascendant-Menü an dieser Stelle fortsetzen. Es werden keine Grafikoptionen übernommen.')}},'welcome')
  page('people',L("Which character style do you prefer?",'Welchen Figuren-Look magst du?'),L("For your player and NPCs. This live version uses one shared character style. Your KASC identity and clothing stay the same.",'Für Spielfigur und NPCs. Diese Live-Version verwendet einen gemeinsamen Figurenstil. Deine in KASC gewählte Identität und Kleidung bleiben erhalten.'),{
   row('apo_enabled',L("Overworld graphics Card",'Oberwelt-Grafik-Card'),L("Main switch for the integrated character and Pokémon presentation. Changing this switch requires a game restart.",'Hauptschalter für die integrierte Figuren- und Pokémon-Darstellung. Nach Änderung dieses Hauptschalters muss das Spiel neu gestartet werden.')),
   row('apo_hd_walking_sprites',L("HD characters",'HD-Figuren'),L("Off: original 2D without dialogue poses. On: HD or Voxel HD from the next choice, with dialogue poses enabled automatically.",'Aus: Original-2D ohne Dialogposen. An: HD oder Voxel-HD aus der folgenden Auswahl, mit automatisch aktiven Dialogposen.')),
@@ -712,24 +712,29 @@ function M.install(mod,config)
   local top=game.stack:top();if getmetatable(top)==Screen then return top:pointer(p)end
   return nextPointer(game,p)
  end,2000010)
- mod.content.screens:register('VascSetup',{new=function(game,opts)return M.new(game,settings,opts)end})
+ local fallbackPrompts
+ local function prompts()
+  local content=mod.exports.ascendantContent
+  if content and content.startupPrompts then return content.startupPrompts end
+  if not fallbackPrompts then fallbackPrompts=V.require('StartupPrompts').new(mod.cache)end
+  return fallbackPrompts
+ end
+ mod.content.screens:register('VascSetup',{new=function(game,opts)
+  local screen=M.new(game,settings,opts)
+  if not prompts():mark('setup') and mod.log then mod.log:warn('Could not persist the one-time setup introduction')end
+  return screen
+ end})
  local seen=setmetatable({},{__mode='k'})
- local startup=setmetatable({},{__mode='k'})
  mod.hooks:wrap('core.update',function(nextUpdate,game,dt)
   local result=nextUpdate(game,dt)
   if not (mod.exports.setupCard and mod.exports.setupCard.suspended) and game and game.save and game.overworld and game.stack:top()==game.overworld and not seen[game.save] then
-   local receipt=M.receipt(game);local kasc=game.mods.exports.kanto_ascendant~=nil
-   if receipt.version~=M.VERSION or not receipt.done or (kasc and not receipt.kasc) then
+   local receipt=M.receipt(game)
+   if prompts():due('setup',receipt.version~=nil) then
     local content=mod.exports.ascendantContent
-    local pending=startup[game.save]
-    if not pending then
-     pending={};startup[game.save]=pending
-     -- Respect an already completed native startup offer; otherwise show
-     -- the existing combined VASC/KASC download owner before any setup.
-     if content and not content.onboardingShown then
-      content.offerRequested=true;pending.downloads=true
-      mod.ui.push(game,'VascPokemonHdOffer');return result
-     end
+    if content and not content.onboardingShown and not content.promptDisabled
+      and prompts():due('downloads') then
+     content.offerRequested=true
+     mod.ui.push(game,'VascPokemonHdOffer');return result
     end
     seen[game.save]=true;mod.ui.push(game,'VascSetup')
    else seen[game.save]=true end

@@ -5,6 +5,14 @@
 -- intentionally remain at package root.
 
 local mod = ...
+-- Capture failures before the renderer starts; this receipt never changes recovery.
+do
+  local source=mod:read("lib/ErrorInbox.lua")
+  if source then
+    local ok,inbox=pcall(function() return assert((loadstring or load)(source,"@ErrorInbox"))().new() end)
+    if ok then mod._vascErrorInbox=inbox end
+  end
+end
 
 -- Cached once; Gen2 inherits this receipt through its mod facade. The engine's
 -- AUTO detector is corrected for this hardware; explicit host tiers survive.
@@ -180,7 +188,7 @@ end
 local nativeContentInfo=mod.info
 local contentSession = runEntry(mod, "lib/AscendantContentSession.lua").new(mod)
 runEntry(mod, "lib/SpriteBundledSession.lua").attach(contentSession,mod,nativeContentInfo,"vasc")
-runEntry(mod, "lib/SpriteStartupOffer.lua").attach(contentSession)
+runEntry(mod, "lib/SpriteStartupOffer.lua").attach(contentSession,mod)
 mod.hooks:wrap("core.update",function(nextFn,game,dt)
   local result={nextFn(game,dt)}
   contentSession:update(game,dt)
@@ -249,6 +257,8 @@ local GEN2_A21_SHARED_UI = {
   -- A21 copy writes through love.filesystem, which current Gen1Recomp removes
   -- from mod sandboxes and therefore lost real Crystal sessions.
   ["lib/Diagnostics.lua"] = "lib/Diagnostics.lua",
+  ["lib/ErrorInbox.lua"] = "lib/ErrorInbox.lua",
+  ["lib/ErrorsMenu.lua"] = "lib/ErrorsMenu.lua",
   ["lib/SupportSend.lua"] = "lib/SupportSend.lua",
   ["lib/SupportMenu.lua"] = "lib/SupportMenu.lua",
   ["lib/PerformanceDiagnostics.lua"] = "lib/PerformanceDiagnostics.lua",
@@ -301,6 +311,7 @@ local GEN2_SHARED_CARD_CORE = {
 
 local GEN2_SHARED_LIGHTING = {
   ["lib/lighting/LocalLightsCore.lua"] = "lib/LocalLights.lua",
+  ["lib/LocalLightGrid.lua"] = "lib/LocalLightGrid.lua",
   ["lib/NativeWindowLights.lua"] = "lib/NativeWindowLights.lua",
   ["lib/LightVisibility.lua"] = "lib/LightVisibility.lua",
 }

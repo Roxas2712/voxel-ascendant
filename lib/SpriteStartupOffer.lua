@@ -1,29 +1,38 @@
--- One startup reminder per process, shared with VASC when it owns the session.
--- Optional-file inventory must not hold the reminder hostage. Only explicit
--- opt-out disables it; declining for now is never persisted as opt-out.
+-- One installation-level offer, shared by standalone KASC and VASC.
 local M={}
-function M.attach(session)
-  if session.__kascStartupOfferV2 then return end
-  session.__kascStartupOfferV2=true
-  local update=session.update
-  function session:update(game,dt,...)
-    -- Older VASC sessions gate their reminder on a complete file inventory.
-    -- Suppress that one branch, leaving their download/update owner intact.
-    local requested=self.offerRequested
-    self.offerRequested=true
-    local ok,err=pcall(update,self,game,dt,...)
-    self.offerRequested=requested
-    if not ok then error(err,0)end
-    if self.promptDisabled or self.onboardingShown or self.offerRequested
-      or (self.offerStable or 0)<0.5 then return end
-    local configured=false
-    for _,p in ipairs(self.catalog.data.packages)do
-      if p.published==true and (not self.catalog.relevant or self.catalog:relevant(p)) and not self.catalog:installed(p.id,self.store) then configured=true;break end
-    end
-    if not configured then return end
-    self.offerRequested=true
-    local success,page=pcall(require('src.ui.Screens').push,game,self.offerScreenId)
-    if not success or not page then self.offerRequested=false end
+function M.attach(session,ownerMod)
+ if session.__ascendantStartupOnce then return end
+ session.__ascendantStartupOnce=true
+ if not session.startupPrompts then
+  -- Updated KASC may share a session owned by an older VASC package.
+  local owner=ownerMod or session.mod
+  local policy=assert((loadstring or load)(assert(owner:read('lib/StartupPrompts.lua'))))()
+  session.startupPrompts=policy.new(session.cache)
+  session.promptDisabled=not session.startupPrompts:due('downloads',session.promptDisabled)
+  session.onboardingShown=session.promptDisabled
+  local offer=session.offer
+  function session:offer(...)
+   local menu=offer(self,...)
+   if menu then self.onboardingShown=true;self.promptDisabled=true;self.startupPrompts:mark('downloads')end
+   return menu
   end
+ end
+ -- Older KASC must not add its per-process reminder over the new session.
+ session.__kascStartupOfferV2=true
+ local update=session.update
+ function session:update(game,dt,...)
+  local requested=self.offerRequested
+  self.offerRequested=true -- suppress legacy inventory-triggered startup branch
+  local ok,err=pcall(update,self,game,dt,...)
+  self.offerRequested=requested
+  if not ok then error(err,0)end
+  if self.promptDisabled or self.onboardingShown or self.offerRequested
+    or (self.offerStable or 0)<0.5
+    or not self.startupPrompts:due('downloads') then return end
+  -- Show the introduction once even if all optional files are installed.
+  self.offerRequested=true
+  local success,page=pcall(require('src.ui.Screens').push,game,self.offerScreenId)
+  if not success or not page then self.offerRequested=false end
+ end
 end
 return M

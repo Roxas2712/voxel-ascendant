@@ -9,6 +9,12 @@
 
 local V = ...
 local Diagnostics = {}
+local errorInbox=V.mod and V.mod._vascErrorInbox
+if not errorInbox then
+  local ok,model=pcall(V.require,"ErrorInbox")
+  if ok and model then errorInbox=model.new();if V.mod then V.mod._vascErrorInbox=errorInbox end end
+end
+function Diagnostics.errorInbox() return errorInbox end
 
 Diagnostics.CODE = "2712"
 Diagnostics.OWNER = "VASC-66-SUPPORT-SESSION-LOG/v1"
@@ -507,7 +513,7 @@ end
 -- never reach the serializer. Cards should emit stable IDs, not display text.
 local SAFE_FIELDS = {}
 for _, key in ipairs({
-  "action", "active", "actual", "animation", "animationTarget", "axis",
+  "action", "activity", "active", "actual", "animation", "animationTarget", "axis",
   "backend", "baseZipSha256", "battleId", "build", "buildReceiptId",
   "caller", "camera", "requested", "cellX", "cellY", "surfing",
   "rejectedCourts", "candidateCount", "terrainMode",
@@ -1013,6 +1019,12 @@ local function updateSummary(event, fields)
 end
 
 function Diagnostics.write(event, fields)
+  if tostring(event):find('battle',1,true) then
+    local copy={};for k,v in pairs(type(fields)=='table' and fields or {})do copy[k]=v end
+    local g=game();copy.activity=g and g.save and g.save.meta and g.save.meta.playthroughId=='dein-look-benchmark-v3' and 'graphics-check' or 'gameplay'
+    fields=copy
+  end
+  if errorInbox then pcall(errorInbox.observe,errorInbox,event,fields) end
   event = normalizedEvent(event)
   local entries, dropped = normalizedFields(fields)
   if dropped > 0 then

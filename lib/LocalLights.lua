@@ -82,6 +82,13 @@ function M.select(candidates, focus, limit)
   return result
 end
 
+function M.assign(sources,buildings,focus,battle)
+  if not battle and #sources>M.MAX_LIGHTS then
+    frame.allLights=sources;frame.allBlockers=buildings;frame.lights={}
+    for _,l in ipairs(sources)do l.weight=1 end
+  else frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)end
+  return frame.lights
+end
 function M.enabled() return M.available() and M.setting:get() end
 -- The cinematic rig keeps low-angle shafts long enough to read, bounded
 -- to two caster heights. OFF continues using the release's compact rig.
@@ -178,12 +185,12 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
   end
   local volcanic=(state.map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(state.map)
   if outdoor and not volcanic and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then
-    frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
+    M.assign(sources,buildings,focus,battle)
     return frame
   end
   local habitat=state.map.def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(state.map)
   if not outdoor and not cave and not interior and not frame.mosaic and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then
-    frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
+    M.assign(sources,buildings,focus,battle)
     return frame
   end
   -- The visible neighborhood supplies translated matrices, including its
@@ -219,7 +226,7 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
     if (extra.glow or 0)<=0 then return end
     for _,p in ipairs(shape.panes) do
       local x,y,z=p.position[1]+mat[4],p.position[2]+mat[8],p.position[3]+mat[12]
-      if distance(x,y,z,focus)<(p.radius+320)^2 then
+      do
         sources[#sources+1]={x=x,y=y,z=z,radius=p.radius,
           power=p.power*extra.glow,normal=p.normal,owner=building}
       end
@@ -230,8 +237,8 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
     nativeWindows.append(state,sources,buildings,
       V.require('DayNight').windowLight(),focus)
   end
-  frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
-  if cave and not tower and not dark and #frame.lights>0 then
+  M.assign(sources,buildings,focus,battle)
+  if cave and not tower and not dark and (#frame.lights>0 or frame.allLights) then
     local tint=frame.tint or {1,1,1}
     frame.tint={tint[1]*.65,tint[2]*.63,tint[3]*.60}
     V.require('Voxel3D').tint=frame.tint
@@ -410,6 +417,7 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
     s[#s+1]=('if(localPortalCount>%.1f) light+=localPortalBeam(world,localPortalP%d,localPortalRect%d,localPortalN%d);'):format(i+.5,i,i,i)
   end
   s[#s+1]='return localPortalColor*light*localPortalOcclusion(world)*(.25+.75*max(0.0,dot(normal,localPortalSun.xyz))); }'
+  if not rawVisibility then s[#s+1]=V.require('LocalLightGrid').GLSL end
   s[#s+1]='vec3 localIrradiance(vec3 world, vec3 normal) { vec3 light=localWindowLight(world,normal)+localMosaicLight(world,localMosaicWater)*max(0.0,normal.y);'
   for i=0,M.MAX_LIGHTS-1 do
     s[#s+1]=('if(localLightCount>%.1f) light+=localLamp(world,localPos%d,localDir%d,localTint%d)*(.12+.88*max(0.0,dot(normal,normalize(localPos%d.xyz-world))));'):format(i+.5,i,i,i,i)
@@ -426,6 +434,11 @@ float localPortalBeam(vec3 world,vec4 plane,vec4 rect,vec3 inward) {
   end
   s[#s+1]='return min(light,vec3(1.0)); }'
   local source=table.concat(s,'\n')
+  if not rawVisibility then
+    source=source:gsub('return min%(light,vec3%(%.85%)%); }','return min(light+localGridLight(world,normal,vec3(0),0.0),vec3(.85)); }',1)
+    source=source:gsub('return min%(light,vec3%(%.85%)%); }','return min(light+localGridLight(world,normal,vec3(0),1.0),vec3(.85)); }',1)
+    source=source:gsub('return min%(light,vec3%(1%.0%)%); }','return min(light+localGridLight(world,vec3(0,1,0),reflected,2.0),vec3(1.0)); }',1)
+  end
   if not rawVisibility then
     -- Keep ray tests only in the cached visibility prepass. This also avoids
     -- enormous inlined programs/register spills on Apple's OpenGL driver.
@@ -536,6 +549,20 @@ function M.send(shader, enabled)
   if shader:hasUniform('localPortalVolume') then
     shader:send('localPortalVolume',frame.map and {frame.map.def.width*32,frame.map.def.height*32} or {1,1})
   end
+  if shader:hasUniform('localGridOn')then
+    local grid
+    if enabled and frame.allLights then
+      grid=V.require('LocalLightGrid').prepare(frame,M,emptyWall())
+    end
+    shader:send('localGridOn',grid and 1 or 0)
+    if grid then
+      shader:send('localGridData',grid.data);shader:send('localGridIndices',grid.indices)
+      shader:send('localGridVisibility',grid.visibility)
+      shader:send('localGridOrigin',grid.origin);shader:send('localGridSpan',grid.span)
+      shader:send('localGridArea',grid.grid);shader:send('localGridListSize',grid.listSize)
+      shader:send('localGridInfo',grid.info)
+    end
+  end
   shader:send('localLightCount',#lights)
   for i,l in ipairs(lights) do
     local n=l.normal
@@ -552,6 +579,7 @@ end
 function M.invalidate()
   if nativeWindows then nativeWindows.invalidate() end
   V.require('LightVisibility').invalidate()
+  V.require('LocalLightGrid').invalidate()
   for _,wall in pairs(wallFields)do wall.texture:release()end
   wallFields=setmetatable({},{__mode='k'})
   if blankWall then blankWall:release();blankWall=nil end

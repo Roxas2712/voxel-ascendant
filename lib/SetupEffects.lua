@@ -163,7 +163,7 @@ function M.install()
   return result
  end
  local water=G.beginWater
- function G.beginWater(...)local result=water(...);if result then M.waterObserved=true end;return result end
+ function G.beginWater(...)local result,depth=water(...);if result then M.waterObserved=true end;return result,depth end
  local shadow=V.require('ShadowMap');local cast=shadow.begin
  function shadow.begin(...)local result,reused=cast(...);if result then M.shadowObserved=true end;return result,reused end
  local aa=V.require('AntiAlias');local expand=aa.expand

@@ -707,15 +707,28 @@ local firstDrawPending = false
 local DEPTH_FORMATS = { "depth24", "depth24stencil8", "depth32f", "depth16" }
 
 local function newDepth(w, h)
-  -- The LIGHT mobile path needs depth testing, not a readable depth texture.
-  -- Skip four optional format allocations and let depthTarget() request the
-  -- engine's internal depth buffer instead. Full-water reflections already
-  -- degrade to their sky path when no sampled depth is present.
+  -- Actor animation/atlas preparation can switch canvases inside drawCast.
+  -- LOVE 12 resets temporary depth=true attachments when their target is rebound
+  -- (and Metal discards them at endPass). Own a persistent, non-sampled depth
+  -- attachment on mobile so terrain/earlier actors survive those nested draws.
+  -- Keep it separate from held.depth: this does not enable mobile reflections.
   if MOBILE_RUNTIME then
-    mobileDiagnostic("checkpoint", "mobile-internal-depth-only", {
-      caller="Voxel3D.newDepth", width=w, height=h,
-      reason="skip-readable-depth-probes-on-mobile",
-    })
+    local failures = {}
+    for _, format in ipairs(DEPTH_FORMATS) do
+      local ok, made = PixelCanvas.new(w, h, { format=format, readable=false })
+      if ok and made then
+        mobileDiagnostic("checkpoint", "mobile-persistent-depth-created", {
+          caller="Voxel3D.newDepth", width=w, height=h, format=format,
+          reason="preserve-occlusion-across-actor-canvas-switches",
+        })
+        return nil, made
+      end
+      failures[#failures+1] = format .. ":" .. tostring(made or "nil")
+    end
+    mobileDiagnostic("capability", "D06", "persistent-depth-canvas", false,
+      "actor-canvas-switches-may-reset-occlusion", {
+        caller="Voxel3D.newDepth", attempts=table.concat(failures, " | "),
+      })
     return nil
   end
   if not (love.graphics and love.graphics.newCanvas) then
@@ -761,10 +774,11 @@ local function newDepth(w, h)
 end
 
 -- The bound target for the slot this pass holds: the colour canvas plus
--- either the readable depth canvas or the internal buffer.
+-- a persistent depth attachment (sampled on desktop), or the last-resort
+-- temporary buffer when no explicit format can be allocated.
 local function depthTarget()
-  if held and held.depth then
-    return { held.canvas, depthstencil = held.depth }
+  if held and (held.depth or held.depthBuffer) then
+    return { held.canvas, depthstencil = held.depth or held.depthBuffer }
   end
   return { canvas, depth = true }
 end
@@ -773,7 +787,7 @@ end
 -- water pass reads (see beginWater); it is only ever made if something asks
 -- for one, so a session that never sees a lake never pays for it.
 local function releaseSlot(slotHeld)
-  for _, key in ipairs({ "canvas", "depth", "mirror" }) do
+  for _, key in ipairs({ "canvas", "depth", "depthBuffer", "mirror" }) do
     local obj = slotHeld[key]
     if obj and obj.release then pcall(obj.release, obj) end
     slotHeld[key] = nil
@@ -1937,7 +1951,9 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
     if slotHeld then releaseSlot(slotHeld) end
     -- the depth canvas is sized with its colour, so a window resize
     -- reallocates the pair together and they can never disagree
-    slotHeld = { canvas = c, w = w, h = h, depth = newDepth(w, h) }
+    local sampledDepth, persistentDepth = newDepth(w, h)
+    slotHeld = { canvas = c, w = w, h = h,
+      depth = sampledDepth, depthBuffer = persistentDepth }
     slots[name] = slotHeld
   end
   held = slotHeld
@@ -1946,15 +1962,16 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   -- the building wins, with no y-sorting anywhere
   mobileDiagnostic("checkpoint", "framebuffer-depth-attach-start", {
     caller="love.graphics.setCanvas", slot=name,
-    depth=held.depth and "readable" or "internal",
+    depth=held.depth and "readable" or held.depthBuffer and "persistent" or "internal",
   })
   local ok = pcall(love.graphics.setCanvas, depthTarget())
-  if not ok and held.depth then
-    -- the readable canvas would not bind; fall back to the internal buffer
+  if not ok and (held.depth or held.depthBuffer) then
+    -- The explicit attachment would not bind; fall back to the internal buffer
     -- for the rest of this session rather than losing the whole 3D pass
-    pcall(held.depth.release, held.depth)
-    held.depth = nil
-    mobileDiagnostic("checkpoint", "readable-depth-attach-rejected", {
+    local rejected = held.depth or held.depthBuffer
+    pcall(rejected.release, rejected)
+    held.depth, held.depthBuffer = nil, nil
+    mobileDiagnostic("checkpoint", "explicit-depth-attach-rejected", {
       caller="Voxel3D.beginScene", slot=name,
       result="retry-internal-depth",
     })
@@ -1973,7 +1990,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   end
   mobileDiagnostic("checkpoint", "framebuffer-depth-attached", {
     caller="Voxel3D.beginScene", slot=name,
-    depth=held.depth and "readable" or "internal",
+    depth=held.depth and "readable" or held.depthBuffer and "persistent" or "internal",
   })
   -- Ahead of the clear, because the sky's bands are placed off the ground
   -- plane's vanishing line and that is a property of this matrix.
@@ -2226,7 +2243,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   mobileDiagnostic("capability", "D08", "scene-framebuffer-ready", true,
     "color-and-depth-target-active", {
       caller="Voxel3D.beginScene", slot=name,
-      depth=held.depth and "readable" or "internal",
+      depth=held.depth and "readable" or held.depthBuffer and "persistent" or "internal",
     })
   return true
 end
