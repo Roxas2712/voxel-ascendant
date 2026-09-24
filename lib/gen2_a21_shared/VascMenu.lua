@@ -398,8 +398,8 @@ local SECTION_DEFS = {
 }
 
 local DEFAULT_SECTION_ORDER = {
-  "world", "weather", "battle", "skins", "pokemon",
-  "wilds", "performance", "user", "advanced",
+  "world", "pokemon", "wilds", "battle", "weather", "skins",
+  "performance", "user", "advanced",
 }
 
 -- Kept as a stable public/manual-QA receipt.  Older tests and standalone
@@ -1623,7 +1623,6 @@ end
 local function newHub(mod, game)
   local rows = {}
   local errors=mod.exports and mod.exports.errors
-  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -1638,6 +1637,7 @@ local function newHub(mod, game)
   if #rows == 0 then
     rows[1] = { label="NO SETTINGS", help="No VASC sections are available." }
   end
+  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   rows[#rows+1] = {label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
     screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
       or "Inspect diagnostics and send a support log."}

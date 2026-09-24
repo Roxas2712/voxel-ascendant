@@ -1064,6 +1064,10 @@ local function shaderSource(variant, grid, lighting)
   elseif variant ~= "full" then
     return nil, "unknown Voxel3D shader variant " .. tostring(variant)
   end
+  source=source:gsub("#ifdef VERTEX",function()
+    return "#ifdef VERTEX\n"..V.require('ModelGrassClearance').GLSL
+  end,1)
+  source=source:gsub("vWorld = w.xyz;", "w = modelGrassPosition(w);\n    vWorld = w.xyz;",1)
   source=source:gsub("// VASC_CAVE_WALL_VERTEX",function()
     return V.require('Gen1CaveWalls').GLSL
   end,1)
@@ -2109,6 +2113,7 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
   Voxel3D.localLightsActive = sceneLighting
   V.require("LocalLights").send(sh, Voxel3D.localLightsActive)
   if not MOBILE_RUNTIME then pcall(sh.send,sh,"localActorOn",0) end
+  pcall(sh.send, sh, "modelGrassCount", 0)
   pcall(sh.send, sh, "towerBackdrop", 0)
   pcall(sh.send, sh, "towerMood", skyContext and skyContext.towerMood or {0,0})
   pcall(sh.send, sh, "caveBattleMist", skyContext and skyContext.caveBattleMist or {0,0,0,0})
@@ -2938,6 +2943,15 @@ function Voxel3D.seasonFoliage(on)
   if Voxel3D._seasonOn==on then return on end
   local ok=pcall(activeShader.send,activeShader,"seasonalFoliage",on and 1 or 0)
   Voxel3D._seasonOn=ok and on or false
+  return ok
+end
+
+function Voxel3D.modelGrass(posed)
+  if not (active and activeShader) then return false end
+  local rows=V.require("ModelGrassClearance").rows(posed)
+  local ok=true
+  if #rows>0 then ok=pcall(activeShader.send,activeShader,"modelGrassFeet",unpack(rows))end
+  pcall(activeShader.send,activeShader,"modelGrassCount",ok and #rows or 0)
   return ok
 end
 

@@ -1,5 +1,5 @@
--- Regression: an eight-unit grass canopy hid seven-unit imported bodies,
--- and received camera-depth pull while those bodies received none.
+-- Regression: imported bodies need Wilds-derived sizing and the same
+-- camera-depth correction as grass, not a global readability enlargement.
 local root=assert((...) or arg[1], 'package root required')..'/'
 local calls={draw=0,upload=0,release=0}
 local failSpecies,failUpload=false,false
@@ -7,6 +7,7 @@ local provider={}
 local modules={
  StadiumPack={KEEP=4,keep=function()end,load=function()return {}end},
  CobblemonPack=provider,
+ CobblemonOverworldSize={scale=function()return 9.45/4.5,{reference=9.45}end},
  StadiumActorBounds={world=function()return {0,0,0,16,12,16}end},
  Voxel3D={seams=function()end,glass=function()end,blend=function()end},
 }
@@ -27,7 +28,7 @@ local M=assert(loadfile(root..'lib/Gen1OverworldStadium.lua')){require=requireMo
 local p={entity={ascendantPokemonModelSource='cobblemon',ascendantPokemonModelDex=16},px=16,py=32,gh=3,facing='down'}
 M.prepare{p}
 assert(p.stadiumMon and p.stadiumMon.provider==provider)
-assert(p.stadiumMon.scale*4.5>=12,'small Cobblemon must clear the eight-unit grass canopy')
+assert(math.abs(p.stadiumMon.scale*4.5-9.45)<1e-8,'use the Wilds size adapter without a global minimum')
 assert(p.stadiumMatrix[2]==3,'grass readability must not float the actor above its ground')
 assert(M.draw(p,function()return true end,9.25) and calls.pull==9.25,'imported actors must share grass camera-depth pull')
 assert(M.cast(p,{}) and calls.shadowMatrix==p.stadiumMatrix,'shadows use the physical matrix')
@@ -42,4 +43,4 @@ assert(not M.draw(p,nil,9.25),'GPU upload failure preserves sprite fallback')
 M.releaseAll();assert(M.status().active==0)
 local f=assert(io.open(root..'lib/VoxelScene.lua'));local scene=f:read('*a');f:close()
 assert(scene:find('OverworldStadium.draw(p,actorVisible,billboardPull())',1,true),'scene must pass the same correction as grass/cards')
-print('PASS Cobblemon grass minimum, ground anchoring, shared depth correction, physical shadows, culling, source switches and failure fallback')
+print('PASS Cobblemon Wilds size delegation, ground anchoring, shared depth correction, physical shadows, culling, source switches and failure fallback')

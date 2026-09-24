@@ -41,11 +41,15 @@ local function prepareOne(p,dex,dt)
   local mon=slot.mon
   if not mon:setSpecies(dex,true,p.entity.ascendantPokemonModelAppearance) or not mon.rig then return false end
   if Pack.keep then Pack.keep(dex) end
-  -- Reuse the imported model's established sizing and bind-pose safety.
-  -- Gen-1 grass is eight world units tall. Use the same readable minimum
-  -- for both imported providers; a seven-unit Cobblemon body disappears in it.
-  local height=mon:worldHeight()
-  mon.scale=height>0 and math.max(1,12/height) or 1
+  if provider then
+    local scale,reference=V.require("CobblemonOverworldSize").scale(mon,dex)
+    if not scale then return false end
+    mon.scale=scale
+    p.stadiumSizeReference=reference
+  else
+    local height=mon:worldHeight()
+    mon.scale=height>0 and math.max(1,12/height) or 1
+  end
   if mon.model and mon.model.actions then
     local moved=slot.x and (math.abs(p.px-slot.x)+math.abs(p.py-slot.y)>.01)
     local clip=moved and mon.model.actions.walk or mon.model.actions.idle
@@ -90,6 +94,7 @@ function M.prepare(posed)
   for _,p in ipairs(posed or {}) do
     p.stadiumMon,p.stadiumMatrix,p.stadiumDex,p.stadiumShadowTick=nil,nil,nil,nil
     p.stadiumBounds=nil
+    p.stadiumSizeReference=nil
     p.stadiumUploadPending,p.stadiumSlot=nil,nil
     local dex=selected(p)
     if dex then

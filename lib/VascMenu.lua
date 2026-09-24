@@ -470,8 +470,9 @@ local SECTION_DEFS = {
 }
 
 local DEFAULT_SECTION_ORDER = {
-  "world", "weather", "pallet", "horizon", "battle", "terarrium", "battleHeroes", "wardrobe", "skins", "pokemon",
-  "wilds", "performance", "liveDisplay", "user", "advanced",
+  "world", "pokemon", "wilds", "battle", "terarrium", "battleHeroes",
+  "weather", "pallet", "horizon", "wardrobe", "skins",
+  "performance", "liveDisplay", "user", "advanced",
 }
 
 -- Kept as a stable public/manual-QA receipt.  Older tests and standalone
@@ -2074,13 +2075,14 @@ end
 local function newHub(mod, game)
   local rows = {}
   local errors=mod.exports and mod.exports.errors
-  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   local setup = mod.exports and mod.exports.setupCard
-  if setup then
-    rows[#rows+1] = {label=setup.title(), screen="VascSetup", help=setup.description()}
-  end
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
+    -- Keep the appearance guide beside wardrobe and UI skins.
+    if setup and (id == "wardrobe" or id == "skins") then
+      rows[#rows+1] = {label=setup.title(), screen="VascSetup", help=setup.description()}
+      setup = nil
+    end
     local section = sections[id]
     if type(section) == "table" then
       rows[#rows + 1] = {
@@ -2095,6 +2097,10 @@ local function newHub(mod, game)
       help=languageCode(mod) == "de" and "Keine VASC-Bereiche verfügbar."
         or "No VASC sections are available." }
   end
+  if setup then
+    rows[#rows+1] = {label=setup.title(), screen="VascSetup", help=setup.description()}
+  end
+  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   rows[#rows+1] = {label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
     screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
       or "Inspect diagnostics and send a support log."}

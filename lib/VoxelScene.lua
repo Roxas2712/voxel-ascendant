@@ -3098,6 +3098,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   if type(Voxel3D.weatherGrass) == "function" then
     Voxel3D.weatherGrass(true)
   end
+  Voxel3D.modelGrass(posed)
   Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
   for _, nb in ipairs(drawState.neighbors or {}) do
     Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
@@ -3106,6 +3107,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   if type(Voxel3D.weatherGrass) == "function" then
     Voxel3D.weatherGrass(false)
   end
+  Voxel3D.modelGrass(nil)
   -- flower billboards: pulled like the characters and the grass, MINUS
   -- the depth of 8 world pixels along the view (8 sin a -- the camera
   -- looks along (0, -cos a, -sin a), so that is exactly one tile row of
