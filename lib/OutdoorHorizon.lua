@@ -127,6 +127,17 @@ function H.connectionCorridors(maps,worldMaps)
  local out={}
  for _,e in ipairs(maps)do
   local map=e.map;local def=map and map.def
+  if def and def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'
+      and def.starterHabitat then
+   -- Keep the southern camera approach to the authored entry/exit low.
+   -- Horizon trees are separate from map trees and otherwise grow through
+   -- the orbit camera behind these compact rooms. The shoulder remains.
+   for _,key in ipairs({'entry','exit'})do
+    local p=def.starterHabitat[key]
+    if p then out[#out+1]={x0=e.x0+(p.x-3)*16,x1=e.x0+(p.x+4)*16,
+      z0=e.z1,z1=e.z1+256}end
+   end
+  end
   if def and map.isWalkableCell then
    for _,edge in ipairs({'north','south','west','east'})do
     local conn=def.connections and def.connections[edge]

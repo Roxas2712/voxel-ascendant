@@ -154,7 +154,7 @@ function B.geometryField(structures,furniture,models)
    end
   end
  end
- return function(x,z)local row=heights[math.floor(z/4)];return row and row[math.floor(x/4)] or 0 end
+ return function(x,z)local row=heights[math.floor(z/4)];local h=row and row[math.floor(x/4)];return h or 0,h~=nil end
 end
 function B.geometryForMap(map)
  local structures=V.require('Structures').forMap(map)
@@ -163,7 +163,16 @@ function B.geometryForMap(map)
   height=B.geometryField(structures,V.require('VoxelFurniture').find(map),V.require('VoxelItems').models)
   fields[structures]=height
  end
- return height
+ -- Quads/furniture are authored relative to their terrain datum. An empty
+ -- sample is not a solid plane at y=0: WORLD can place a valid route below it.
+ local elevation=V.require('LedgeElevation').map(map)
+ return function(x,z)
+  local h,occupied=height(x,z)
+  if not occupied then return -math.huge end
+  local base=elevation.atWorld and elevation:atWorld(x,z)
+    or elevation:at(math.floor(x/16),math.floor(z/16))
+  return base+h
+ end
 end
 function B.geometryClear(height,eye,point)
  local dx,dy,dz=point[1]-eye[1],point[2]-eye[2],point[3]-eye[3]

@@ -1823,7 +1823,14 @@ function OverworldBattle.battleHudCameraSafe(battle, arena, groundY, camera)
           local ok, scale = pcall(battle.growInScale, battle, battler)
           zeroScale = ok and scale == 0
         end
-        hiddenCurrentActor = (side == "enemy"
+        -- A trainer intro can have a complete, separately checked hero card
+        -- while the Pokemon has not appeared yet. Its nominal full-size
+        -- Pokemon prism is not another visible actor (especially on phones).
+        local introHero = (side=="player" and battle.showPlayerBack
+            and shot.actorVisuals.playerHero~=nil)
+          or (side=="enemy" and battle.showEnemyTrainer
+            and shot.actorVisuals.enemyHero~=nil)
+        hiddenCurrentActor = introHero or (side == "enemy"
           and not battle.showEnemyTrainer
           and (battle.enemySendingOut == true or battle.enemyHidden == true
             or zeroScale or (battler and battler.fainted == true)))
@@ -2101,15 +2108,17 @@ function OverworldBattle.stageFor(state, plan, bypassPreflight)
     or mode == OverworldBattle.FLAT_B and 4 or 1
   local requested = ({"MAP", "TERRARIUM", "ARENA", "DISCS"})[first]
   local reason = "selected-stage-unavailable"
+  local placementReview
   if first == 1 then
-    local ok, arena = pcall(BattleArena.find, state.map,
+    local ok, arena, review = pcall(BattleArena.find, state.map,
       state.player.cellX, state.player.cellY, state.player.surfing)
     if ok and arena then
       arena.presentationMode = "MAP"
       arena.surfing = state.player.surfing == true
       return arena
     end
-    reason = ok and "no-safe-map-placement" or tostring(arena)
+    placementReview=ok and review or nil
+    reason = ok and (review and review.reason or "no-safe-map-placement") or tostring(arena)
   end
   if not Voxel3D.available() then return nil end
   local modes = { [2]="terarrium", [3]=OverworldBattle.ARENA, [4]=OverworldBattle.FLAT_B }
@@ -2119,6 +2128,8 @@ function OverworldBattle.stageFor(state, plan, bypassPreflight)
       if index > first then
         arena.mapFallback=true; arena.requestedMode=requested
         arena.fallbackReason=reason
+        arena.placementRejected=placementReview and table.concat(placementReview.rejected,",")
+        arena.placementTotal=placementReview and placementReview.total
       end
       return arena
     end
@@ -3714,14 +3725,33 @@ local function commitShot(active, shot, pendingActors)
     -- later, distinct hold episode to emit its own single diagnostic.
     active.diagnosticOwnerPendingHold = false
     active.presentationCommitted = true
+    if active.arena and active.arena.presentationMode=="MAP" and not active.assignmentNotified then
+      active.assignmentNotified=true
+      Diagnostics.write("battle-map-assignment", {
+        mapId=active.state and active.state.map and active.state.map.id,
+        cellX=active.state and active.state.player and active.state.player.cellX,
+        cellY=active.state and active.state.player and active.state.player.cellY,
+        surfing=active.arena.surfing==true,
+        anchorMapId=active.arena.map and active.arena.map.id,
+        anchorIndex=active.arena.anchorIndex,anchorSource=active.arena.anchorSource,
+        terrainMode=V.require("LedgeElevation").mode(),
+      })
+    end
     if active.arena and active.arena.mapFallback and not active.mapFallbackNotified then
       active.mapFallbackNotified=true
       V.require("ShortcutToast").notify("MAP NOT POSSIBLE",
         (active.arena.terarrium and "TERRARIUM" or active.arena.presentationMode).." FALLBACK - 8 NEXT VIEW")
       Diagnostics.write("battle-map-placement-fallback", {
-        requested="MAP", actual=active.arena.terarrium and "TERRARIUM" or active.arena.presentationMode,
+        actual=active.arena.terarrium and "TERRARIUM" or active.arena.presentationMode,
         mapId=active.state and active.state.map and active.state.map.id,
         reason=active.arena.fallbackReason,
+        requested=active.arena.requestedMode or "MAP",
+        cellX=active.state and active.state.player and active.state.player.cellX,
+        cellY=active.state and active.state.player and active.state.player.cellY,
+        surfing=active.state and active.state.player and active.state.player.surfing==true,
+        rejectedCourts=active.arena.placementRejected,
+        candidateCount=active.arena.placementTotal,
+        terrainMode=V.require("LedgeElevation").mode(),
       })
     end
     active.pendingSwitch = nil
@@ -4161,6 +4191,8 @@ function OverworldBattle.tryPortableRecovery(active, textures, reason, first, la
         arena.mapFallback=true
         arena.requestedMode=active.arena.requestedMode or active.arena.presentationMode
         arena.fallbackReason=reason
+        arena.placementRejected=active.arena.placementRejected
+        arena.placementTotal=active.arena.placementTotal
         active.pendingPresentation={mode=modes[index],arena=arena,elapsed=0,emergency=true}
         if OverworldBattle.applyPendingPresentation(active,0,textures) then return true end
         active.pendingPresentation=nil
@@ -4185,7 +4217,40 @@ function OverworldBattle.tryFaultRecovery(active, reason)
   return OverworldBattle.tryPortableRecovery(active,textures,reason,3,4)
 end
 
+-- A court can pass terrain checks yet overlap the live HUD on a narrow
+-- screen. Exhaust the map's other reviewed courts before leaving MAP.
+-- Each candidate still crosses the complete presentation/actor transaction;
+-- no half-rendered frame or changed saved preference is published.
+function OverworldBattle.tryMapRecovery(active,textures,reason)
+  if not active or not active.arena or active.arena.presentationMode~="MAP"
+      or active.mapCourtsTried or active.pendingPresentation or not textures
+      or active.rendererOwnerKind~="legacy" then return false end
+  active.mapCourtsTried=true
+  local state=active.state
+  local ok,review=pcall(BattleArena.withVisibilitySamples,BattleArena.review,
+    state.map,state.player.surfing)
+  if not ok then return false end
+  local old=active.arena
+  for _,arena in ipairs(review.candidates) do
+    if arena.anchorIndex~=old.anchorIndex or arena.map~=old.map then
+      arena.presentationMode="MAP"
+      active.pendingPresentation={mode=true,arena=arena,elapsed=0,emergency=true}
+      if OverworldBattle.applyPendingPresentation(active,0,textures) then
+        Diagnostics.write("battle-map-court-recovery",{
+          mapId=state.map.id,anchorIndex=arena.anchorIndex,reason=reason,
+        })
+        return true
+      end
+      active.pendingPresentation=nil
+      if not rawequal(session,active) then return false end
+    end
+  end
+  return false
+end
+
 function OverworldBattle.trySceneRecovery(active, textures, reason)
+  if OverworldBattle.tryMapRecovery(active,textures,reason) then return true end
+  if not rawequal(session,active) then return false end
   if OverworldBattle.tryPortableRecovery(active,textures,reason) then return true end
   if not rawequal(session,active) then return false end
   return OverworldBattle.tryFaultRecovery(active,reason)

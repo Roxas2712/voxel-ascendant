@@ -43,6 +43,8 @@ function M.new(mod)
   local defaults={}
   for _,spec in ipairs(self.options.schema(mod)) do defaults[spec.key]=spec.default end
   function self:get(key)
+    -- Dialogue poses follow the figure mode, including F6/menu changes.
+    if key=="human_acting_pilot" then return mod.options:get("apo_hd_walking_sprites")~=false end
     if key=="human_art_style" and mod.options:get("voxelCharacterCardEnabled")==false then return "hd" end
     local value=mod.options and mod.options:get("apo_"..key)
     if value==nil then return defaults["apo_"..key] end

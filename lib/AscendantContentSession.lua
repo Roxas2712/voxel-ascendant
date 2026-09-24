@@ -289,6 +289,10 @@ function M.new(mod,options)
   end
   self.model=load('SpriteDownloadMenuModel').new(catalog,self.store,{language='de',importIds=importIds,hasPartial=function(id)return ca:info('sprite-content/pending/'..id)~=nil or ca:info('sprite-content/archive-pending/'..id)~=nil end})
   function self:cobblemon() return mod.exports and mod.exports.cobblemonContent end
+  function self:needsCobblemonDownload()
+    local c=self:cobblemon()
+    return c and (not c.requiresDownload or c.requiresDownload())and not c.complete()or false
+  end
   function self:openCobblemon()
     local c=self:cobblemon();if not c then return self:notice("Cobblemon unavailable")end
     local menu=load("CobblemonMenu").new(mod,self.game,self.guided,self.de,c)
@@ -338,7 +342,7 @@ function M.new(mod,options)
     self.lastPackage=ids[1]
     local p=self:planFor(ids)
     local cb=includeCobblemon and self:cobblemon()
-    local cbMissing=cb and not cb.complete()
+    local cbMissing=includeCobblemon and self:needsCobblemonDownload()
     if p.ready then if cbMissing then return self:openCobblemon()end;return self:notice('already_installed')end
     if not p.canDownload then return self:notice('not_yet_available')end
     local help=(self.de and 'Alle fehlenden Pakete laufen automatisch nacheinander. Bereits installierte Inhalte werden uebersprungen. Fehlende Pakete: ' or 'All missing packages download automatically, one after another. Installed content is skipped. Missing packages: ')..#p.missing..(self.de and ' Danach wird das Spiel automatisch gespeichert und neu gestartet.' or ' When finished, the game saves and restarts automatically.')
@@ -358,7 +362,7 @@ function M.new(mod,options)
         else
           local yes,err=self.installer:start(current,true);if not yes then return self:notice(err)end
         end
-        self.downloadIncludesCobblemon=includeCobblemon or nil
+        self.downloadIncludesCobblemon=cbMissing or nil
         self.cobblemonQueued=cbMissing or nil
         self.cobblemonBatch=cbMissing or nil
         self.activeOperation='download'
@@ -482,9 +486,10 @@ function M.new(mod,options)
   function self:update(game,dt)
     local cb=self:cobblemon()
     if cb then cb.update() end
+    if cb and cb.requiresDownload and not cb.requiresDownload()then self.cobblemonQueued=nil;self.cobblemonBatch=nil;self.downloadIncludesCobblemon=nil end
     if self.cobblemonQueued and self.installer.state=="ready"then
       self.cobblemonQueued=nil
-      if cb then local ok,err=cb.start();if ok then self:openCobblemon()else self:notice(err)end end
+      if cb and self:needsCobblemonDownload()then local ok,err=cb.start();if ok then self:openCobblemon()else self:notice(err)end end
     elseif self.cobblemonQueued and (self.installer.state=="cancelled" or self.installer.state=="error")then
       self.cobblemonQueued=nil;self.cobblemonBatch=nil
     end
@@ -550,7 +555,7 @@ function M.new(mod,options)
   self.promptDisabled=ca:read(PROMPT_KEY)=='1'
   self.onboardingShown=false
   function self:hasAvailableDownloads()
-    local cb=self:cobblemon();if cb and not cb.complete() then return true end
+    if self:needsCobblemonDownload()then return true end
     for _,p in ipairs(catalog.data.packages)do
       if p.published==true and catalog:relevant(p) and not catalog:installed(p.id,self.store)then return true end
     end
@@ -572,7 +577,7 @@ function M.new(mod,options)
       {label=tr('PLAY WITHOUT DOWNLOAD','OHNE DOWNLOAD SPIELEN'),action='skip',help=tr('Continue without a download. Ask again next start.','Kein Download. Weiterspielen und beim naechsten Start erneut fragen.')},
       {label=tr('DOWNLOAD / UPDATE ALL','ALLES LADEN / UPDATEN'),action='all',help=tr('Download all missing sprite collections in one go: HD, Crystal, Mega and more. Installed sprites are kept. Stadium needs your own file.','Alle fehlenden Sprite-Sammlungen in einem Durchgang laden: HD, Crystal, Mega und weitere. Vorhandene Sprites bleiben. Stadium braucht deine eigene Datei.')},
       {label=tr('HD WALKING SPRITES','HD-LAUFSPRITES'),action='hd',help=tr('Animated HD Pokemon in the world and as followers. Kanto, Johto and Hoenn; download all or choose a generation.','Animierte HD-Pokemon in der Spielwelt und als Begleiter. Kanto, Johto und Hoenn; alle laden oder Generation waehlen.')},
-      {label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),action='graphics',help=tr('Complete base pack: Cobblemon models, Crystal, Mega, animations, pixel sprites and icons. One download for all normal Ascendant Pokemon graphics.','Komplettes Basispaket: Cobblemon-Modelle, Crystal, Mega, Animationen, Pixel-Sprites und Icons. Ein Download fuer alle normalen Ascendant-Pokemon-Grafiken.')},
+      {label=tr('BASE SPRITE PACK','BASIS-SPRITEPAKET'),action='graphics',help=tr('Downloadable base sprites: Crystal, Mega, animations, pixel sprites and icons. Cobblemon is already bundled with VASC.','Ladbare Basis-Sprites: Crystal, Mega, Animationen, Pixel-Sprites und Icons. Cobblemon wird bereits mit VASC geliefert.')},
       {label=tr('IMPORT A FILE','DATEI IMPORTIEREN'),action='import',help=tr('Choose a spritepack or vaschd file you already downloaded. The file is checked before import.','Eine geladene spritepack- oder vaschd-Datei auswaehlen. Sie wird vor dem Import geprueft.')},
       {label=tr('TURN OFF THIS PROMPT','ABFRAGE ABSCHALTEN'),action='disablePrompt',help=tr('Stop showing this choice at startup. You can turn it back on in Sprite Downloads.','Diese Startabfrage dauerhaft abschalten. Im Download-Menue kannst du sie wieder einschalten.')},
     }

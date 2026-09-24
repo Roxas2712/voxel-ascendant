@@ -2889,6 +2889,7 @@ local function runJob(job)
   -- body's terrain can warm while this job resumes its finishing overlays
   -- later, without serialising every connection ahead of the current scene.
   job.urgent = false
+  job.terrainPublished = true
   coroutine.yield("terrain-ready")
 
   -- Decorations can now finish without delaying the first visible voxel
@@ -3083,6 +3084,12 @@ function ChunkMesher.pump(covered, background, loading, warpPrefetch, survey)
       if job.urgent then return job end
       local rank = type(job.priority) == "number"
                    and job.priority or (job.priority and 2 or 0)
+      -- On phones, finishing a current map's decorations must not starve
+      -- missing direct terrain. The time slice stays unchanged; only ready
+      -- BODY jobs yield their place to maps that still have no ground.
+      if MOBILE_RUNTIME and job.live and rank > 0 and not job.auxOnly and not job.terrainPublished then
+        rank = rank + 4
+      end
       if job.live and rank > firstPriorityRank then
         firstPriority, firstPriorityRank = job, rank
       end

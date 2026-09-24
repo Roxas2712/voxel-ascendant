@@ -1393,6 +1393,14 @@ function Structures.forMap(map)
   local TileRenderer = require("src.render.TileRenderer")
   local borderId = TileRenderer.borderBlockFor(map)
   local borderBlk = borderId and tileset.blocks[borderId + 1] or nil
+  -- The compact, authored habitat already has its own forest boundary.
+  -- Repeating its custom Johto tree block in the generic twelve-tile apron
+  -- creates a solid canopy directly through the entrance camera. Keep the
+  -- real boundary/collision cells; omit only this decorative outside ring.
+  if def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3' then
+    local habitat=V.require('KascHabitatScenery').profile(map)
+    if habitat=='PLANT' or habitat=='WATER' then borderBlk=nil end
+  end
   -- TREES fill stops at ROUND_RING instead of running the full RING.
   -- Only that far out does a tree cell get carved into a hull; past it
   -- the cells fall through to the mesher's plain box, and a slab of

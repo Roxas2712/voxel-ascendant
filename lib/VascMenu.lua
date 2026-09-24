@@ -338,7 +338,7 @@ local SECTION_DEFS = {
         .. "Team-, PC-, Bank-, Taschen- und Menüskins: SKINS & OVERLAYS.",
     },
     keys = {
-      trainerBack=true, battleBack=true, modernDexSpriteSource=true, battleHdSprites=true,
+      trainerBack=true, battleBack=true, modernDexSpriteSource=true, battleSpriteStyle=true,
       pokemonModelSkin=true,
     },
     actions = {
@@ -2073,6 +2073,10 @@ end
 
 local function newHub(mod, game)
   local rows = {}
+  local setup = mod.exports and mod.exports.setupCard
+  if setup then
+    rows[#rows+1] = {label=setup.title(), screen="VascSetup", help=setup.description()}
+  end
   local sections = activeSections()
   for _, id in ipairs(activeSectionOrder()) do
     local section = sections[id]
@@ -2216,6 +2220,9 @@ end
 function VascMenu.install(mod, opts)
   config = opts or config
   config.settings = config.settings or {}
+  -- This setup uses Gen1 scene/battle owners; the shared Gen2 hub must not
+  -- install Gen1 hooks or advertise an unsupported screen.
+  if config.setupCard then V.require("SetupCard").install(mod, config) end
   local screens = mod and mod.content and mod.content.screens
   if not screens or type(screens.register) ~= "function" then return false end
   screens:register("VascMenu", {

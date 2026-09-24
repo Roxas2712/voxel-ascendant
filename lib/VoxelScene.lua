@@ -38,6 +38,7 @@ local PanoramaBackdrop = V.require("PanoramaBackdrop")
 local Weather = V.require("Weather")
 local CanvasPresentation = V.require("CanvasPresentation")
 local MobileSceneryGate = V.require("MobileSceneryGate")
+local MobileWorldPlan = V.require("MobileWorldPlan")
 local ExternalKascWalker = V.require("ExternalKascWalker")
 local okWeatherTweak, WeatherTweak = pcall(V.require, "WeatherTweak")
 if not okWeatherTweak or type(WeatherTweak) ~= "table"
@@ -322,8 +323,11 @@ local function skyFor(map, weatherMode)
     and type(MobileSceneryGate.allow) == "function"
     and MobileSceneryGate.allow(map) == true
   local sky = sceneSkyColor(
-    map, skyStrength(Voxel.angle), mobileScenery)
+    map, skyStrength(Voxel.angle), MOBILE_RUNTIME or mobileScenery)
   if not sky then return nil end
+  -- A plain clear colour needs no upload or sky shader. Keep it while the
+  -- decorative scene restages so crossing a seam never flashes a black sky.
+  if MOBILE_RUNTIME and not mobileScenery then return sky end
   if sky.canopy then return sky end
   return Sky.dress(sky, weatherMode)
 end
@@ -1013,9 +1017,9 @@ end
 --
 -- Keep the mobile bootstrap deliberately small: current map only, BODY first
 -- and atlas CPU preparation. Once that exact scene has produced a real canvas,
--- its current-only Horizon/Panorama is staged and promoted. Direct connections
--- then enter a depth-1 ring one at a time; each BODY becomes visible only with
--- its own aux/atlas and future semantic horizon. No semantic phone map builds
+-- its Horizon/Panorama is staged and promoted. Direct connections enter a
+-- depth-1 ring one at a time before decoration; BODY + atlas become visible
+-- independently of aux overlays and the future semantic horizon. No semantic phone map builds
 -- current FULL, and no ring work can delay the first scene or a battle. A
 -- two-hop survey never enters this path. Desktop continues through
 -- semanticPlan unchanged below.
@@ -1035,9 +1039,8 @@ local mobileSceneryLifecycleArmed = false
 -- Gen2's useful phone invariant is an admitted depth-1 ring, not an atomic
 -- FULL + every-neighbour transaction.  `admitted` is deliberately separate
 -- from the visible plan: one direct map may enter the BODY/atlas work queue
--- per pipeline update, while a completed current-only canvas remains on
--- screen.  A neighbour becomes visible only after its own BODY, aux bundle,
--- atlas and the future semantic horizon all agree in one plan.
+-- per pipeline update. BODY + atlas publish immediately; the optional rich
+-- scene is prepared separately against that same visible terrain set.
 local mobileRingPlanMap, mobileRing = nil, nil
 local mobileGateStatus
 
@@ -1082,7 +1085,8 @@ local function semanticMobileRing(map)
   return ok and answer == true
 end
 
--- Keep only current + already admitted direct maps resident.  ChunkMesher
+-- Reserve current + all direct maps, including ready return-cache entries.
+-- Admission still queues at most one cold map per update. ChunkMesher
 -- itself retains one previous live set for a quick door/warp round-trip, so
 -- this bounds the active phone ring without weakening that existing cache.
 local function setMobileRingLive(state, ring)
@@ -1092,7 +1096,7 @@ local function setMobileRingLive(state, ring)
   for _, i in ipairs(directOrder) do
     local nb = state.neighbors[i]
     local id = nb and nb.map and nb.map.id
-    if id and ring.admitted[id] then
+    if id then
       live[id] = true
       key = key .. "|" .. tostring(id)
     end
@@ -1123,11 +1127,25 @@ local function mobileCorePrefetch(state)
   mobileSceneryLifecycleArmed = true
 
   if mobileSceneryPlanMap ~= map then
+    -- Preserve only actual direct connections with the same map instances and
+    -- translated native offsets. Doors, warps and replaced maps start fresh.
+    local retained = MobileWorldPlan.handoff(state,
+      mobileSceneryPlan and mobileSceneryPlan.state, activeUnion and activeUnion.state)
     mobileSceneryPlanMap, mobileSceneryPlan = map, nil
     mobileSceneryHorizonMap, mobileSceneryHorizon = map, nil
     mobileSkyWarmMap, mobileSkyWarmPhase = map, "clouds"
     mobileSceneryCanvasMap, mobileSceneryNextSlot = map, "mobile-scenery"
-    resetMobileRing(map)
+    local nextRing = resetMobileRing(map)
+    nextRing.admitted = retained
+    -- A fast return can already have every direct BODY cached. Reuse those
+    -- before setLive changes the return set, rather than briefly dropping
+    -- them and rebuilding one connection per frame.
+    local _, warmOrder = directIds(state)
+    for _, i in ipairs(warmOrder) do
+      local nb = state.neighbors[i]
+      local mesh = ChunkMesher.pair(nb.map, true)
+      if mesh and atlasPrepared(nb.map) then nextRing.admitted[nb.map.id] = true end
+    end
   end
   local ring = ringFor(map)
   ring.semantic = semanticMobileRing(map)
@@ -1168,10 +1186,9 @@ local function mobileCorePrefetch(state)
     })
   end
 
-  -- Before a real canvas has been returned, current-map work is the entire
-  -- live set.  This prevents render()'s second prefetch in the publication
-  -- frame from doing a synchronous neighbour-atlas prepare before that first
-  -- canvas has actually reached the caller.
+  -- Reserve the direct ring before eviction, but do not queue cold neighbour
+  -- work here. Only the update lane may prepare its atlas after publication;
+  -- render() can call prefetch twice without adding synchronous cold work.
   local _, directOrder = directIds(state)
   local live = setMobileRingLive(state, ring)
   traceMobileCore(map, "live-set", {
@@ -1235,20 +1252,24 @@ local function mobileCorePrefetch(state)
     end
   end
 
-  -- Semantic outdoor maps never enqueue the current FULL slot on a phone.
-  -- Their current-only HorizonWall is already the closed edge treatment and
-  -- every admitted direct BODY is promoted independently behind a future
-  -- horizon.  Non-semantic interiors/settings retain a maskless current FULL
-  -- fallback, but it is independent of the ring and never waits for a direct
-  -- map; this removes the old FULL+all-direct atomic dependency everywhere.
+  -- Semantic outdoors use BODY terrain and a separately staged horizon.
+  -- Isolated interiors retain their existing FULL fallback; connected bodies
+  -- must not overlap a maskless repeated FULL border.
   local terrain, terrainWater = body, bodyWater
-  -- A failed rich probe is latched for this map object.  Keep drawing the
-  -- already proven current BODY contract rather than leaking the unproven
-  -- candidate ring into the ordinary (non-scenery) render path.
+  -- A failed rich probe is latched for this map object, without dropping the
+  -- independently ready terrain ring.
   local gateState = mobileGateStatus and mobileGateStatus(map) or nil
-  local visiblePlan = gateState and gateState.failed and corePlan
-                      or mobileSceneryPlan or corePlan
-  if not ring.semantic and mobileCoreTrace.presented == true then
+  -- Playable ground is independent of decorative aux/horizon/panorama work.
+  -- A cold or failed rich pass must never erase an already ready neighbour.
+  local bodyPlan = MobileWorldPlan.bodies(state, nbMesh, nbWater, atlasPrepared)
+  local richPlan = not (gateState and gateState.failed) and mobileSceneryPlan
+  local richActive = richPlan and type(MobileSceneryGate.allow) == "function"
+    and MobileSceneryGate.allow(map)
+  local visiblePlan = richPlan and MobileWorldPlan.covers(bodyPlan, richPlan)
+    and (richActive or MobileWorldPlan.covers(richPlan, bodyPlan))
+    and richPlan or bodyPlan
+  if not ring.semantic and mobileCoreTrace.presented == true
+      and #visiblePlan.state.neighbors == 0 then
     ChunkMesher.request(map, false, nil, false, 2)
     local full, fullWater = ChunkMesher.pair(map, false)
     if full then
@@ -1261,7 +1282,7 @@ local function mobileCorePrefetch(state)
       visiblePlan.mobileCoreClosed = true
     end
   end
-  setActive(state, visiblePlan.maps)
+  setActive(visiblePlan.state, visiblePlan.maps)
   return terrain, nbMesh, terrainWater, nbWater, visiblePlan
 end
 
@@ -1633,106 +1654,11 @@ local function nextMobileRingAdmission(state, ring, directOrder)
   end
 end
 
-local function nextMobileRingCandidate(state, ring, meshes, directOrder)
-  local visible = mobileSceneryPlan and mobileSceneryPlan.maps
-                  or { [state.map.id] = true }
-  local approached = seamCandidate(state)
-  local function ready(i)
-    local nb = i and state.neighbors[i]
-    local id = nb and nb.map and nb.map.id
-    return id and ring.admitted[id] and not ring.failed[id]
-           and not visible[id] and visuallyReady(nb, i, meshes)
-  end
-  if ready(approached) then return approached end
-  for _, i in ipairs(directOrder) do if ready(i) then return i end end
-end
-
--- Advance Gen2-style depth-1 residency from the pipeline update only.  The
--- return tuple begins with `handled`: callers must not fall through into a
--- second upload/mesh action when a ring step already consumed this update.
-local function advanceMobileRing(state)
-  local map = state.map
-  local ring = ringFor(map)
-  if not ring.semantic then return false end
-
-  local status = mobileGateStatus(map)
-  if not status or status.failed then return false end
-
-  -- finishProbe is the only proof that the candidate canvas actually became
-  -- safe.  Until that render happens, keep every other admission/promotion
-  -- paused and let render() consume the already prepared plan.
-  if ring.promoting then
-    if not status.active then return true, false, "direct-ring-probe" end
-    setActive(state, mobileSceneryPlan.maps)
-    traceMobileCore(map,
-      "direct-visible-" .. tostring(ring.promoting.mapId), {
-        neighbor=ring.promoting.mapId,
-        visibleMaps=#(mobileSceneryPlan.state.neighbors or {}) + 1,
-        depth=1,
-      })
-    ring.promoting = nil
-  end
-
-  if not status.active then return false end
-
-  -- The future horizon is cooperative and may need several updates.  It is
-  -- built while Gate.active keeps the previous canvas visible.  Only a ready
-  -- horizon can arm the one-frame ping-pong promotion; a failed neighbour is
-  -- skipped without poisoning the current core or its other direct seams.
-  if ring.pending then
-    local pending = ring.pending
-    local ok, horizonOrError, ready, failed = pcall(
-      HorizonWall.meshes, pending.plan.state)
-    if ok and ready == true then
-      local begin = type(MobileSceneryGate.beginRingPromotion) == "function"
-                    and MobileSceneryGate.beginRingPromotion(map) == true
-      if not begin then return true, false, "direct-ring-promotion-gate" end
-      pending.plan.horizonFallback = nil
-      pending.plan.mobileCoreClosed = true
-      pending.plan.mobileRingDepth = 1
-      mobileSceneryPlan = pending.plan
-      mobileSceneryHorizonMap, mobileSceneryHorizon =
-        map, horizonOrError or {}
-      ring.pending = nil
-      ring.promoting = pending
-      traceMobileCore(map,
-        "direct-horizon-ready-" .. tostring(pending.mapId), {
-          neighbor=pending.mapId,
-          visibleMaps=#(pending.plan.state.neighbors or {}) + 1,
-          depth=1,
-        })
-      return true, true, "direct-ring-horizon"
-    end
-    if not ok or failed == true then
-      ring.failed[pending.mapId] = true
-      ring.pending = nil
-      mobileDiagnostic("fallback", "mobile-direct-ring-horizon",
-        ok and "build-failed" or tostring(horizonOrError),
-        "previous-ring-retained", {
-          caller="VoxelScene.stageMobileScenery", context="world",
-          map=map.id, neighbor=pending.mapId, depth=1,
-        })
-      return true, false, "direct-ring-horizon-failed"
-    end
-    return true, false, "direct-ring-horizon"
-  end
-
-  local meshes, waters, directOrder = mobileRingPairs(state, ring)
-  local candidateIndex = nextMobileRingCandidate(
-    state, ring, meshes, directOrder)
-  if candidateIndex then
-    local nb = state.neighbors[candidateIndex]
-    local futureIds = copySet(mobileSceneryPlan.maps)
-    futureIds[nb.map.id] = true
-    local plan = planForIds(state, meshes, waters, futureIds)
-    if plan then
-      ring.pending = {
-        mapId=nb.map.id, index=candidateIndex, plan=plan,
-      }
-      return true, false, "direct-ring-candidate"
-    end
-  end
-
+-- One direct terrain admission per update, before optional decoration. No
+-- two-hop maps, synchronous meshing or draw-time atlas preparation.
+local function admitMobileTerrain(state)
+  local ring = ringFor(state.map)
+  local _, directOrder = directIds(state)
   -- Admit no more than one cold map in this update.  Atlas preparation and
   -- the first BODY request stay together so the following bounded mesher pump
   -- can immediately spend its slice on that exact direct neighbour.
@@ -1749,7 +1675,7 @@ local function advanceMobileRing(state)
     local approached = seamCandidate(state)
     ChunkMesher.request(nb.map, true, nil, false,
                         admission == approached and 2 or 1)
-    traceMobileCore(map, "direct-admitted-" .. tostring(id), {
+    traceMobileCore(state.map, "direct-admitted-" .. tostring(id), {
       neighbor=id, depth=1, atlasReady=atlasPrepared(nb.map),
     })
     return true, true, "direct-ring-admit"
@@ -1766,6 +1692,33 @@ function VoxelScene.stageMobileScenery(state)
   local map = state.map
   if mobileSceneryPlanMap ~= map or not mobileSceneryPlan then return false end
 
+  local admitted, ready, name = admitMobileTerrain(state)
+  if admitted then return ready, name end
+  -- Stage decoration around the ground that can actually be seen now. A
+  -- delayed aux bundle/panorama cannot hold the playable neighbour hostage.
+  local ringMeshes, ringWaters = mobileRingPairs(state, ringFor(map))
+  local ground = MobileWorldPlan.bodies(state, ringMeshes, ringWaters, atlasPrepared)
+  if not MobileWorldPlan.covers(mobileSceneryPlan, ground)
+      or not MobileWorldPlan.covers(ground, mobileSceneryPlan) then
+    ground.mobileTerrainOnly = nil
+    -- Keep the completed scene visible while its larger replacement builds.
+    -- Previously every new BODY reset P1 and hid the whole skyline, producing
+    -- a bare-map flash for each connection even at a steady 60 FPS.
+    if MobileSceneryGate.allow(map) then
+      local ok, meshes, complete = pcall(HorizonWall.meshes, ground.state)
+      if not ok or complete ~= true then return false, "ring-horizon" end
+      ground.horizonFallback = nil
+      ground.mobileCoreClosed = true
+      mobileSceneryPlan = ground
+      mobileSceneryHorizonMap, mobileSceneryHorizon = map, meshes or {}
+      return true, "ring-horizon-promoted"
+    end
+    mobileSceneryPlan = ground
+    mobileSceneryHorizonMap, mobileSceneryHorizon = map, nil
+    if type(MobileSceneryGate.restage) == "function" then
+      MobileSceneryGate.restage(map, "direct-terrain-ready")
+    end
+  end
   if type(MobileSceneryGate.nextResource) ~= "function" then return false end
 
   local resource = MobileSceneryGate.nextResource(map)
@@ -1859,9 +1812,6 @@ function VoxelScene.stageMobileScenery(state)
     return false, "panorama-terminal"
   end
 
-  local ringHandled, ringReady, ringName = advanceMobileRing(state)
-  if ringHandled then return ringReady, ringName end
-
   if type(MobileSceneryGate.assetWarmAllowed) ~= "function"
       or MobileSceneryGate.assetWarmAllowed(map) ~= true then
     return false
@@ -1912,8 +1862,7 @@ function VoxelScene.mobileSceneryLifecyclePending(state)
   end
   if mobileRingPlanMap == map and mobileRing and mobileRing.semantic then
     local status = mobileGateStatus(map)
-    if status and not status.failed then
-      if mobileRing.pending or mobileRing.promoting then return true end
+    if status then
       local visible = mobileSceneryPlan.maps or {}
       local _, directOrder = directIds(state)
       for _, i in ipairs(directOrder) do
@@ -2652,9 +2601,10 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     if type(MobileSceneryGate.enterMap) == "function" then
       MobileSceneryGate.enterMap(state.map)
     end
-    mobileScenery = type(MobileSceneryGate.allow) == "function"
+    mobileScenery = not plan.mobileTerrainOnly
+                      and type(MobileSceneryGate.allow) == "function"
                       and MobileSceneryGate.allow(state.map) == true
-    if not mobileScenery
+    if not mobileScenery and not plan.mobileTerrainOnly
         and type(MobileSceneryGate.beginProbe) == "function" then
       mobileSceneryProbe = MobileSceneryGate.beginProbe(state.map) == true
       mobileScenery = mobileSceneryProbe
@@ -2707,8 +2657,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- Semantic sky/horizon discovery belongs to the desktop scene.  Mobile's
   -- bounded world-core pass intentionally starts with neutral lighting and
   -- adds no horizon, glass or weather dependency before the first canvas.
-  local outdoor = (not MOBILE_RUNTIME or mobileScenery)
-                  and HorizonWall.hasSky(state.map)
+  local outdoor = HorizonWall.hasSky(state.map)
   local dynamic=V.require("LocalLights").enabled()
   local indoorLight=dynamic and not outdoor and V.require('InteriorLights').layout(state.map)
   DayNight.applyRig(outdoor or (dynamic and DayNight.isCanopy(state.map))
@@ -3134,6 +3083,7 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- drawEntity resolves the lean-over-the-wall-in-front case, and a
   -- character genuinely behind a building is far deeper and loses the
   -- test, so buildings and trees really occlude.
+  V.require('AccessWayfinding').draw(drawState)
   drawCast(drawState, posed, atlasFor, me)
   -- tall grass last, pulled camera-ward exactly as far as the characters
   -- were (same per-vertex shader bias, so grass never drifts either):
@@ -3313,6 +3263,18 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
     traceMobileCore(state.map, "canvas-presented", {
       caller="VoxelScene.render", context="world",
     })
+    -- Report visibility only after the terrain draw returned a canvas. The
+    -- monitor must not keep timing out a neighbour whose body already landed
+    -- merely because its optional rich scenery is still being prepared.
+    for _, nb in ipairs(drawState.neighbors or {}) do
+      local phase = "direct-visible-" .. tostring(nb.map.id)
+      if not mobileCoreTrace.phases[phase] then
+        traceMobileCore(state.map, phase, {
+          neighbor=nb.map.id, depth=1, terrainFirst=true,
+          sceneryReady=mobileScenery, visibleMaps=#drawState.neighbors+1,
+        })
+      end
+    end
     if mobileScenery then
       mobileSceneryNextSlot = sceneSlot == "mobile-scenery"
         and "world" or "mobile-scenery"

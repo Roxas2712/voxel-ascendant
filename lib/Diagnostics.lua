@@ -509,7 +509,9 @@ local SAFE_FIELDS = {}
 for _, key in ipairs({
   "action", "active", "actual", "animation", "animationTarget", "axis",
   "backend", "baseZipSha256", "battleId", "build", "buildReceiptId",
-  "caller", "camera",
+  "caller", "camera", "requested", "cellX", "cellY", "surfing",
+  "rejectedCourts", "candidateCount", "terrainMode",
+  "anchorMapId", "anchorIndex", "anchorSource",
   "canvasHeight", "canvasWidth", "cardId", "checkpoint", "code", "count",
   "context", "clipScaleX", "clipScaleY", "determinant",
   "dependency", "dependencyStatus", "diagnosticCode", "dpi", "edition",

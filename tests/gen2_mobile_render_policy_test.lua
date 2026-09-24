@@ -6,7 +6,7 @@ for _,os in ipairs({'iOS','Android','OS X'})do
  local setting={new=function(key,label,values,labels,default)
   local t={value=default or values[1]};function t:get()return self.value end;return t
  end}
- local modules={ModSetting=setting,CanvasPresentation={OS=os},Mat4=assert(loadfile(root..'/gen2/lib/Mat4.lua'))()}
+ local modules={ActorLighting={install=noop},ModSetting=setting,CanvasPresentation={OS=os},Mat4=assert(loadfile(root..'/gen2/lib/Mat4.lua'))()}
  local V={require=function(k)return modules[k] or {}end}
  local aa=assert(loadfile(root..'/gen2/lib/AntiAlias.lua'))(V)
  local gpu=assert(loadfile(root..'/gen2/lib/Voxel3D.lua'))(V)

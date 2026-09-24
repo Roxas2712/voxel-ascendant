@@ -18,7 +18,28 @@ end
 local catalogHash=sha(V.mod:read('assets/cobblemon-catalog.json'))
 local installed={};local complete=false;local candidate;local receiptRaw=cache:read(ROOT..'installed.json')
 if receiptRaw then local ok,r=pcall(J.decode,receiptRaw);if ok and r.schema==1 and r.commit==C.commit and type(r.species)=='table'then installed=r.species;complete=r.complete==true and r.catalogHash==catalogHash end end
-local state={phase='idle',done=0,total=0,bytes=0,totalBytes=0,message='',failures={}}
+-- The release contains engine-ready data, not just importer inputs. A fresh
+-- installation (including a read-only cache) can use it immediately. Load one
+-- requested model at a time; never decode the whole model collection at boot.
+local bundled={};local bundledComplete=false
+local bundledRaw=V.mod:read('assets/cobblemon-prepared/index.json')
+if bundledRaw then
+ local ok,r=pcall(J.decode,bundledRaw)
+ if ok and type(r)=='table' and r.schema==1 and r.commit==C.commit
+     and r.catalogHash==catalogHash and r.importRevision==C.importRevision
+     and type(r.species)=='table' then
+  bundled=r.species;bundledComplete=r.complete==true and r.speciesCount==C.speciesCount
+ end
+end
+complete=complete or bundledComplete
+local downloadable=false;for _,f in ipairs(C.files)do if not f.bundled then downloadable=true end end
+function M.requiresDownload()return downloadable end
+function M.included()return not downloadable end
+local state={phase=complete and 'ready' or 'idle',done=0,total=0,bytes=0,totalBytes=0,message=complete and 'Included models are ready.' or '',failures={}}
+local function hashFor(rows,dex,variant)
+ local r=rows[tostring(dex)];local h=type(r)=='table' and r[variant or 'normal']
+ return type(h)=='string' and #h==64 and h:match('^[a-f0-9]+$') and h or nil
+end
 local jobs={};local queue,position,compileList,compileIndex,variantIndex,working={},1,nil,1,1,nil
 local function now()return love.timer and love.timer.getTime() or 0 end
 local samples={}
@@ -40,14 +61,21 @@ local baseVariants={{key='normal',aspects={}},{key='female',aspects={female=true
 function M.status()return state end
 function M.complete()return complete end
 function M.available(dex,variant)
- if dex==nil then return next(installed)~=nil end
- local r=installed[tostring(dex)];return type(r)=='table' and type(r[variant or 'normal'])=='string'
+ if dex==nil then return next(bundled)~=nil or next(installed)~=nil end
+ return hashFor(bundled,dex,variant)~=nil or hashFor(installed,dex,variant)~=nil
 end
 function M.read(path)return read(path)end
 function M.record(dex,variant)
- local r=installed[tostring(dex)];local h=r and r[variant or 'normal'];if not h then return nil end
- local raw=cache:read(ROOT..'models/'..h..'.json');if not raw or sha(raw)~=h then return nil end
- local ok,m=pcall(J.decode,raw);return ok and m or nil
+ for _,source in ipairs({bundled,installed})do
+  local h=hashFor(source,dex,variant)
+  if h then
+   local raw=source==bundled and V.mod:read('assets/cobblemon-prepared/models/'..h..'.json')
+     or cache:read(ROOT..'models/'..h..'.json')
+   if raw and sha(raw)==h then
+    local ok,m=pcall(J.decode,raw);if ok and type(m)=='table' then return m end
+   end
+  end
+ end
 end
 function M.busy()return state.phase=='download' or state.phase=='prepare'end
 local function stop(phase,message)
@@ -56,6 +84,7 @@ local function stop(phase,message)
 end
 function M.cancel()stop('cancelled','Download stopped. Verified files are retained.')end
 function M.start(generation)
+ if not downloadable then return bundledComplete,bundledComplete and 'included'or 'bundled_models_unavailable'end
  if M.busy()then return false,'busy'end
  candidate={};for k,v in pairs(installed)do candidate[k]=v end
  queue={};position=1;compileList={};compileIndex=1;variantIndex=1;working=nil
@@ -111,7 +140,7 @@ function M.update()
   if not dex then
    local raw=Encode{schema=1,commit=C.commit,species=candidate,catalogHash=catalogHash,complete=#compileList==C.speciesCount}
    if cache:write(ROOT..'installed.json',raw)~=true then stop('error','Cannot activate graphics');return end
-   installed=candidate;complete=#compileList==C.speciesCount
+   installed=candidate;complete=bundledComplete or #compileList==C.speciesCount
    local supported=0;for _,entry in pairs(installed)do if entry.normal then supported=supported+1 end end
    state.supported=supported;state.phase='ready';state.message=string.format('Cobblemon: %d species ready. Missing models use existing sprites.',supported);M.epoch=(M.epoch or 0)+1;progress();return
   end

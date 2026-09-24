@@ -4,6 +4,9 @@ local V = ...
 local M = { KEY="0" }
 M.setting=V.require("ModSetting").new("battleHdSprites", "HD BATTLE SPRITES",
   {false,true}, {"OFF", "ON"}, false)
+M.styleSetting=V.require("ModSetting").new("battleSpriteStyle", "BATTLE POKEMON STYLE",
+ {"current","original","crystal","hd","stadium1","stadium2","cobblemon"},
+ {"AUTO","ORIGINAL","CRYSTAL","HD ANIMATED","STADIUM 1","STADIUM 2","COBBLEMON"},"current")
 local states = setmetatable({}, {__mode="k"})
 local Game = require("src.core.Game")
 local Battle = require("src.battle.BattleState")
@@ -36,7 +39,8 @@ local function state(b)
   local s=states[b]
   if not s then
     local hd=M.setting:get()==true
-    s={choice=hd and "hd" or "current",label=hd and "HD ANIMATED" or "AUTO",cache={}}
+    local choice=M.styleSetting:get();if choice=="current" and hd then choice="hd" end
+    s={choice=choice,label=string.upper(choice),cache={}}
     states[b]=s
   end
   return s
@@ -187,23 +191,26 @@ function M.update(b,dt)
     end
   end
 end
-function M.choices(b)
+function M.choices(b,includeMissing)
   local rows={{id="current",label="AUTO"}}
   local view=staged(b) and "front" or "back"
   for _,r in ipairs({{id="original",label="ORIGINAL"},{id="crystal",label="CRYSTAL"}})do
     -- Availability is per actor, just like HD. A missing enemy pack must
     -- not hide an installed player style; that actor retains its native art.
-    if imageFor(b,"player",view,r.id) or imageFor(b,"enemy","front",r.id) then rows[#rows+1]=r end
+    local available=imageFor(b,"player",view,r.id) or imageFor(b,"enemy","front",r.id)
+    if available or includeMissing then r.unavailable=not available;rows[#rows+1]=r end
   end
   local hd=V.require("HdPokemonPresentation")
-  if hd.resolve(b.game,b.player and b.player.mon) or hd.resolve(b.game,b.enemy and b.enemy.mon) then
-    rows[#rows+1]={id="hd",label="HD ANIMATED"}
-  end
-  if staged(b) then
+  local hdReady=hd.resolve(b.game,b.player and b.player.mon) or hd.resolve(b.game,b.enemy and b.enemy.mon)
+  if hdReady or includeMissing then rows[#rows+1]={id="hd",label="HD ANIMATED",unavailable=not hdReady} end
+  -- Model selection itself switches cropped backs to full-body presentation.
+  -- Do not hide it behind the current sprite orientation.
+  if b.voxelAscendantShot~=nil or includeMissing then
     local provider=V.PokemonModelProvider
     for _,id in ipairs({"stadium1","stadium2","cobblemon"})do
       local source=provider.resolve(id)
-      if source==id then rows[#rows+1]={id=id,label=id=="cobblemon" and "COBBLEMON" or id=="stadium1" and "STADIUM 1" or "STADIUM 2"} end
+      local ready=b.voxelAscendantShot~=nil and source==id
+      if ready or includeMissing then rows[#rows+1]={id=id,label=id=="cobblemon" and "COBBLEMON" or id=="stadium1" and "STADIUM 1" or "STADIUM 2",unavailable=not ready,needsStage=b.voxelAscendantShot==nil} end
     end
   end
   return rows
@@ -213,6 +220,19 @@ end
 function M.recover(b)
   local s=state(b)
   s.choice="original";s.label="ORIGINAL (RECOVERY)";s.cache={}
+end
+function M.select(game,id)
+  local b=active(game)
+  if not b then V.require("ShortcutToast").notify("POKEMON SPRITES","Wait for the command menu");return false end
+  for _,row in ipairs(M.choices(b))do
+    if row.id==id then
+      local s=state(b);s.choice=id;s.label=row.label
+      V.require("ShortcutToast").notify("POKEMON SPRITES",row.label)
+      return true
+    end
+  end
+  V.require("ShortcutToast").notify("POKEMON SPRITES","Source unavailable for this battle")
+  return false
 end
 function M.cycle(game)
   local b=active(game);if not b then return false end

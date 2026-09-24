@@ -807,6 +807,28 @@ local INTERIOR_FLOOR_GLSL = V.require('Gen1OutdoorScenery').waterGLSL .. [[
     vec2 pos=world.xz;
     float family = floor(-material - 128.0 + 0.5);
     if (family == 46.0) return outdoorWater(pos,0.0);
+#ifdef VASC_MOBILE_FLOOR
+    // Phone-size pixels cannot resolve half-world-pixel random grains.
+    // Use continuous broad variation for the two reported outdoor floors;
+    // lavender retains its paving courses with soft, distance-faded joints.
+    if (family == 32.0) {
+      float drift=sin(pos.x*.033+sin(pos.y*.025))*.025;
+      return vec4(vec3(.77,.70,.50)+drift,1.0);
+    }
+    if (family == 45.0 || family == 34.0) {
+      // Both town paving families need filtered joints on phone-size pixels.
+      // Hard subpixel step() seams alias into moving stripes while walking.
+      vec2 size=family==45.0 ? vec2(18.0,10.0) : vec2(16.0,8.0);
+      float row=floor(pos.y/size.y);
+      vec2 seam=mod(vec2(pos.x+mod(row,2.0)*size.x*.5,pos.y),size);
+      vec2 edge=min(seam,size-seam);
+      float joint=1.0-smoothstep(.2,1.1,min(edge.x,edge.y));
+      float detail=1.0-smoothstep(80.0,320.0,length(eye-world));
+      float variation=sin(pos.x*.028+sin(pos.y*.041))*.012;
+      vec3 paving=family==45.0 ? vec3(.57,.55,.61) : vec3(.62,.65,.67);
+      return vec4((paving+variation)*(1.0-joint*.15*detail),1.0);
+    }
+#endif
     if (family == 50.0) {
       vec2 grainPos=floor(pos*2.0);
       float grain=fract(sin(dot(grainPos,vec2(12.9898,78.233)))*43758.5453);
@@ -1032,7 +1054,7 @@ local function shaderSource(variant, grid, lighting)
     return V.require('Gen1CaveWalls').GLSL
   end,1)
   source=source:gsub("#ifdef PIXEL",function()
-    return "#ifdef PIXEL\nuniform Image roomMask;\nuniform vec3 roomMaskSize;\n"..INTERIOR_FLOOR_GLSL..CaveSurfaces.GLSL..TowerAtmosphere.GLSL..V.require("CaveBattleMist").GLSL
+    return "#ifdef PIXEL\nuniform highp vec3 eye;\nuniform Image roomMask;\nuniform vec3 roomMaskSize;\n".."#ifdef GL_ES\nprecision highp float;\n#endif\n"..INTERIOR_FLOOR_GLSL..CaveSurfaces.GLSL..TowerAtmosphere.GLSL..V.require("CaveBattleMist").GLSL.."\n#ifdef GL_ES\nprecision mediump float;\n#endif\n"
   end,1)
   source=source:gsub("vec4 p = Texel%(tex, tc%);",
     "if(roomMaskSize.z>0.5){vec2 ru=vWorld.xz/roomMaskSize.xy;bool outsideRoomMap=ru.x<0.0||ru.y<0.0||ru.x>=1.0||ru.y>=1.0;if(outsideRoomMap){if(roomMaskSize.z<1.5)discard;}else if(Texel(roomMask,(floor(vWorld.xz/8.0)+vec2(0.5))/(roomMaskSize.xy/8.0)).r<0.5)discard;}\n    vec4 p = Texel(tex, tc);\n    if (tc.x < -200.5) p = caveSurface(tc.x, vWorld); else if (tc.x < -128.5) p = interiorFloor(tc.x, vWorld);")
@@ -1068,7 +1090,7 @@ local function shaderSource(variant, grid, lighting)
     return vec4(rgb,1.0)*color;]],1)
   if localLights.supported and lighting ~= false then
     source=source:gsub("#ifdef PIXEL",function()
-      return "#ifdef PIXEL\nuniform vec3 eye;\nuniform float localActorOn;\n"..localLights.glsl()
+      return "#ifdef PIXEL\nuniform float localActorOn;\n"..localLights.glsl()
     end,1)
     local normal=localLights.mobile and 'vec3 localNormal=vec3(0,1,0);' or [[
     vec3 localNormal=cross(dFdx(vWorld),dFdy(vWorld));
@@ -1077,6 +1099,15 @@ local function shaderSource(variant, grid, lighting)
     source=source:gsub("vec3 rgb = p.rgb %* vShade", normal..[[
     vec3 rgb = p.rgb * localSurfaceShade(vShade,localActorOn>.5 ? vec3(0,1,0) : localNormal,vWorld)]],1)
     source=source:gsub("rgb = caveBattleFade", "rgb += p.rgb * (localActorOn>.5 ? localActorIrradiance(vWorld,localNormal) : localIrradiance(vWorld,localNormal));\n    rgb = caveBattleFade",1)
+  end
+  -- GLES links shared uniforms across stages; LOVE uses different default
+  -- float precision in vertex and fragment shaders. Specify the same one.
+  source=source:gsub("uniform vec3 eye;", "uniform highp vec3 eye;")
+  -- Surface functions above use highp intermediates, then restore LOVE's
+  -- mediump effect signature. Changing the entry-point precision breaks the
+  -- GLES prototype supplied by LOVE even when desktop drivers accept it.
+  if variant == "mobile-core" or variant == "mobile-safe" then
+    source = "#define VASC_MOBILE_FLOOR 1\n" .. source
   end
   if grid then source = "#define VOXEL_GRID 1\n" .. source end
   return source

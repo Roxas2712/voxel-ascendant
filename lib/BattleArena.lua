@@ -837,10 +837,10 @@ function BattleArena.clearance(map, arena)
   local eye = rig.eye
   if not BattleArena.cameraClear(map, eye,
                                  BattleArena.CAMERA_EDGE_MARGIN) then
-    return false
+    return false,"camera-obstruction"
   end
   for _, mark in ipairs({ arena.player, arena.enemy }) do
-    if BattleArena.visibility(map, eye, mark, groundY) < 3 then return false end
+    if BattleArena.visibility(map, eye, mark, groundY) < 3 then return false,"pokemon-visibility" end
   end
   if arena.trainerOffsets then
     local H=V.require("BattleHeroesBridge")
@@ -852,13 +852,13 @@ function BattleArena.clearance(map, arena)
       local x,z=mark[1]+offset[1]*1.5,mark[2]+offset[2]*1.5
       for _,dx in ipairs({-8,0,8}) do
         for _,dz in ipairs({-6,0,6}) do
-          if not openCell(map,math.floor((x+dx)/CELL),math.floor((z+dz)/CELL),arena.surfing==true)
-              or math.abs(groundAt(map,x+dx,z+dz)-groundY)>.5
-              or geometry(x+dx,z+dz)>groundY+.5 then return false end
+          if not openCell(map,math.floor((x+dx)/CELL),math.floor((z+dz)/CELL),arena.surfing==true) then return false,"trainer-footprint" end
+          if math.abs(groundAt(map,x+dx,z+dz)-groundY)>.5 then return false,"trainer-height" end
+          if geometry(x+dx,z+dz)>groundY+.5 then return false,"trainer-geometry" end
         end
-        if BattleArena.visibility(map,eye,{x+dx,z},groundY,27)<3 then return false end
+        if BattleArena.visibility(map,eye,{x+dx,z},groundY,27)<3 then return false,"trainer-visibility" end
         for _,rise in ipairs({1,13.5,27}) do
-          if not H.geometryClear(geometry,eye,{x+dx,groundY+rise,z}) then return false end
+          if not H.geometryClear(geometry,eye,{x+dx,groundY+rise,z}) then return false,"trainer-geometry-ray" end
         end
       end
     end
@@ -883,7 +883,9 @@ end
 -- must pass the same complete visibility and camera-clearance checks
 -- before it can own a physical arena.
 function BattleArena.keepAnchorSafe(map, arena, allowCompact)
-  if BattleArena.clearance(map, arena) then return true end
+  local safe,why=BattleArena.clearance(map,arena)
+  if safe then return true end
+  if arena then arena.clearanceReason=why end
   local previous = arena and arena.cam
   if arena then arena.cam = "wide" end
   if BattleArena.clearance(map, arena) then return true end
@@ -899,7 +901,7 @@ function BattleArena.keepAnchorSafe(map, arena, allowCompact)
 end
 
 -- The nearest arena to (fromX, fromY) -- the player's cell -- or nil when
--- the map has room for neither shape.
+-- the map has no safe authored court or local placement.
 --
 -- Distance is measured from the player to the arena's MIDPOINT, so "nearest"
 -- means the fight is staged as close to where it was triggered as the ground
@@ -908,85 +910,111 @@ end
 -- Both shapes are searched over the whole map before the next one is tried:
 -- a wide arena on the far side of a route still beats a narrow one
 -- underfoot, because the wide one is the shot this mode is framed for.
-function BattleArena.find(map, fromX, fromY, surfing)
-  if not (map and map.widthCells) then return nil end
-
-  -- the authored spot wins outright when the map has one and it still holds
+-- Validate courts once per request. The returned review can also be used by
+-- the native coverage audit to assign EVERY encounter cell without repeating
+-- the expensive geometry rays. It is never retained across map/terrain edits.
+function BattleArena.review(map, surfing)
+  local review = { map=map, surfing=surfing==true, candidates={}, rejected={} }
+  if not (map and map.widthCells) then review.reason="missing-map"; return review end
   local pick = authoredFor(map.id)
-  -- `false` is an authored REFUSAL: a map looked at and found to have nowhere
-  -- a fight can be seen, with no other floor to borrow. Declining is the
-  -- honest answer -- the battle draws on the plain screen -- and it has to be
-  -- said explicitly, because the fallback search below would otherwise go and
-  -- find one of the bad spots that were already rejected by eye.
-  if pick == false then return nil end
+  review.pick = pick
+  if pick == false then review.reason="authored-refusal"; return review end
   local entries = entryList(pick)
-  local authoredBest, authoredScore = nil, nil
+  review.total = #entries
   local grids = {}
-  local originHeight = groundAt(map, fromX * CELL + CELL / 2,
-                                fromY * CELL + CELL / 2)
   for index, entry in ipairs(entries) do
-    local shape = nil
-    for _, s in ipairs(BattleArena.SHAPES) do
-      if s.id == (entry.shape or "wide") then shape = s end
+    local shape
+    for _, candidate in ipairs(BattleArena.SHAPES) do
+      if candidate.id == (entry.shape or "wide") then shape = candidate end
     end
-    -- An entry may point at another floor of the same cave or building; the
-    -- arena is then measured against THAT map, and carries it.
     local host = map
     if shape and entry.map and entry.map ~= map.id then
       local ok, other = pcall(function()
         local Game = require("src.core.Game")
         return require("src.world.MapLoader").load(Game.data, entry.map)
       end)
-      host = (ok and other) or nil
+      host = ok and other or nil
     end
-    if shape and host and type(entry.x) == "number" and type(entry.y) == "number"
-       and entry.x == math.floor(entry.x) and entry.y == math.floor(entry.y)
-       and (not entry.surface or entry.surface==(surfing and 'water' or 'land')) then
-      -- Regional entries distinguish land and surf encounters. Legacy entries
-      -- keep their original authored surface contract. Cache each grid once.
-      local surfaces=grids[host]
-      if not surfaces then surfaces={};grids[host]=surfaces end
-      local key=entry.surface or 'any'
+    local reason
+    if not shape or not host or not finiteInteger(entry.x) or not finiteInteger(entry.y) then
+      reason = "invalid-court"
+    elseif entry.terrain and entry.terrain ~= V.require("LedgeElevation").mode() then
+      reason = "terrain-mode"
+    elseif entry.surface and entry.surface ~= (surfing and "water" or "land") then
+      reason = "surface"
+    else
+      local surfaces = grids[host]
+      if not surfaces then surfaces={}; grids[host]=surfaces end
+      local key = entry.surface or "any"
       local cached = surfaces[key]
       if not cached then
-        local grid, gw = openGrid(host, true, nil, entry.surface)
-        cached = { grid, gw }
-        surfaces[key] = cached
+        local grid, width = openGrid(host, true, nil, entry.surface)
+        cached={grid,width}; surfaces[key]=cached
       end
-      if fits(cached[1], cached[2], entry.x, entry.y, shape.w, shape.h) then
-        local arena = place(shape, entry.x, entry.y)
-        arena.map, arena.cam = host, entry.cam
-        arena.surfing=surfing==true
-        arena.anchorSource, arena.anchorIndex = "authored", index
-        local eh = groundAt(host, arena.enemy[1], arena.enemy[2])
-        local ph = groundAt(host, arena.player[1], arena.player[2])
-        arena.anchorHeight = (eh + ph) / 2
-        local dx = arena.mid[1] / CELL - fromX
-        local dy = arena.mid[2] / CELL - fromY
-        local localEnough = host ~= map
-          or dx * dx + dy * dy
-             <= BattleArena.MAX_ANCHOR_DISTANCE
-                * BattleArena.MAX_ANCHOR_DISTANCE
-        if localEnough and BattleArena.keepRouteAnchorInBounds(map, arena)
-            and BattleArena.keepAnchorSafe(host, arena) then
-          local score = dx * dx + dy * dy + index * 1e-6
-          if host == map then
-            -- Matching the player's course dominates distance. An arena whose
-            -- two mon cells disagree is retained only as a last authored
-            -- fallback, never preferred over a level one.
-            score = score + math.abs(arena.anchorHeight - originHeight) * 100000
-            score = score + math.abs(eh - ph) * 1000000
-          else
-            score = score + 10000000
-          end
-          if not authoredScore or score < authoredScore then
-            authoredBest, authoredScore = arena, score
-          end
+      if not fits(cached[1],cached[2],entry.x,entry.y,shape.w,shape.h) then
+        reason = "footprint"
+      else
+        local arena = place(shape,entry.x,entry.y)
+        arena.map, arena.cam, arena.surfing = host,entry.cam,surfing==true
+        arena.anchorSource,arena.anchorIndex = "authored",index
+        local eh=groundAt(host,arena.enemy[1],arena.enemy[2])
+        local ph=groundAt(host,arena.player[1],arena.player[2])
+        arena.anchorHeight=(eh+ph)/2
+        arena.anchorHeightDelta=math.abs(eh-ph)
+        if not BattleArena.keepRouteAnchorInBounds(map,arena) then
+          reason="camera-bounds"
+        elseif not BattleArena.keepAnchorSafe(host,arena) then
+          reason=arena.clearanceReason or "clearance"
+        else
+          review.candidates[#review.candidates+1]=arena
         end
       end
     end
+    if reason then review.rejected[#review.rejected+1]=index..":"..reason end
   end
+  if #review.candidates==0 then
+    local surface=surfing and "water" or "land"
+    local fallback=type(pick)=="table" and pick.fallbacks and pick.fallbacks[surface]
+    if fallback=="terarrium" or type(pick)=="table" and pick.fixed and #entries==0 then
+      review.fallbackMode="terarrium"
+      review.reason="authored-"..surface.."-terrarium"
+    else review.reason="no-safe-map-placement" end
+  end
+  return review
+end
 
+-- Authored courts serve the entire map/surface, including disconnected grass
+-- patches and route ends. A distance cap belongs to the local placement search;
+-- applying it to fixed courts left legitimate encounters without an assignment.
+-- This chooses a court only: it never teleports the overworld player or opens
+-- collision/quest gates. Height still ranks before distance.
+function BattleArena.assign(review, fromX, fromY)
+  local map=review.map
+  if not map then return nil end
+  local originHeight=groundAt(map,fromX*CELL+CELL/2,fromY*CELL+CELL/2)
+  local best,bestScore
+  for _,arena in ipairs(review.candidates) do
+    local dx,dy=arena.mid[1]/CELL-fromX,arena.mid[2]/CELL-fromY
+    local distance=dx*dx+dy*dy
+    local fixed=type(review.pick)=="table" and review.pick.fixed
+    if fixed or arena.map~=map or distance<=BattleArena.MAX_ANCHOR_DISTANCE^2 then
+      local score=distance+arena.anchorIndex*1e-6
+      if arena.map==map then
+        score=score+math.abs(arena.anchorHeight-originHeight)*100000
+          +arena.anchorHeightDelta*1000000
+      else score=score+10000000 end
+      if not bestScore or score<bestScore then best,bestScore=arena,score end
+    end
+  end
+  return best
+end
+
+function BattleArena.find(map, fromX, fromY, surfing)
+  local review=BattleArena.withVisibilitySamples(BattleArena.review,map,surfing)
+  local pick=review.pick
+  if not (map and map.widthCells) or pick==false then return nil,review end
+  local authoredBest=BattleArena.assign(review,fromX,fromY)
+  local originHeight=groundAt(map,fromX*CELL+CELL/2,fromY*CELL+CELL/2)
   -- A bounded local candidate gives large routes and caves more than one
   -- repeated postcard. It must be on the exact player height, visible from a
   -- canonical battle rig, and close enough that the scene still reads as the
@@ -1017,10 +1045,10 @@ function BattleArena.find(map, fromX, fromY, surfing)
       return localPick
     end
   end
-  if authoredBest then return authoredBest end
+  if authoredBest then return authoredBest,review end
   -- Reviewed regional courts must not silently turn back into arbitrary
   -- placements when a map mod blocks one. Let the caller use its 3D fallback.
-  if type(pick)=='table' and pick.fixed then return nil end
+  if type(pick)=='table' and pick.fixed then return nil,review end
 
   local found = BattleArena.search(map, fromX, fromY, surfing, true, {
     height = originHeight, maxDistance = BattleArena.MAX_ANCHOR_DISTANCE,
@@ -1035,7 +1063,7 @@ function BattleArena.find(map, fromX, fromY, surfing)
     })
   end
   if found then found.map = map end
-  return found
+  return found,review
 end
 
 -- The arena at a given north-west corner, whatever the map says about it.

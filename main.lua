@@ -305,7 +305,25 @@ local GEN2_SHARED_LIGHTING = {
   ["lib/LightVisibility.lua"] = "lib/LightVisibility.lua",
 }
 
+-- Cobblemon is a data-only model format shared by both renderers. Resolve
+-- these exact modules at the package root: the old Gen-2 forwarding files
+-- read their own virtual path again and recurse indefinitely.
+local GEN2_SHARED_MODEL_DATA = {
+  ["lib/CobblemonContent.lua"] = true,
+  ["lib/CobblemonExpression.lua"] = true,
+  ["lib/CobblemonGeometry.lua"] = true,
+  ["lib/CobblemonImport.lua"] = true,
+  ["lib/CobblemonJson.lua"] = true,
+  ["lib/CobblemonMotion.lua"] = true,
+  ["lib/CobblemonPack.lua"] = true,
+  ["lib/CobblemonSize.lua"] = true,
+  ["lib/ContentJson.lua"] = true,
+  ["lib/HdBinaryFetch.lua"] = true,
+  ["lib/HdBinaryFetchWorker.lua"] = true,
+}
+
 local function privatePath(rel)
+  if GEN2_SHARED_MODEL_DATA[rel] then return rel end
   if GEN2_SHARED_LIGHTING[rel] then return GEN2_SHARED_LIGHTING[rel] end
   local a21Shared = GEN2_A21_SHARED_UI[rel]
   if a21Shared then return a21Shared end

@@ -1565,11 +1565,21 @@ function SpeciesFlyCinematic.install()
         local provider = partyFlyBridge.provider
         local selection = provider and provider.takeSelection(
           game, screenId, select(1, ...)) or nil
-        local screen = partyFlyBridge.original(game, screenId, ...)
-        provider = partyFlyBridge.provider
-        if provider and selection then
-          provider.wrapTownMap(game, screen, selection)
+        -- Providers may replace the native screen on their first update.
+        -- Bind the callback at the request boundary so native and HD maps
+        -- inherit the same selected Pokemon, including deferred replacements.
+        local args = packValues(...)
+        if provider and selection and type(args[1]) == "table" then
+          local opts = {}
+          for k, v in pairs(args[1]) do opts[k] = v end
+          local target = { screenId="TownMap", fly=opts.fly, onFly=opts.onFly }
+          if provider.wrapTownMap(game, target, selection) then
+            opts.onFly = target.onFly
+            args[1] = opts
+          end
         end
+        local screen = partyFlyBridge.original(game, screenId,
+          unpackValues(args, 1, args.n))
         return screen
       end
     end
@@ -1601,8 +1611,11 @@ function SpeciesFlyCinematic.install()
         return selection
       end,
       wrapTownMap = function(game, townMap, selection)
+        -- The integrated HD map is a SafeWideScreen provider. It carries
+        -- __vascKantoMap, not the native screenId. Keep the chosen Pokemon
+        -- even when QoL offers FLY without teaching the move first.
         if not (type(townMap) == "table"
-            and townMap.screenId == "TownMap" and townMap.fly == true
+            and (townMap.screenId == "TownMap" or townMap.__vascKantoMap == true) and townMap.fly == true
             and type(townMap.onFly) == "function") then return false end
         if townMap.__vascSpeciesFlyPartySelection then return true end
         townMap.__vascSpeciesFlyPartySelection = true
@@ -1710,7 +1723,7 @@ function SpeciesFlyCinematic.install()
         local stack = game and game.stack
         local townMap = stack and type(stack.top) == "function"
           and stack:top() or nil
-        if not (type(townMap) == "table" and townMap.screenId == "TownMap"
+        if not (type(townMap) == "table" and (townMap.screenId == "TownMap" or townMap.__vascKantoMap == true)
             and townMap.fly == true and type(townMap.onFly) == "function") then
           return false
         end

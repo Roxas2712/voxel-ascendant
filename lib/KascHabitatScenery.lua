@@ -29,8 +29,23 @@ local haze={FIRE={color={.46,.37,.32},density=.009,height=34},
  PLANT={color={.42,.51,.43},density=.004,height=28},
  WATER={color={.46,.57,.61},density=.005,height=24}}
 function M.mist(map)return haze[M.profile(map)]end
+function M.nearAccess(map,x,y)
+ local h=map and map.def and map.def.starterHabitat
+ if not h then return false end
+ for _,key in ipairs({'entry','exit'})do
+  local p=h[key]
+  -- Preserve the collision-bearing boundary as low growth/rubble, but
+  -- clear the standard southern camera's view of the actual exit.
+  if p and math.abs(x-p.x)<=2 and y>=p.y-2 and y<=p.y+5 then return true end
+ end
+ return false
+end
 function M.register(P)
  local c=P.decorColors
+ P.models.kasc_habitat_access_shrub={directBoxes=true,boxes={
+  {1,0,1,14,3,14,c.leafDark},{3,3,3,10,2,10,c.leaf}}}
+ P.models.kasc_habitat_access_rubble={directBoxes=true,boxes={
+  {1,0,1,9,4,10,c.slate},{9,0,6,6,3,9,c.stone}}}
  for variant=1,4 do
   local source=P.models.kanto_tree_1_3
   local model={boxes={},frameW=16,frameH=56,depth=16,offsetY=-40,step=1}
@@ -71,6 +86,9 @@ function M.find(P,map)
     local variant=1+(cx*3+cy*7)%4
     local kind=category=='FIRE'and'kasc_habitat_rock_'..variant
       or'kasc_habitat_pine_'..variant
+    if M.nearAccess(map,cx,cy)then
+     kind=category=='FIRE'and'kasc_habitat_access_rubble'or'kasc_habitat_access_shrub'
+    end
     result[#result+1]={kind=kind,tx=cx*2,ty=cy*2,w=2,h=2,
      groundTile=category=='FIRE'and 36 or 5,voxelOnly=true,enabled=enabled}
    end

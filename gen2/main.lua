@@ -1716,6 +1716,9 @@ mod.exports.overworldPokemonModelAvailable = function(dex)
 end
 local PokemonModelProvider = BaseV.require("PokemonModelProvider")
 mod.exports.pokemonModelProvider = PokemonModelProvider.public()
+BaseV.PokemonModelProvider = PokemonModelProvider
+mod.exports.cobblemonContent=BaseV.require("CobblemonContent")
+mod.exports.cobblemonModels=BaseV.require("CobblemonPack")
 mod.exports.red3dPlayerCompat = true
 mod.exports.red3dPlayerCompatStatus = function()
   local selector = mod.find and mod.find("red_3d_player") or nil

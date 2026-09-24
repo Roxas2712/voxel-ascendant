@@ -52,7 +52,7 @@ function M.new(mod,game,guided,de,session)
     if busy()then return notice('busy_or_restart_required')end
     local ids,plan,checking=selection(group)
     local cb=session:cobblemon();local includeCb=not group or group.id=='pokemon'
-    if plan.ready then if includeCb and cb and not cb.complete()then return session:openCobblemon()end;return notice('already_installed')end
+    if plan.ready then if includeCb and session:needsCobblemonDownload()then return session:openCobblemon()end;return notice('already_installed')end
 
     if not plan.canDownload then return notice('not_yet_available')end
     return session:confirmDownload(ids,includeCb)
@@ -61,7 +61,7 @@ function M.new(mod,game,guided,de,session)
     if session.pendingDownloadIds or session.installer and session.installer.state=='downloading'then return {label=tr('VIEW ACTIVE DOWNLOAD','LAUFENDEN DOWNLOAD ANZEIGEN'),action='all',help=batchHelp}end
     local ids,plan,checking=selection(group)
     local checked,total=0,0;if session.inventoryProgress then checked,total=session:inventoryProgress(ids)end
-    local cb=session:cobblemon();local cbMissing=(not group or group.id=='pokemon') and cb and not cb.complete()
+    local cb=session:cobblemon();local cbMissing=(not group or group.id=='pokemon')and session:needsCobblemonDownload()
     local size=plan.downloadBytes+(cbMissing and cb.size() or 0)
     local status=checking and (tr('Checking: ','Pruefung: ')..checked..'/'..total..'. ')or (plan.ready and not cbMissing) and tr('Already installed. ','Bereits installiert. ')or string.format('%.1f MiB. ',size/1048576)
     return {label=group and tr('DOWNLOAD / UPDATE','LADEN / AKTUALISIEREN')or tr('DOWNLOAD / UPDATE ALL','ALLES LADEN / UPDATEN'),action='all',
@@ -337,7 +337,7 @@ function M.new(mod,game,guided,de,session)
     local buckets=categoryGroups()
     local result={allRow()}
     local cb=session:cobblemon()
-    if cb then result[#result+1]={label='COBBLEMON',right=cb.available() and tr('INSTALLED','INSTALLIERT') or tr('IN BASE PACK','IM BASISPAKET'),action='cobblemon',help=tr('Models and animations included in the base pack. Download, resume or repair here.','Modelle und Animationen im Basispaket. Hier laden, fortsetzen oder reparieren.')}end
+    if cb then result[#result+1]={label='COBBLEMON',right=cb.available()and tr('INCLUDED','ENTHALTEN')or tr('CHECK FILES','DATEIEN PRUEFEN'),action='cobblemon',help=tr('Bundled with VASC. No separate installation or download. Open for availability information.','Mit VASC geliefert. Keine separate Installation und kein Download. Oeffnen fuer Hinweise zur Verfuegbarkeit.')}end
     for _,bucket in ipairs(buckets)do
       if #bucket.children>0 then
         local _,plan,checking=selection(bucket)
@@ -382,7 +382,6 @@ function M.new(mod,game,guided,de,session)
     return notice('not_yet_available')
   end
   function menu:openFamily(id)
-    if not id:match('^pokemon%-hd%-')then return self:openCategory('pokemon')end
     for _,g in ipairs(session.model:groups())do if g.id==id then return groupsMenu(g)end end
     return notice('not_yet_available')
   end

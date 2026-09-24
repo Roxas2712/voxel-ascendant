@@ -20,7 +20,8 @@ Diagnostic.BASE_ZIP_SHA256 =
 Diagnostic.PHYSICAL_STATUS = "RC12_REQUIRES_PHYSICAL_SMARTPHONE_PASS"
 Diagnostic.PENDING_LIMIT = 600
 Diagnostic.SNAPSHOT_BURST = 3
-Diagnostic.SNAPSHOT_INTERVAL = 30
+Diagnostic.SNAPSHOT_INTERVAL = 30 -- legacy schema readers
+Diagnostic.SNAPSHOT_SECONDS = 1
 
 local state = {
   active = true,
@@ -65,6 +66,11 @@ local occurrences = {}
 local snapshotRetry = {}
 local lastSnapshotState = {}
 local snapshotRiskPending = false
+local lastSnapshotTime = -math.huge
+local function snapshotClock()
+  return love and love.timer and love.timer.getTime and love.timer.getTime()
+    or os.clock()
+end
 local buffered = {}
 local BUFFER_LIMIT = 96
 
@@ -203,12 +209,10 @@ local function emit(key, event, fields)
   fields.sequence = state.sequence
   fields.occurrence = state.occurrence
 
-  -- The fixed launcher receipt is a sampled last-boundary recorder, not an
-  -- event log. Persist the first three occurrences of every exact key and then
-  -- every thirtieth. Separate START/READY keys therefore remain aligned when
-  -- their call sites are paired, while per-frame callbacks cannot generate
-  -- 60--200 filesystem writes per second. Persistence decisions and attempts
-  -- still happen before the session-log-only dedupe below.
+  -- One global periodic receipt, not one timer per draw/checkpoint key.
+  -- First-seen risky operations and failures still reach disk immediately.
+  -- Once a START is written, its successor must clear/advance it even inside
+  -- the throttle window, so successful rendering cannot leave a crash latch.
   local duplicate = seen[key] == true
   local riskBoundary = event == "mobile-checkpoint"
     and tostring(fields.status or "") == "BOUNDARY"
@@ -216,14 +220,11 @@ local function emit(key, event, fields)
   local snapshotState = tostring(fields.code or "D00") .. ":"
     .. tostring(fields.status or "BOUNDARY") .. ":"
     .. tostring(fields.checkpoint or "unknown")
-  local shouldPersist = state.occurrence <= Diagnostic.SNAPSHOT_BURST
-    or state.occurrence % Diagnostic.SNAPSHOT_INTERVAL == 0
+  local now = snapshotClock()
+  local shouldPersist = lastSnapshotState[key] == nil
     or snapshotRetry[key] == true
     or lastSnapshotState[key] ~= snapshotState
-    -- START and terminal keys have independent occurrence counters. Once a
-    -- sampled START reached disk, the very next marker must therefore reach
-    -- disk too even when its own counter is not sampled; otherwise a normal
-    -- return could leave a stale START receipt and re-create E12 next boot.
+    or now - lastSnapshotTime >= Diagnostic.SNAPSHOT_SECONDS
     or snapshotRiskPending
   local persisted, attempted = true, false
   if shouldPersist then
@@ -237,6 +238,7 @@ local function emit(key, event, fields)
     snapshotRetry[key] = true
     duplicate = false
   elseif attempted then
+    lastSnapshotTime = now
     snapshotRetry[key] = nil
     lastSnapshotState[key] = snapshotState
     snapshotRiskPending = riskBoundary

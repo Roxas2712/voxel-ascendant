@@ -86,3 +86,23 @@ assert(O.battleHudCameraSafe(battle,{},0,{}),'fainted enemy phantom body blocked
 battle.showEnemyTrainer=true
 assert(O.battleHudCameraSafe(battle,{},0,{})==false,'trainer replacing fainted enemy was hidden')
 print('Enemy faint camera ownership: ok')
+
+-- On a portrait screen the intro trainer is much narrower than the future
+-- Pokemon's nominal prism. Validate the real hero, not both bodies at once.
+local Heroes=assert(loadfile('lib/BattleHeroesBridge.lua'))({})
+env.V={require=function(name)assert(name=='BattleHeroesBridge');return Heroes end}
+battle.enemy.fainted=false;battle.showEnemyTrainer=false;battle.showPlayerBack=true
+battle.sendingOut=false;env.session={battle=battle,presentationCommitted=true}
+shot.actorHulls.player={-50,230,200,160};shot.actorFeet.player={50,390}
+shot.actorHulls.enemy={600,230,50,60};shot.actorFeet.enemy={625,290}
+shot.actorVisuals={playerHero={hull={30,230,68,76}},enemy={hull=shot.actorHulls.enemy,foot={x=625,y=290}}}
+bounds.reserved={{id='enemy-status',x=220,y=120,w=180,h=60}}
+assert(O.battleHudCameraSafe(battle,{},0,{}),'intro trainer inherited absent Pokemon hull')
+shot.actorVisuals.playerHero.hull={230,130,68,76}
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'visible trainer bypassed HUD safety')
+shot.actorVisuals.playerHero.hull={30,230,68,76}
+shot.actorVisuals.player={hull=shot.actorHulls.player,foot={x=50,y=390}}
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'visible intro Pokemon bypassed safety')
+shot.actorVisuals.player=nil;shot.actorVisuals.playerHero=nil
+assert(O.battleHudCameraSafe(battle,{},0,{})==false,'missing intro hero was accepted')
+print('Portrait intro trainer and absent Pokemon ownership: ok')

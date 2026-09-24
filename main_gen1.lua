@@ -1088,6 +1088,7 @@ local SETTINGS = {
     .. "Any Modern Pokedex install, construction or rendering failure returns "
     .. "to that same native screen without changing save data.",
     full = true },
+  { V.require("BattleSpriteControl").styleSetting, "Default Pokemon appearance for new battles: Original, Crystal, HD or a supported 3D model. The setup wizard keeps model and sprite dependencies consistent.", full=true },
   { V.require("BattleSpriteControl").setting,
     "Start battles with installed animated HD Pokemon cards. Missing HD "
     .. "variants keep their normal sprites. OFF preserves the current sprite "
@@ -2364,6 +2365,7 @@ mod.exports.weatherMusic = {
 -- Independent render-only Card; battle and save owners remain separate.
 V.require("cards/lighting/Gen1DynamicLightingCard").installHost(mod,Diagnostics)
 VascMenu.install(mod, {
+  setupCard=true,
   settings=SETTINGS,
   factoryResetPrepare=function(game)
     assert(LocalContent.select("VASC_DEFAULT", game))

@@ -106,11 +106,15 @@ M.rows={
   {key="q",title="Zoom in",hint="Q",detail="Move the current camera closer."},
   {key="e",title="Zoom out",hint="E",detail="Move the current camera further away."},
 }
-local groupNames={terrarium={"Terrarium","Terrarium"},wilds={"Wilds","Wilds"},followers={"Followers","Begleiter"},town={"Town Pokémon","Stadt-Pokémon"},effects={"Camera & world","Kamera & Welt"}}
+local groupNames={["battle-sprites"]={"Pokémon sprites","Pokémon-Sprites"},terrarium={"Terrarium","Terrarium"},wilds={"Wilds","Wilds"},followers={"Followers","Begleiter"},town={"Town Pokémon","Stadt-Pokémon"},effects={"Camera & world","Kamera & Welt"}}
 function M.context(g)
  if Host then return Host.context(g,M.current(g)) end
  local p=M.current(g);local t=p and p.previous or top(g)
  if t and t.player and t.enemy and t.phase then return "battle",t end
+ if t and type(t.items)=='table' then
+  local owner=V.require('BattleSpriteControl').active({stack={states=g.stack.states,top=function()return t end}})
+  if owner then return "battle",owner end
+ end
  if t==g.overworld then return "world",t end
  return "other",t
 end
@@ -141,6 +145,20 @@ end
 function M.visibleRows(g,group)
  if Host then return Host.rows(g,group,M) end
  local context=M.context(g);local out={}
+ if group=='battle-sprites' and context=='battle' then
+  local control=V.require('BattleSpriteControl');local _,battle=M.context(g)
+  if not battle then return out end
+  for _,choice in ipairs(control.choices(battle,true))do
+   local id=choice.id
+   local reason=choice.needsStage and 'Choose a 3D battle view first.' or id=='stadium1' and 'Requires a compatible Stadium 1 provider.' or id=='stadium2' and 'Import your Stadium 2 models first.' or 'Install the matching Pokemon sprite pack; this battle currently has no matching artwork.'
+   out[#out+1]={id='sprite-'..id,title=choice.label,titleDe=choice.label,hint='',
+    detail=choice.unavailable and reason or 'Use this artwork for the current battle.',
+    detailDe=choice.unavailable and (choice.needsStage and 'Zuerst eine 3D-Kampfansicht wählen.' or id=='stadium1' and 'Benötigt einen kompatiblen Stadium-1-Anbieter.' or id=='stadium2' and 'Zuerst eigene Stadium-2-Modelle importieren.' or 'Passendes Pokémon-Spritepaket installieren; für diesen Kampf fehlen die Grafiken.') or 'Diese Darstellung im aktuellen Kampf verwenden.',
+    status=function(de)return control.choice(battle)==id and (de and 'AKTIV' or 'ACTIVE') or choice.unavailable and (de and 'FEHLT' or 'UNAVAILABLE') or '' end,
+    change=function(game)control.select(game,id)end}
+  end
+  return out
+ end
  if group=='terrarium'then return terrariumRows()end
  local allowed=context=="battle" and {['0']=true,['8']=true,['5']=true,['6']=true,f4=true,q=true,e=true}
   or context=="world" and {['0']=true,v=true,f6=true,f4=true}or{f4=true}
@@ -153,6 +171,7 @@ function M.visibleRows(g,group)
   if (not group and allowed[row.key])or(group=='effects'and context=='world'and effect)then
    local copy={};for k,v in pairs(row)do copy[k]=v end
    copy.titleDe=germanRows[i].title;copy.detailDe=germanRows[i].detail;copy.hintDe=germanRows[i].hint
+   if context=="battle" and row.key=="0" then copy.submenu="battle-sprites";copy.detail="Choose battle artwork; unavailable sources explain what is missing.";copy.detailDe="Kampfgrafik auswählen; fehlende Quellen zeigen den Grund." end
    out[#out+1]=copy
   end
  end
@@ -180,6 +199,8 @@ function M.visibleRows(g,group)
  end
  local order=context=='battle'and{['8']=1,['0']=2,['5']=3,['6']=4,['battle-distance']=5,q=6,e=7,['camera-reset']=8,f4=9}or{v=1,followers=2,wilds=3,town=4,['0']=5,f6=6,effects=7,f4=8}
  if not group then table.sort(out,function(a,b)return(order[a.key or a.id]or 99)<(order[b.key or b.id]or 99)end)end
+ local setup=V.mod.exports and V.mod.exports.setupCard
+ if setup and not group and context=='world' then out[#out+1]={id='dein-look',title=setup.title(),titleDe=setup.title(),hint='',detail=setup.description(),detailDe=setup.description(),status=function()return '›'end,change=function(game)return setup.open(game)end}end
  return out
 end
 function M.back(g)

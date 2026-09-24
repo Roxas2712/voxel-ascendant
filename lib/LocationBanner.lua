@@ -50,10 +50,34 @@ function M.draw()
  g.print(n.name,b.x+40,b.y+(b.h-font:getHeight()*scale)/2,0,scale,scale)
  g.pop()
 end
+-- QoL Toggles 1.31 paints a fading white/black toast into the indexed UI.
+-- Its intermediate grey shades are palette indices, not RGB opacity. Route
+-- the exported layout through this final RGB pass while VASC owns the world.
+-- Keep its toast alive and its original lifetime intact; alpha zero
+-- prevents only the legacy indexed draw. Also works when it loads after us.
+local bridged=setmetatable({}, {__mode='k'})
+function M.bridgeToasts(game)
+ local exports=game.mods and game.mods.exports
+ local q=exports and exports.qol_toggles
+ if type(q)~='table' or type(q.toastLayout)~='function' or bridged[q]==q.toastLayout then return end
+ local previous=q.toastLayout
+ local wrapped=function(toast,t,...)
+  local layout=previous(toast,t,...)
+  if not layout or V.require('VoxelState').level<=0 then return layout end
+  local ow=game.overworld
+  if ow and game.stack and game.stack:top()==ow and not ow.transitioning then
+   M.present(layout.text,toast.expire,toast.duration)
+  end
+  local hidden={};for k,v in pairs(layout)do hidden[k]=v end
+  hidden.alpha=0
+  return hidden
+ end
+ q.toastLayout=wrapped;bridged[q]=wrapped
+end
 function M.install()
  if M.installed then return end
  local Game=require('src.core.Game');local previous=Game.draw
- function Game:draw(...)local result=previous(self,...);M.draw();return result end
+ function Game:draw(...)M.bridgeToasts(self);local result=previous(self,...);M.draw();return result end
  M.installed=true
 end
 return M

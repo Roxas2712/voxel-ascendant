@@ -141,6 +141,7 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
   frame.battle=battle == true
   local Items=V.require('VoxelItems')
   local sources, buildings={},{}
+  V.require('AccessWayfinding').appendLights(state,sources)
   local interior,indoorTint
   if not outdoor then interior,indoorTint=V.require('InteriorLights').prepare(state.map) end
   frame.interior=interior
@@ -176,9 +177,15 @@ function M.prepare(state, outdoor, focus, dark, weather, battle, props)
     for _,b in ipairs(interior.blockers)do buildings[#buildings+1]=b end
   end
   local volcanic=(state.map.id or ''):match('^KA_MOLTRES_VOLCANO')and V.require('KascVolcano').profile(state.map)
-  if outdoor and not volcanic and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then return frame end
+  if outdoor and not volcanic and V.require('DayNight').windowLight and V.require('DayNight').windowLight()<=0 then
+    frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
+    return frame
+  end
   local habitat=state.map.def.runtimeAuthority=='KASC_6_7_STARTER_HABITAT_V2_3'and V.require('KascHabitatScenery').profile(state.map)
-  if not outdoor and not cave and not interior and not frame.mosaic and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then return frame end
+  if not outdoor and not cave and not interior and not frame.mosaic and not volcanic and habitat~='FIRE'and not V.require('TowerAtmosphere').active(state.map) then
+    frame.lights=M.select(sources,focus,battle and M.MAX_BATTLE_LIGHTS or M.MAX_LIGHTS)
+    return frame
+  end
   -- The visible neighborhood supplies translated matrices, including its
   -- ledge elevation. This is the same enumeration used by the furniture pass.
   local function eachSource(fn)
