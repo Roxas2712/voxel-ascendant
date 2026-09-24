@@ -295,10 +295,21 @@ local SEARCH_X, SEARCH_Y, SEARCH_W, SEARCH_H = 326, 14, 178, 40
 local SEARCH_DONE_X, SEARCH_DONE_Y, SEARCH_DONE_W, SEARCH_DONE_H =
   442, 16, 58, 14
 
-local function drawHeader(model, accent)
+local function drawHeader(model, accent, headerFocus)
   shell(16, 12, 480, 42, accent)
   local title = model.title or (model.surface == "legacy_bank" and "LEGACY BANK"
     or model.surface == "battle_party" and "BATTLE TEAM" or "ASC BOX")
+  if model.surface == "legacy_bank" then
+    local box = tonumber(model.surfaceData and model.surfaceData.currentBox) or 1
+    title = (model.locale == "de" and "LEGACY-BOX %d" or "LEGACY BOX %d"):format(box)
+    if headerFocus then
+      rounded(C.gold, 60, 17, 429, 32, 4)
+      outline(C.navy, 60, 17, 429, 32, 4, 2)
+    end
+    color(C.navy)
+    love.graphics.polygon("fill", 78, 25, 68, 32, 78, 39)
+    love.graphics.polygon("fill", 470, 25, 480, 32, 470, 39)
+  end
   -- `shell` has an opaque cream/paper interior. White text was effectively
   -- invisible there in every Legacy selection frame; the reviewed PC/Team
   -- presenter uses a separate navy title plate and never enters this branch.
@@ -385,8 +396,8 @@ local function drawGrid(self, accent)
     local x, y = 28 + col * spec.stepX, 72 + row * spec.stepY
     local cw, ch = spec.stepX - 5, spec.stepY - 5
     local entry = bySlot[slot]
-    local focus = virtualFocus and virtualFocus == slot
-      or not virtualFocus and model.focus.zone == name and model.focus.slot == slot
+    local focus = not self.boxHeaderFocus and (virtualFocus and virtualFocus == slot
+      or not virtualFocus and model.focus.zone == name and model.focus.slot == slot)
     rounded(focus and accent or C.glass2, x, y, cw, ch, 5,
       entry and .96 or .52)
     outline(entry and C.blue or C.gray, x, y, cw, ch, 5, focus and 3 or 1)
@@ -655,12 +666,25 @@ local function drawFooter(self, accent)
   end
   -- Keep the focused name/selection counter separate from the right-hand
   -- control help; the old 310px budget visibly overprinted long German rows.
+  if self.model.surface == "legacy_bank" and self.boxHeaderFocus then
+    left = self.model.locale == "de" and "UNTEN:POKéMON B:ZURÜCK"
+      or "DOWN:POKéMON B:BACK"
+  end
   text(fit(left, 238, 1), 29, 261, C.navy, 1)
   local de = self.model.locale == "de"
   local prompt
   if self.model.surface == "legacy_bank" then
-    prompt = de and "SELECT:MARK  START:SENDEN"
-      or "SELECT:MARK  START:SEND"
+    if self.boxHeaderFocus then
+      prompt = de and "LINKS/RECHTS:BOX"
+        or "LEFT/RIGHT:BOX"
+    elseif self.model.focus.zone == "legacy"
+        and (tonumber(self.model.focus.slot) or 1) <= gridSpec().columns then
+      prompt = de and "OBEN:BOX  SELECT:MARK"
+        or "UP:BOX  SELECT:MARK"
+    else
+      prompt = de and "SELECT:MARK  START:SENDEN"
+        or "SELECT:MARK  START:SEND"
+    end
   elseif self.model.surface == "battle_party" then
     prompt = de and "A:WÄHLEN  START:STATUS" or "A:CHOOSE  START:SUMMARY"
   else
@@ -866,7 +890,9 @@ function Controller:pointerpressed(x, y)
 end
 
 function Controller:_changeBox(delta)
-  if self.model.surface ~= "pc_box" or not enabled(self.model, "change_box") then
+  local action = self.model.surface == "legacy_bank" and "cross_box_select"
+    or self.model.surface == "pc_box" and "change_box"
+  if not action or not enabled(self.model, action) then
     return false
   end
   local surface = type(self.model.surfaceData) == "table"
@@ -874,7 +900,7 @@ function Controller:_changeBox(delta)
   local current = tonumber(surface.currentBox) or 1
   local count = math.max(1, tonumber(surface.boxCount) or 1)
   local nextBox = ((current + delta - 1) % count) + 1
-  return self:_dispatch("change_box", { boxIndex=nextBox })
+  return self:_dispatch(action, { boxIndex=nextBox })
 end
 
 function Controller:_entryActions()
@@ -1008,7 +1034,8 @@ function Controller:handleInput(input)
   if pressed.start and self.model.surface == "pc_box" then
     return self:beginSearch()
   end
-  if self.boxHeaderFocus and self.model.surface == "pc_box" then
+  if self.boxHeaderFocus and (self.model.surface == "pc_box"
+      or self.model.surface == "legacy_bank") then
     if pressed.left or pressed.page_prev then return self:_changeBox(-1) end
     if pressed.right or pressed.page_next then return self:_changeBox(1) end
     if pressed.up or pressed.down or pressed.a or pressed.b then
@@ -1018,11 +1045,12 @@ function Controller:handleInput(input)
     return false
   end
   local focus = type(self.model.focus) == "table" and self.model.focus or {}
-  if self.model.surface == "pc_box" and focus.zone == "box"
+  if ((self.model.surface == "pc_box" and focus.zone == "box")
+      or (self.model.surface == "legacy_bank" and focus.zone == "legacy"))
       and tonumber(focus.slot) and tonumber(focus.slot) <= gridSpec().columns
       and pressed.up and enabled(self.model, "navigate") then
     -- Header focus is presentation-local: Host-v1 focus IDs remain bound to
-    -- their exact namespaced slot until LEFT/RIGHT requests change_box.
+    -- their exact namespaced slot; LEFT/RIGHT only requests a box change.
     self.boxHeaderFocus = true
     return true
   end
@@ -1063,14 +1091,7 @@ function Controller:handleInput(input)
     end
   end
   if pressed.page_prev or pressed.page_next then
-    local current = self.model.surfaceData.currentBox or 1
-    local count = math.max(1, self.model.surfaceData.boxCount or 1)
-    local nextBox = ((current + (pressed.page_next and 1 or -1) - 1) % count) + 1
-    local action = self.model.surface == "legacy_bank"
-      and "cross_box_select" or "change_box"
-    if enabled(self.model, action) then
-      return self:_dispatch(action, { boxIndex=nextBox })
-    end
+    return self:_changeBox(pressed.page_next and 1 or -1)
   end
   if pressed.select and self.model.surface ~= "battle_party" then
     if self.model.surface == "legacy_bank" then
@@ -1187,7 +1208,7 @@ function Controller:draw()
   for y = 0, 148, 6 do rect(C.glass2, 0, y, W, 3, .08 + y / 1800) end
   rect(C.sea, 0, 150, W, H - 150)
   local accent = editionAccent(self.model)
-  drawHeader(self.model, accent)
+  drawHeader(self.model, accent, self.boxHeaderFocus)
   drawSearchPanel(self)
   if self.model.surface == "battle_party" then drawBattleParty(self.model, accent)
   else drawGrid(self, accent); drawPartyStrip(self, accent) end
@@ -1218,8 +1239,9 @@ end
 function Controller:onEvent(_, envelope)
   if envelope and envelope.model then
     self.model = envelope.model
-    if not (self.model.surface == "pc_box" and self.model.focus
-        and self.model.focus.zone == "box") then
+    local focus = self.model.focus or {}
+    if not ((self.model.surface == "pc_box" and focus.zone == "box")
+        or (self.model.surface == "legacy_bank" and focus.zone == "legacy")) then
       self.boxHeaderFocus = false
     end
   end

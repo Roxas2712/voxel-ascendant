@@ -1,17 +1,11 @@
-# VASC 3.0.42 — Wild Pokémon sizing and menu organization
+# VASC 3.0.43 — Legacy Bank box navigation
 
-Full public test update, published as a regular release for launcher updater compatibility.
+The Legacy Bank can now change boxes without shoulder buttons or a keyboard. From the top Pokémon row, press UP to focus the numbered Legacy Box heading, LEFT/RIGHT to change boxes, and DOWN, A or B to return to the grid. This uses the normal controller and touch D-pad.
 
-## Changes since 3.0.41
-- Cobblemon wild Pokémon now follow the existing Wilds overworld walking-sprite size profiles. Removed the blanket minimum that made small species such as Rattata oversized.
-- Sizing accounts for idle/walking poses and body, tail and wing extent, preserving proportions and a stable scale while moving. Measurements are cached per model.
-- Small Cobblemon Pokémon gently part nearby tall grass so they remain visible at the corrected size. The existing camera-depth visibility correction is retained.
-- Reorganized the Voxel Ascendant menu: world controls, Pokémon/models and Wilds/followers come first; battle options stay together. Your Look sits beside Wardrobe and Skins. Errors and Diagnostics are near the bottom; factory reset stays last. Shared Gen-2 menu ordering follows the same priorities.
+The heading displays the current box number, visible arrows and a highlighted focus state. Footer hints explain how to reach the heading and return to the Pokémon. Cross-box selections and carried Pokémon are preserved; first/last box wrapping follows the existing Bank contract. Ordinary PC box navigation remains unchanged. The shared Gen-2 provider receives the same fix.
 
-## Validation
-Compared ten species against genuine Wilds walking sprites in the running game: Rattata, Pidgey, Caterpie, Weedle, Pikachu, Eevee, Growlithe, Snorlax, Onix and Charizard. Checked animation/facing changes, natural Route 1 roaming, sprite/Cobblemon switching, menu navigation and error-report access. Desktop and both mobile shader paths compile under desktop LÖVE. Package integrity, receipts and preserving installation checked; see QA-REPORT.md.
+This update changes presentation and navigation only. Bank data, withdrawal eligibility and the KASC NG+ recovery safeguards remain owned by KASC. It retains all VASC 3.0.42 changes.
 
-Tested on macOS / LÖVE 11.5. Physical Android/iPhone verification remains pending. This is a test release and does not claim to fix all outstanding mobile rendering issues.
+Validation: regression failed on 3.0.42 and passes on the fix; controller and touch input paths tested, including a native combined KASC/VASC session with the affected Yellow Bank fixture. Screenshot review verified the numbered heading, arrows and help. Physical controller hardware and Android/iOS device testing remain pending.
 
-## Installation
-Close the game, install the complete Voxel-Ascendant-3.0.42.zip through the launcher and restart. Existing saves and optional artwork are retained. No engine, ROM or player save is included. KASC 6.7.24 provides the corresponding Ascendant menu organization.
+Install the complete ZIP using the launcher and restart the game. Keep Kanto Ascendant installed and updated (current integration baseline: 6.7.24). No manual Bank import or new NG+ run is required.

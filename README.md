@@ -1,4 +1,10 @@
-# VASC 3.0.38 — Voxel activation hotfix
+# VASC 3.0.43: Legacy Bank navigation
+
+In the Legacy Bank, move UP from the top row to the box heading, use LEFT/RIGHT to switch boxes and DOWN to return. Works with the controller or touch D-pad. Tested with KASC 6.7.24. See [release notes](RELEASE_NOTES.md).
+
+## Earlier release notes
+
+### VASC 3.0.38 — Voxel activation hotfix
 
 Public test release. Recommended pairing: KASC 6.7.20. Changes since 3.0.37:
 
