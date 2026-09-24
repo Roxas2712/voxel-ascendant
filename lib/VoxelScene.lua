@@ -2093,7 +2093,7 @@ VoxelScene._actorEngulfsEye = actorEngulfsEye
 -- Sprite sheets until the figure pass: their texture coordinates mean
 -- nothing to the tileset-shaped glass mask, so the glass is off or the
 -- panes' atlas positions stripe the cast with lamplight at night.
-local function drawCast(state, posed, atlasFor, ghostPose)
+local function drawCast(state, posed, atlasFor, ghostPose, beforeActors)
   local actorVisible=V.require('PropVisibility').forView(Voxel3D.vp,
     Voxel3D.curveK,Voxel3D.curveX,Voxel3D.curveZ)
   Voxel3D.roomVisibility(state.currentRoom)
@@ -2110,6 +2110,18 @@ local function drawCast(state, posed, atlasFor, ghostPose)
     drawGhost(ghostPose)
     Voxel3D.endGhost()
     Voxel3D.roomVisibility(state.currentRoom)
+  end
+  -- On iOS, commit alpha-cutout foliage before changing to the character
+  -- shaders. The Metal regression otherwise leaves a rectangular gap in
+  -- grass drawn after a transparent actor. Depth still decides which blades
+  -- cover the actor. Keep the navigation ghost before grass, so blades alone
+  -- cannot trigger the behind-building silhouette. Reflections omit this pass.
+  if beforeActors then
+    Voxel3D.glass(true)
+    Voxel3D.seams(true)
+    beforeActors()
+    Voxel3D.glass(false)
+    Voxel3D.seams(false)
   end
   -- Characters, normally depth-tested: the camera-ward pull inside
   -- drawEntity resolves the lean-over-the-wall-in-front case, and a
@@ -3084,30 +3096,29 @@ renderWorld = function(state, w, h, vw, vh, paletteFor)
   -- character genuinely behind a building is far deeper and loses the
   -- test, so buildings and trees really occlude.
   V.require('AccessWayfinding').draw(drawState)
-  drawCast(drawState, posed, atlasFor, me)
-  -- tall grass last, pulled camera-ward exactly as far as the characters
-  -- were (same per-vertex shader bias, so grass never drifts either):
-  -- relative depth between a walker and the tuft row south of their feet
-  -- is preserved, so the row still overdraws feet -- the 3D version of
-  -- the GB's grass-over-feet trick -- while grass keeps losing to the
-  -- buildings it genuinely stands behind (far deeper than the pull).
-  -- the same angle the cards leaned by (leanAngle honours VR's override),
-  -- so the tuft rows keep exactly the characters' own depth handicap
+  -- Grass and actors keep the same per-vertex camera bias. Drawing grass
+  -- first on iOS prevents transparent actor bounds from removing later grass;
+  -- ordinary depth testing still preserves grass-over-feet and wall occlusion.
   local lean = math.max(leanAngle(), 0.05)
   local pull = VoxelScene.pull(lean)
-  if type(Voxel3D.weatherGrass) == "function" then
-    Voxel3D.weatherGrass(true)
+  local function drawGrass()
+    if type(Voxel3D.weatherGrass) == "function" then
+      Voxel3D.weatherGrass(true)
+    end
+    Voxel3D.modelGrass(posed)
+    Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
+    for _, nb in ipairs(drawState.neighbors or {}) do
+      Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
+                   Mat4.translate(nb.ox, 0, nb.oy), pull)
+    end
+    if type(Voxel3D.weatherGrass) == "function" then
+      Voxel3D.weatherGrass(false)
+    end
+    Voxel3D.modelGrass(nil)
   end
-  Voxel3D.modelGrass(posed)
-  Voxel3D.draw(ChunkMesher.grass(state.map), atlasFor(state.map), nil, pull)
-  for _, nb in ipairs(drawState.neighbors or {}) do
-    Voxel3D.draw(ChunkMesher.grass(nb.map), atlasFor(nb.map),
-                 Mat4.translate(nb.ox, 0, nb.oy), pull)
-  end
-  if type(Voxel3D.weatherGrass) == "function" then
-    Voxel3D.weatherGrass(false)
-  end
-  Voxel3D.modelGrass(nil)
+  local grassFirst = CanvasPresentation.OS == "iOS"
+  drawCast(drawState, posed, atlasFor, me, grassFirst and drawGrass or nil)
+  if not grassFirst then drawGrass() end
   -- flower billboards: pulled like the characters and the grass, MINUS
   -- the depth of 8 world pixels along the view (8 sin a -- the camera
   -- looks along (0, -cos a, -sin a), so that is exactly one tile row of

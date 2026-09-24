@@ -4386,18 +4386,9 @@ function FloatingHud.orasCommandBounds(battle, rect, scale, logicalW, logicalH)
 end
 
 function FloatingHud.roundControls()
-  local shape = optionChoice("battle_controls_shape", "auto")
-  -- Layout may lift the dock for touch controls or a safe-area inset even
-  -- when the saved lift is zero. Use its final geometry, including on resize.
-  if shape == "glass" then return false end
-  if FloatingHud.commandDetached then return true end
-  if shape == "original" and (tonumber(optionChoice("battle_controls_y", 0)) or 0) > 0 then
-    return true
-  end
-  return shape == "round" or (shape == "auto" and (
-    (tonumber(optionChoice("battle_controls_y", 0)) or 0) ~= 0
-    or (tonumber(optionChoice("battle_controls_x", 0)) or 0) ~= 0
-    or (tonumber(optionChoice("battle_controls_scale", 1)) or 1) ~= 1))
+  -- Shape is a deliberate choice. Safe areas, size and position must never
+  -- replace the original edge-cut artwork with complete buttons.
+  return optionChoice("battle_controls_shape", "auto") == "round"
 end
 
 function FloatingHud.drawGlassControl(key, label, x, y, w, h, focused, k)
@@ -9003,6 +8994,44 @@ local hudProvider = {
 local registerProvider = INTEGRATED_VASC
   and registerBundledProvider
   or OverworldBattle.setBattleHudProvider
+-- Draft-only setup preview. Reuses the real command layout and artwork;
+-- no settings, battle state, hit targets or provider canvases are modified.
+function FloatingHud.controlsPreview(draft)
+  local previousSnapshot = FloatingHud.optionSnapshot
+  local snapshot = {}; for key,value in pairs(draft) do snapshot[key]=value end
+  FloatingHud.optionSnapshot = snapshot
+  local previousCanvas = g.getCanvas()
+  g.push("all")
+  local ok, result = pcall(function()
+    local w,h = 640,360
+    FloatingHud.setupControlsCanvas = FloatingHud.setupControlsCanvas or g.newCanvas(w,h)
+    g.setCanvas(FloatingHud.setupControlsCanvas); g.origin(); g.setScissor()
+    g.setShader(); g.setDepthMode(); g.setBlendMode("alpha")
+    g.clear(.08,.14,.19,1)
+    g.setColor(.12,.22,.22,1); g.rectangle("fill",0,h*.45,w,h*.55)
+    local rect,scale,lw,lh = FloatingHud.configureControls(w,h,{0,h-156,w,156},1,w,156)
+    local _,_,entries = FloatingHud.orasCommandLayout({menuIndex=1,frame=0},lw,lh)
+    g.translate(rect[1],rect[2]); g.scale(scale,scale)
+    local labels = hudLanguage()=="de" and {"KAMPF","POKEMON","BEUTEL","FLUCHT"}
+      or {"FIGHT","POKEMON","BAG","RUN"}
+    for _,entry in ipairs(entries) do
+      if entry.image and entry.x and entry.y then
+        if optionChoice("battle_controls_shape","auto")=="glass" then
+          FloatingHud.drawGlassControl(entry.key,labels[entry.index],entry.x,entry.y,
+            entry.width,entry.height,entry.focused,1)
+        else
+          FloatingHud.drawColoredAsset(entry.image,entry.x,entry.y,entry.scale,1)
+        end
+      end
+    end
+    return FloatingHud.setupControlsCanvas
+  end)
+  g.setCanvas(previousCanvas); g.pop()
+  FloatingHud.optionSnapshot = previousSnapshot
+  if not ok then return nil,tostring(result) end
+  return result
+end
+
 function FloatingHud.snapshotProviderOptions(provider)
   for _, method in ipairs({"draw", "cameraBounds", "damageBounds"}) do
     local call = provider[method]

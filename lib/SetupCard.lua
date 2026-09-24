@@ -39,7 +39,7 @@ function M.new(game,settings,opts)
  local function custom(key,label,help,choices,default)
   self.draft[key]=default;return {key=key,label=label,help=help,choices=choices}
  end
- page('welcome',L("Your adventure. Your look.",'Dein Abenteuer. Dein Look.'),L("Nine clear steps: characters, Pokémon, Pokédex, battles and the world. Choose on the left; see previews and explanations on the right. Everything stays a draft until you apply it.",'Neun klare Schritte: Figuren, Pokémon, Pokédex, Kampf und Spielwelt. Links wählst du, rechts siehst du Vorschau und Erklärung. Bis zum Abschluss bleibt alles ein Entwurf.'),{
+ page('welcome',L("Your adventure. Your look.",'Dein Abenteuer. Dein Look.'),L("Step by step: characters, Pokémon, Pokédex, battles and the world. Choose on the left; see previews and explanations on the right. Everything stays a draft until you apply it.",'Schritt für Schritt: Figuren, Pokémon, Pokédex, Kampf und Spielwelt. Links wählst du, rechts siehst du Vorschau und Erklärung. Bis zum Abschluss bleibt alles ein Entwurf.'),{
   {label=L("Start setup",'Einrichtung beginnen'),action='next',help=L("Walk through all active areas. Your existing settings are preselected.",'Alle aktiven Bereiche gemeinsam durchgehen. Bestehende Einstellungen sind vorausgewählt.')},
   {label=L("Keep current settings",'Aktuelle Einstellungen behalten'),action='keep',help=L("Finishes setup without changing graphics. Reopen it any time in the main VASC menu.",'Beendet die Einrichtung ohne Grafikänderung. Später jederzeit im großen VASC-Menü erneut öffnen.')},
   {label=L("Later / save draft",'Später / Entwurf speichern'),action='later',help=L("Resume later from the Ascendant menu. No graphics settings are applied.",'Später im Ascendant-Menü an dieser Stelle fortsetzen. Es werden keine Grafikoptionen übernommen.')}},'welcome')
@@ -165,6 +165,15 @@ function M.new(game,settings,opts)
   local labels={sceneResolution=L("3D resolution",'3D-Auflösung'),shadows=L("Shadows",'Schatten'),aa=L("Anti-aliasing",'Kantenglättung'),water=L("Water reflections",'Wasserreflexionen'),localLights=L("World lighting",'Weltlicht'),battleLights=L("Battle lighting",'Kampflicht'),terarriumLighting=L("Terrarium lighting",'Terrarium-Licht')}
   table.insert(self.optional.graphics_override.rows,row(key,labels[key],help[key]))
  end
+ -- Add after the compact-page rewrite so this remains a first-class setup step.
+ local controls={id='battle_controls',kind='battle_controls',title=L('Battle buttons: your choice','Kampfbuttons: deine Wahl'),description=L('Keep the original edge-cut buttons or explicitly choose complete buttons. Size and position never change the shape. Changes stay a draft until Apply.','Behalte die angeschnittenen Originalbuttons oder wähle bewusst vollständige Buttons. Größe und Position ändern die Form nicht. Erst Übernehmen speichert.'),rows={
+  row('battle_controls_shape',L('Button shape','Buttonform'),L('Default / Original: artwork cut at the lower edge. Complete ORAS: fully enclosed buttons. Glass: transparent panels. Touch safe areas may raise the group, but never change your shape.','Standard / Original: am unteren Rand angeschnittene Grafik. Vollständiges ORAS: geschlossene Buttons. Glas: transparente Flächen. Touch-Sicherheitsabstände können die Gruppe anheben, ändern aber nie die Form.'),{{L('Default: original edge-cut','Standard: Original angeschnitten'),'auto'},{L('Original edge-cut','Original angeschnitten'),'original'},{L('Complete ORAS (opt in)','Vollständiges ORAS (bewusst wählen)'),'round'},{L('Glass','Glas'),'glass'}}),
+  row('battle_controls_scale',L('Button size','Buttongröße'),L('Scales battle buttons and move selection. Shape stays as selected.','Skaliert Kampfbuttons und Attackenauswahl. Die gewählte Form bleibt erhalten.')),
+  row('battle_controls_x',L('Horizontal position','Horizontale Position'),L('Move the buttons left or right. Zero centres the group.','Verschiebt die Buttons nach links oder rechts. Null zentriert die Gruppe.')),
+  row('battle_controls_y',L('Lift above lower edge','Über unteren Rand anheben'),L('Zero keeps the original bottom dock. Increase only if you want buttons further inside the picture. Touch controls and safe areas still reserve space.','Null behält den ursprünglichen unteren Rand bei. Nur erhöhen, wenn die Buttons weiter ins Bild sollen. Touch-Steuerung und Sicherheitsabstände reservieren weiterhin Platz.')),
+  {label=L('Restore original edge layout','Originales Randlayout wiederherstellen'),action='controlsDefault',help=L('Resets only button shape, size and position in this draft. Apply to save.','Setzt nur Form, Größe und Position der Buttons in diesem Entwurf zurück. Zum Speichern übernehmen.')}
+ }}
+ for i,pg in ipairs(self.pages)do if pg.id=='battle'then table.insert(self.pages,i+1,controls);break end end
  local saved=M.receipt(game)
  local interrupted=V.mod.storage:read(game,'dein-look/light-test')
  if saved.version==M.VERSION and not saved.done and type(saved.draft)=='table' then
@@ -333,7 +342,7 @@ function Screen:step(dir)
 end
 function Screen:refreshPreview()
  if self.settings.apo_human_acting_pilot then self.draft.apo_human_acting_pilot=self.draft.apo_hd_walking_sprites~=false end
- local p=self:current();local source='cobblemon';local selected=self:rows()[self.index]
+ local p=self:current();if p.kind=='battle_controls'then return end;local source='cobblemon';local selected=self:rows()[self.index]
  if p.kind=='people' then source=self.draft.apo_hd_walking_sprites==false and 'classic' or self.draft.apo_human_art_style
  if source=='voxel' and self.draft.voxelCharacterCardEnabled==false then source='hd' end
  elseif p.kind=='dex' then source=({kasc_crystal='crystal',active='active',game='classic',hd='full_hd'})[self.draft.modernDexSpriteSource]
@@ -345,6 +354,16 @@ function Screen:refreshPreview()
  local dex=({1,25,6,133})[self.species]
  local ok,err=pcall(self.preview.set,self.preview,source,dex,p.kind=='people')
  if not ok then self.preview.error=L("Preview unavailable: ",'Vorschau nicht verfügbar: ')..tostring(err) end
+end
+function Screen:drawControlsPreview(x,y,w,h)
+ local exports=self.game.mods and self.game.mods.exports
+ local hud=exports and exports.VOXEL_ASCENDANT and exports.VOXEL_ASCENDANT.orasBattleHud
+ if not (hud and hud.controlsPreview)then return false end
+ local canvas,err=hud.controlsPreview(self.draft)
+ if not canvas then self.message=L('Button preview unavailable: ','Buttonvorschau nicht verfügbar: ')..tostring(err);return false end
+ local fit=math.min(w/canvas:getWidth(),h/canvas:getHeight())
+ local G=love.graphics;G.setColor(1,1,1,1);G.draw(canvas,x+(w-canvas:getWidth()*fit)/2,y,0,fit,fit)
+ return true
 end
 function Screen:next()
  if self:current().id=='device' and self.draft._device=='choose' then self.message=L("Please select a device, choose a safe start or explicitly keep existing graphics settings.",'Bitte wähle ein Gerät, den sicheren Start oder ausdrücklich „Vorhandene Grafikwerte behalten“.');return end
@@ -385,6 +404,9 @@ function Screen:choose()
  if r.action=='next' then self:next()
  elseif r.action=='keep' then persist(self,true);self.game.stack:pop()
  elseif r.action=='later' then persist(self,false);self.game.stack:pop()
+ elseif r.action=='controlsDefault' then
+  for k,v in pairs({battle_controls_shape='auto',battle_controls_scale=1,battle_controls_x=0,battle_controls_y=0})do if self.settings[k]then self.draft[k]=v end end
+  self:refreshPreview();persist(self,false)
  elseif r.action=='base' then
   local names={};for _,c in ipairs(self.contexts)do if self.draft['_include_'..c[1]]then self:stageContext(c,self.draft._base);names[#names+1]=c[2]end end
   self.message=#names>0 and (L("Draft preset: ",'Entwurf vorbelegt: ')..table.concat(names,', ')..L(". Battles and the Pokédex stay unchanged.",'. Kampf und Pokédex bleiben unverändert.')) or L("No area selected. Nothing changed.",'Kein Bereich ausgewählt. Es wurde nichts verändert.');persist(self,false)
@@ -653,6 +675,9 @@ function Screen:drawPhysical()
    text(string.format(self.performance.lowerBound and L("At least level %d / 6 · %s",'Mindestens Stufe %d / 6 · %s')or L("Level %d / 6 · %s",'Stufe %d / 6 · %s'),self.performance.level,V.require('SetupBenchmark').tiers[self.performance.level] or self.performance.label),561,420,489,24,highlight)
    text(string.format(L("VASC · %s · frame time %.1f ms",'VASC · %s · Bildzeit %.1f ms'),({economy='720p',balanced='1080p',native=L("Native",'Nativ')})[self.performance.resolution]or L("current resolution",'aktuelle Auflösung'),self.performance.renderMs),561,459,489,17,muted)
   elseif p.kind~='device' then text(L("Six levels: Weak to High-End.\nUnstable checks do not assign a rating.",'Sechs Stufen: Schwach bis High-End.\nBei instabilem Test keine Einstufung.'),561,430,489,19,muted)end
+ elseif p.kind=='battle_controls' then
+  self:drawControlsPreview(554,230,509,252)
+  text(L('Layout preview · touch spacing can differ','Layoutvorschau · Touch-Abstände können abweichen'),558,486,505,16,muted)
  elseif scene then
   local iw,ih=scene:getDimensions();local scale=math.min(509/iw,252/ih);G.setColor(1,1,1,1);G.draw(scene,554+(509-iw*scale)/2,230,0,scale,scale)
   text(L("Actual demo capture · example setting",'Echte Demo-Aufnahme · Kulisse als Beispiel'),558,486,505,16,muted)

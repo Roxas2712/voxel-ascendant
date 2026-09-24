@@ -547,6 +547,7 @@ for _, key in ipairs({
   "provider", "providerStatus", "reason", "resource", "sequence",
   "renderer", "repeatCount", "repeatedEvent", "requestToken", "result", "retention",
   "rollbackReceiptId", "schema", "sceneId", "segmentId", "shader",
+  "settingId", "settingValue", "settingDirection",
   "source", "speciesId", "stack", "status", "target", "targetKind",
   "timeOfDay", "total", "transition", "version", "warning", "weatherCode",
   "width", "windowHeight", "windowWidth",

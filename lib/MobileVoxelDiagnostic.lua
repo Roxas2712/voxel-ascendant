@@ -535,14 +535,21 @@ end
 function Diagnostic.observeOption(enabled, source, fields)
   if not state.active then return false end
   enabled = enabled == true
+  local level = fields and tonumber(fields.level)
   local changed = not state.optionKnown or state.optionEnabled ~= enabled
     or state.optionSource ~= tostring(source or "unknown")
+    or state.optionLevel ~= level
   state.optionKnown = true
   state.optionEnabled = enabled
   state.optionSource = clean(source or "unknown", 80)
+  state.optionLevel = level
   local reason = enabled and "voxel-option-enabled" or "voxel-option-disabled"
   if changed then
-    emit("option:" .. tostring(enabled) .. ":" .. state.optionSource,
+    -- The caller runs every frame. Only write transitions, but don't dedupe
+    -- a return to a previously selected rung out of the session evidence.
+    local key = "option:" .. state.optionSource
+    seen[key] = nil
+    emit(key,
       "mobile-voxel-option", eventFields(fields, {
         code="D00",
         status="INFO",
@@ -777,6 +784,7 @@ local function detailedStatus()
     reason=state.reason,
     optionKnown=state.optionKnown,
     optionEnabled=state.optionEnabled,
+    optionLevel=state.optionLevel,
     optionSource=state.optionSource,
     providerInstalled=state.providerInstalled,
     providerSelected=state.providerSelected,

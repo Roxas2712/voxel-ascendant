@@ -321,7 +321,7 @@ local function writeSceneryRing(action, state, receipt)
   receipt = type(receipt) == "table" and receipt or {}
   local delta = receipt.resourceDelta or {}
   pcall(diagnostics.write, "vasc.performance.scenery-ring", {
-    action=action, status=receipt.status or "ready",
+    action=action, status=receipt.status or "ready", reason=receipt.reason,
     mapId=state and state.mapId, neighbor=receipt.neighbor,
     elapsed=receipt.elapsedMs,
     coreToFirstVisibleMs=state and state.coreToFirstVisibleMs,
@@ -562,6 +562,7 @@ function PerformanceDiagnostics.noteEvent(event, fields)
   fields = type(fields) == "table" and fields or {}
   local result = tostring(fields.result or fields.status or ""):lower()
   local expectedFallback = result == "expected_fallback" or result == "expected-fallback"
+    or event:find("battle-camera-static-fallback", 1, true) ~= nil
   local failed = not expectedFallback and (result == "failed" or result == "failure" or result == "error"
     or event:find("error", 1, true) or event:find("fallback", 1, true))
   local function starts(kind)

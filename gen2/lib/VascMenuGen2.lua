@@ -200,10 +200,6 @@ end
 
 local function changedCallback(opts, key)
   return function(game, value)
-    if key == "battle_controls_y" and (tonumber(value) or 0) > 0 then
-      local shape = M.settingsByKey.battle_controls_shape
-      if shape and shape:get() == "original" then shape:setValue("auto", game) end
-    end
     local payload = {
       mod=(mod and mod.id) or "VOXEL_ASCENDANT", key=key, value=value,
       source="vasc_menu", game=game,
@@ -302,10 +298,6 @@ local function syncExternalChanges(settingsByKey)
   pcall(mod.events.on, mod.events, "mod.options_changed", function(payload)
     if type(payload) ~= "table" or type(payload.key) ~= "string" then return end
     if payload.mod ~= nil and payload.mod ~= mod.id then return end
-    if payload.key == "battle_controls_y" and (tonumber(payload.value) or 0) > 0 then
-      local shape = settingsByKey.battle_controls_shape
-      if shape and shape:get() == "original" then shape:setValue("auto", payload.game) end
-    end
     -- This listener runs after VascRendererOptions (priority 0), which has
     -- applied any DEVICE profile fan-out by the time the hub reads all keys.
     -- Reading all keys also keeps a previously opened hub coherent after a

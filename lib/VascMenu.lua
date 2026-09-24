@@ -172,9 +172,9 @@ local SETTING_HELP_DE = {
   battle_textbox_y = "Kampf-Textbox vertikal verschieben. Negative Werte: nach oben. Standard: 0%.",
   battle_controls_scale = "Größe nur der Kampfbuttons und Attackenauswahl. Standard: 100%.",
   battle_controls_x = "Buttons seitlich verschieben. Standard: 0%.",
-  battle_controls_y = "Buttons anheben und Originalgrafiken automatisch vervollständigen. GLASS bleibt erhalten. Standard: 0%.",
+  battle_controls_y = "Buttons anheben. Die gewählte Form bleibt erhalten. 0%: am unteren Rand; Touch-Steuerung und Sicherheitsabstände werden berücksichtigt.",
   battle_controls_transparency = "Transparenz von Kampfbuttons, Mega, Attacken und Zurück. 0% = bisherige Darstellung; höhere Werte lassen mehr vom Hintergrund durchscheinen.",
-  battle_controls_shape = "AUTO ergänzt bei eigener Platzierung die Originalgrafiken. COMPLETE ORAS zeigt sie immer vollständig; GLASS wählt transparente Ersatzbuttons.",
+  battle_controls_shape = "AUTO / ORIGINAL behalten die angeschnittene Originalgrafik. Nur COMPLETE ORAS zeigt vollständige Buttons; GLASS wählt transparente Ersatzbuttons. Position und Größe ändern diese Wahl nicht.",
   hud_scale = "Skaliert die komplette ORAS-Auswahl proportional, ohne "
     .. "einzelne Knöpfe künstlich zu strecken.",
   oras_status_glass = "Stärke nur der Glasfläche hinter ORAS-Statuskarten. "
@@ -1418,9 +1418,9 @@ local function stepSetting(game, item, direction)
   local diagnostics = config and config.diagnostics
   if diagnostics and type(diagnostics.write) == "function" then
     diagnostics.write("menu-setting-change", {
-      key=item.settingKey or row.id or item.label,
-      value=item.right,
-      direction=direction or 1,
+      settingId=item.settingKey or row.id or item.label,
+      settingValue=item.right,
+      settingDirection=direction or 1,
     })
   end
   if game and type(game.writeOptions) == "function" then

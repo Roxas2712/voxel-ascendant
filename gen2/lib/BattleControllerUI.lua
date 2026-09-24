@@ -2689,16 +2689,9 @@ local function drawHandCursor(x, y, scale)
 end
 
 function M.roundControls(screen)
-  local shape = optionValue(screen, "battle_controls_shape", "auto")
-  if shape == "glass" then return false end
-  if screen and screen._vascCommandDetached then return true end
-  if shape == "original" and (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) > 0 then
-    return true
-  end
-  return shape == "round" or (shape == "auto" and (
-    (tonumber(optionValue(screen, "battle_controls_y", 0)) or 0) ~= 0
-    or (tonumber(optionValue(screen, "battle_controls_x", 0)) or 0) ~= 0
-    or (tonumber(optionValue(screen, "battle_controls_scale", 1)) or 1) ~= 1))
+  -- Shape is a deliberate choice. Safe areas, size and position must never
+  -- replace the original edge-cut artwork with complete buttons.
+  return optionValue(screen, "battle_controls_shape", "auto") == "round"
 end
 
 function M.drawGlassControl(key, label, x, y, w, h, focused)

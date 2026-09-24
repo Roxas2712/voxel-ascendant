@@ -3973,7 +3973,7 @@ function OverworldBattle.cycleLivePresentation(g)
   local active = session
   local request = battle and OverworldBattle.presentationRequests[battle]
   local receipt = battle and lifecycle("current", battle)
-  if not request or not request.plan.mode or not receipt
+  if not request or not request.plan or request.plan.mode == nil or not receipt
       or not runtimeLeaseActive() or not battleLifecycleReady or not supported
       or (active and not sameBattle(active.battle, battle)) then return false end
   local native = receipt.provider == "DEFAULT"
@@ -3994,6 +3994,9 @@ function OverworldBattle.cycleLivePresentation(g)
   else
     active.pendingPresentation = {mode=mode,elapsed=0}
   end
+  Diagnostics.write("battle-view-request", {
+    requested=mode, actual=receipt.provider, action="queued",
+  })
   V.require("ShortcutToast").notify("BATTLE VIEW",
     mode == true and "MAP QUEUED"
       or mode == OverworldBattle.ARENA and "ARENA QUEUED"
@@ -4013,10 +4016,14 @@ function OverworldBattle.retryNativePresentation()
   if not receipt or receipt.provider ~= "DEFAULT" then request.pending=nil;return end
   if battle.phase ~= "menu" or battle.growIn or battle.sendingOut or battle.current then return end
   request.pending = nil
-  local function unavailable()
+  local function unavailable(reason)
+    Diagnostics.write("battle-view-retained", {
+      requested=request.mode, actual="DEFAULT", action="native-retry",
+      reason=tostring(reason or "stage-unavailable"),
+    })
     V.require("ShortcutToast").notify("BATTLE VIEW", "2D RETAINED - 8 NEXT VIEW")
   end
-  if not Voxel3D.available() then unavailable();return end
+  if not Voxel3D.available() then unavailable("voxel-unavailable");return end
   local Stage = V.require("VoxelBattleStage")
   if type(Stage.retryFailedImages) == "function" then Stage.retryFailedImages() end
   local plan = {}
@@ -4024,24 +4031,24 @@ function OverworldBattle.retryNativePresentation()
   plan.mode, plan.pokemonBack, plan.trainerBack = request.mode, false, false
   OverworldBattle.setPlanStage(plan,request.mode)
   local ok, arena = pcall(OverworldBattle.stageFor, request.state, plan, true)
-  if not ok or not arena then unavailable();return end
+  if not ok or not arena then unavailable(not ok and arena or "stage-unavailable");return end
   if session then
     if not sameBattle(session.battle,battle) then return end
     rendererSessionAbort(battle,"explicit-native-retry",false)
   end
-  local prepared = rendererSessionPrepare(request.state,battle,plan,arena)
-  if not prepared then unavailable();return end
-  local changed = lifecycle("retryPresentation",battle,arena.presentationMode)
+  local prepared,prepareReason = rendererSessionPrepare(request.state,battle,plan,arena)
+  if not prepared then unavailable(prepareReason);return end
+  local changed,changeReason = lifecycle("retryPresentation",battle,arena.presentationMode)
   if not changed then
     rendererSessionAbort(battle,"native-retry-rejected",false)
-    unavailable();return
+    unavailable(changeReason);return
   end
   local adopted, reason = rendererSessionAdopt(battle,
     legacyRendererOwner(arena.presentationMode,changed,prepared))
   if not adopted then
     rendererSessionAbort(battle,reason,false)
     lifecycle("nativeLatched",battle,reason)
-    unavailable();return
+    unavailable(reason);return
   end
   bindPresetArenaBackdrop(request.state,battle,arena,adopted)
   -- Commit the option only after the normal atomic renderer publishes a frame.
@@ -4082,11 +4089,15 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
   OverworldBattle.setPlanStage(plan,pending.mode)
   if not pending.arena then
     local ok,arena=pcall(OverworldBattle.stageFor,active.state,plan,true)
-    if ok then pending.arena=arena end
+    if ok then pending.arena=arena else pending.reason=tostring(arena) end
   end
   local arena=pending.arena
   if not arena then
     active.pendingPresentation=nil
+    Diagnostics.write("battle-view-retained", {
+      requested=pending.mode, actual=active.rendererProvider,
+      reason=pending.reason or "stage-unavailable", action="stage",
+    })
     V.require("ShortcutToast").notify("BATTLE VIEW","STAGE UNAVAILABLE")
     return false
   end
@@ -4095,12 +4106,16 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     OverworldBattle.setPlanStage(plan,arena.terarrium and "terarrium"
       or arena.presentationMode == "ARENA" and OverworldBattle.ARENA or OverworldBattle.FLAT_B)
   end
-  local prepared=pcall(function()
+  local prepared,prepareReason=pcall(function()
     BattleScene.prepare(active.state,arena)
     ChunkMesher.pump(true)
   end)
   if not prepared then
     active.pendingPresentation=nil
+    Diagnostics.write("battle-view-retained", {
+      requested=pending.mode, actual=active.rendererProvider,
+      reason=tostring(prepareReason), action="prepare",
+    })
     V.require("ShortcutToast").notify("BATTLE VIEW","PREVIOUS VIEW RETAINED")
     return false
   end
@@ -4131,11 +4146,17 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
   end)
   local complete=ok and shot and shotMatchesTextures(shot,textures)
     and replacementFramePending(active,shot,textures)~=nil
+  -- Capture the candidate's reason before repainting the retained stage:
+  -- the ordinary render resets BattleScene.lastDeclineReason each frame.
+  pending.reason=not ok and tostring(shot)
+    or not shot and (BattleScene.lastDeclineReason or "render-incomplete")
+    or not complete and "actor-receipt-mismatch" or nil
   if complete then
     active.rendererProvider=arena.presentationMode
-    local changed=lifecycle("changePresentation",battle,oldProvider,arena.presentationMode)
+    local changed,changeReason=lifecycle("changePresentation",battle,oldProvider,arena.presentationMode)
     if not rawequal(session,active) then return true end
     if not changed then
+      pending.reason=changeReason or "presentation-owner-rejected"
       local current=lifecycle("current",battle)
       if not current or current.provider~=oldProvider then
         error("live presentation owner could not roll back",0)
@@ -4144,6 +4165,10 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     if changed then
       active.pendingPresentation=nil
       if publishRenderedShot(active,shot,textures) then
+        Diagnostics.write("battle-view-committed", {
+          requested=pending.mode, actual=arena.presentationMode,
+          elapsed=pending.elapsed,
+        })
         if not pending.emergency then
           OverworldBattle.setting:setValue(pending.mode,game(),true)
         end
@@ -4154,6 +4179,7 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
       -- The HUD could not commit. Return the exact lifecycle to the old stage
       -- before the normal frame path repaints it in this same update.
       local reverted=lifecycle("changePresentation",battle,arena.presentationMode,oldProvider)
+      pending.reason="presentation-publish-rejected"
       if not rawequal(session,active) then return true end
       if not reverted then error("live presentation rollback rejected",0) end
     end
@@ -4161,6 +4187,10 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
   restore()
   if not ok or pending.elapsed>=2 then
     active.pendingPresentation=nil
+    Diagnostics.write("battle-view-retained", {
+      requested=pending.mode, actual=oldProvider,
+      reason=pending.reason, elapsed=pending.elapsed, action="render",
+    })
     V.require("ShortcutToast").notify("BATTLE VIEW","PREVIOUS VIEW RETAINED")
   end
   -- Candidate rendering may reuse a canvas. The caller always repaints the
@@ -4609,6 +4639,10 @@ function OverworldBattle.update(dt)
     if rawequal(session,active) and active.retryRequestedMode ~= nil
         and active.presentationCommitted and not active.broken then
       OverworldBattle.setting:setValue(active.retryRequestedMode,game(),true)
+      Diagnostics.write("battle-view-committed", {
+        requested=active.retryRequestedMode, actual=active.rendererProvider,
+        action="native-retry",
+      })
       active.retryRequestedMode=nil
     end
     return true

@@ -13,7 +13,19 @@ M.supported = not (V.mod and V.mod._vascHostGeneration
 M.ownerActive = true -- the Gen1 host closes this until its Card activates
 if M.mobile or M.handheld then M.MAX_LIGHTS=4;M.MAX_BATTLE_LIGHTS=2;M.MAX_BLOCKERS=4;M.MAX_PORTALS=2 end
 function M.available() return M.supported and M.ownerActive and not M.failure end
-function M.fail(reason) M.failure=tostring(reason);M.clear(true) end
+function M.fail(reason)
+  local first = not M.failure
+  M.failure=tostring(reason);M.clear(true)
+  if first then
+    -- A lighting failure must leave the world renderer usable. Keep the
+    -- driver response so support can distinguish this from a 2D selection.
+    pcall(function()
+      V.require('Diagnostics').write('local-lighting-failed', {
+        reason=M.failure, requested='dynamic-lighting', actual='unlit-3d',
+      })
+    end)
+  end
+end
 function M.setOwnerActive(value) M.ownerActive=value==true;if not value then M.invalidate() end end
 M.setting = V.require('ModSetting').new('localLights', 'DYNAMIC LIGHTING',
   {true, false}, {'ON', 'OFF'}, M.supported)
@@ -552,7 +564,12 @@ function M.send(shader, enabled)
   if shader:hasUniform('localGridOn')then
     local grid
     if enabled and frame.allLights then
-      grid=V.require('LocalLightGrid').prepare(frame,M,emptyWall())
+      -- Like the bounded visibility pass above, this optional GPU allocation
+      -- can fail on a particular driver. Letting it escape disables the
+      -- engine's entire voxel pipeline for the rest of the session.
+      local ok,result=pcall(V.require('LocalLightGrid').prepare,frame,M,emptyWall())
+      if not ok then M.fail(result);return M.send(shader,false) end
+      grid=result
     end
     shader:send('localGridOn',grid and 1 or 0)
     if grid then

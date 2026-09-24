@@ -128,15 +128,6 @@ Settings.battle_controls_transparency = ModSetting.new("battle_controls_transpar
 Settings.battle_controls_shape = ModSetting.new("battle_controls_shape", "BUTTON SHAPE",
   {"auto", "original", "round", "glass"}, {"AUTO", "ORIGINAL", "COMPLETE ORAS", "GLASS"}, "auto")
 
--- Raising the dock exposes the formerly cropped lower edge. The placement
--- action therefore selects completed artwork without a second menu change.
-Settings.battle_controls_y:onChange(function(game, value)
-  if (tonumber(value) or 0) > 0
-      and Settings.battle_controls_shape:get() == "original" then
-    Settings.battle_controls_shape:setValue("auto", game)
-  end
-end)
-
 Settings.all = {
   Settings.battle_textbox_x, Settings.battle_textbox_y,
   Settings.battle_controls_scale,

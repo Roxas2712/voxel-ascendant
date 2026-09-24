@@ -51,7 +51,10 @@ function M.draw(s,sourceHelp)
  end
  if ph>=100 then
   panel(16,py,508,ph,false)
-  if scene then
+  if p.kind=='battle_controls'then
+   s:drawControlsPreview(22,py+4,496,ph-28)
+   text(L('Layout preview · touch spacing can differ','Layoutvorschau · Touch-Abstände können abweichen'),26,py+ph-22,488,20,13,muted)
+  elseif scene then
    local iw,ih=scene:getDimensions();local fit=math.min(488/iw,(ph-32)/ih);G.setColor(1,1,1,1);G.draw(scene,270-iw*fit/2,py+6,0,fit,fit)
    text(L('Example capture','Beispielaufnahme'),26,py+ph-24,488,20,13,muted)
   elseif p.kind=='people'or p.kind=='pokemon'or p.kind=='dex'or p.kind=='battle'then

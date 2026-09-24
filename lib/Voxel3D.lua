@@ -1228,17 +1228,35 @@ function Voxel3D.shader(grid)
         warnShader(("Gen-1 Voxel3D full shader did not compile (grid=%s): %s")
           :format(tostring(grid), tostring(fullError)))
         local fallback, fallbackError = compileShader("mobile-safe", grid)
+        local lightingError
+        if not fallback then
+          -- Both variants include the same optional lighting program. A
+          -- driver that rejects that program needs a lighting-free retry;
+          -- reducing aerial effects alone cannot recover its 3D renderer.
+          local unlit, unlitError = compileShader("full", grid, false)
+          if not unlit then unlit, unlitError = compileShader("mobile-safe", grid, false) end
+          if unlit then
+            V.require('LocalLights').fail(fallbackError or fullError)
+            fallback = unlit
+            lightingError = tostring(fallbackError or fullError)
+          else
+            fallbackError = unlitError or fallbackError
+          end
+        end
         shaderErrors[grid] = {
           full = tostring(fullError),
           mobileSafe = fallbackError and tostring(fallbackError) or nil,
+          lighting = lightingError,
         }
         if fallback then
           shaders[grid] = fallback
-          shaderVariants[grid] = "mobile-safe"
-          warnShader(("Gen-1 Voxel3D is using the mobile-safe 3D shader "
+          shaderVariants[grid] = lightingError and "unlit-3d" or "mobile-safe"
+          if lightingError then
+            warnShader("Gen-1 Voxel3D retained 3D with dynamic lighting disabled: " .. lightingError)
+          else warnShader(("Gen-1 Voxel3D is using the mobile-safe 3D shader "
             .. "(grid=%s); weather, glass and cutaway remain enabled; "
             .. "only cloud/bird ground shadows are neutral")
-            :format(tostring(grid)))
+            :format(tostring(grid))) end
         else
           shaders[grid] = false
           shaderVariants[grid] = "unavailable"
