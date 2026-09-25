@@ -1,6 +1,9 @@
 -- Bounded local light rig and cached 64x64 soft contact lightmap.
 return function(api)
  local S={bakes=0};local L=api.lights
+ local rigs=setmetatable({},{__mode='k'})
+ local defaultPalette={{1,.84,.66},{.63,.81,1}}
+ local towerPalette={{.59,.49,.80},{.66,.74,.94}}
  local palettes={
   ROCKET_HIDEOUT_B4F={{1,.61,.53},{.60,.79,.96}},
   CINNABAR_GYM={{1,.43,.12},{1,.70,.27},'lava'},
@@ -16,6 +19,17 @@ return function(api)
   LANCES_ROOM={{1,.63,.35},{1,.86,.57}},
   CHAMPIONS_ROOM={{1,.88,.66},{.52,.84,1}},
  }
+ local function rigFor(arena)
+  local rig=rigs[arena]
+  if not rig then
+   local lamps={}
+   for i=1,3 do lamps[i]={weight=1,normal={0,0,0},owner={}}end
+   lamps[3].radius=130;lamps[3].power=.27;lamps[3].color={1,.95,.87}
+   rig={lamps=lamps,fill=lamps[3],tint={.80,.81,.84}}
+   rigs[arena]=rig
+  end
+  return rig
+ end
  function S.enabled()return not S.failure and L.available() and api.enabled()~=false end
  function S.fail(reason)
   if not S.failure then
@@ -62,15 +76,19 @@ return function(api)
  function S.prepare(arena,ground,lightmap)
   if not S.enabled()then L.clear(true);return false end
   local id=arena.terarrium.id
-  local p=palettes[id]or(id:match('^POKEMON_TOWER_')and{{.59,.49,.80},{.66,.74,.94}})or{{1,.84,.66},{.63,.81,1}}
-  local t=api.clock();local pulse=p[3]=='lava' and (1+.035*math.sin(t*2.1)+.018*math.sin(t*4.7))or 1
-  local lamps={};local x,z=arena.mid[1],arena.mid[2];local lava=p[3]=='lava'
-  for i,side in ipairs({-1,1})do
-   lamps[#lamps+1]={x=x+side*(lava and 57 or 44),y=ground+(lava and 9 or 32),z=z-17,
-    radius=112,power=(lava and .92 or .68)*pulse,weight=1,normal={0,0,0},owner={},color=p[i]}
+  local p=palettes[id]or(id:match('^POKEMON_TOWER_')and towerPalette)or defaultPalette
+  local lava=p[3]=='lava';local pulse=1
+  if lava then local t=api.clock();pulse=1+.035*math.sin(t*2.1)+.018*math.sin(t*4.7)end
+  local rig=rigFor(arena);local lamps=rig.lamps;local x,z=arena.mid[1],arena.mid[2]
+  for i=1,2 do
+   local lamp=lamps[i];local side=i==1 and -1 or 1
+   lamp.x=x+side*(lava and 57 or 44);lamp.y=ground+(lava and 9 or 32);lamp.z=z-17
+   lamp.radius=112;lamp.power=(lava and .92 or .68)*pulse;lamp.color=p[i]
   end
-  if not (L.mobile or L.handheld) then lamps[3]={x=x,y=ground+38,z=z+49,radius=130,power=.27,weight=1,normal={0,0,0},owner={},color={1,.95,.87}}end
-  local tint={.80,.81,.84};if lava then tint={.77,.74,.76}end
+  if L.mobile or L.handheld then lamps[3]=nil
+  else lamps[3]=rig.fill;rig.fill.x=x;rig.fill.y=ground+38;rig.fill.z=z+49 end
+  local tint=rig.tint
+  tint[1],tint[2],tint[3]=lava and .77 or .80,lava and .74 or .81,lava and .76 or .84
   api.graphics.tint=tint
   local f=L.stage(nil,tint,lamps)
   f.terrarium=true;f.stageAO=lightmap;f.stageOrigin={x,ground,z,152}
@@ -79,6 +97,6 @@ return function(api)
   S.last={id=id,count=#lamps,bakes=S.bakes}
   return true
  end
- function S.release()L.clear(true);S.last=nil;S.failure=nil end
+ function S.release()L.clear(true);S.last=nil;S.failure=nil;rigs=setmetatable({},{__mode='k'}) end
  return S
 end

@@ -71,21 +71,9 @@ end
 -- to return to the physical screen; restoring an engine intermediate canvas
 -- there lets the later native 2D composite cover the voxel frame.
 local function preserveCallerCanvas()
-  local okNative, nativeName = pcall(function()
-    local sys = love and love.system
-    return sys and sys.getOS and sys.getOS()
-  end)
-  if okNative and (nativeName == "Android" or nativeName == "iOS") then
-    return true
-  end
-  local okPlatform, Platform = pcall(require, "src.core.Platform")
-  if okPlatform and type(Platform) == "table" and type(Platform.detect) == "function" then
-    local okInfo, info = pcall(Platform.detect)
-    if okInfo and type(info) == "table" and type(info.os) == "string" then
-      return info.os == "Android" or info.os == "iOS"
-    end
-  end
-  return false
+  -- Use the same bootstrap receipt as resolution and mobile lighting. Host
+  -- capability probes can cross the sandbox; they do not belong in a frame.
+  return CanvasPresentation.OS == "Android" or CanvasPresentation.OS == "iOS"
 end
 
 

@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.2 — Kanto location terrariums
+# VASC 3.0.46-rc.3 — Kanto location terrariums
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -39,3 +39,11 @@ Runtime audit corrections in this candidate:
 - Failed Cobblemon texture preparation releases intermediate file, pixel and GPU objects.
 
 See RUNTIME_AUDIT_2026-09-25.md and the delivery QA evidence for checks and limitations. Physical phone GPU verification remains separate from desktop or simulated mobile policy checks.
+
+Further performance work in rc.3:
+
+- Crystal artwork resolution caches bounded file-presence results and uses metadata on current hosts; legacy hosts read each path once. Missing art keeps the existing fallback. Transient read errors remain retryable.
+- Gen2 shadow, antialiasing and scene passes share the existing platform receipt, removing repeated host capability checks from rendering.
+- Terrarium lamps reuse per-arena data while updating positions, colors and lava animation. Weak arena ownership and explicit release bound the cache lifetime.
+
+See PERFORMANCE_FOLLOWUP_2026-09-25.md for measured call/allocation reductions and validation.

@@ -485,21 +485,9 @@ local returnCanvas = nil
 -- that nesting fix only on mobile; on desktop the outer Gold present canvas is
 -- later replaced by the native 2D scene, which hides the voxel result.
 local function preserveCallerCanvas()
-  local okNative, nativeName = pcall(function()
-    local sys = love and love.system
-    return sys and sys.getOS and sys.getOS()
-  end)
-  if okNative and (nativeName == "Android" or nativeName == "iOS") then
-    return true
-  end
-  local okPlatform, Platform = pcall(require, "src.core.Platform")
-  if okPlatform and type(Platform) == "table" and type(Platform.detect) == "function" then
-    local okInfo, info = pcall(Platform.detect)
-    if okInfo and type(info) == "table" and type(info.os) == "string" then
-      return info.os == "Android" or info.os == "iOS"
-    end
-  end
-  return false
+  -- Use the same bootstrap receipt as resolution and mobile lighting. Host
+  -- capability probes can cross the sandbox; they do not belong in a frame.
+  return CanvasPresentation.OS == "Android" or CanvasPresentation.OS == "iOS"
 end
 
 function Voxel3D.canvasRestorePolicy()

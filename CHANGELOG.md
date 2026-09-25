@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.3 — Further runtime optimization
+
+Caches Crystal artwork presence, unifies Gen2 render policy with its existing platform receipt and reuses Terrarium light rigs per arena. Preserves fallback selection, mobile lamp budgets and animated lighting. Includes the rc.2 audit fixes and all 15 new location terrariums. See PERFORMANCE_FOLLOWUP_2026-09-25.md. Local candidate.
+
+---
+
 # Voxel Ascendant 3.0.46-rc.2 — Runtime audit
 
 Preserves fitted Gen2 shadow canvases, releases shadow and partial model texture resources, tolerates corrupt optional model receipts and bounds failed model/effect retries. Optional Terrarium background and lighting errors retain the battle presentation. Includes all 15 location terrariums from rc.1. Local review candidate; see RUNTIME_AUDIT_2026-09-25.md.
