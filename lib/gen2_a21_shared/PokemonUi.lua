@@ -96,7 +96,7 @@ local KNOWN_SCHEMAS = {
 }
 
 local WELL_KNOWN_LABELS = {
-  asc_box = "ASC BOX",
+  asc_box = "ORAS FULLSCREEN",
   oras_glass = "ORAS GLASS",
   game_default = "GAME DEFAULT",
   kasc_frlg = "KASC FRLG",

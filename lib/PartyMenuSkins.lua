@@ -35,7 +35,7 @@ M.setting = ModSetting.new(
   M.optionKey,
   "START TEAM UI",
   { M.styles.ASC_BOX, M.styles.ORAS_GLASS, M.styles.GAME_DEFAULT },
-  { "ASC BOX", "ORAS GLASS", "GAME DEFAULT" },
+  { "ORAS FULLSCREEN", "ORAS GLASS", "GAME DEFAULT" },
   M.styles.ASC_BOX
 )
 
@@ -181,7 +181,7 @@ function M.decorate(state, style)
 end
 
 -- Battle PartyMenu remains the authoritative native switch picker. The
--- PokemonUi Host-v1 adapter calls this only after resolving ASC BOX for the
+-- PokemonUi Host-v1 adapter calls this only after resolving ORAS FULLSCREEN for the
 -- battle_party surface; this function replaces presentation on that concrete
 -- instance and forwards the live battle owner to the reviewed 0.5.3 adapter.
 -- Any construction error restores the complete native object and metatable.
@@ -320,11 +320,11 @@ local function installSummaryFactory()
       if decorated and type(result) == "table" then return result end
       restore(summary, saved)
       if egg then
-        warn("ASC BOX Egg Summary presentation failed private: %s",
+        warn("ORAS FULLSCREEN Egg Summary presentation failed private: %s",
           tostring(result))
         return safeEggSummary(game)
       end
-      warn("ASC BOX Summary presentation failed open: %s", tostring(result))
+      warn("ORAS FULLSCREEN Summary presentation failed open: %s", tostring(result))
       return summary
     end,
   })
@@ -440,7 +440,7 @@ local function installOverlayListener()
         })
       if not decorated then
         restore(state, saved)
-        warn("ASC BOX TextBox presentation failed open: %s", tostring(result))
+        warn("ORAS FULLSCREEN TextBox presentation failed open: %s", tostring(result))
       end
     elseif classInstance(state, NativeChoiceBox) and bagParent then
       local saved = snapshot(state)
@@ -462,7 +462,7 @@ local function installOverlayListener()
         })
       if not decorated then
         restore(state, saved)
-        warn("ASC BOX ChoiceBox presentation failed open: %s", tostring(result))
+        warn("ORAS FULLSCREEN ChoiceBox presentation failed open: %s", tostring(result))
       end
     end
   end, 900)
@@ -533,10 +533,10 @@ function M.install()
   }
   if not hookOk then return false, hookReason end
   if not summaryOk then
-    warn("ASC BOX Summary integration unavailable: %s", tostring(summaryReason))
+    warn("ORAS FULLSCREEN Summary integration unavailable: %s", tostring(summaryReason))
   end
   if not overlayOk then
-    warn("ASC BOX overlay integration unavailable: %s", tostring(overlayReason))
+    warn("ORAS FULLSCREEN overlay integration unavailable: %s", tostring(overlayReason))
   end
   return true
 end

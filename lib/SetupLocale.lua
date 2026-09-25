@@ -14,6 +14,7 @@ function M.text(en,de)return M.language()=='de' and de or en end
 -- Normalize public setting labels too: owners may already have translated
 -- them, and a saved benchmark can outlive a language restart.
 local choices={
+ {'GAME DEFAULT','SPIELSTANDARD'},{'FOLLOW GLOBAL','GLOBAL FOLGEN'},
  {'OFF','AUS'},{'ON','AN'},{'CLASSIC','KLASSISCH'},{'NATURAL','NATUERLICH'},
  {'FOLLOW MODEL PRIORITY','MODELLREIHENFOLGE'},{'AUTO: MODELS > FULL HD','AUTO: MODELLE > FULL HD'},
  {'FULL HD > MODELS','FULL HD > MODELLE'},{'SPRITES ONLY','NUR SPRITES'},

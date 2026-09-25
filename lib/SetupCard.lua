@@ -31,7 +31,19 @@ function M.new(game,settings,opts)
  local self=setmetatable({game=game,page=1,index=1,time=0,draft={},initial={},settings={},pages={},species=2,confirmed={},opts=opts or {}},Screen)
  self.kasc=game.mods and game.mods.exports and game.mods.exports.kanto_ascendant~=nil
  self.wilds=self.kasc or game.mods and game.mods.exports and game.mods.exports.overworld_wild_spawns~=nil
- for _,row in ipairs(settings or {})do local s=row[1];if s and s.key and type(s.values)=="table" and #s.values>0 then self.settings[s.key]=s;self.initial[s.key]=s:get();self.draft[s.key]=s:get()end end
+ for _,entry in ipairs(settings or {})do
+  local s=entry[1]
+  -- PokemonUi owns dynamic provider choices. Adapt its public schema without
+  -- replacing the owner or changing Setup's transactional return contract.
+  if s and s.key and not s.values and type(s.schema)=='function' then
+   local owner=s;local schema=owner:schema();local values,labels={},{}
+   for _,choice in ipairs(schema.choices or {})do labels[#labels+1]=choice[1];values[#values+1]=choice[2]end
+   s={key=owner.key,values=values,labels=labels,
+    get=function()return owner:get()end,
+    setValue=function(_,value,g)if owner:setValue(value,g)then return owner:get()end end}
+  end
+  if s and s.key and type(s.values)=='table' and #s.values>0 then self.settings[s.key]=s;self.initial[s.key]=s:get();self.draft[s.key]=s:get()end
+ end
  self.preview=V.require('SetupPreview').new(game)
  local function page(id,title,description,rows,kind)
   self.pages[#self.pages+1]={id=id,title=title,description=description,rows=rows or {},kind=kind};return self.pages[#self.pages]
@@ -179,6 +191,14 @@ function M.new(game,settings,opts)
   {label=L('Restore original edge layout','Originales Randlayout wiederherstellen'),action='controlsDefault',help=L('Resets only button shape, size and position in this draft. Apply to save.','Setzt nur Form, Größe und Position der Buttons in diesem Entwurf zurück. Zum Speichern übernehmen.')}
  }}
  for i,pg in ipairs(self.pages)do if pg.id=='battle'then table.insert(self.pages,i+1,controls);break end end
+ local layouts={id='menus',title=L('Team and PC layouts','Team- und PC-Layouts'),
+  description=L('ORAS FULLSCREEN is the default for a fresh setup. Choose each menu separately. Existing choices are preselected.','ORAS FULLSCREEN ist die Vorgabe bei neuer Einrichtung. Wähle jedes Menü einzeln. Bestehende Einstellungen sind vorausgewählt.'),kind='menus',rows={
+   row('pokemonUiPartyMenu',L('Team from START','Team über START'),L('Fullscreen team cards, compact ORAS GLASS or the original game menu.','Vollbild-Teamkarten, kompaktes ORAS GLASS oder das originale Spielmenü.')),
+   row('pokemonUiBattleParty',L('Team in battle','Team im Kampf'),L('The team and switch picker during battles.','Teamansicht und Pokémon-Wechsel während des Kampfes.')),
+   row('pokemonUiPcBox',L('PC boxes','PC-Boxen'),L('Choose the box layout. Follow global uses the shared Pokémon UI choice below.','Wähle das Box-Layout. Global folgen verwendet die gemeinsame Pokémon-UI-Auswahl darunter.')),
+   row('pokemonUiSkin',L('Shared Pokémon UI','Gemeinsame Pokémon-UI'),L('Used by boxes and the bank when they follow global.','Gilt für Boxen und Bank, wenn dort Global folgen gewählt ist.')),
+  }}
+ for i,pg in ipairs(self.pages)do if pg.id=='dex'then table.insert(self.pages,i+1,layouts);break end end
  local saved=M.receipt(game)
  local interrupted=V.mod.storage:read(game,'dein-look/light-test')
  if saved.version==M.VERSION and not saved.done and type(saved.draft)=='table' then
@@ -710,6 +730,9 @@ function Screen:drawPhysical()
    text(string.format(self.performance.lowerBound and L("At least level %d / 6 · %s",'Mindestens Stufe %d / 6 · %s')or L("Level %d / 6 · %s",'Stufe %d / 6 · %s'),self.performance.level,V.require('SetupBenchmark').tiers[self.performance.level] or self.performance.label),561,420,489,24,highlight)
    text(string.format(L("VASC · %s · frame time %.1f ms",'VASC · %s · Bildzeit %.1f ms'),({economy='720p',balanced='1080p',native=L("Native",'Nativ')})[self.performance.resolution]or L("current resolution",'aktuelle Auflösung'),self.performance.renderMs),561,459,489,17,muted)
   elseif p.kind~='device' then text(L("Six levels: Weak to High-End.\nUnstable checks do not assign a rating.",'Sechs Stufen: Schwach bis High-End.\nBei instabilem Test keine Einstufung.'),561,430,489,19,muted)end
+ elseif p.kind=='menus' then
+  text(L('ORAS FULLSCREEN','ORAS FULLSCREEN'),561,244,493,27,highlight)
+  text(L('Wide team cards and PC boxes.\n\nORAS GLASS\nCompact menus with glass panels.\n\nGAME DEFAULT\nThe original game layout.','Breite Teamkarten und PC-Boxen.\n\nORAS GLASS\nKompakte Menüs mit Glasflächen.\n\nSPIELSTANDARD\nDas originale Spiel-Layout.'),561,287,489,22)
  elseif p.kind=='battle_controls' then
   self:drawControlsPreview(554,230,509,252)
   text(L('Layout preview · touch spacing can differ','Layoutvorschau · Touch-Abstände können abweichen'),558,486,505,16,muted)

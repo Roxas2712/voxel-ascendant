@@ -1,4 +1,4 @@
--- VASC-owned ASC BOX presentation provider for PokemonUi Host Contract v1.
+-- VASC-owned ORAS FULLSCREEN presentation provider for PokemonUi Host Contract v1.
 --
 -- This module never receives a Game, save table, box backend or live Pokemon
 -- object.  It renders the manager's immutable descriptor and sends only
@@ -28,7 +28,7 @@ local function reviewedStoragePresentation()
   return storagePresentation
 end
 
-AscBox.densitySetting = ModSetting.new("ascBoxDensity", "ASC BOX GRID",
+AscBox.densitySetting = ModSetting.new("ascBoxDensity", "ORAS FULLSCREEN GRID",
   { "detail_20", "oras_30" }, { "5 X 4 DETAIL", "6 X 5 ORAS" },
   "detail_20")
 
@@ -298,7 +298,7 @@ local SEARCH_DONE_X, SEARCH_DONE_Y, SEARCH_DONE_W, SEARCH_DONE_H =
 local function drawHeader(model, accent, headerFocus)
   shell(16, 12, 480, 42, accent)
   local title = model.title or (model.surface == "legacy_bank" and "LEGACY BANK"
-    or model.surface == "battle_party" and "BATTLE TEAM" or "ASC BOX")
+    or model.surface == "battle_party" and "BATTLE TEAM" or "ORAS FULLSCREEN")
   if model.surface == "legacy_bank" then
     local box = tonumber(model.surfaceData and model.surfaceData.currentBox) or 1
     title = (model.locale == "de" and "LEGACY-BOX %d" or "LEGACY BOX %d"):format(box)
@@ -514,7 +514,7 @@ local function drawBattleParty(model, accent)
 end
 
 -- ORAS GLASS remains a separate PokemonUi provider for the battle-party
--- surface. It consumes the same immutable host model as ASC BOX and is not
+-- surface. It consumes the same immutable host model as ORAS FULLSCREEN and is not
 -- coupled to the independently selected floating Battle HUD.
 local function drawOrasGlassBattleParty(model, accent)
   rect(C.navy2, 0, 0, W, H)
@@ -1335,7 +1335,7 @@ function AscBox.install(PokemonUi)
   end
   local unregisterAsc, why = PokemonUi.register({
     schema=PokemonUi.PROVIDER_SCHEMA, apiVersion=PokemonUi.API_VERSION,
-    id="asc_box", owner="VOXEL_ASCENDANT", label="ASC BOX",
+    id="asc_box", owner="VOXEL_ASCENDANT", label="ORAS FULLSCREEN",
     surfaces={
       pc_box=surfaceDef(PokemonUi, "pc_box"),
       legacy_bank=surfaceDef(PokemonUi, "legacy_bank"),

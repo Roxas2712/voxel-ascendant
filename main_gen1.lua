@@ -100,7 +100,7 @@ local GEN1_STADIUM2_MODULES = {
   LugiaRescue=true,
 }
 
--- ASC BOX uses German labels even without a translation package. Register
+-- ORAS FULLSCREEN uses German labels even without a translation package. Register
 -- only still-missing glyphs from VASC's original, ROM-independent 8x8 page;
 -- an installed translation keeps precedence for every row it already owns.
 do
@@ -348,7 +348,7 @@ local SpeciesFishingCinematic = V.require("SpeciesFishingCinematic")
 
 local ascBoxInstalled, ascBoxInstallReason = AscBoxProvider.install(PokemonUi)
 if not ascBoxInstalled and mod.log and type(mod.log.warn) == "function" then
-  mod.log:warn("ASC BOX provider failed open: %s", tostring(ascBoxInstallReason))
+  mod.log:warn("ORAS FULLSCREEN provider failed open: %s", tostring(ascBoxInstallReason))
 end
 
 -- Forward declaration: the voxel pipeline's update hook (registered below)
@@ -1055,16 +1055,16 @@ local SETTINGS = {
   -- page preserves SETTINGS order, so placing them here keeps both choices
   -- visible before the first six-row scroll boundary.
   { PartyMenuSkins.setting,
-    "Choose the normal Start-menu team view independently: ASC BOX uses the "
+    "Choose the normal Start-menu team view independently: ORAS FULLSCREEN uses the "
     .. "new wide ORAS party, summary and modal presentation; ORAS GLASS "
     .. "repaints only the already-created native PartyMenu; GAME DEFAULT "
     .. "leaves its exact game/KASC renderer untouched. The canonical POKéMON "
     .. "row and all native actions, field moves and callbacks stay authoritative.",
     full = true },
   { PokemonUi.surfaceSettings.battle_party,
-    "Choose ASC BOX, ORAS GLASS or GAME DEFAULT only for the in-battle "
+    "Choose ORAS FULLSCREEN, ORAS GLASS or GAME DEFAULT only for the in-battle "
     .. "party/team and forced-switch picker. HP/status cards and battle commands still follow the "
-    .. "independent BATTLE HUD option, so ORAS HUD plus ASC BOX is valid.",
+    .. "independent BATTLE HUD option, so ORAS HUD plus ORAS FULLSCREEN is valid.",
     full = true },
   { VascMenuSkinSetting,
     "The VASC/KASC settings hub always opens as responsive ORAS FULLSCREEN "
@@ -1134,7 +1134,7 @@ local SETTINGS = {
     .. "GREEN uses the handled Bag; RED and BLUE use the round Bag.",
     full = true },
   { PokemonUi.globalSetting,
-    "Choose the preferred skin for box-like Pokemon screens. ASC BOX becomes "
+    "Choose the preferred skin for box-like Pokemon screens. ORAS FULLSCREEN becomes "
     .. "the new default only on surfaces where its complete provider is "
     .. "installed; unavailable choices fail open to GAME DEFAULT without "
     .. "erasing the saved preference. This never changes the battle HUD.",
@@ -1150,7 +1150,7 @@ local SETTINGS = {
     .. "capacity and cross-box multi-selection backend remains authoritative.",
     full = true },
   { AscBoxProvider.densitySetting,
-    "ASC BOX uses the genuine Gen-I 5x4 capacity by default with larger "
+    "ORAS FULLSCREEN uses the genuine Gen-I 5x4 capacity by default with larger "
     .. "Pokemon art. 6x5 DENSE keeps the ORAS-like compact grid and visibly "
     .. "locks cells beyond the host-reported capacity. This changes only "
     .. "presentation; every transfer and capacity rule stays host-owned.",

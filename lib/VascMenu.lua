@@ -131,7 +131,7 @@ local SETTING_HELP_DE = {
     .. "KASC GREEN den Henkel und für RED/BLUE die runde Normalform. Form und "
     .. "Akzent sind voneinander unabhängig.",
   pokemonUiSkin = "Gemeinsamer Wunsch für boxartige Pokémon-Oberflächen. "
-    .. "ASC BOX wird nur wirksam, wenn ein vollständiger Provider für die "
+    .. "ORAS FULLSCREEN wird nur wirksam, wenn ein vollständiger Provider für die "
     .. "jeweilige Oberfläche registriert ist; sonst bleibt GAME DEFAULT aktiv.",
   pokemonUiPcBox = "Darstellung der normalen PC-Box: GLOBAL folgen oder einen "
     .. "vollständig registrierten Skin wählen. Ablage, Entnahme, Freilassen "
@@ -140,7 +140,7 @@ local SETTING_HELP_DE = {
     .. "einen vollständigen Provider oder GAME DEFAULT wählen. Mehrfachauswahl "
     .. "über Boxen, Kapazitätswarnung, Übertragung und Dex bleiben KASC-Logik.",
   pokemonUiPartyMenu = "Darstellung der normalen Teamansicht über die "
-    .. "unveränderte POKéMON-Zeile im Startmenü: neue breite ASC BOX, "
+    .. "unveränderte POKéMON-Zeile im Startmenü: neue breite ORAS FULLSCREEN, "
     .. "zeichnungsreines ORAS GLASS oder exaktes GAME DEFAULT. Teamaktionen, "
     .. "Feldattacken, Zielauswahl und Rückkehr ins Startmenü bleiben Spiel-/KASC-Logik.",
   pokemonUiBattleParty = "Nur die Team-/Wechselauswahl im Kampf. Diese Zeile "
@@ -690,7 +690,7 @@ local VALUE_DE = {
   HIGH="HOCH", NORMAL="NORMAL", FRONT="VORNE", BACK="HINTEN",
   LEFT="LINKS", RIGHT="RECHTS", CENTER="MITTE",
   WORLD="WELT", LOCAL="ÖRTLICH", FLAT="FLACH", WIDE="BREIT",
-  ["ORAS GLASS"]="ORAS-GLAS", ["ASC BOX"]="ASC-BOX",
+  ["ORAS GLASS"]="ORAS-GLAS", ["ORAS FULLSCREEN"]="ASC-BOX",
   ["GAME/KASC"]="SPIEL/KASC", ACTIVE="AKTIV", BEGIN="START",
   END="ENDE", FAILED="FEHLER", LOCKED="GESPERRT",
   OUTSIDE="AUSSEN", ABOVE="OBEN", CORNERS="ECKEN",

@@ -1,3 +1,11 @@
+## 3.0.50 — Team and PC layouts
+
+- Fix native text contrast outside ORAS GLASS panels.
+- Rename ASC BOX to ORAS FULLSCREEN; preserve stored layout IDs and choices.
+- Add START team, battle team, PC box and shared UI choices to setup.
+- Read authoritative KASC ability/held-item names in team details and show equipment in normal box selection.
+- Preserve box stat values, team navigation, native callbacks and egg privacy.
+
 ## 3.0.49 — Crystal battle sizes and Mira
 
 - Fit animated Cobblemon models to Crystal sprite dimensions.

@@ -1357,37 +1357,34 @@ drawStar = function(cx, cy, outer)
   drawStarMaskRuns(mask, originX, originY, "H")
 end
 
-local function drawPartyMetadata(self, mon, x, y)
-  rounded(C.paper, x + 8, y + 147, 135, 40, 3)
-  outline(C.navy, x + 8, y + 147, 135, 40, 3, 1)
+local function drawPartyMetadata(self, mon, x, y, compact)
+  if compact then y = y - 26 end
+  rounded(C.paper, x + 8, y + 147, 135, compact and 25 or 40, 3)
+  outline(C.navy, x + 8, y + 147, 135, compact and 25 or 40, 3, 1)
   local pillX = x + 13
   local available = x + 138 - pillX
-  if isEgg(mon) then
-    rounded(C.gold, pillX, y + 149, available, 13, 3)
-    outline(C.navy, pillX, y + 149, available, 13, 3, 1, 0.65)
-    centeredText(self.language == "de" and "POKéMON-EI" or "POKEMON EGG",
-      pillX + 2, y + 152, available - 4, C.navy2)
-  else
-    local types = monTypes(self.game, mon)
-    if types[2] then
-      local pillWidth = math.floor((available - 3) / 2)
-      drawTypePill(types[1], pillX, y + 149, pillWidth)
-      drawTypePill(types[2], pillX + pillWidth + 3, y + 149, pillWidth)
+  if not compact then
+    if isEgg(mon) then
+      rounded(C.gold, pillX, y + 149, available, 13, 3)
+      outline(C.navy, pillX, y + 149, available, 13, 3, 1, 0.65)
+      centeredText(self.language == "de" and "POKéMON-EI" or "POKEMON EGG",
+        pillX + 2, y + 152, available - 4, C.navy2)
     else
-      drawTypePill(types[1], pillX, y + 149, available)
+      local types = monTypes(self.game, mon)
+      if types[2] then
+        local pillWidth = math.floor((available - 3) / 2)
+        drawTypePill(types[1], pillX, y + 149, pillWidth)
+        drawTypePill(types[2], pillX + pillWidth + 3, y + 149, pillWidth)
+      else
+        drawTypePill(types[1], pillX, y + 149, available)
+      end
     end
   end
-
-  local leftX, rightX, fieldWidth = x + 13, x + 78, 60
-  rect(C.shellDark, x + 74, y + 164, 1, 20, 0.55)
-  drawText(self.language == "de" and "FÄH." or "ABIL.",
-    leftX, y + 165, C.navy)
-  drawText(self.language == "de" and "GEGENST." or "ITEM",
-    rightX, y + 165, C.navy)
-  drawBoldText(fitText(abilityName(self.game, mon), fieldWidth),
-    leftX, y + 176, C.navy2)
-  drawBoldText(fitText(itemName(self.game, mon), fieldWidth),
-    rightX, y + 176, C.navy2)
+  local offset = compact and 0 or 14
+  drawText(self.language == "de" and "FÄH." or "ABIL.", x + 13, y + 151 + offset, C.navy)
+  drawBoldText(fitText(abilityName(self.game, mon), 81), x + 57, y + 151 + offset, C.navy2)
+  drawText("ITEM", x + 13, y + 162 + offset, C.navy)
+  drawBoldText(fitText(itemName(self.game, mon), 81), x + 57, y + 162 + offset, C.navy2)
 end
 
 local function drawDetail(self)
@@ -1448,8 +1445,8 @@ local function drawDetail(self)
       x + w - 48, y + 14)
   end
 
-  rounded(C.paper, x + 8, y + 84, 135, 61, 3)
-  outline(C.navy, x + 8, y + 84, 135, 61, 3, 1)
+  rounded(C.paper, x + 8, y + 84, 135, (partyDetail or egg) and 61 or 35, 3)
+  outline(C.navy, x + 8, y + 84, 135, (partyDetail or egg) and 61 or 35, 3, 1)
   if egg then
     local progress, remaining = eggProgress(mon)
     drawBoldText(self.language == "de" and "EI-STATUS" or "EGG STATUS",
@@ -1470,6 +1467,7 @@ local function drawDetail(self)
     rightText(hpValue, x + 138, y + 88, C.navy2)
     drawBar(x + 14, y + 98, 124, (tonumber(mon.hp) or 0) / maxHP,
       hpRatio(self.game, mon) < 0.25 and C.red or C.green, 6)
+    if partyDetail then
     drawText(self.language == "de" and "ANG" or "ATK", x + 14, y + 107, C.navy2)
     local attack = tonumber(stats.attack)
     rightText(attack and ("%d"):format(math.max(0, math.floor(attack)))
@@ -1482,10 +1480,16 @@ local function drawDetail(self)
       or "---", x + 138, y + 126, C.navy2)
     drawBar(x + 14, y + 136, 124,
       math.min(1, math.max(0, defense or 0) / 200), C.glassDark, 6)
+    else
+      local atk = stats.attack and tostring(math.floor(stats.attack)) or "---"
+      local def = stats.defense and tostring(math.floor(stats.defense)) or "---"
+      drawText((self.language == "de" and "ANG " or "ATK ") .. atk, x + 14, y + 108, C.navy2)
+      rightText((self.language == "de" and "VER " or "DEF ") .. def, x + 138, y + 108, C.navy2)
+    end
   end
 
-  if partyDetail then
-    drawPartyMetadata(self, mon, x, y)
+  if partyDetail or not egg then
+    drawPartyMetadata(self, mon, x, y, not partyDetail)
   end
 end
 

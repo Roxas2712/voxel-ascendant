@@ -80,6 +80,14 @@ do
   if ok and type(value) == "table" then MobileMenuPresentation = value end
 end
 
+local EquipmentView = V.require("PokemonEquipmentView")
+local function equipmentName(game, mon, field)
+  if mon and mon.__equipmentSnapshot then return mon[field] or "---", true end
+  local view, owned = EquipmentView.read(V.mod, game, mon)
+  if owned then return view and not view.isEgg and view[field].name or "---", true end
+  return nil, false
+end
+
 local P = {}
 P.WIDTH = 512
 P.HEIGHT = 288
@@ -636,13 +644,14 @@ local function namedValue(value)
   return nil
 end
 
--- Gen I records have no Ability field. Hoenn-aware data packs can expose one
--- on the individual mon or species definition without requiring another UI
--- rewrite; until then the reserved row deliberately renders a neutral dash.
+-- KASC owns equipment outside native Gen-I records. Live team views consult
+-- that authority; standalone data packs keep their existing field fallback.
 local function abilityName(game, mon)
   -- KASC eggs deliberately retain their future species internally. Never
   -- consult either the individual or species record from an egg-facing UI.
   if isEgg(mon) then return "---" end
+  local equipment, owned = equipmentName(game, mon, "ability")
+  if owned then return equipment end
   local direct = namedValue(mon and (mon.ability or mon.abilityId))
   if direct then return direct:gsub("_", " ") end
   local def = monDef(game, mon)
@@ -661,10 +670,12 @@ local function abilityName(game, mon)
   return direct and direct:gsub("_", " ") or "---"
 end
 
--- Held items are not part of the Gen-I save object, but Johto-aware data can
--- fill any of these common seams without another presentation rewrite.
+-- Storage descriptors already contain resolved, presentation-safe names.
+-- Never look up their synthetic drawing records in the live equipment owner.
 local function itemName(game, mon)
   if isEgg(mon) then return "---" end
+  local equipment, owned = equipmentName(game, mon, "item")
+  if owned then return equipment end
   local direct
   for _, key in ipairs({
     "item", "heldItem", "held_item", "itemId",
@@ -1466,38 +1477,35 @@ drawStar = function(cx, cy, outer)
   drawStarMaskRuns(mask, originX, originY, "H")
 end
 
-local function drawPartyMetadata(self, mon, x, y)
-  rounded(C.paper, x + 8, y + 147, 135, 40, 3)
-  outline(C.navy, x + 8, y + 147, 135, 40, 3, 1)
+local function drawPartyMetadata(self, mon, x, y, compact)
+  if compact then y = y - 26 end
+  rounded(C.paper, x + 8, y + 147, 135, compact and 25 or 40, 3)
+  outline(C.navy, x + 8, y + 147, 135, compact and 25 or 40, 3, 1)
   local pillX = x + 13
   local available = x + 138 - pillX
-  if isEgg(mon) then
-    rounded(C.gold, pillX, y + 149, available, 13, 3)
-    outline(C.navy, pillX, y + 149, available, 13, 3, 1, 0.65)
-    centeredText(self.language == "de" and "POKéMON-EI" or "POKEMON EGG",
-      pillX + 2, y + 152, available - 4, C.navy2)
-  else
-    local types = monTypes(self.game, mon)
-    if types[2] then
-      local pillWidth = math.floor((available - 3) / 2)
-      drawTypePill(types[1], pillX, y + 149, pillWidth, self.language)
-      drawTypePill(types[2], pillX + pillWidth + 3, y + 149,
-        pillWidth, self.language)
+  if not compact then
+    if isEgg(mon) then
+      rounded(C.gold, pillX, y + 149, available, 13, 3)
+      outline(C.navy, pillX, y + 149, available, 13, 3, 1, 0.65)
+      centeredText(self.language == "de" and "POKéMON-EI" or "POKEMON EGG",
+        pillX + 2, y + 152, available - 4, C.navy2)
     else
-      drawTypePill(types[1], pillX, y + 149, available, self.language)
+      local types = monTypes(self.game, mon)
+      if types[2] then
+        local pillWidth = math.floor((available - 3) / 2)
+        drawTypePill(types[1], pillX, y + 149, pillWidth, self.language)
+        drawTypePill(types[2], pillX + pillWidth + 3, y + 149,
+          pillWidth, self.language)
+      else
+        drawTypePill(types[1], pillX, y + 149, available, self.language)
+      end
     end
   end
-
-  local leftX, rightX, fieldWidth = x + 13, x + 78, 60
-  rect(C.shellDark, x + 74, y + 164, 1, 20, 0.55)
-  drawText(self.language == "de" and "FÄH." or "ABIL.",
-    leftX, y + 165, C.navy)
-  drawText(self.language == "de" and "GEGENST." or "ITEM",
-    rightX, y + 165, C.navy)
-  drawBoldText(fitText(abilityName(self.game, mon), fieldWidth),
-    leftX, y + 176, C.navy2)
-  drawBoldText(fitText(itemName(self.game, mon), fieldWidth),
-    rightX, y + 176, C.navy2)
+  local offset = compact and 0 or 14
+  drawText(self.language == "de" and "FÄH." or "ABIL.", x + 13, y + 151 + offset, C.navy)
+  drawBoldText(fitText(abilityName(self.game, mon), 81), x + 57, y + 151 + offset, C.navy2)
+  drawText("ITEM", x + 13, y + 162 + offset, C.navy)
+  drawBoldText(fitText(itemName(self.game, mon), 81), x + 57, y + 162 + offset, C.navy2)
 end
 
 local function drawDetail(self)
@@ -1563,8 +1571,8 @@ local function drawDetail(self)
       x + w - 48, y + 14)
   end
 
-  rounded(C.paper, x + 8, y + 84, 135, 61, 3)
-  outline(C.navy, x + 8, y + 84, 135, 61, 3, 1)
+  rounded(C.paper, x + 8, y + 84, 135, (partyDetail or egg) and 61 or 35, 3)
+  outline(C.navy, x + 8, y + 84, 135, (partyDetail or egg) and 61 or 35, 3, 1)
   if egg then
     local progress, remaining = eggProgress(mon)
     drawBoldText(self.language == "de" and "EI-STATUS" or "EGG STATUS",
@@ -1585,6 +1593,7 @@ local function drawDetail(self)
     rightText(hpValue, x + 138, y + 88, C.navy2)
     drawBar(x + 14, y + 98, 124, (tonumber(mon.hp) or 0) / maxHP,
       hpRatio(self.game, mon) < 0.25 and C.red or C.green, 6)
+    if partyDetail then
     drawText(self.language == "de" and "ANG" or "ATK", x + 14, y + 107, C.navy2)
     local attack = tonumber(stats.attack)
     rightText(attack and ("%d"):format(math.max(0, math.floor(attack)))
@@ -1597,10 +1606,16 @@ local function drawDetail(self)
       or "---", x + 138, y + 126, C.navy2)
     drawBar(x + 14, y + 136, 124,
       math.min(1, math.max(0, defense or 0) / 200), C.glassDark, 6)
+    else
+      local atk = stats.attack and tostring(math.floor(stats.attack)) or "---"
+      local def = stats.defense and tostring(math.floor(stats.defense)) or "---"
+      drawText((self.language == "de" and "ANG " or "ATK ") .. atk, x + 14, y + 108, C.navy2)
+      rightText((self.language == "de" and "VER " or "DEF ") .. def, x + 138, y + 108, C.navy2)
+    end
   end
 
-  if partyDetail then
-    drawPartyMetadata(self, mon, x, y)
+  if partyDetail or not egg then
+    drawPartyMetadata(self, mon, x, y, not partyDetail)
   end
 end
 
@@ -1832,6 +1847,7 @@ local function hostDescriptorMon(descriptor)
   local maxHP = math.max(1,
     tonumber(descriptor.maxHp) or tonumber(descriptor.hp) or 1)
   local mon = {
+    __equipmentSnapshot=true,
     species=descriptor.species,
     form=descriptor.form,
     gender=descriptor.gender,

@@ -1,3 +1,9 @@
+# VASC 3.0.50 — Team and PC layouts
+
+Fixes ORAS GLASS text visibility, exposes layout choices in setup and shows KASC abilities and held items in full-screen Team/PC details. The full-screen default is clearly named ORAS FULLSCREEN. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).
+
+---
+
 # VASC 3.0.49 — Habitat, Hunting Club and Mira update
 
 Crystal-based Cobblemon battle sizes and dedicated HD/voxel artwork for Mira. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).
