@@ -842,13 +842,32 @@ local function createController(mod, opts)
     local previousDrawCode = Font.drawCode
     local inkShader = getTextMaskShader()
     local backdropPainted = false
+    local inkRegions = {}
+    local function markInkRegion(x, y, width, height)
+      inkRegions[#inkRegions + 1] = {
+        transformedRectBounds(graphics, x, y, width, height),
+      }
+    end
+    local function usesLightInk(x, y)
+      local gx, gy = transformedRectBounds(graphics, x + 4, y + 4, 0, 0)
+      for _, region in ipairs(inkRegions) do
+        if gx >= region[1] and gx < region[3]
+            and gy >= region[2] and gy < region[4] then return true end
+      end
+      return false
+    end
     Font.drawBox = function(tx, ty, tw, th)
-      return G.drawOrasBox(previousDrawBox, tx, ty, tw, th, inkShader ~= nil)
+      local painted = G.drawOrasBox(previousDrawBox, tx, ty, tw, th, inkShader ~= nil)
+      if painted == true then markInkRegion(tx * 8, ty * 8, tw * 8, th * 8) end
+      return painted
     end
 
     if inkShader and type(previousDrawCode) == "function"
         and graphics and type(graphics.setShader) == "function" then
       Font.drawCode = function(code, x, y, ...)
+        -- Native mixed surfaces (notably PartyMenu) retain white paper above
+        -- the glass message box. Only text over a painted skin gets light ink.
+        if not usesLightInk(x, y) then return previousDrawCode(code, x, y, ...) end
         local glyphArgs = packed(...)
         local previousShader
         if type(graphics.getShader) == "function" then
@@ -907,6 +926,7 @@ local function createController(mod, opts)
             return
           end
           previousRectangle("fill", 0, 0, 160, 144)
+          markInkRegion(0, 0, 160, 144)
           graphics.setColor(0.02, 0.66, 0.86, 1)
           previousRectangle("fill", 0, 0, 160, 2)
           previousRectangle("fill", 0, 142, 160, 2)
