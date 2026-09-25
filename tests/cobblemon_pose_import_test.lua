@@ -22,8 +22,8 @@ assert(m.actionSources.attack_default=='vasc' and m.actionSources.attack_physica
 local pose=m.anims[m.actions.idle];assert(#pose.layers==2,'one bad layer discarded a good track')
 local out=G.sample(m,m.actions.idle,45,true);assert(out[2][2]==1 and math.abs(out[3][6]+30*32768/180)<.01,'body and tail must both animate')
 assert(#m.warnings>0,'unsupported track was not diagnosed')
-files.poser.animations.special=ref('broken');m=compile();assert(not m.actions.attack_special and m.actions.attack_default,'invalid special did not retain VASC fallback')
-files.poser.animations.physical=ref('absent');m=compile();assert(not m.actions.attack_physical,'missing clip claimed as original')
+files.poser.animations.special=ref('broken');m=compile();assert(m.actions.attack_special and m.actionSources.attack_special=='vasc' and m.actions.attack_default,'invalid special did not retain VASC fallback')
+files.poser.animations.physical=ref('absent');m=compile();assert(m.actionSources.attack_physical=='vasc','missing clip claimed as original')
 -- Independent loop periods, additive rotation/translation, multiplicative scale.
 local a=G.clip(clip(1,{body={position={['0']={0,0,0},['1']={2,0,0}},scale={2,2,2}}}),{body=2})
 local b=G.clip(clip(2,{body={position={['0']={0,0,0},['2']={0,4,0}},scale={3,3,3}}}),{body=2})
@@ -32,3 +32,6 @@ local n=#m.anims;out=G.sample(m,n,45,true)
 assert(out[2][1]==1 and out[2][2]==3 and out[2][7]==6,'independent periods/additive blend')
 local prior=out;out=G.sample(m,n,75,true);assert(out==prior and out[2][1]==1 and out[2][2]==1,'pose buffer reuse/independent repeat')
 print('PASS original category import, combined pose layers, independent clocks, rejected-layer isolation and authored fallback')
+files.poser.poses['battle-standing']={isBattle=true,poseTypes={'STAND'},animations={ref('broken')}}
+m=compile();assert(m.actions.battle==m.actions.idle and m.actionSources.battle=='cobblemon','invalid battle-only clip hid valid original idle')
+print('PASS unsupported battle-only animation retains supported original idle')

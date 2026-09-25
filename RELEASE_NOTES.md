@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.7 — Cobblemon Dex and functional menu audit
+# VASC 3.0.46-rc.8 — Complete Cobblemon pose coverage and battle fallback fixes
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -84,3 +84,11 @@ Bei aktivem Cobblemon-Kampfmodell werden unterstützte Originalclips für physis
 463 Arten / 1.894 Varianten neu vorbereitet; importRevision 4 verhindert alte Animationszuordnungen aus optionalen Caches. Cobblemon ist nun auch in der Gen2-Auswahl für Kampfmodelle enthalten. Der Wechsel zurück zu Crystal lädt keine optionalen Stadium-Modelle und verliert die Bühne nicht mehr.
 
 85 Headless-Suiten bestanden, einschließlich 25.944 endlicher Animations-Stichproben. Native Red-/Crystal-Kämpfe prüfen Originalaktionen und Sprite-Ersatz. Details und Grenzen: `COBBLEMON_BATTLE_AUDIT_2026-09-25.md`.
+
+## rc.8 — Vollständige Posen für den enthaltenen Artenbestand
+
+Alle 463 enthaltenen Arten und 1.894 Varianten besitzen jetzt zehn definierte Posen/Aktionen: Ruhe, Kampfhaltung, Bewegung, Auftreten, allgemeiner/physischer/spezieller/Status-Angriff, Treffer und Besiegtwerden. Vorhandene unterstützte Originalclips bleiben vorrangig. Fehlende Aktionen werden anhand des Modellaufbaus als VASC-Bewegungen ergänzt, einschließlich Erhalt der artspezifischen Ruhepose und versteckter Gesichtselemente. Es handelt sich nicht um 463 neu handanimierte Original-Cobblemon-Sätze.
+
+`assets/cobblemon-prepared/poses.json` dokumentiert jede Art/Variante mit Modellreferenz, Bewegungsprofil, Aktionsslots und Herkunft. Importrevision 5 verhindert die Verwendung veralteter vorbereiteter Modelldaten. Details: `ALL_POSES_AUDIT_2026-09-25.md`.
+
+Crystal battle sprites now remove border-connected opaque white before palette remapping, preserving enclosed white details and cached animation-frame cutouts. Completed 3D faint animations retain ownership of the battler slot so an underlying sprite cannot reappear. True-color replacement art retains its own alpha.

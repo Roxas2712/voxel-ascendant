@@ -2719,7 +2719,8 @@ local function goldSideTexture(screen, side)
     -- A Stadium Pokemon model may already be marked visible while the native
     -- trainer intro flag still owns the stage. Trainer art wins until Gen 2
     -- clears that flag; afterwards the model/Pokemon path resumes normally.
-    if okVisible and visible == true
+    local fainted = type(stadium.fainted) == "function" and stadium.fainted(side)
+    if okVisible and (visible == true or fainted)
         and not (portableTrainerCapture or enemyTrainerCapture) then return nil end
   end
   if type(screen.animPicState) == "function" then
@@ -2796,6 +2797,24 @@ local function goldSideTexture(screen, side)
   if not trainerCapture then
     captureScreen=goldCompanionCapture(screen,side,mon,captureScreen)
   end
+  -- Normalize native indexed art only. True-color replacement art already
+  -- owns its alpha, including deliberate white details.
+  local sourceScreen = captureScreen
+  local cutoutProxy = {}
+  cutoutProxy.pic = function(self, asked, back)
+    local image, trueColor, path = sourceScreen:pic(asked, back)
+    if not trueColor then image = BattlePics.cutout(image) end
+    return image, trueColor, path
+  end
+  cutoutProxy.frontAnimFrame = function(self, asked)
+    local image, quad, size = sourceScreen:frontAnimFrame(asked)
+    if image then
+      local _, trueColor = sourceScreen:pic(asked, false)
+      if not trueColor then image = BattlePics.cutout(image, size) end
+    end
+    return image, quad, size
+  end
+  captureScreen = setmetatable(cutoutProxy, { __index=sourceScreen })
   local G = love.graphics
   local previous = type(G.getCanvas) == "function" and G.getCanvas() or nil
   local guarded = packResults(withGraphicsBoundary(

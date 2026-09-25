@@ -640,6 +640,14 @@ end
 -- updateGen2 marks the just-summoned 3D model visible; callers use this narrower
 -- query to suppress that one-frame duplicate without hiding the fallback sprite
 -- for species whose Stadium pack genuinely failed to load.
+-- A completed faint still owns the picture until the next battler loads.
+-- Visibility alone must not resurrect the native sprite underneath it.
+function Stadium.fainted(side)
+  if side ~= "player" and side ~= "enemy" then return false end
+  local mon = session and session[side]
+  return (mon and mon.rig and mon.state == "faint") and true or false
+end
+
 function Stadium.hasModel(side)
   if side ~= "player" and side ~= "enemy" then return false end
   local mon = session and session[side]

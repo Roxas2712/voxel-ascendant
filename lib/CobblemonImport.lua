@@ -32,6 +32,8 @@ function M.compile(catalog,dex,aspects,read,decode)
   local idle=pick{'ground_idle','idle','air_idle','water_idle'}
   local walk=pick{'ground_walk','walk','air_fly','swim'}
   if idle then poser.poses.standing={poseTypes={'STAND'},animations={idle}}end
+  local battle=pick{'battle_idle','battle_standing','battle'}
+  if battle then poser.poses['battle-standing']={isBattle=true,poseTypes={'STAND'},animations={battle}}end
   if walk then poser.poses.walking={poseTypes={'WALK'},animations={walk}}end
   poser.animations={physical=pick{'physical','attack'},special=pick{'special'},status=pick{'status'},cry=pick{'cry'},recoil=pick{'recoil'},faint=pick{'faint'}}
  end
@@ -100,6 +102,10 @@ function M.compile(catalog,dex,aspects,read,decode)
    end
    model.anims[#model.anims+1]=c;model.actions[action]=#model.anims;model.actionSources[action]=catalog.authored and catalog.authored[tostring(dex)] and 'vasc' or 'cobblemon'
   end
+ end
+ -- An unsupported battle-only clip must not hide a valid original idle.
+ if not model.actions.battle and model.actions.idle then
+  model.actions.battle=model.actions.idle;model.actionSources.battle=model.actionSources.idle
  end
  V.require('CobblemonMotion').complete(model,names,G)
  assert(model.actions.idle,'no supported idle animation: '..table.concat(model.warnings,'; '))

@@ -1,3 +1,11 @@
+## 3.0.46-rc.8 — Complete pose sets
+
+- Prepare all ten supported pose/action slots for every included species and variant; preserve available Cobblemon originals.
+- Fix opaque white Crystal sprite backgrounds and fallback reappearance after completed 3D faint animations.
+- Supply separate rig-aware VASC physical, special, status, entrance and faint motions where original clips are missing; retain species idle posture and hidden facial geometry.
+- Recognize authored battle-idle clips in legacy posers; retain original idle when a battle-only clip is unsupported.
+- Publish a per-species/variant pose manifest and enforce complete action coverage during model preparation (import revision 5).
+
 ## 3.0.46-rc.7 — Cobblemon battle motions
 
 - Route physical, special and status moves to the matching original Cobblemon action; missing actions use independent VASC motion fallback.

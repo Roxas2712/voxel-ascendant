@@ -16,15 +16,17 @@ function love.load(args)
    local b=assert(read(f.bundled),f.bundled);assert(#b==f.bytes and sha(b)==f.sha256,'Invalid bundled input: '..f.bundled);paths[f.path]=f.bundled
   end
   local importer=V.require('CobblemonImport');local species={};local total,unique=0,{}
-  local failures={};local dexes={};for d in pairs(c.species)do dexes[#dexes+1]=tonumber(d)end;table.sort(dexes)
+  local failures={};local poses={};local required=V.require('CobblemonMotion').REQUIRED;local dexes={};for d in pairs(c.species)do dexes[#dexes+1]=tonumber(d)end;table.sort(dexes)
   local defaults={{key='normal',aspects={}},{key='female',aspects={female=true}},{key='shiny',aspects={shiny=true}},{key='female_shiny',aspects={female=true,shiny=true}}}
   for i,dex in ipairs(dexes)do
-   local row={}
+   local row={};local poseRow={};poses[tostring(dex)]=poseRow
    for _,variant in ipairs(c.variants and c.variants[tostring(dex)] or defaults)do
     local yes,m=pcall(importer.compile,c,dex,variant.aspects,function(p)return paths[p]and read(paths[p])end,J.decode)
     if yes then
+     for _,action in ipairs(required)do assert(m.actions[action] and m.actionSources[action], 'Incomplete pose '..dex..'/'..variant.key..'/'..action)end
      local b=encode(m);local h=sha(b);if not unique[h]then write('assets/cobblemon-prepared/models/'..h..'.json',b);unique[h]=true end
      row[variant.key]=h;total=total+1
+     poseRow[variant.key]={model=h,profile=m.motionProfile.kind,actions=m.actions,sources=m.actionSources}
     else failures[#failures+1]={dex=dex,variant=variant.key,error=tostring(m)}end
    end
    assert(row.normal,'No base model for #'..dex)
@@ -34,6 +36,7 @@ function love.load(args)
   end
   local index={schema=1,commit=c.commit,catalogHash=sha(raw),importRevision=c.importRevision,speciesCount=#dexes,species=species,complete=#dexes==c.speciesCount}
   write('assets/cobblemon-prepared/index.json',encode(index))
+  write('assets/cobblemon-prepared/poses.json',encode{schema=1,importRevision=c.importRevision,required=required,species=poses})
   write('assets/cobblemon-prepared/build-report.json',encode{species=#dexes,variants=total,declined=failures})
   print('PREPARED',#dexes,'species',total,'variants',#failures,'unsupported variants')
  end,debug.traceback)

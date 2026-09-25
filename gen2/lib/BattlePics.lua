@@ -367,7 +367,54 @@ function BattlePics.filled(img, sealBottom)
   return made or img
 end
 
+-- Crystal's native pictures carry an opaque shade-0 background. Remove only
+-- border-connected paper BEFORE palette remapping; enclosed eye/body whites
+-- remain opaque. Animated sheets are processed per frame, once per texture.
+local cutouts = setmetatable({}, { __mode = "k" })
+function BattlePics.cutout(img, frameSize)
+  if not img then return img end
+  local size = tonumber(frameSize) or 0
+  local slots = cutouts[img]
+  if not slots then slots = {}; cutouts[img] = slots end
+  if slots[size] ~= nil then return slots[size] or img end
+  local data = readBack(img)
+  if not data then slots[size] = false; return img end
+  local w, h = data:getDimensions()
+  local fw, fh = size > 0 and size or w, size > 0 and size or h
+  local changed = false
+  for top = 0, h - 1, fh do
+    for left = 0, w - 1, fw do
+      local right, bottom = math.min(w-1,left+fw-1), math.min(h-1,top+fh-1)
+      local seen, queue = {}, {}
+      local function visit(x,y)
+        if x < left or x > right or y < top or y > bottom then return end
+        local key = y*w+x
+        if seen[key] then return end
+        seen[key] = true
+        local r,g,b,a = data:getPixel(x,y)
+        if a <= CUT or (r > .999 and g > .999 and b > .999) then
+          queue[#queue+1] = {x,y}
+          if a > 0 then data:setPixel(x,y,0,0,0,0); changed = true end
+        end
+      end
+      for x=left,right do visit(x,top); visit(x,bottom) end
+      for y=top,bottom do visit(left,y); visit(right,y) end
+      local n=1
+      while n <= #queue do
+        local q=queue[n];n=n+1
+        visit(q[1]-1,q[2]);visit(q[1]+1,q[2]);visit(q[1],q[2]-1);visit(q[1],q[2]+1)
+      end
+    end
+  end
+  local out
+  if changed then out=love.graphics.newImage(data);out:setFilter("nearest","nearest") end
+  if data.release then data:release() end
+  slots[size]=out or false
+  return out or img
+end
+
 function BattlePics.invalidate()
+  cutouts = setmetatable({}, { __mode = "k" })
   cache = newCache()
   inkCache = setmetatable({}, { __mode = "k" })
 end
