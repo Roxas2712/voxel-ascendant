@@ -15,6 +15,8 @@ for i=1,60 do assert(dome.draw(arena,0,'clear')==false)end
 assert(shaderCount==1 and meshCount==1,'failed effect recompiles every frame')
 dome.release();failCompile=false;assert(dome.draw(arena,0,'blue'));assert(pushes==0)
 failDraw=true;assert(dome.draw(arena,0,'blue')==false);assert(pushes==0 and reports==2,'draw state not restored')
+for i=1,120 do assert(dome.draw(arena,0,'blue')==false)end
+assert(reports==2,'failed dome draw repeated every frame')
 dome.release();assert(releasedMesh==2 and releasedShader==1)
 failDraw=false;failMesh=true;assert(dome.draw(arena,0,'clear')==false);dome.release()
 failMesh=false;assert(dome.draw(arena,0,'rose'));dome.release()

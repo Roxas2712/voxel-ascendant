@@ -39,7 +39,7 @@ return function(mod)
   api.idleEnabled=function()return mod.options:get('idleAnimation')~=false end
   api.branding=function()return assert((loadstring or load)(assert(mod:read('Branding.lua')),'@TerarriumBranding.lua'))()(mod)end
   api.cameraMode=function()return mod.options:get('behindRed')==true and 'behind' or 'side'end
-  if api.LocalLights then api.lighting=assert((loadstring or load)(assert(mod:read('Lighting.lua')),'@TerarriumLighting.lua'))()({lights=api.LocalLights,graphics=api.Voxel3D,clock=api.clock,enabled=function()return mod.options:get('lighting')end})end
+  if api.LocalLights then api.lighting=assert((loadstring or load)(assert(mod:read('Lighting.lua')),'@TerarriumLighting.lua'))()({lights=api.LocalLights,graphics=api.Voxel3D,clock=api.clock,reportEffectFailure=api.reportEffectFailure,enabled=function()return mod.options:get('lighting')end})end
   service=factory(api);return service
  end)
  assert(ok,reason)

@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.2 — Runtime audit
+
+Preserves fitted Gen2 shadow canvases, releases shadow and partial model texture resources, tolerates corrupt optional model receipts and bounds failed model/effect retries. Optional Terrarium background and lighting errors retain the battle presentation. Includes all 15 location terrariums from rc.1. Local review candidate; see RUNTIME_AUDIT_2026-09-25.md.
+
+---
+
 # Voxel Ascendant 3.0.46-rc.1 — Kanto location terrariums
 
 Adds 15 supplied Omega Dias designs across 43 exact Gen1 locations on the public 3.0.45 baseline. Preserves scene families, limits Silph occupation to live story state and excludes Gen2 substitutions. See RELEASE_NOTES_3.0.46-rc.1.md. Local review candidate.

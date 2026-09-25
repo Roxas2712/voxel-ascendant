@@ -1,6 +1,7 @@
 -- Regression: imported bodies need Wilds-derived sizing and the same
 -- camera-depth correction as grass, not a global readability enlargement.
 local root=assert((...) or arg[1], 'package root required')..'/'
+love={timer={getDelta=function()return 1/60 end},graphics={}}
 local calls={draw=0,upload=0,release=0}
 local failSpecies,failUpload=false,false
 local provider={}

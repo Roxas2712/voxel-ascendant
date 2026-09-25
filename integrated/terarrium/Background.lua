@@ -4,6 +4,7 @@ return function(api)
  local presets={night={{.045,.065,.11},{.31,.56,.79}},forest={{.065,.11,.085},{.36,.62,.40}},stone={{.13,.14,.145},{.63,.67,.65}},gallery={{.83,.85,.85},{.42,.48,.51}}}
  local S={}
  function S.draw(arena,selection)
+  if S.failure then return false end
   local appearance=api.ballAppearance(arena.terarrium.ballStyle)
   local base,accent
   if presets[selection]then base,accent=unpack(presets[selection])
@@ -12,6 +13,8 @@ return function(api)
    base={.075+accent[1]*.09,.08+accent[2]*.09,.09+accent[3]*.09}
    if arena.terarrium.ballStyle=='ultra'or arena.terarrium.ballStyle=='apri_black'then accent=appearance.accent end
   end
+  G.push('all')
+  local ok,err=pcall(function()
   if not shader then shader=G.newShader([[
    uniform vec2 size;uniform vec3 base;uniform vec3 accent;uniform float light;
    vec4 effect(vec4 color,Image tex,vec2 uv,vec2 sc){
@@ -32,13 +35,17 @@ return function(api)
   local canvas=G.getCanvas();local w,h
   for _=1,3 do if type(canvas)=='table'and not canvas.getDimensions then canvas=canvas[1]or canvas.canvas else break end end
   if canvas and canvas.getDimensions then w,h=canvas:getDimensions()else w,h=G.getDimensions()end
-  G.push('all')
-  local ok,err=pcall(function()
    G.origin();G.setShader(shader);shader:send('size',{w,h});shader:send('base',base);shader:send('accent',accent);shader:send('light',selection=='gallery'and 1 or 0)
    G.setDepthMode('always',false);G.setColor(1,1,1,1);G.setBlendMode('replace');G.rectangle('fill',0,0,w,h)
   end)
-  G.pop();if not ok then error(err)end
+  G.pop()
+  if not ok then
+   S.failure=tostring(err)
+   if api.reportEffectFailure then pcall(api.reportEffectFailure,'background',S.failure)end
+   return false
+  end
+  return true
  end
- function S.release()if shader then shader:release();shader=nil end end
+ function S.release()if shader then shader:release();shader=nil end;S.failure=nil end
  return S
 end

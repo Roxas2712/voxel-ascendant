@@ -17,7 +17,7 @@ local function read(path)
 end
 local catalogHash=sha(V.mod:read('assets/cobblemon-catalog.json'))
 local installed={};local complete=false;local candidate;local receiptRaw=cache:read(ROOT..'installed.json')
-if receiptRaw then local ok,r=pcall(J.decode,receiptRaw);if ok and r.schema==1 and r.commit==C.commit and type(r.species)=='table'then installed=r.species;complete=r.complete==true and r.catalogHash==catalogHash end end
+if receiptRaw then local ok,r=pcall(J.decode,receiptRaw);if ok and type(r)=='table' and r.schema==1 and r.commit==C.commit and type(r.species)=='table'then installed=r.species;complete=r.complete==true and r.catalogHash==catalogHash end end
 -- The release contains engine-ready data, not just importer inputs. A fresh
 -- installation (including a read-only cache) can use it immediately. Load one
 -- requested model at a time; never decode the whole model collection at boot.

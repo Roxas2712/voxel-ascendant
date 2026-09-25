@@ -284,7 +284,8 @@ local function getCanvas(res)
   if canvas and canvasRes == res then return canvas end
   local ok, c = V.require("PixelCanvas").new(res, res)
   if not (ok and c) then
-    canvas = false
+    if canvas and canvas.release then pcall(canvas.release, canvas) end
+    canvas, canvasRes, ready = false, 0, false
     return nil
   end
   -- nearest: the 2x2 filter in the main pass wants raw texels, and a
@@ -303,11 +304,13 @@ end
 -- which is beyond the far plane and therefore "nothing occludes anything".
 local function getBlank()
   if blank == nil then
+    local data
     local ok, img = pcall(function()
-      local data = love.image.newImageData(1, 1)
+      data = love.image.newImageData(1, 1)
       data:setPixel(0, 0, 1, 1, 1, 1)
       return love.graphics.newImage(data)
     end)
+    if data then data:release() end
     blank = (ok and img) or false
   end
   return blank or nil
@@ -328,9 +331,11 @@ function ShadowMap.available()
           and love.graphics.setDepthMode) then
     return false
   end
-  -- the smallest rung is enough to answer the question; fit() picks the
-  -- one this frame actually wants
-  return getShader() ~= nil and getCanvas(Quality.shadowSizes()[1]) ~= nil
+  if getShader() == nil then return false end
+  -- Once fitted, this is a read-only capability check. Replacing the live
+  -- canvas with the smallest rung here forces begin() to allocate it again.
+  if canvas ~= nil then return canvas ~= false end
+  return getCanvas(Quality.shadowSizes()[1]) ~= nil
 end
 
 -- The map to sample, or the blank stand-in. Never nil once the main pass
@@ -720,6 +725,8 @@ end
 
 -- Drop the GPU objects (window resize, hot reload).
 function ShadowMap.invalidate()
+  if canvas and canvas.release then pcall(canvas.release, canvas) end
+  if blank and blank.release then pcall(blank.release, blank) end
   canvas, canvasRes, blank = nil, 0, nil
   drawing, ready, lastSig = false, false, nil
   deferred = 0

@@ -530,12 +530,18 @@ return function(api)
   lightTexture:replacePixels(lightPixels)
   G.draw(lightMesh,lightTexture,matrix)
  end
+ local function prepareLighting(item,arena,groundY)
+  if not item.lightmap then item.lightmap=api.lighting.bake(item.occluders)end
+  return api.lighting.prepare(arena,groundY,item.lightmap)
+ end
  function S.lightEnabled()return api.lighting and api.lighting.enabled()or false end
  function S.prepareLighting(arena,groundY)
   if not S.lightEnabled()then return api.lighting and api.lighting.prepare(arena,groundY)or false end
   local item=get(arena.terarrium)
-  if not item.lightmap then item.lightmap=api.lighting.bake(item.occluders)end
-  return api.lighting.prepare(arena,groundY,item.lightmap)
+  local ok,result=pcall(prepareLighting,item,arena,groundY)
+  if ok then return result end
+  if api.lighting.fail then api.lighting.fail(result);return false end
+  error(result) -- Legacy lighting providers retain their own failure contract.
  end
  function S.lightingStatus()return api.lighting and api.lighting.last end
  function S.draw(arena,groundY)

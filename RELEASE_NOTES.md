@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.1 — Kanto location terrariums
+# VASC 3.0.46-rc.2 — Kanto location terrariums
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -30,4 +30,12 @@ Silph occupation is checked from the live engine flag `EVENT_BEAT_SILPH_CO_GIOVA
 
 Use TERRARIUM as the battle presentation to see these scenes. The complete ZIP can be imported through the launcher updater with the game closed. It includes the 3.0.45 baseline; keep existing saves and optional artwork. Geometry is decorative; water, gates, ladders and machinery do not change battle or overworld rules.
 
-See the delivery QA report for checks and limitations. Physical phone GPU verification remains separate from desktop or simulated mobile policy checks.
+Runtime audit corrections in this candidate:
+
+- Invalid optional Cobblemon installation receipts no longer prevent bundled models from loading.
+- Gen2 shadow availability preserves the fitted canvas. Both generations explicitly release shadow resources on invalidation and failed replacement.
+- Optional Terrarium dome, background and lighting failures remain local, produce one diagnostic per failure lifecycle and permit recovery after release.
+- Missing Cobblemon models are negatively cached until content activation changes the content epoch, avoiding repeated disk reads and diagnostics.
+- Failed Cobblemon texture preparation releases intermediate file, pixel and GPU objects.
+
+See RUNTIME_AUDIT_2026-09-25.md and the delivery QA evidence for checks and limitations. Physical phone GPU verification remains separate from desktop or simulated mobile policy checks.

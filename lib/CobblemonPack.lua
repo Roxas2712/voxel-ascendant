@@ -6,6 +6,9 @@ local function failure(dex,reason)
   reason=tostring(dex)..': '..tostring(reason),caller='CobblemonPack'})end
 end
 local models=setmetatable({},{__mode='v'})
+-- An actor may ask again every frame while using its sprite fallback. Retry
+-- a failed model only after content activation changes the available data.
+local failed,failedEpoch={},nil
 function M.variant(mon)
  if type(mon)~='table'then return 'normal'end
  if mon._ascMegaForm or mon.ascMegaForm then return nil end
@@ -26,9 +29,14 @@ function M.dex(mon)return national(nil,mon)end
 function M.available(dex,mon)local variant=M.variant(mon);return variant~=nil and Content.available(national(dex,mon),variant)end
 function M.load(dex,mon)
  dex=national(dex,mon)
- local variant=M.variant(mon);if not variant or not Content.available(dex,variant)then failure(dex,'variant-unavailable/'..tostring(variant));return nil end
- local key=tostring(Content.epoch or 0)..':'..tostring(dex)..':'..variant;local model=models[key];if model then return model end
- model=Content.record(dex,variant);if not model then failure(dex,'prepared-model-missing-or-invalid/'..variant);return nil end
+ local epoch=Content.epoch or 0
+ if failedEpoch~=epoch then failed,failedEpoch={},epoch end
+ local variant=M.variant(mon)
+ local key=tostring(epoch)..':'..tostring(dex)..':'..tostring(variant)
+ if failed[key]then return nil end
+ if not variant or not Content.available(dex,variant)then failed[key]=true;failure(dex,'variant-unavailable/'..tostring(variant));return nil end
+ local model=models[key];if model then return model end
+ model=Content.record(dex,variant);if not model then failed[key]=true;failure(dex,'prepared-model-missing-or-invalid/'..variant);return nil end
  model.crystalDex=dex
  model.assetProvider=M;model.textures={{}};models[key]=model;return model
 end
@@ -36,12 +44,17 @@ function M.sample(model,index,frame,wrap)return Geometry.sample(model,index,fram
 function M.image(model,index)
  if index~=1 then return nil end
  local slot=model.textures[1];if slot.image~=nil then return slot.image or nil end
+ local owned={}
+ local function own(object)owned[object]=true;return object end
+ local function release(object)
+  if owned[object]then owned[object]=nil;if object.release then pcall(object.release,object)end end
+ end
  local ok,img=pcall(function()
   local fs=V.require('EngineCompat').fs()
   local function data(path)
    local bytes=assert(Content.read(path),'Cobblemon texture missing')
-   local fd=(fs.newFileData or love.filesystem.newFileData)(bytes,'cobblemon.png')
-   local image=love.image.newImageData(fd);if fd.release then fd:release()end
+   local fd=own((fs.newFileData or love.filesystem.newFileData)(bytes,'cobblemon.png'))
+   local image=own(love.image.newImageData(fd));release(fd)
    assert(image:getWidth()<=4096 and image:getHeight()<=4096,'texture size');return image
   end
   local base=data(model.texture)
@@ -54,10 +67,12 @@ function M.image(model,index)
      return (R*A+r*a*(1-A))/out,(G*A+g*a*(1-A))/out,(B*A+b*a*(1-A))/out,out
     end)
    end
-   layer:release()
+   release(layer)
   end
-  local image=love.graphics.newImage(base);base:release();image:setFilter('nearest','nearest');return image
+  local image=own(love.graphics.newImage(base));release(base);image:setFilter('nearest','nearest');return image
  end)
+ if ok then owned[img]=nil end -- The model owns only the completed GPU image.
+ for object in pairs(owned)do release(object)end
  if not ok then failure(model.crystalDex,'texture-upload: '..tostring(img))end
  slot.image=ok and img or false;return slot.image or nil
 end

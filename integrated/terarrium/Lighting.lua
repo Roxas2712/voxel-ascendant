@@ -16,7 +16,14 @@ return function(api)
   LANCES_ROOM={{1,.63,.35},{1,.86,.57}},
   CHAMPIONS_ROOM={{1,.88,.66},{.52,.84,1}},
  }
- function S.enabled()return L.available() and api.enabled()~=false end
+ function S.enabled()return not S.failure and L.available() and api.enabled()~=false end
+ function S.fail(reason)
+  if not S.failure then
+   S.failure=tostring(reason)
+   if api.reportEffectFailure then pcall(api.reportEffectFailure,'lighting',S.failure)end
+  end
+  L.clear(true);S.last=nil
+ end
  -- Grounded vertical props only; the bowl/floor cannot darken the whole map.
  function S.bake(boxes)
   local n,span=64,152;local cells={}
@@ -72,6 +79,6 @@ return function(api)
   S.last={id=id,count=#lamps,bakes=S.bakes}
   return true
  end
- function S.release()L.clear(true);S.last=nil end
+ function S.release()L.clear(true);S.last=nil;S.failure=nil end
  return S
 end

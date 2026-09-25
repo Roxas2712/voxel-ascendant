@@ -6,8 +6,8 @@ return function(api)
  -- Build atomically: a rejected shader must never leave a retained mesh
  -- paired with nil shader on the next frame. Optional glass fails locally.
  local function prepare()
-  if mesh and shader then return true end
   if S.failure then return false end
+  if mesh and shader then return true end
   local candidateMesh,candidateShader
   local ok,err=pcall(function()
    local verts={};local function point(a,b)

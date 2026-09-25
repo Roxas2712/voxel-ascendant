@@ -278,7 +278,9 @@ local function getCanvas(res)
   if canvas and canvasRes == res then return canvas end
   local ok, c = V.require("PixelCanvas").new(res, res)
   if not (ok and c) then
-    canvas = false
+    if canvas and canvas.release then pcall(canvas.release, canvas) end
+    dropStatic()
+    canvas, canvasRes, ready = false, 0, false
     return nil
   end
   -- nearest: the 2x2 filter in the main pass wants raw texels, and a
@@ -298,11 +300,13 @@ end
 -- which is beyond the far plane and therefore "nothing occludes anything".
 local function getBlank()
   if blank == nil then
+    local data
     local ok, img = pcall(function()
-      local data = love.image.newImageData(1, 1)
+      data = love.image.newImageData(1, 1)
       data:setPixel(0, 0, 1, 1, 1, 1)
       return love.graphics.newImage(data)
     end)
+    if data then data:release() end
     blank = (ok and img) or false
   end
   return blank or nil
@@ -750,6 +754,8 @@ end
 -- Drop the GPU objects (window resize, hot reload).
 function ShadowMap.invalidate()
   dropStatic()
+  if canvas and canvas.release then pcall(canvas.release, canvas) end
+  if blank and blank.release then pcall(blank.release, blank) end
   canvas, canvasRes, blank = nil, 0, nil
   drawing, ready, lastSig = false, false, nil
   savedGraphicsState = nil

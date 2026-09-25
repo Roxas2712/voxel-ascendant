@@ -27,6 +27,7 @@ local function register(factory,builtin)
     return type(flags)=='table'and not flags.EVENT_BEAT_SILPH_CO_GIOVANNI
    end,
    reportDomeFailure=function(reason)V.require('Diagnostics').write('terrarium-dome-error',{reason=reason,requested='TERRARIUM',actual='TERRARIUM',source='optional-glass-dome'})end,
+   reportEffectFailure=function(effect,reason)V.require('Diagnostics').write('terrarium-'..effect..'-error',{reason=reason,requested='TERRARIUM',actual='TERRARIUM',source='optional-'..effect})end,
    playFanfare=function(battle)return require('src.core.Sound').play(battle.data,'Caught_Mon')end})
   for _,name in ipairs({'setup','draw','cast','camera','trainerFoot','release'})do
    if type(service)~='table' or type(service[name])~='function' then return false,'missing '..name end
