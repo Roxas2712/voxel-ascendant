@@ -1,6 +1,6 @@
 # Cobblemon pose coverage — 2026-09-25
 
-Local candidate 3.0.46-rc.8; not published.
+Runtime validation of candidate 3.0.46-rc.8, promoted unchanged to public test version 3.0.46.
 
 All 463 bundled species and 1,894 variants now contain idle, battle, walk, entrance, default attack, physical attack, special attack, status attack, flinch and faint slots. The prepared set has 1,069 unique model records and an explicit per-variant pose/source manifest in `assets/cobblemon-prepared/poses.json`.
 

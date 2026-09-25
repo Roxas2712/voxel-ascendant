@@ -1,94 +1,24 @@
-# VASC 3.0.46-rc.8 — Complete Cobblemon pose coverage and battle fallback fixes
+# VASC 3.0.46 — Public Test Update
 
-Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
+Complete installable update based on 3.0.45, published as a regular GitHub Latest release for launcher updates. This promotes the tested rc.8 runtime without gameplay code changes. Test status and coverage limits remain explicit.
 
-Integrates all 15 supplied Omega Dias designs across 43 exact Gen1 map IDs:
+## Changes since 3.0.45
 
-| Design | Maps |
-| --- | --- |
-| S.S. Anne | Bow only |
-| Fighting Dojo | Fighting Dojo |
-| Power Plant | Power Plant |
-| Viridian Forest | Viridian Forest |
-| Rocket Hideout 1 | B1F–B3F; existing office remains on B4F |
-| Silph Company | 1F–11F, during Rocket occupation only |
-| Pokémon Mansion | 1F–3F and B1F |
-| Safari Zone | Center, East, North, West |
-| Mt. Moon | 1F, B1F, B2F |
-| Diglett’s Cave | Main cave |
-| Cerulean Cave | 1F, 2F, B1F |
-| Oak’s Lab | Laboratory |
-| Champion Road | Victory Road 1F–3F |
-| Route 17 | Cycling Road only |
-| Seafoam Islands | 1F and B1F–B4F |
+- Integrate all 15 supplied Omega Dias Kanto Terrarium designs across 43 exact map IDs. Silph Company uses its design during Rocket occupation only. Original authored sources and credits are retained; encounters and story rules are unchanged.
+- Add Cobblemon to the Dex source selector and correct Gen2 battle-model selection and switching back to Crystal sprites.
+- Provide all ten supported pose/action slots for 463 bundled species and 1,894 variants: idle, battle, walk, entrance, default/physical/special/status attacks, flinch and faint. Supported original Cobblemon clips take priority; missing actions use rig-aware VASC motions. These are functional procedural fallbacks, not newly hand-authored original Cobblemon animations. The package includes a per-variant pose/source manifest.
+- Preserve original idle posture and hidden facial geometry in generated actions. Recognize dedicated legacy battle-idle clips and keep original idle when a battle-only clip cannot be imported. Route move categories and recoil to the appropriate actions.
+- Fix the opaque white background behind native Crystal battle sprites, preserving enclosed eye whites. Prevent a native sprite from reappearing after the 3D faint animation completes.
+- Correct menu/help refresh, conditional rows, download selection/status navigation and setup failure handling. Preserve choices when menus rebuild, and keep download receipt failures retryable.
+- Harden optional-model, Terrarium-effect and shadow-resource fallbacks. Recover invalid saved clocks and isolate optional download diagnostics.
+- Reduce repeated content checks, disk lookups, listener sorting and render-time allocations with bounded caches and idle-scene scheduling.
 
-Selection uses exact IDs and excludes Gen2, neighboring routes, ship cabins, gates, elevators and unrelated maps. Existing gym, League, Tower and Rocket office designs retain their previous routing. No encounters are added or changed.
+## Validation and limits
 
-The original authored Lua files are preserved byte for byte with SHA-256 receipts in `integrated/terarrium/gyms/SOURCES.json`. The shared host supplies the bowl, ΩDIAS signature, cameras, participants, trainer platforms, lighting and bounded mesh cache. Location palettes retain their forest, cave, industrial, ship, safari, coast or ice theme. Authored scenes remain open bowls even when the optional glass dome is selected.
+86 headless suites pass. All 1,894 prepared variants contain the ten required slots; 85,520 sampled poses across 1,069 unique models are finite. Native desktop tests cover 90 Dex pose captures over nine species and Gen1/Gen2 battle routing, recoil, source switching and exit. The corrected Unown test checks generated actions, manually triggered faint completion, native background alpha, preserved enclosed whites and animated-frame cutout caching.
 
-Silph occupation is checked from the live engine flag `EVENT_BEAT_SILPH_CO_GIOVANNI` whenever a stage is selected. After liberation, or when save state is unavailable, the normal Silph fallback is used. Cached modules never cache story eligibility; existing battles retain their stage until the next selection.
+The earlier screenshot with a white rectangle was a real defect and is corrected here. Faint regression coverage uses a manually triggered animation, not a full engine-driven zero-HP knockout sequence. Not every species/variant has received individual visual approval. Physical phone/console GPU tests remain outside the desktop checks. See QA-REPORT.md and ALL_POSES_AUDIT_2026-09-25.md for details.
 
-Use TERRARIUM as the battle presentation to see these scenes. The complete ZIP can be imported through the launcher updater with the game closed. It includes the 3.0.45 baseline; keep existing saves and optional artwork. Geometry is decorative; water, gates, ladders and machinery do not change battle or overworld rules.
+## Install
 
-Runtime audit corrections in this candidate:
-
-- Invalid optional Cobblemon installation receipts no longer prevent bundled models from loading.
-- Gen2 shadow availability preserves the fitted canvas. Both generations explicitly release shadow resources on invalidation and failed replacement.
-- Optional Terrarium dome, background and lighting failures remain local, produce one diagnostic per failure lifecycle and permit recovery after release.
-- Missing Cobblemon models are negatively cached until content activation changes the content epoch, avoiding repeated disk reads and diagnostics.
-- Failed Cobblemon texture preparation releases intermediate file, pixel and GPU objects.
-
-See RUNTIME_AUDIT_2026-09-25.md and the delivery QA evidence for checks and limitations. Physical phone GPU verification remains separate from desktop or simulated mobile policy checks.
-
-Further performance work in rc.3:
-
-- Crystal artwork resolution caches bounded file-presence results and uses metadata on current hosts; legacy hosts read each path once. Missing art keeps the existing fallback. Transient read errors remain retryable.
-- Gen2 shadow, antialiasing and scene passes share the existing platform receipt, removing repeated host capability checks from rendering.
-- Terrarium lamps reuse per-arena data while updating positions, colors and lava animation. Weak arena ownership and explicit release bound the cache lifetime.
-
-See PERFORMANCE_FOLLOWUP_2026-09-25.md for measured call/allocation reductions and validation.
-
-Repository-wide audit changes in rc.4:
-
-- Both generations show the actual default label when a saved setting becomes unavailable.
-- Failed download-receipt writes retain their previous in-memory state so insertion, replacement and deletion remain retryable.
-- Optional download diagnostics validate persisted reports, bound queues and fields, isolate encoder failures and back off oversized reports.
-- Invalid non-finite day/night and sky clocks reset on save restoration in both generations.
-- Content fulfillment waits for a safe, idle scene before resolving and hashing package plans; already-started downloads still finalize.
-- The internal event bus reuses sorted listener snapshots until subscriptions change, preserving priority, recursive dispatch, teardown and failure isolation.
-
-Validation: 72 headless suites; 432 native animation cases / 2,656 checks; Gen1 setup preview/apply/reopen in portrait and landscape; Crystal MAP/ARENA/DISCS/TERRARIUM battles, exits and optional-effect recovery. The audit also inventories and syntax-checks the entire Lua tree and parses all Python tools. See FULL_CODE_AUDIT_2026-09-25.md for per-subsystem coverage and limits.
-
-Menu, download and setup corrections in rc.5:
-
-- Contextual HELP survives conditional-row refreshes in both generations and in the download manager. Download collection/action selection survives inventory changes.
-- Download status keeps the selected action when its state changes, hides unavailable manual-link actions and distinguishes successful verification from a required restart.
-- F3 Back retains the originating group. Empty groups and optional status failures are handled safely; keyboard instructions use readable key names instead of unsupported arrow glyphs.
-- Setup draft saves report failure and keep the screen open. Apply failures restore setting values and attempted callbacks, restore the options writer and allow retry. Resumed drafts reject invalid setting values/types and sanitize page indices.
-
-Validation: 79 headless suites, native Red and Crystal menus, F3 groups in portrait/landscape, all ten Gen1 setup pages, real setup apply/reopen and graphics-check cancellation. Transfer interruption/restart/corrupt-cache cases use deterministic transport fixtures. No live-CDN throughput or physical-phone claim is made. See MENU_FLOW_AUDIT_2026-09-25.md.
-
-Functional and visual audit in rc.6:
-
-- COBBLEMON 3D is an explicit Dex image option in Gen1, Gen2 and the Gen1 setup guide. Models animate independently of battle/overworld settings. Missing models and draw failures retain the sprite fallback; unseen entries remain hidden. Screen exit releases preview resources.
-- Gen2 now honors the Dex image source and its own layout switch. Native cartridge descriptions, both text pages and feet/inches height are adapted correctly. Crystal menu fronts use their existing packaged/fallback path without a KASC download prompt.
-- Setup battle details expose only controls applicable to MAP, Arena, Discs, Terrarium or classic battles. Choosing the native Dex also previews its active sprite provider.
-- Setup help uses the existing font cache; download buttons are retained while only progress changes. Model previews reuse their actor, shader and canvas until species/content changes or the screen exits.
-
-Validation: 82 headless suites, 881 native setting transitions across 228 generation-specific setting keys, 29 menu actions, 86 F3 actions, 211 setup choices across 23 page/context cases, and Dex source/model/layout checks in Red and Crystal. See FUNCTIONAL_VISUAL_AUDIT_2026-09-25.md for the exact scope, screenshots and remaining portrait-layout limitation.
-
-## rc.7 — Cobblemon-Kampfanimationen
-
-Bei aktivem Cobblemon-Kampfmodell werden unterstützte Originalclips für physische, spezielle und Status-Attacken getrennt verwendet. Fehlende Clips greifen auf VASC-Bewegungen zurück. Treffer verwenden den Rückstoß statt des Ruf-Clips. Mehrere unterstützte Animationsspuren einer Haltung werden gemeinsam abgespielt. Die vorhandenen VASC-Attackeneffekte und andere Spriteanbieter bleiben erhalten.
-
-463 Arten / 1.894 Varianten neu vorbereitet; importRevision 4 verhindert alte Animationszuordnungen aus optionalen Caches. Cobblemon ist nun auch in der Gen2-Auswahl für Kampfmodelle enthalten. Der Wechsel zurück zu Crystal lädt keine optionalen Stadium-Modelle und verliert die Bühne nicht mehr.
-
-85 Headless-Suiten bestanden, einschließlich 25.944 endlicher Animations-Stichproben. Native Red-/Crystal-Kämpfe prüfen Originalaktionen und Sprite-Ersatz. Details und Grenzen: `COBBLEMON_BATTLE_AUDIT_2026-09-25.md`.
-
-## rc.8 — Vollständige Posen für den enthaltenen Artenbestand
-
-Alle 463 enthaltenen Arten und 1.894 Varianten besitzen jetzt zehn definierte Posen/Aktionen: Ruhe, Kampfhaltung, Bewegung, Auftreten, allgemeiner/physischer/spezieller/Status-Angriff, Treffer und Besiegtwerden. Vorhandene unterstützte Originalclips bleiben vorrangig. Fehlende Aktionen werden anhand des Modellaufbaus als VASC-Bewegungen ergänzt, einschließlich Erhalt der artspezifischen Ruhepose und versteckter Gesichtselemente. Es handelt sich nicht um 463 neu handanimierte Original-Cobblemon-Sätze.
-
-`assets/cobblemon-prepared/poses.json` dokumentiert jede Art/Variante mit Modellreferenz, Bewegungsprofil, Aktionsslots und Herkunft. Importrevision 5 verhindert die Verwendung veralteter vorbereiteter Modelldaten. Details: `ALL_POSES_AUDIT_2026-09-25.md`.
-
-Crystal battle sprites now remove border-connected opaque white before palette remapping, preserving enclosed white details and cached animation-frame cutouts. Completed 3D faint animations retain ownership of the battler slot so an underlying sprite cannot reappear. True-color replacement art retains its own alpha.
+Close the game, import the complete Voxel-Ascendant-3.0.46.zip through the launcher updater and restart. Keep existing saves and optional artwork. Select TERRARIUM for the new location scenes and Cobblemon as the relevant Dex/battle model source. No ROM, engine or player save is included.

@@ -1,3 +1,7 @@
+## 3.0.46 — Public Test Release
+
+- Promote the tested rc.8 runtime, including rc.1–rc.8 changes below, with release version and package receipts updated.
+
 ## 3.0.46-rc.8 — Complete pose sets
 
 - Prepare all ten supported pose/action slots for every included species and variant; preserve available Cobblemon originals.

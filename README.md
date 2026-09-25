@@ -1,6 +1,6 @@
-# VASC 3.0.46-rc.1: Kanto location terrariums
+# VASC 3.0.46 — Public Test Release
 
-Local review candidate based on GitHub Latest 3.0.45. Adds all 15 supplied Omega Dias location designs with exact map routing and live Silph occupation checks. Select TERRARIUM in battle presentation. See [candidate release notes](RELEASE_NOTES_3.0.46-rc.1.md).
+Adds the 15 supplied Kanto Terrarium designs, completes supported Cobblemon pose slots for all 463 bundled species, and fixes menu, download, setup and battle fallback issues. This is the tested rc.8 runtime promoted to a launcher-compatible release. See [release notes](RELEASE_NOTES.md) and [pose coverage and limitations](ALL_POSES_AUDIT_2026-09-25.md).
 
 # VASC 3.0.43: Legacy Bank navigation
 
