@@ -1,14 +1,14 @@
-# VASC 3.0.46 — QA report
+# VASC 3.0.47 — QA report
 
-Source runtime: rc.8 commit 0205ef59c1ba3ad3e50e38541068b5f28734361f. Public promotion changes only version, documentation and generated package receipts. The public archive is compared with rc.8 to enforce that constraint.
+Source runtime: 7cca9432db5e01a44fc5facb4e0be692a4aedf24, based on public 3.0.46 (05753b5bce6e4763fe619303561fc86f9fce0a29). Packaging updates version, documentation and generated receipts only.
 
-- 86/86 headless regression suites passed.
-- Prepared coverage: 463 species, 1,894 variants, ten slots each; 1,069 unique models; 85,520 finite pose samples.
-- Native Gen1 battle: category routing, original actions, recoil, fallback, source switching and exit passed.
-- Native Gen2 battle: corresponding original-action checks passed.
-- Native Dex: 90 captures across nine available species, 48 original and 42 VASC actions; Rayquaza skipped because absent from the Crystal host.
-- Native generated-action battle: Unown attacks, entrance, flinch, manual faint/held endpoint, sprite suppression, Crystal alpha, enclosed whites, frame separation and cache reuse passed.
-- Corrected Crystal and mid/completed-faint screenshots were inspected. The entire 90-capture set was not individually signed off visually.
-- All packaged Lua is syntax-checked. ZIP CRC, file receipts, prepared-model content hashes and 30 original Terrarium source hashes are checked during packaging.
+- 89/89 headless regression suites passed. Three existing GPU-only suites are excluded from that runner.
+- New tests cover pose-based size calibration, species ordering, metadata, cache reuse, trainer support/occlusion/cached seats and 8,223 glass/opaque intersection checks.
+- Native Gen 1: actual Venusaur, Rattata and Gorochu battles against Rattata; Cobblemon model source and supported trainer feet asserted. Screenshots inspected. Measured visible heights approximately 19.82, 7.71 and 16.57 world units.
+- Native Crystal: Venusaur-versus-Rattata; species metadata 2.0066 m and posed height 19.69 world units verified; screenshot inspected.
+- The prior Venusaur trainer position behind trees was reproduced. The corrected position is on open ground beside Venusaur. World entity coordinates and map collisions are not changed by this presentation fix.
+- Pallet native captures cover Red's house, Blue's house and the lab with shadow variants. Before/after Red-house and lab images inspected. The defect reproduced with shadows disabled; the fix changes geometry, not the user's lighting settings.
+- Existing battle-button settings are preserved.
+- Packaging verifies all Lua syntax, ZIP CRC, every embedded file receipt, all prepared-model content hashes and 30 original Terrarium source hashes. Prepared assets are unchanged from 3.0.46.
 
-Missing original action slots use procedural VASC movement, not newly authored original Cobblemon animation. No exhaustive visual signoff for all variants, full zero-HP knockout-sequence test, or physical phone/console GPU testing is claimed. Historical runtime/menu/performance audit documents in the package describe their own scope. Existing device-specific reports outside those checks are not claimed resolved.
+The 3.0.46 pose/action audits remain historical evidence for the unchanged assets. This release does not claim a new exhaustive pose review, a full zero-HP knockout-sequence retest, all-map visual signoff, or physical phone/console GPU validation. See WINDOW_SIZE_TRAINER_AUDIT_2026-09-25.md for the focused follow-up.

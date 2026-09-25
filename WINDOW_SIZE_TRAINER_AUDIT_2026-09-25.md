@@ -1,6 +1,6 @@
 # Window, species-size and trainer-placement follow-up
 
-Local fixes on top of public 3.0.46 (05753b5b). Not a new published release.
+Fixes on top of public 3.0.46 (05753b5b), included in release 3.0.47.
 
 ## Changes
 

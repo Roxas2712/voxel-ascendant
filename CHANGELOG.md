@@ -1,3 +1,10 @@
+## 3.0.47 — Battle scale, trainer clearance and windows
+
+- Calibrate Cobblemon battle size from species height and animated model bounds in both generations.
+- Check full trainer support and keep scenery visibility mandatory during fallback placement.
+- Separate Pallet glass panes from opaque facade relief and mullions.
+- Preserve battle-button preferences; 89 headless suites and targeted native captures passed.
+
 ## 3.0.46 — Public Test Release
 
 - Promote the tested rc.8 runtime, including rc.1–rc.8 changes below, with release version and package receipts updated.

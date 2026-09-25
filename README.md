@@ -1,6 +1,6 @@
-# VASC 3.0.46 — Public Test Release
+# VASC 3.0.47 — Public Test Release
 
-Adds the 15 supplied Kanto Terrarium designs, completes supported Cobblemon pose slots for all 463 bundled species, and fixes menu, download, setup and battle fallback issues. This is the tested rc.8 runtime promoted to a launcher-compatible release. See [release notes](RELEASE_NOTES.md) and [pose coverage and limitations](ALL_POSES_AUDIT_2026-09-25.md).
+Corrects Cobblemon battle proportions, keeps battle trainers clear of hedges, and fixes overlapping Pallet window geometry. Includes all 3.0.46 content. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).
 
 # VASC 3.0.43: Legacy Bank navigation
 
