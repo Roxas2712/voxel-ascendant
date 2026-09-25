@@ -129,9 +129,9 @@ local SETTING_HELP_DE = {
   battle_textbox_y = "Kampf-Textbox vertikal verschieben. Negative Werte: nach oben. Standard: 0%.",
   battle_controls_scale = "Größe nur der Kampfbuttons und Attackenauswahl. Standard: 100%.",
   battle_controls_x = "Buttons seitlich verschieben. Standard: 0%.",
-  battle_controls_y = "Buttons anheben. Die gewählte Form bleibt erhalten. 0%: am unteren Rand; Touch-Steuerung und Sicherheitsabstände werden berücksichtigt.",
+  battle_controls_y = "Buttons anheben. AUTO zeigt angehobene Buttons vollständig. 0%: am unteren Rand, sofern Touch-Steuerung und Sicherheitsabstände das erlauben.",
   battle_controls_transparency = "Transparenz von Kampfbuttons, Mega, Attacken und Zurück. 0% = bisherige Darstellung; höhere Werte lassen mehr vom Hintergrund durchscheinen.",
-  battle_controls_shape = "AUTO / ORIGINAL behalten die angeschnittene Originalgrafik. Nur COMPLETE ORAS zeigt vollständige Buttons; GLASS wählt transparente Ersatzbuttons. Position und Größe ändern diese Wahl nicht.",
+  battle_controls_shape = "AUTO: am unteren Bildschirmrand angeschnitten, darüber vollständig. ORIGINAL bleibt immer angeschnitten; COMPLETE ORAS immer vollständig; GLASS bleibt Glas.",
   hud_scale = "Skaliert die komplette ORAS-Auswahl proportional, ohne "
     .. "einzelne Knöpfe künstlich zu strecken.",
   oras_status_glass = "Stärke nur der Glasfläche hinter ORAS-Statuskarten. "

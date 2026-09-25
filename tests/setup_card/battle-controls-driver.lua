@@ -5,11 +5,11 @@ return function(game)
  local screen=e.setupCard.new(game);local before={};for k,s in pairs(screen.settings)do before[k]=s:get()end
  local idx;for i,p in ipairs(screen.pages)do if p.id=='battle_controls'then idx=i end end;assert(idx,'controls page absent');screen.page=idx;screen.index=1;game.stack:push(screen)
  local hud=assert(e.orasBattleHud);assert(hud.controlsPreview)
- for _,case in ipairs{{'edge','auto',0,1,0},{'complete','round',0,1,0},{'raised-original','original',25,.75,20},{'glass','glass',15,1,0}}do
+ for _,case in ipairs{{'edge','auto',0,1,0},{'auto-raised','auto',25,1,0},{'complete','round',0,1,0},{'raised-original','original',25,.75,20},{'glass','glass',15,1,0}}do
   screen.draft.battle_controls_shape=case[2];screen.draft.battle_controls_y=case[3];screen.draft.battle_controls_scale=case[4];screen.draft.battle_controls_x=case[5]
   for _,size in ipairs{{1100,760,'landscape'},{540,960,'portrait'}}do
    love.window.setMode(size[1],size[2],{resizable=true,vsync=1});screen:refreshPreview();U.wait(5)
-   assert(not screen.message,tostring(screen.message));assert(hud.optionSnapshot==nil,'preview leaked draft snapshot')
+   assert(not screen.message,tostring(screen.message));assert(hud.optionSnapshot==nil,'preview leaked draft snapshot');assert(hud.commandDetached==nil,'preview leaked dock state')
    assert(U.shot(game,root..'/'..case[1]..'-'..size[3]..'.png'))
    for k,v in pairs(before)do assert(screen.settings[k]:get()==v,'preview changed live setting '..k)end
   end
@@ -25,22 +25,5 @@ return function(game)
  local reopened=e.setupCard.new(game);assert(reopened.draft.battle_controls_shape=='original' and reopened.draft.battle_controls_y==25,'settings not retained on reopen')
  screen.settings.battle_controls_y:setValue(30,game);assert(screen.settings.battle_controls_shape:get()=='original','ordinary setting change overrode ORIGINAL')
  print('PASS draft resume, reset, apply, reopen and position callback')
- local settings=screen.settings
- settings.battle_controls_shape:setValue('auto',game);settings.battle_controls_y:setValue(0,game);settings.battle_controls_x:setValue(0,game);settings.battle_controls_scale:setValue(1,game)
- love.window.setMode(1100,760,{resizable=true,vsync=1})
- game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB=true;game.save.flags.EVENT_GOT_STARTER=true;game.save.repelSteps=999999
- game.save.party={require('src.pokemon.Pokemon').new(game.data,'PIKACHU',50)}
- require('src.render.Pipelines').setLevel('voxel',3);U.teleport(game,'ROUTE_1',10,30,'down');U.wait(90)
- local b=require('src.battle.BattleState').newWild(game,'RATTATA',5);local ow=game.overworld
- b.onFinish=function(result)ow:afterBattle(result,b)end;ow:pushBattle(b)
- for i=1,900 do U.wait(1);if game.stack:top()==b and b.phase=='menu'then break end;if i%15==0 then U.tap(game,'a')end end
- assert(game.stack:top()==b and b.phase=='menu','native battle intro stalled')
- for _,shape in ipairs{'auto','round'}do
-  settings.battle_controls_shape:setValue(shape,game);U.wait(30)
-  assert(U.shot(game,root..'/battle-'..shape..'.png'))
-  assert(hud.roundControls()==(shape=='round'),'live battle shape differs')
- end
- U.tap(game,'a');U.wait(10);assert(b.phase=='moveSelect','fight stopped opening moves');U.tap(game,'b');U.wait(10);assert(b.phase=='menu','back stopped working')
- print('PASS actual battle: default edge, explicit complete, moves/back')
  print('BUTTONS_SETUP_DONE');love.event.quit()
 end

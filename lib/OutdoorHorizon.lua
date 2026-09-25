@@ -298,8 +298,9 @@ function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
   occupied[key]=true
   local dark=profile=='lavender'
   local grass=dark and 21 or profile=='volcanic'and 5 or 2
+  local cherry=false
   local function b(dx,y,dz,w,h,d,c,lit,foliage)
-   emit(x+dx,y,z+dz,w,h,d,c,lit,foliage==true)
+   emit(x+dx,y,z+dz,w,h,d,c,lit,foliage==true,cherry and foliage==true)
   end
   -- Joined ground shoulders continue below the skyline instead of exposing
   -- bright gaps under trees. Every shoulder stays outside the resident union.
@@ -333,9 +334,10 @@ function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
    if (dark and seed%5<3)or seed%4==0 then
     -- Tall firs and cypress shapes among broad crowns.
     for tier=0,3 do
-     local w=40-tier*8;b(24-w/2,rise+16+tier*(h-12)/4,24-w/2,w,(h-12)/4+5,w,leaf+tier%2,false,true)
+     local w=40-tier*8;b(24-w/2,rise+16+tier*(h-12)/4,24-w/2,w,(h-12)/4+5,w,leaf+tier%2,false,false)
     end
    else
+    cherry=not dark and profile~="volcanic" and V.require("SpringBlossom").selected(profile or "forest",x,z)
     -- Interlocking lobes and lower branches make a dense, irregular canopy.
     b(4,rise+h*.45,10,32,h*.35,30,leaf,false,true)
     b(12,rise+h*.55,2,30,h*.3,32,leaf+1,false,true)
@@ -343,6 +345,7 @@ function H.geometry(maps,horizon,emit,yieldStep,worldMaps)
     b(16,rise+h,16,16,6,18,leaf+2,false,true)
     b(2,rise+h*.5,18,12,10,16,leaf,false,true)
    end
+   cherry=false -- low bushes are not cherry trees
    if row<2 and seed%3==0 then
     b(3,rise,3,13,8,12,leaf+1,false,true);b(29,rise,32,16,10,14,leaf,false,true)
     if not dark and seed%7==0 then b(6,rise+8,6,3,3,3,28)end
@@ -410,7 +413,7 @@ function H.build(maps,horizon,yieldStep,worldMaps)
  local clock=love.timer and love.timer.getTime
  local buildStart=clock and clock() or 0
  local emitted=0
- local function emit(x,y,z,w,h,d,c,lit,foliage)
+ local function emit(x,y,z,w,h,d,c,lit,foliage,blossom)
   -- External forest landmarks share these authored leaf palette slots.
   if foliage==nil then foliage=(c>=1 and c<=3)or(c>=20 and c<=22)or(c>=25 and c<=27)end
   foliage=foliage==true and not lit
@@ -422,10 +425,10 @@ function H.build(maps,horizon,yieldStep,worldMaps)
       or (emitted%16==0 and clock and clock()-buildStart>=H.BUILD_SLICE))then
    yieldStep();emitted=1;buildStart=clock and clock()or 0
   end
-  local key=math.floor(x/H.BATCH_CELL)..':'..math.floor(z/H.BATCH_CELL)..':'..(lit and 1 or 0)..':'..(foliage and 1 or 0)
+  local key=math.floor(x/H.BATCH_CELL)..':'..math.floor(z/H.BATCH_CELL)..':'..(lit and 1 or 0)..':'..(foliage and 1 or 0)..':'..(blossom and 1 or 0)
   local a=byCell[key]
   if not a or a.boxes>=H.BATCH_BOXES then
-   a={vertices={},indices={},boxes=0,lit=lit,foliage=foliage,
+   a={vertices={},indices={},boxes=0,lit=lit,foliage=foliage,blossom=blossom==true,
       bounds={x,y,z,x+w,y+h,z+d}}
    byCell[key]=a;groups[#groups+1]=a
   end
@@ -458,7 +461,7 @@ function H.build(maps,horizon,yieldStep,worldMaps)
   if not mesh then for _,part in ipairs(out)do part.mesh:release()end;error('voxel horizon allocation failed',0)end
   uploads=uploads+1
   out[#out+1]={mesh=mesh,texture=tex,ox=0,oy=0,kind='wall',class='voxel_horizon',
-   bounds=a.bounds,windowLight=a.lit==true,seasonalFoliage=a.foliage,castsShadow=false}
+   bounds=a.bounds,windowLight=a.lit==true,seasonalFoliage=a.foliage,springBlossom=a.blossom,castsShadow=false}
   a.vertices,a.indices=nil,nil
  end
  return out
@@ -471,7 +474,7 @@ function H.draw(rim,matrix,visible)
  if rim.windowLight then G.flatten({1,.86,.6},V.require('Gen1PalletVillage').windowLight())end
  -- Match real roofs/crowns without rebuilding geometry or changing windows.
  if G.weatherGround then G.weatherGround(not rim.windowLight)end
- if G.seasonFoliage then G.seasonFoliage(rim.seasonalFoliage==true)end
+ if G.seasonFoliage then G.seasonFoliage(rim.seasonalFoliage==true,rim.springBlossom==true)end
  local ok,result=pcall(G.draw,rim.mesh,rim.texture,matrix)
  if G.seasonFoliage then G.seasonFoliage(false)end
  if G.weatherGround then G.weatherGround(false)end

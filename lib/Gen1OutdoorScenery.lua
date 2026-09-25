@@ -400,6 +400,9 @@ function M.register(P,F)
  end
  for size=1,2 do for variant=1,5 do
   local w=16*size;local b=make('kanto_tree_'..size..'_'..variant,w,w)
+  -- All round silhouettes can host cherry blossom; placement chooses a
+  -- stable irregular subset. Conifers never enter the blossom draw group.
+  if variant~=3 then P.models['kanto_tree_'..size..'_'..variant].blossomSource={w/2,(variant==4 and 28 or 25)+(size-1)*8,w/2} end
   local mid=w/2;local tr=2*size
   b(mid-tr,0,mid-tr,tr*2,12*size,tr*2,variant==4 and 14 or C.walnut)
   b(mid-tr-1,0,mid-tr-1,tr*2+2,2,tr*2+2,C.oak)

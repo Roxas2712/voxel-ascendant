@@ -4497,7 +4497,16 @@ local function updateBattleFrame(dt)
                          textures, session.token)
   if not ok then
     Diagnostics.write("battle-scene-error", {
-      mode=session.arena and session.arena.presentationMode,
+      mode=session.arena and (session.arena.terarrium and "TERRARIUM" or session.arena.presentationMode),
+      requested=session.arena and (session.arena.requestedMode or (session.arena.terarrium and "TERRARIUM" or session.arena.presentationMode)),
+      actual="SCENE FAILED; recovery pending",
+      mapId=session.state and session.state.map and session.state.map.id,
+      cellX=session.state and session.state.player and session.state.player.cellX,
+      cellY=session.state and session.state.player and session.state.player.cellY,
+      phase=session.battle and session.battle.phase,
+      battleId=nativeLatchBattleId(session),
+      declineReason=BattleScene.lastDeclineReason,
+      renderFailures=session.renderFailures,
       reason=tostring(shot),
       grow=session.battle and session.battle.growIn ~= nil,
     })
@@ -4593,8 +4602,13 @@ local function updateBattleFrame(dt)
     session.actorFreeCoverOwner = nil
     session.snapped = false
     markSnapped(session.battle, nil, false, "scene-render-timeout")
-    markSessionNative(session, "scene-render-timeout",
-      "scene-render-timeout")
+    -- Keep the actual decline on the screenshot-sized error report; the
+    -- generic timeout alone cannot distinguish camera, owner or asset waits.
+    local timeoutReason="scene-render-timeout"
+    if BattleScene.lastDeclineReason then
+      timeoutReason=timeoutReason..": "..tostring(BattleScene.lastDeclineReason)
+    end
+    markSessionNative(session, "scene-render-timeout", timeoutReason)
     lifecycle("nativeLatched", session.battle,
       "scene-render-timeout")
     V.mod.log:warn("overworld battle scene produced no complete frame within "

@@ -1076,7 +1076,7 @@ local function shaderSource(variant, grid, lighting)
   end,1)
   source=source:gsub("vec4 p = Texel%(tex, tc%);",
     "if(roomMaskSize.z>0.5){vec2 ru=vWorld.xz/roomMaskSize.xy;bool outsideRoomMap=ru.x<0.0||ru.y<0.0||ru.x>=1.0||ru.y>=1.0;if(outsideRoomMap){if(roomMaskSize.z<1.5)discard;}else if(Texel(roomMask,(floor(vWorld.xz/8.0)+vec2(0.5))/(roomMaskSize.xy/8.0)).r<0.5)discard;}\n    vec4 p = Texel(tex, tc);\n    if (tc.x < -200.5) p = caveSurface(tc.x, vWorld); else if (tc.x < -128.5) p = interiorFloor(tc.x, vWorld);")
-  source=source:gsub("#ifdef PIXEL", "#ifdef PIXEL\nuniform Image rooftopMaterialMask;\nuniform float rooftopMaterials;\nuniform vec2 seasonWeights;\nuniform float seasonalFoliage;",1)
+  source=source:gsub("#ifdef PIXEL", "#ifdef PIXEL\nuniform Image rooftopMaterialMask;\nuniform float rooftopMaterials;\nuniform vec3 seasonWeights;\nuniform float seasonalFoliage;",1)
   source=source:gsub("vec3 rgb = p.rgb", [[
     vec2 roofMaterial=vec2(0.0);
     if(rooftopMaterials>.5) roofMaterial=Texel(rooftopMaterialMask,tc).rg;
@@ -1087,6 +1087,13 @@ local function shaderSource(variant, grid, lighting)
       vec3 autumn=mix(vec3(.68,.20,.055),vec3(.92,.49,.10),foliageVariation)*(.35+brightness*.9);
       vec3 spring=vec3(p.r*.87,min(1.0,p.g*1.10),p.b*.88);
       p.rgb=mix(p.rgb,spring,green*seasonWeights.x*.65);
+      if (seasonalFoliage > 1.5) {
+        // Keep the original leaf shading; only the selected deciduous
+        // crowns bloom. Brown trunks, grass and actors never enter this pass.
+        vec3 blossom=mix(vec3(.94,.43,.60),vec3(1.0,.88,.92),clamp(brightness*1.7,0.0,1.0));
+        blossom*=.62+brightness*.65;
+        p.rgb=mix(p.rgb,blossom,green*seasonWeights.z);
+      }
       p.rgb=mix(p.rgb,autumn,green*seasonWeights.y*.94);
     }
     vec3 rgb = p.rgb]],1)
@@ -2118,13 +2125,16 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot, skyContext)
     variant=shaderVariants[grid],
   })
   local seasonWeather=V.require("Weather")
-  local spring,autumn=0,0
-  if seasonWeather.setting:get()=="auto" then spring,autumn=seasonWeather.foliageAt(seasonWeather.clock) end
-  Voxel3D._seasonUniform=Voxel3D._seasonUniform or {0,0}
-  Voxel3D._seasonUniform[1],Voxel3D._seasonUniform[2]=spring,autumn
+  local spring,autumn,bloom=0,0,0
+  if seasonWeather.setting:get()=="auto" then
+    spring,autumn=seasonWeather.foliageAt(seasonWeather.clock)
+    bloom=seasonWeather.blossomAt(seasonWeather.clock)
+  end
+  Voxel3D._seasonUniform=Voxel3D._seasonUniform or {0,0,0}
+  Voxel3D._seasonUniform[1],Voxel3D._seasonUniform[2],Voxel3D._seasonUniform[3]=spring,autumn,bloom
   pcall(sh.send,sh,"seasonWeights",Voxel3D._seasonUniform)
   pcall(sh.send,sh,"seasonalFoliage",0)
-  Voxel3D._seasonOn=false
+  Voxel3D._seasonOn=0
   pcall(sh.send,sh,"rooftopMaterials",0)
   pcall(sh.send, sh, "vp", "row", Voxel3D.vp)
   pcall(sh.send, sh, "eye", Voxel3D.eye)
@@ -2955,12 +2965,12 @@ function Voxel3D.rooftopMaterials(mask)
   return ok
 end
 
-function Voxel3D.seasonFoliage(on)
+function Voxel3D.seasonFoliage(on,blossom)
   if not (active and activeShader) then return false end
-  on=on==true
-  if Voxel3D._seasonOn==on then return on end
-  local ok=pcall(activeShader.send,activeShader,"seasonalFoliage",on and 1 or 0)
-  Voxel3D._seasonOn=ok and on or false
+  local amount=on==true and (blossom==true and 2 or 1) or 0
+  if Voxel3D._seasonOn==amount then return true end
+  local ok=pcall(activeShader.send,activeShader,"seasonalFoliage",amount)
+  Voxel3D._seasonOn=ok and amount or nil
   return ok
 end
 

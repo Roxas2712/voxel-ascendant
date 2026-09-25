@@ -150,6 +150,17 @@ function Weather.foliageAt(clock)
          (previous == 2 and 1-t or 0) + (current == 2 and t or 0)
 end
 
+-- A short bloom within spring, then green again before summer. The same
+-- continuous weight drives nearby trees, the skyline and falling petals.
+function Weather.blossomAt(clock)
+  clock=finite(clock,Weather.clock)
+  if Weather.seasonAt(clock)~="spring" then return 0 end
+  local t=clock%Weather.SEASON_SECONDS
+  local function smooth(x) x=math.max(0,math.min(1,x));return x*x*(3-2*x) end
+  return smooth(t/Weather.SEASON_BLEND_SECONDS)
+    * (1-smooth((t-Weather.SEASON_SECONDS*.6)/(Weather.SEASON_SECONDS*.3)))
+end
+
 function Weather.autumnLeafGust(map, selected, clock)
   if selected ~= "auto" or not Weather.isOutdoor(map) or (Weather.isLavender and Weather.isLavender(map))
       or tostring(mapId(map)):match("^KA_MOLTRES_VOLCANO") then return nil end

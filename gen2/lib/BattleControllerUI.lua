@@ -1892,7 +1892,7 @@ local function commandCameraRect(ww, wh, layout, screen)
   local actionGap = math.max(2, math.min(5, logicalW * .012)) * scale
   local cursorLead = 20 * .82 * scale
   local artHeight = math.min(dock[4],
-    logicalH * (M.roundControls(screen) and .92 or .64) * scale + actionGap + cursorLead)
+    logicalH * (optionValue(screen, "battle_controls_shape", "auto") == "round" and .92 or .64) * scale + actionGap + cursorLead)
   return { dock[1], dock[2] + dock[4] - artHeight,
            dock[3], artHeight, bottomInset=dock.bottomInset }
 end
@@ -2689,9 +2689,11 @@ local function drawHandCursor(x, y, scale)
 end
 
 function M.roundControls(screen)
-  -- Shape is a deliberate choice. Safe areas, size and position must never
-  -- replace the original edge-cut artwork with complete buttons.
-  return optionValue(screen, "battle_controls_shape", "auto") == "round"
+  -- AUTO follows the final dock, not platform, scale or horizontal offsets.
+  -- Explicit ORIGINAL / COMPLETE / GLASS choices always retain ownership.
+  local shape = optionValue(screen, "battle_controls_shape", "auto")
+  if shape == "auto" then return (screen and screen._vascCommandDetached == true) or false end
+  return shape == "round"
 end
 
 function M.drawGlassControl(key, label, x, y, w, h, focused)
@@ -2773,7 +2775,7 @@ local function drawNativeCommandGrid(screen, ww, wh)
     local maxW = (entry.key == "run" or entry.key == "mega") and 0.16 or 0.18
     local maxH = entry.key == "mega" and 0.36
       or (entry.key == "run" and 0.30 or 0.32)
-    if M.roundControls(screen) then maxH = .60 end
+    if optionValue(screen, "battle_controls_shape", "auto") == "round" then maxH = .60 end
     entry.baseScale = math.min(w * maxW * controlScale / iw, h * maxH / ih)
     entry.layoutW, entry.layoutH = iw * entry.baseScale, ih * entry.baseScale
     lowerW = lowerW + entry.layoutW

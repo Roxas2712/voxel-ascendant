@@ -496,6 +496,10 @@ function F.each(state,draw,lightsOnly)
         p.drawExtra=p.drawExtra or {};extra=extra or p.drawExtra
         extra.frost=model.frost
         extra.seasonalFoliage=model.seasonalFoliage
+        if model.blossomSource and p.springBlossomSelected==nil then
+          p.springBlossomSelected=V.require('SpringBlossom').selected(state.map.id,p.tx,p.ty)
+        end
+        extra.blossomSource=p.springBlossomSelected and model.blossomSource or nil
         if model.winterKind then
           extra.winterMesh,extra.winterTex=P.resolveKind(model.winterKind)
         end
@@ -663,7 +667,7 @@ function F.drawProp(mesh,tex,mat,shade,extra)
   -- the same upward-face coat; otherwise only vanilla surfaces turn white.
   G.weatherGround(true)
   G.weatherGrass(extra and extra.frost==true)
-  if G.seasonFoliage then G.seasonFoliage(extra and extra.seasonalFoliage==true) end
+  if G.seasonFoliage then G.seasonFoliage(extra and extra.seasonalFoliage==true,extra and extra.blossomSource~=nil) end
   local drawn=G.draw(mesh,tex,mat,0)
   if G.seasonFoliage then G.seasonFoliage(false) end
   G.weatherGround(false)
@@ -680,6 +684,8 @@ function F.drawProp(mesh,tex,mat,shade,extra)
   return drawn
 end
 function F.draw(state)
+  local blossom=V.require("SpringBlossom")
+  blossom.begin(state.map)
   if not state.sightFurniture and state.map and state.map.id=='SAFFRON_CITY'
       and V.require('Gen1SilphCo').occludes(state.map,
       V.require('VoxelState').level,G.eye,G.focus)then
@@ -690,10 +696,14 @@ function F.draw(state)
   local function each(view,draw)
     F.eachWorld(view,function(mesh,tex,mat,shade,extra)
       if not P.bounds or visible(P.bounds(mesh),mat)
-        or (extra and extra.mesh and visible(P.bounds(extra.mesh),mat))then draw(mesh,tex,mat,shade,extra)end
+        or (extra and extra.mesh and visible(P.bounds(extra.mesh),mat))then
+        if extra and extra.blossomSource then blossom.add(mat,extra.blossomSource) end
+        draw(mesh,tex,mat,shade,extra)
+      end
     end)
   end
   V.require('VoxelPropBatch').draw(state,each,F.drawProp)
+  blossom.draw()
   love.graphics.setColor(1,1,1,1)
   local p,ha=F.activeHealer(state)
   local visible=not state.sightFurniture

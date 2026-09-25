@@ -69,9 +69,10 @@ function B.draw(state,each,draw,pass)
   local cachePass=pass=='battle-color' and 'color'
     or pass=='battle-shadow' and 'shadow' or pass
   local s=scratch[pass]
-  if not s then s={byMesh={},order={},groups={},entries={}};scratch[pass]=s end
+  if not s then s={byMesh={},byBlossom={},order={},groups={},entries={}};scratch[pass]=s end
   local byMesh,order=s.byMesh,s.order
   for k in pairs(byMesh)do byMesh[k]=nil end
+  for k in pairs(s.byBlossom)do s.byBlossom[k]=nil end
   for i=#order,1,-1 do order[i]=nil end
   local entryCount,groupCount=0,0
   local function newGroup(p)
@@ -91,8 +92,11 @@ function B.draw(state,each,draw,pass)
     end
     p[1],p[2],p[3],p[4],p[5]=mesh,tex,mat,shade,extra
     if (extra and not extra.batchWindow and not extra.frost and not extra.seasonalFoliage)or not translated(mat)then newGroup(p);return end
-    local group=byMesh[mesh]
-    if not group then group=newGroup();byMesh[mesh]=group end
+    -- The same tree mesh may carry either green or cherry crowns. Keep both
+    -- instance groups batched, rather than issuing one draw per cherry tree.
+    local paletteGroups=extra and extra.blossomSource and s.byBlossom or byMesh
+    local group=paletteGroups[mesh]
+    if not group then group=newGroup();paletteGroups[mesh]=group end
     -- A template normally uses one palette and shade. Never merge a caller
     -- that explicitly overrides either property.
     if #group>0 and (group[1][2]~=tex or group[1][4]~=shade
@@ -135,15 +139,17 @@ function B.draw(state,each,draw,pass)
     if #entries>1 and not disabled then
       local original=entries[1][1]
       local passes=cache[original];if not passes then passes={};cache[original]=passes end
-      local group=passes[cachePass]
-      if not group then group={};passes[cachePass]=group end
+      local palettePass=entries[1][5] and entries[1][5].blossomSource
+        and cachePass..'-blossom' or cachePass
+      local group=passes[palettePass]
+      if not group then group={};passes[palettePass]=group end
       local ok,bundle=pcall(prepare,group,entries)
       if ok then
         local rendered,result=pcall(draw,bundle,entries[1][2],nil,entries[1][4],entries[1][5])
         batched=rendered and result~=false
         if not batched then B.lastError=tostring(result)end
       else B.lastError=tostring(bundle)end
-      if not batched then release(group);passes[cachePass]=nil;disabled=true end
+      if not batched then release(group);passes[palettePass]=nil;disabled=true end
     end
     if not batched then for _,p in ipairs(entries)do draw(unpack(p))end end
   end

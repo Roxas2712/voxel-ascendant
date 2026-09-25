@@ -4277,7 +4277,8 @@ function FloatingHud.orasCommandLayout(battle, logicalW, logicalH)
       local rowGap = clamp(logicalW * 0.025, 5, 9)
       local rowWidth, rowTop, visibleCount = 0, logicalH, 0
       for _, entry in ipairs(rowEntries) do
-        if FloatingHud.roundControls and FloatingHud.roundControls() then entry.maxH = .60 end
+        -- AUTO completes the art inside the original compact height budget.
+        if optionChoice("battle_controls_shape", "auto") == "round" then entry.maxH = .60 end
         entry.image = FloatingHud.styleAsset(entry.key)
         if entry.image then
           entry.baseScale = math.min(
@@ -4386,9 +4387,11 @@ function FloatingHud.orasCommandBounds(battle, rect, scale, logicalW, logicalH)
 end
 
 function FloatingHud.roundControls()
-  -- Shape is a deliberate choice. Safe areas, size and position must never
-  -- replace the original edge-cut artwork with complete buttons.
-  return optionChoice("battle_controls_shape", "auto") == "round"
+  -- AUTO follows the final dock, not platform, scale or horizontal offsets.
+  -- Explicit ORIGINAL / COMPLETE / GLASS choices always retain ownership.
+  local shape = optionChoice("battle_controls_shape", "auto")
+  if shape == "auto" then return FloatingHud.commandDetached == true end
+  return shape == "round"
 end
 
 function FloatingHud.drawGlassControl(key, label, x, y, w, h, focused, k)
@@ -8998,6 +9001,7 @@ local registerProvider = INTEGRATED_VASC
 -- no settings, battle state, hit targets or provider canvases are modified.
 function FloatingHud.controlsPreview(draft)
   local previousSnapshot = FloatingHud.optionSnapshot
+  local previousDetached = FloatingHud.commandDetached
   local snapshot = {}; for key,value in pairs(draft) do snapshot[key]=value end
   FloatingHud.optionSnapshot = snapshot
   local previousCanvas = g.getCanvas()
@@ -9010,6 +9014,7 @@ function FloatingHud.controlsPreview(draft)
     g.clear(.08,.14,.19,1)
     g.setColor(.12,.22,.22,1); g.rectangle("fill",0,h*.45,w,h*.55)
     local rect,scale,lw,lh = FloatingHud.configureControls(w,h,{0,h-156,w,156},1,w,156)
+    FloatingHud.commandDetached = rect[2]+rect[4] < h-.5
     local _,_,entries = FloatingHud.orasCommandLayout({menuIndex=1,frame=0},lw,lh)
     g.translate(rect[1],rect[2]); g.scale(scale,scale)
     local labels = hudLanguage()=="de" and {"KAMPF","POKEMON","BEUTEL","FLUCHT"}
@@ -9028,6 +9033,7 @@ function FloatingHud.controlsPreview(draft)
   end)
   g.setCanvas(previousCanvas); g.pop()
   FloatingHud.optionSnapshot = previousSnapshot
+  FloatingHud.commandDetached = previousDetached
   if not ok then return nil,tostring(result) end
   return result
 end

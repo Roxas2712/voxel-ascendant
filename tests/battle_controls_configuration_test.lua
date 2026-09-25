@@ -16,7 +16,7 @@ extract('battle_hud_oras.lua','function FloatingHud.roundControls','function Flo
 for _, viewport in ipairs({{390,844},{844,390},{1024,768},{2048,1536}}) do
   local ww,wh=unpack(viewport)
   local rect={ww*.1,wh*.7,ww*.8,wh*.3}
-  values={}
+  values={};F.commandDetached=false
   assert(not F.roundControls())
   for _,api in ipairs({F,M}) do
     local got,s=api.configureControls(ww,wh,rect,2,300,156)
@@ -31,7 +31,8 @@ for _, viewport in ipairs({{390,844},{844,390},{1024,768},{2048,1536}}) do
         for i=1,4 do assert(math.abs(a[i]-b[i])<1e-8,'generation parity')end
         assert(s==t and math.abs(a[3]/a[4]-rect[3]/rect[4])<1e-8,'proportions')
         assert(a[1]>=0 and a[2]>=0 and a[1]+a[3]<=ww+1e-8 and a[2]+a[4]<=wh+1e-8,'screen bounds')
-        assert(not F.roundControls(),'position and scale must not select complete art')
+        F.commandDetached=a[2]+a[4]<wh-.5
+        assert(F.roundControls()==(y>0),'AUTO follows final vertical placement, never size or X alone')
       end
     end
   end
@@ -39,15 +40,15 @@ end
 values={battle_controls_y=25,battle_controls_shape='original'};assert(not F.roundControls(),'raised ORIGINAL keeps authored art')
 values={battle_controls_shape='round'};assert(F.roundControls())
 values={battle_controls_shape='glass',battle_controls_y=25};assert(not F.roundControls(),'glass is explicit alternative')
-values={};assert(not F.roundControls(),'reset restores original')
+values={};F.commandDetached=false;assert(not F.roundControls(),'reset restores original')
 extract('gen2/lib/BattleControllerUI.lua','function M.roundControls','function M.drawGlassControl',
   {M=M,optionValue=function(_,...)return read(...)end})
 for _,shape in ipairs({'auto','original','round','glass'})do
  for _,detached in ipairs({false,true})do
   values={battle_controls_shape=shape,battle_controls_x=20,battle_controls_y=25,battle_controls_scale=.75}
   F.commandDetached=detached
-  assert(F.roundControls()==(shape=='round'),'Gen1 explicit shape')
-  assert(M.roundControls({_vascCommandDetached=detached})==(shape=='round'),'Gen2 explicit shape')
+  assert(F.roundControls()==(shape=='round' or shape=='auto' and detached),'Gen1 position-aware AUTO and explicit shape')
+  assert(M.roundControls({_vascCommandDetached=detached})==(shape=='round' or shape=='auto' and detached),'Gen2 position-aware AUTO and explicit shape')
  end
 end
 F.commandDetached=nil
@@ -185,16 +186,16 @@ for _,size in ipairs({{1280,589},{390,844},{844,390}})do
  viewport=size;touch=true;inset=0;values={}
  local shot={pw=size[1],ph=size[2]}
  local rect=F.screenDockRect(shot,'command')
- assert(rect[2]+rect[4]<size[2]-1 and not F.roundControls(),'phone dock preserves original at zero manual lift')
+ assert(rect[2]+rect[4]<size[2]-1 and F.roundControls(),'raised phone dock completes AUTO at zero manual lift')
  values={battle_controls_shape='original'};assert(not F.roundControls(),'touch layout cannot override ORIGINAL')
  values={battle_controls_shape='glass'};assert(not F.roundControls(),'touch must preserve GLASS')
  values={};touch=false;F.screenDockRect(shot,'command')
  assert(not F.roundControls(),'desktop bottom dock must retire mobile geometry')
- inset=20;F.screenDockRect(shot,'command');assert(not F.roundControls(),'safe inset cannot select complete art')
+ inset=20;F.screenDockRect(shot,'command');assert(F.roundControls(),'safe inset raises AUTO clear of the screen edge')
 end
 for _,shape in ipairs({'auto','original','glass'})do
  values={battle_controls_shape=shape}
- assert(M.roundControls({_vascCommandDetached=true})==false,'Gen2 detached parity')
+ assert(M.roundControls({_vascCommandDetached=true})==(shape=='auto'),'Gen2 detached parity')
  assert(not M.roundControls({_vascCommandDetached=false}),'Gen2 anchored defaults')
 end
 print('PASS actual phone dock, zero lift, safe insets, rotation, desktop return and GLASS preservation')
@@ -239,3 +240,20 @@ for _,platform in ipairs({'iOS','Android','OS X','Windows'})do
 end
 love=nil
 print('PASS mobile 40% / desktop 20% defaults in Gen1 and Gen2')
+
+-- Completing AUTO above touch controls must not double the command row's
+-- reserved height and put the trainer underneath it in narrow portrait views.
+local shape='auto'
+local art={getWidth=function()return 200 end,getHeight=function()return 170 end}
+local C={CONTROL_SCALE=1.5,ORAS_FIGHT_DESIGN_W=69,ORAS_FIGHT_DESIGN_H=32,
+ styleAsset=function()return art end,megaArmed=function()return false end}
+extract('battle_hud_oras.lua','function FloatingHud.commandAssetMetrics','function FloatingHud.orasCommandBounds',{
+ FloatingHud=C,clamp=function(v,a,b)return math.max(a,math.min(b,v))end,
+ optionChoice=function()return shape end,megaProfileFor=function()return nil end})
+for _,width in ipairs({280,480,720})do
+ shape='auto';local entries=C.orasCommandLayout({menuIndex=1},width,156)
+ for _,entry in ipairs(entries)do assert(entry.layoutH<=156*.32+.001,'AUTO complete art enlarged the compact row')end
+ shape='round';entries=C.orasCommandLayout({menuIndex=1},width,156)
+ assert(entries[1].layoutH>156*.32,'explicit large complete selection lost its scale')
+end
+print('PASS AUTO complete art stays within compact camera budget; explicit COMPLETE retains its size')

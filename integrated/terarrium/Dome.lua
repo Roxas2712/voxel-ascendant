@@ -3,8 +3,13 @@ return function(api)
  local G=love.graphics;local mesh,shader
  local S={}
  local tints={clear={.78,.91,.96},blue={.30,.65,1},rose={1,.51,.68},gold={1,.79,.36}}
- function S.draw(arena,y,style)
-  if not mesh then
+ -- Build atomically: a rejected shader must never leave a retained mesh
+ -- paired with nil shader on the next frame. Optional glass fails locally.
+ local function prepare()
+  if mesh and shader then return true end
+  if S.failure then return false end
+  local candidateMesh,candidateShader
+  local ok,err=pcall(function()
    local verts={};local function point(a,b)
     return {77*math.cos(a)*math.sin(b),3.7+72*math.cos(b),77*math.sin(a)*math.sin(b)}
    end
@@ -12,8 +17,8 @@ return function(api)
     local a,b=i*math.pi/48,(i+1)*math.pi/48;local c,d=j*math.pi/48,(j+1)*math.pi/48
     for _,p in ipairs({point(a,c),point(a,d),point(b,d),point(a,c),point(b,d),point(b,c)})do verts[#verts+1]=p end
    end end
-   mesh=G.newMesh({{'VertexPosition','float',3}},verts,'triangles','static')
-   shader=G.newShader([[
+   candidateMesh=G.newMesh({{'VertexPosition','float',3}},verts,'triangles','static')
+   candidateShader=G.newShader([[
     uniform vec3 tint;uniform vec3 eye;uniform float glassPass;uniform float ballKind;uniform vec3 shellBase;uniform vec3 shellAccent;varying vec3 localPos;
     float stroke(vec2 p,vec2 a,vec2 b){vec2 d=b-a;return length(p-a-d*clamp(dot(p-a,d)/dot(d,d),0.0,1.0));}
     vec4 effect(vec4 color,Image tex,vec2 uv,vec2 sc){
@@ -41,8 +46,8 @@ return function(api)
       }
       if(ballKind>4.5){
        vec3 p=floor(localPos/5.5);
-       float patch=sin(p.x*.87+p.y*1.23+p.z*.72)+cos(p.x*.41-p.z*1.18);
-       ball=patch>.6?shellAccent:patch<-.45?vec3(.18,.28,.115):shellBase;
+       float shellPattern=sin(p.x*.87+p.y*1.23+p.z*.72)+cos(p.x*.41-p.z*1.18);
+       ball=shellPattern>.6?shellAccent:shellPattern<-.45?vec3(.18,.28,.115):shellBase;
       }
       vec3 shell=ball*light;
       if(localPos.z>-1.4)shell=mix(ball,vec3(1.0),0.24);
@@ -59,7 +64,19 @@ return function(api)
     uniform mat4 vp;uniform mat4 model;varying vec3 localPos;
     vec4 position(mat4 transform_projection,vec4 p){localPos=p.xyz;return vp*model*p;}
    ]])
+  end)
+  if not ok then
+   if candidateMesh then pcall(candidateMesh.release,candidateMesh)end
+   if candidateShader then pcall(candidateShader.release,candidateShader)end
+   S.failure=tostring(err)
+   if api.reportDomeFailure then pcall(api.reportDomeFailure,S.failure)end
+   return false
   end
+  mesh,shader=candidateMesh,candidateShader
+  return true
+ end
+ function S.draw(arena,y,style)
+  if not prepare()then return false end
   local x,z=arena.mid[1],arena.mid[2];local eye=api.Voxel3D.eye
   G.push('all')
   local ok,err=pcall(function()
@@ -71,8 +88,18 @@ return function(api)
    G.setColor(1,1,1,1);G.setBlendMode('alpha','alphamultiply');G.setMeshCullMode('none');G.setDepthMode('lequal',true);shader:send('glassPass',0);G.draw(mesh)
    G.setDepthMode('lequal',false);shader:send('glassPass',1);G.draw(mesh)
   end)
-  G.pop();if not ok then error(err)end
+  G.pop()
+  if not ok then
+   S.failure=tostring(err)
+   if api.reportDomeFailure then pcall(api.reportDomeFailure,S.failure)end
+   return false
+  end
+  return true
  end
- function S.release()if mesh then mesh:release();shader:release();mesh,shader=nil,nil end end
+ function S.release()
+  if mesh then mesh:release()end
+  if shader then shader:release()end
+  mesh,shader,S.failure=nil,nil,nil
+ end
  return S
 end

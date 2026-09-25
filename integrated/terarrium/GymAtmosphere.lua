@@ -15,7 +15,7 @@ return function(api)
   shader=G.newShader([[
    varying vec2 puffUV; varying vec3 localPos;
    uniform vec3 tint; uniform vec3 actorA; uniform vec3 actorB;
-   uniform float clock; uniform float smoke; uniform float towerMist;
+   uniform highp float clock; uniform highp float smoke; uniform highp float towerMist;
    vec4 effect(vec4 color,Image tex,vec2 uv,vec2 sc){
     vec2 p=puffUV*2.0-1.0;
     float soft=1.0-smoothstep(0.15,1.0,dot(p,p));
@@ -28,7 +28,7 @@ return function(api)
    }
   ]],[[
    attribute float PuffSeed;
-   uniform mat4 vp; uniform mat4 model; uniform float clock; uniform float smoke; uniform float towerMist;
+   uniform mat4 vp; uniform mat4 model; uniform highp float clock; uniform highp float smoke; uniform highp float towerMist;
    uniform vec3 right; varying vec2 puffUV; varying vec3 localPos;
    vec4 position(mat4 transform_projection,vec4 p){
     float age=fract(clock*(0.075+smoke*0.055)+PuffSeed);

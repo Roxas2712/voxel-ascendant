@@ -99,7 +99,7 @@ local function copyFields(fields)
   for key, value in pairs(type(fields) == "table" and fields or {}) do
     local kind = type(value)
     if kind == "string" then
-      out[tostring(key)] = clean(value)
+      out[tostring(key)] = clean(value, key == "reasonDetail" and 4093 or 256)
     elseif kind == "number" or kind == "boolean" then
       out[tostring(key)] = value
     elseif value == nil then
@@ -506,6 +506,7 @@ function Diagnostic.fail(code, checkpoint, reason, fields)
   if not state.active then return false end
   code = canonicalCode(code, "D11")
   checkpoint = clean(checkpoint or state.checkpoint or "unknown", 80)
+  local reasonDetail = clean(reason or "unspecified", 4093)
   reason = clean(reason or "unspecified", 256)
   updateRoute(fields and fields.caller or "diagnostic-failure",
     fields and fields.context or state.context, reason)
@@ -527,6 +528,7 @@ function Diagnostic.fail(code, checkpoint, reason, fields)
     status="FAILURE",
     checkpoint=checkpoint,
     reason=reason,
+    reasonDetail=reasonDetail,
     caller=state.caller,
     context=state.context,
   }), {}))
