@@ -183,12 +183,41 @@ function B.geometryClear(height,eye,point)
  end
  return true
 end
+-- Camera occlusion may be cut away for presentation; solid support never is.
+-- Check the whole trainer card plus a small body depth, not just its centre
+-- cell. Samples are closer than the authored geometry field's four-unit grid.
+function B.supportsFoot(point,width,scale,yaw,open,ground,height)
+ local rx,rz=math.cos(yaw),-math.sin(yaw)
+ local half=width*scale*.5;local depth=2*scale
+ local across=math.max(1,math.ceil(half*2/2))
+ local along=math.max(1,math.ceil(depth*2/2))
+ for i=0,across do for j=0,along do
+  local u=-half+2*half*i/across;local v=-depth+2*depth*j/along
+  local x,z=point[1]+rx*u-rz*v,point[3]+rz*u+rx*v
+  if not open(x,z) then return false,'ground' end
+  if math.abs(ground(x,z)-point[2])>.5 then return false,'height' end
+  if height(x,z)>point[2]+.5 then return false,'geometry' end
+ end end
+ return true
+end
 local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
  if not (map and arena and arena.presentationMode=='MAP') then return desired end
  local A=V.require('BattleArena');local Scene=V.require('VoxelScene')
  local Board=V.require('BattleBillboard')
  if arena.discs or arena.portableStage then return desired end
  local height=B.geometryForMap(map)
+ local function support(x,z)return Scene.groundAt(map,math.floor(x/16),math.floor(z/16))end
+ local function open(x,z)return A.openCell(map,math.floor(x/16),math.floor(z/16),arena.surfing==true)end
+ local supportCache={}
+ local function supported(point)
+  local key=point[1]..':'..point[2]..':'..point[3]
+  local cached=supportCache[key]
+  if not cached then
+   cached={B.supportsFoot(point,hero.width,scale,Board.yawToward(point[1],point[3],eye),open,support,height)}
+   supportCache[key]=cached
+  end
+  return unpack(cached)
+ end
  vp=vp or V.require('Voxel3D').vp
  local function screenSpan(point,width,height)
   if not vp then return end
@@ -241,16 +270,15 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
     local l,r=obstacle.left,obstacle.right
     if l and B.screenOverlap(left,right,top,bottom,l,r,obstacle.top,obstacle.bottom) then
      local foreground=obstacle.mark==p and B.inForeground(p,eye,point,scale)
-     if not B.foregroundOverlap(left,right,l,r,screenY(point,hero.height*scale),
+     local besideOwnMon=relaxed and foreground
+       and math.max(0,math.min(right,r)-math.max(left,l))<(r-l)*.45
+     if not besideOwnMon and not B.foregroundOverlap(left,right,l,r,screenY(point,hero.height*scale),
        obstacle.upper,foreground) then return false,'actor-overlap' end
     end
    end
   end
-  local cx,cy=math.floor(x/16),math.floor(z/16)
-  if not A.openCell(map,cx,cy,arena.surfing == true) then return false,'ground' end
-  if math.abs(Scene.groundAt(map,cx,cy)-y)>.5 then return false,'height' end
-  if relaxed then return true end
-  if height(x,z)>y+.5 then return false,'geometry' end
+  local solidSafe,reason=supported(point)
+  if not solidSafe then return false,reason end
   local yaw=Board.yawToward(x,z,eye)
   local rx,rz=math.cos(yaw),-math.sin(yaw)
   for _,edge in ipairs({0,-.35,.35})do
@@ -264,11 +292,10 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
  end
  local cache=hero.mapFoot
  local same=cache and cache.arena==arena and cache.x==p[1] and cache.z==p[3]
- relaxed=same and cache.needsClearance or false
+ relaxed=same and cache.allowsOwnOverlap or false
  sideFlank=same and cache.sideFlank or false
  local preferred=not arena.trainerOffsets and layout.player==p
   and function(q)return B.inForeground(p,eye,q,scale)end or nil
- local function support(x,z)return Scene.groundAt(map,math.floor(x/16),math.floor(z/16))end
  -- Once an actual frame has established a clear seat, moving the lens or
  -- animating a Pokemon must not teleport its trainer. Keep reporting the
  -- live clearance so the camera guard can reframe the same world actors.
@@ -276,20 +303,23 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
  -- initial search is not latched, and a new arena/anchor searches afresh.
  -- The introduction has no Pokemon bounds yet. Do not freeze that temporary
  -- seat before both combatants have appeared: a large mon can occupy it.
- if same and cache.locked then
+ if same and cache.locked and supported(cache.foot) then
   local foot={cache.foot[1],support(cache.foot[1],cache.foot[3]),cache.foot[3]}
   hero.mapFoot={arena=arena,x=p[1],z=p[3],foot=foot,clear=accept(foot)==true,
-   locked=true,needsClearance=relaxed,sideFlank=sideFlank}
+   locked=true,supportSafe=true,allowsOwnOverlap=relaxed,sideFlank=sideFlank}
   return foot
  end
  local foot,clear=B.chooseFoot(p,desired,scale,accept,same and cache.foot,preferred,support)
  if not clear then
-  relaxed=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
+  -- A narrow pier may have no rear apron. Allow a close side flank, still
+  -- level with its own Pokemon, never advancing toward midfield. Prefer a
+  -- visible flank over a rear seat hidden behind scenery.
+  sideFlank=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
  end
  if not clear then
-  -- A narrow pier may have no rear apron. Allow a close side flank, still
-  -- level with its own Pokemon, never advancing toward midfield.
-  sideFlank=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
+  -- A large Pokemon may partly overlap its foreground trainer. Relax that
+  -- screen-space separation only; never place the trainer behind scenery.
+  relaxed=true;foot,clear=B.chooseFoot(p,desired,scale,accept,nil,preferred,support)
  end
  -- Billboard sprites provide ink sizes; native 3D models provide projected
  -- hulls. Either complete pair establishes the combatants' occupied space.
@@ -299,7 +329,7 @@ local function mapFoot(hero,p,desired,scale,map,arena,eye,layout,vp,settled)
  local ready=settled and not hero.intro and same and cache.clear
   and cache.foot[1]==foot[1] and cache.foot[3]==foot[3] and boundsReady
  hero.mapFoot={arena=arena,x=p[1],z=p[3],foot=foot,clear=clear,locked=clear and ready and true or false,
-  needsClearance=relaxed,sideFlank=sideFlank}
+  supportSafe=supported(foot)==true,allowsOwnOverlap=relaxed,sideFlank=sideFlank}
  return foot
 end
 -- Compare the body's direction toward its opponent with the actual camera
@@ -369,10 +399,10 @@ function B.append(cards,textures,layout,eye,map,arena,presentationVP,probe)
    (vp[5]*hx+vp[6]*hy+vp[7]*hz+vp[8])/w} end
  end
  cards[#cards+1]={side=side..'Hero',source=hero,tex=hero.canvas,
-  placementSafe=not (map and arena and arena.presentationMode=='MAP'
+  placementSafe=(not hero.mapFoot or hero.mapFoot.arena~=arena or hero.mapFoot.supportSafe~=false) and (not (map and arena and arena.presentationMode=='MAP'
     and ((layout.actorScreenHulls and layout.actorScreenHulls.player and layout.actorScreenHulls.enemy)
       or (layout.actorInkWidth and layout.actorInkWidth.player and layout.actorInkWidth.enemy))) or
-    (hero.mapFoot and hero.mapFoot.arena==arena and hero.mapFoot.clear)~=false,
+    (hero.mapFoot and hero.mapFoot.arena==arena and hero.mapFoot.clear)~=false),
   metrics={canvasWidth=192,canvasHeight=256,inkX0=0,inkY0=0,inkX1=191,inkY1=255},
   model=matrix,shadowModel=matrix,shadowGroundY=y,
   shadowFoot={x,y,z},shadowRadius={2.8*scale,1.8*scale}}

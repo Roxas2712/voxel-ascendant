@@ -301,6 +301,12 @@ function StadiumMon:setSpecies(dex, allowStatic, appearance)
     if ok and d.write then pcall(d.write,'battle-model-ready',{speciesId=dex,source=self.side,
       actual=model.source or 'stadium',status='ready',caller='StadiumMon.setSpecies'})end
   end
+  if model.source=="cobblemon" then
+    local Size=V.require("CobblemonSize")
+    Size.prepare(model,rig)
+    local game=V.game or require("src.core.Game")
+    self.heightMeters=Size.meters(model.crystalDex or dex,appearance,game and game.data)
+  end
   self.staticPose = model.staticPose and true or false
   -- A static-safe overworld model intentionally has no animation selected:
   -- StadiumMon:build() already treats nil anim as the bind pose.
@@ -573,7 +579,7 @@ end
 -- How tall this species stands on the map, in world pixels.
 function StadiumMon:worldHeight()
   if self.model and self.model.source=="cobblemon" then
-    return V.require("CobblemonSize").worldHeight(self.model.crystalDex or self.dex, self.model)
+    return V.require("CobblemonSize").worldHeight(self.model.crystalDex or self.dex, self.model, self.heightMeters)
   end
   local model = self.model
   local h = model and model.height or 0

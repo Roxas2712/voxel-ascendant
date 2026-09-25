@@ -66,6 +66,9 @@ function M.register(P,F)
   b(4,22,front,w-8,2,2,4)
   -- Front windows use their own pane mesh; trim remains normally shaded.
   local function window(x,y,z,ww,hh)
+   -- Stone/half-timber relief ends one voxel beyond the wall. Seat glass
+   -- beyond that relief and keep its mullions another layer in front.
+   z=z+1
    b(x-1,y-1,z,ww+2,1,2,4);b(x-1,y+hh,z,ww+2,1,2,4)
    b(x-1,y,z,1,hh,2,4);b(x+ww,y,z,1,hh,2,4)
    g(x,y,z,ww,hh,1,7)
@@ -88,8 +91,13 @@ function M.register(P,F)
    b(0,26,0,w,2,d,C.navy);b(2,28,2,w-4,2,d-4,4)
    b(5,30,5,w-10,2,d-10,10)
    -- A framed laboratory skylight, kept below the old 36px roof envelope.
-   b(24,32,20,48,2,24,4);g(26,34,22,44,1,20,7)
-   for x=26,66,10 do b(x,34,22,2,2,20,4)end
+   b(24,32,20,48,2,24,4)
+   -- The bars and glass have separate materials: never give them the same
+   -- voxels, or their coincident side faces flicker as the camera moves.
+   for x=26,66,10 do
+    b(x,34,22,2,2,20,4)
+    g(x+2,34,22,math.min(8,70-(x+2)),1,20,7)
+   end
    b(24,34,20,48,2,2,4);b(24,34,42,48,2,2,4)
    -- Raised laboratory plaque: three starter-colour squares under a ball.
    b(58,23,front,23,3,2,C.navy)
@@ -105,7 +113,7 @@ function M.register(P,F)
     b(inset+2,24+y,d-2,rw-4,1,1,2)
    end
    -- Small attic glazing within the same roof and footprint.
-   g(28,26,d-1,8,5,1,7)
+   g(28,26,d-1,3,5,1,7);g(32,26,d-1,4,5,1,7)
    b(27,25,d-1,10,1,1,4);b(27,31,d-1,10,1,1,4)
    b(27,26,d-1,1,5,1,4);b(36,26,d-1,1,5,1,4)
    b(31,26,d-1,1,5,1,4)
@@ -117,7 +125,10 @@ function M.register(P,F)
   end
   -- Side windows are visible when walking around the building.
   for _,x in ipairs({3,w-4})do for _,z in ipairs(lab and {13,35} or {12,26})do
-   g(x,10,z,1,9,7,7)
+   -- Four separate panes leave the crossbars opaque at every angle.
+   for _,yy in ipairs({10,15})do for _,zz in ipairs({z,z+4})do
+    g(x,yy,zz,1,4,3,7)
+   end end
    b(x,9,z-1,1,1,9,4);b(x,19,z-1,1,1,9,4)
    b(x,10,z-1,1,9,1,4);b(x,10,z+7,1,9,1,4)
    b(x,14,z,1,1,7,4);b(x,10,z+3,1,9,1,4)

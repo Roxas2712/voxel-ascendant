@@ -452,18 +452,55 @@ local ink = {
  [718]={46,52},
  [1026]={52.5,54.25},
 }
--- Match BattleBillboard's 16 world units per 56 Crystal pixels. Fit both
--- height and horizontal/depth extent with ONE scale, preserving anatomy.
--- Use the measured bind pose so idle bobbing cannot pump the model's size.
-function Size.worldHeight(dex, model)
- local ref = ink[tonumber(dex)] or {40,40}
- local height = tonumber(model and model.height) or 0
- local span = 2 * (tonumber(model and model.radius) or 0)
- local targetH, targetSpan = ref[2]*16/56, math.max(ref[1],ref[2])*16/56
- if not (height > 0 and height < math.huge) then return targetH end
- local scale = targetH/height
- if span > 0 and span < math.huge then scale = math.min(scale,targetSpan/span) end
- return height*scale
+-- Battle models use species dimensions, not the occupied pixels in a
+-- 56x56 sprite. Fitting a broad bind pose into that square flattened the
+-- visible size spread and made compact authored models disproportionately big.
+local measured=setmetatable({}, {__mode='k'})
+local function positive(x)
+ x=tonumber(x);return x and x==x and x>0 and x<1e6 and x or nil
+end
+function Size.prepare(model,rig)
+ if measured[model] then return measured[model] end
+ local height,span=0,0
+ local clip=model.actions and (model.actions.battle or model.actions.idle)
+ local seconds=clip and model.anims and model.anims[clip] and model.anims[clip].seconds or 1
+ for i=0,15 do
+  rig:pose(clip,seconds*30*i/16,true)
+  local x,y,z,X,Y,Z=rig:posedBounds()
+  if x then height=math.max(height,Y-y);span=math.max(span,X-x,Z-z) end
+ end
+ local root=positive(math.abs(tonumber(model.rootScale)or 1))or 1
+ if positive(height) and positive(span)then
+  measured[model]={height=height*root,span=span*root}
+ end
+ return measured[model]
+end
+function Size.meters(dex,appearance,data)
+ local species=type(appearance)=='table' and appearance.species
+ local def=species and data and data.pokemon and data.pokemon[species]
+ local entry=def and (def.dexEntry or def.pokedex)or{}
+ local meters=positive(entry.heightM)
+ if meters then return meters end
+ local inches=(tonumber(entry.heightFt)or 0)*12+(tonumber(entry.heightIn)or 0)
+ if positive(inches)then return inches*.0254 end
+ local native=species and data and data.gen2Pokedex and data.gen2Pokedex.entries and data.gen2Pokedex.entries[species]
+ local height=native and positive(native.height)
+ if height then return (math.floor(height/100)*12+height%100)*.0254 end
+ return nil
+end
+function Size.targetHeight(meters)
+ -- Compress extremes for the battle camera while retaining species order.
+ return math.max(6,math.min(32,14*math.sqrt(positive(meters)or 1)))
+end
+function Size.worldHeight(dex, model, meters)
+ local size=measured[model]
+ local height=positive(model and model.height)
+ if not height then return Size.targetHeight(meters) end
+ size=size or {height=height,span=2*(positive(model.radius)or height*.5)}
+ local fit=math.min(Size.targetHeight(meters)/size.height,56/math.max(.001,size.span))
+ -- StadiumMon.matrix applies this over bind height; calibration itself comes
+ -- from the stable, visible battle pose rather than hidden/bind geometry.
+ return height*fit
 end
 function Size.reference(dex)
  local ref = ink[tonumber(dex)] or {40,40}

@@ -550,7 +550,7 @@ function Stadium.updateGen2(dt, screen, groundY)
     -- handful of species.  In-world battles prefer a real bind-pose model to
     -- dropping that species back to a flat card, the same policy the Gold
     -- overworld already uses.
-    if not broken then mon:setSpecies(dex, true) end
+    if not broken then mon:setSpecies(dex, true, battler) end
     if mon.species then StadiumPack.keep(mon.species) end
 
     local faintSlide = screen.faintSlide
