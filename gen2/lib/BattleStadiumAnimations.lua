@@ -150,11 +150,11 @@ local function goldActiveMon(screen, side)
   return mon
 end
 
-local function requestAttack(mon, index)
+local function requestAttack(mon, index, def)
   if not (mon and mon.rig) then return false end
   if mon.state == "faint" then return false end
-  if index and type(mon.attack) == "function" then
-    local ok, played = pcall(mon.attack, mon, index)
+  if (index or def) and type(mon.attack) == "function" then
+    local ok, played = pcall(mon.attack, mon, index, def)
     if ok and played then return true end
   end
   if type(mon.request) == "function" then
@@ -176,7 +176,7 @@ end
 function M.requestGen2Attack(mon, moveIndex, def)
   if not (mon and mon.rig) or mon.state == "faint" then return false end
   local played = false
-  if moveIndex and type(mon.attackGen2) == "function" then
+  if (moveIndex or def) and type(mon.attackGen2) == "function" then
     local okPlay, out = pcall(mon.attackGen2, mon, moveIndex, def)
     played = okPlay and out and true or false
   end
@@ -195,6 +195,19 @@ local function requestState(mon, state)
     return ok and played and true or false
   end
   return false
+end
+
+-- Cobblemon has an actual recoil slot (or our authored replacement).
+-- Keep the older whole-body reaction for other model providers.
+function M.requestRecoil(mon)
+ if mon and mon.model and mon.model.source=="cobblemon" then
+  if mon.state=="hit" or requestState(mon,"hit") then
+   mon._stage1Recoil=nil
+   return true
+  end
+ end
+ if mon then mon._stage1Recoil=1 end
+ return false
 end
 
 local function battlerHP(battler)
@@ -344,7 +357,7 @@ function M.install()
           local prev = battler and goldLastHP[battler] or nil
           if hp ~= nil then
             if prev ~= nil and hp < prev and hp > 0 and mon and mon.rig then
-              mon._stage1Recoil = 1
+              M.requestRecoil(mon)
             end
             goldLastHP[battler] = hp
           end
@@ -376,7 +389,8 @@ function M.install()
         local side = sideOf(self, user)
         local mon = side and getActor(side)
         if mon and mon.rig and mon.state ~= "attack" and mon.state ~= "faint" then
-          requestAttack(mon, moveIndex(self, moveInst))
+          local okDef,def=pcall(self.moveDef,self,moveInst)
+          requestAttack(mon, moveIndex(self, moveInst),okDef and def or nil)
         end
         return unpackValues(out, 1, out.n)
       end
@@ -408,7 +422,7 @@ function M.install()
             local prev = lastHP[battler]
             if hp ~= nil then
               if prev ~= nil and hp < prev and hp > 0 and mon and mon.rig then
-                mon._stage1Recoil = 1
+                M.requestRecoil(mon)
               end
               lastHP[battler] = hp
             end

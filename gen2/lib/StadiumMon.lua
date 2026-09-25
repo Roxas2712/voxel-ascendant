@@ -229,6 +229,7 @@ end
 function StadiumMon:setSpecies(dex, allowStatic, appearance)
   if self.side=="player" or self.side=="enemy" then
     local source=V.PokemonModelProvider and V.PokemonModelProvider.resolve()
+    if source=="crystal" then self:release();self.provider=nil;return false end
     local provider=source=="cobblemon" and V.require("CobblemonPack") or nil
     if provider~=self.provider then self:release();self.provider=provider end
   end
@@ -331,6 +332,7 @@ function StadiumMon:play(state, animIndex, auxIndex)
   if not model then return false end
   local def = STATES[state] or STATES.idle
   local index = animIndex
+  if not index and state=="hit" and model.source=="cobblemon" then index=model.actions and model.actions.flinch end
   if not index and def.slot then index = self:slotAnim(def.slot) end
   if not index and def.fallback then index = self:slotAnim(def.fallback) end
   if not index then
@@ -374,8 +376,34 @@ end
 -- per-species table (model_extract's moves.json, packed into the .dsm).
 -- `moveIndex` is the Gen 1 move id, which the engine's move defs carry as
 -- `index` -- the same numbering, so no name mapping is needed.
-function StadiumMon:attack(moveIndex)
+-- The active move definition is authoritative, including modded category
+-- overrides. Vanilla Gen1/Gen2 fall back to their type-based split.
+local SPECIAL_TYPES={FIRE=true,WATER=true,GRASS=true,ELECTRIC=true,
+ PSYCHIC=true,PSYCHIC_TYPE=true,ICE=true,DRAGON=true,DARK=true}
+local PHYSICAL_TYPES={NORMAL=true,FIGHTING=true,FLYING=true,POISON=true,
+ GROUND=true,ROCK=true,BUG=true,GHOST=true,STEEL=true}
+function StadiumMon:attackCobblemon(def)
+ local model=self.model
+ if not model or model.source~="cobblemon" then return false end
+ local category
+ if type(def)=="table" then
+  category=type(def.category)=="string" and def.category:lower() or nil
+  if tonumber(def.power)==0 then category="status" end
+  if not category then
+   local kind=tostring(def.type or ""):upper()
+   category=SPECIAL_TYPES[kind] and "special" or PHYSICAL_TYPES[kind] and "physical" or nil
+  end
+ end
+ local actions=model.actions or {}
+ local index=category and actions["attack_"..category]
+ -- Unknown/missing authored action uses our conservative generic movement.
+ index=index or actions.attack_default
+ return index and self:request("attack",index) or false
+end
+
+function StadiumMon:attack(moveIndex, def)
   local model = self.model
+  if model and model.source=="cobblemon" then return self:attackCobblemon(def) end
   if not (model and moveIndex and moveIndex >= 1
           and moveIndex <= StadiumPack.N_MOVES) then
     return false
@@ -437,6 +465,7 @@ end
 -- bridge applies, including Lugia's world-unsafe clip exclusions.
 function StadiumMon:manualAttackGen2()
   local model = self.model
+  if model and model.source=="cobblemon" then return self:attackCobblemon() end
   if not model or self.state == "faint" then return false end
   local clips = eligibleGen2Clips(model)
   if #clips == 0 then return self:request("attack") end
@@ -448,6 +477,7 @@ end
 
 function StadiumMon:attackGen2(moveIndex, def)
   local model = self.model
+  if model and model.source=="cobblemon" then return self:attackCobblemon(def) end
   moveIndex = tonumber(moveIndex)
   if not (model and moveIndex and moveIndex >= 1) then return false end
 

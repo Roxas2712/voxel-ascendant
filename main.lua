@@ -321,6 +321,7 @@ local GEN2_SHARED_LIGHTING = {
 -- these exact modules at the package root: the old Gen-2 forwarding files
 -- read their own virtual path again and recurse indefinitely.
 local GEN2_SHARED_MODEL_DATA = {
+  ["lib/StadiumContentState.lua"] = true,
   ["lib/CobblemonContent.lua"] = true,
   ["lib/CobblemonExpression.lua"] = true,
   ["lib/CobblemonGeometry.lua"] = true,

@@ -1,3 +1,10 @@
+## 3.0.46-rc.7 — Cobblemon battle motions
+
+- Route physical, special and status moves to the matching original Cobblemon action; missing actions use independent VASC motion fallback.
+- Import all supported tracks of a pose, preserve independent loop periods, and use recoil instead of cry for Cobblemon hits.
+- Rebuild 463 species / 1,894 variants with import revision 4 and reject obsolete optional model receipts.
+- Expose Cobblemon in Gen2 battle model choices; switching to Crystal releases model resources without loading optional Stadium assets. Resolve the shared Stadium content-state helper in Gen2.
+
 # Voxel Ascendant 3.0.46-rc.6 — Functional menu audit and Cobblemon Dex
 
 Adds animated Cobblemon artwork to both modern Dex implementations and the Gen1 setup guide. Repairs Gen2 Dex source/layout selection and its text/height adapter; packaged Gen2 Crystal fronts no longer prompt for an unrelated download. Setup battle details follow the selected stage, and the native Dex preview follows the active game graphics. Reuses setup fonts and stable download action rows. Native coverage includes 881 setting transitions, 29 menu actions, 86 F3 actions and 211 setup choices. Includes all earlier candidates. See FUNCTIONAL_VISUAL_AUDIT_2026-09-25.md. Local candidate.

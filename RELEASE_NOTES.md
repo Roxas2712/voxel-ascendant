@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.6 — Cobblemon Dex and functional menu audit
+# VASC 3.0.46-rc.7 — Cobblemon Dex and functional menu audit
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -76,3 +76,11 @@ Functional and visual audit in rc.6:
 - Setup help uses the existing font cache; download buttons are retained while only progress changes. Model previews reuse their actor, shader and canvas until species/content changes or the screen exits.
 
 Validation: 82 headless suites, 881 native setting transitions across 228 generation-specific setting keys, 29 menu actions, 86 F3 actions, 211 setup choices across 23 page/context cases, and Dex source/model/layout checks in Red and Crystal. See FUNCTIONAL_VISUAL_AUDIT_2026-09-25.md for the exact scope, screenshots and remaining portrait-layout limitation.
+
+## rc.7 — Cobblemon-Kampfanimationen
+
+Bei aktivem Cobblemon-Kampfmodell werden unterstützte Originalclips für physische, spezielle und Status-Attacken getrennt verwendet. Fehlende Clips greifen auf VASC-Bewegungen zurück. Treffer verwenden den Rückstoß statt des Ruf-Clips. Mehrere unterstützte Animationsspuren einer Haltung werden gemeinsam abgespielt. Die vorhandenen VASC-Attackeneffekte und andere Spriteanbieter bleiben erhalten.
+
+463 Arten / 1.894 Varianten neu vorbereitet; importRevision 4 verhindert alte Animationszuordnungen aus optionalen Caches. Cobblemon ist nun auch in der Gen2-Auswahl für Kampfmodelle enthalten. Der Wechsel zurück zu Crystal lädt keine optionalen Stadium-Modelle und verliert die Bühne nicht mehr.
+
+85 Headless-Suiten bestanden, einschließlich 25.944 endlicher Animations-Stichproben. Native Red-/Crystal-Kämpfe prüfen Originalaktionen und Sprite-Ersatz. Details und Grenzen: `COBBLEMON_BATTLE_AUDIT_2026-09-25.md`.

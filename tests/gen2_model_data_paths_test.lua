@@ -4,7 +4,7 @@ local f=assert(io.open('main.lua'));local s=f:read('*a');f:close()
 local a=assert(s:find('local GEN2_A21_SHARED_UI',1,true))
 local b=assert(s:find('local gen2 = setmetatable',a,true))
 local resolve=assert(loadstring(s:sub(a,b-1)..'return privatePath'))()
-for _,name in ipairs({'CobblemonContent','CobblemonExpression','CobblemonGeometry',
+for _,name in ipairs({'StadiumContentState','CobblemonContent','CobblemonExpression','CobblemonGeometry',
  'CobblemonImport','CobblemonJson','CobblemonMotion','CobblemonPack','CobblemonSize',
  'ContentJson','HdBinaryFetch','HdBinaryFetchWorker'})do
  local path='lib/'..name..'.lua';assert(resolve(path)==path,'model loader recurses: '..name)

@@ -47,8 +47,9 @@ return {
       { "CRYSTAL", "crystal" },
       { "STADIUM 1", "stadium1" },
       { "STADIUM 2", "stadium2" },
+      { "COBBLEMON", "cobblemon" },
     },
-    description = "Chooses the Pokemon actor only for MAP, ARENA or DISCS battles. CRYSTAL keeps the cartridge card. AUTO preserves the existing local Stadium 2 path. Stadium 1/2 require a compatible optional provider or a locally built legal ROM pack and fail closed to Crystal when unavailable. Native/OFF battles are never replaced.",
+    description = "Chooses the Pokemon actor only for MAP, ARENA or DISCS battles. CRYSTAL keeps the cartridge card. COBBLEMON uses bundled models and their supported original battle motions, with VASC motion/sprite fallbacks for missing content. AUTO preserves the existing local Stadium 2 path. Stadium 1/2 require a compatible optional provider or a locally built legal ROM pack and fail closed to Crystal when unavailable. Native/OFF battles are never replaced.",
   },
   {
     key = "player3dModel",

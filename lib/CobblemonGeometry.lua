@@ -114,17 +114,32 @@ local function evaluate(c,t,axis)
  end end
  return E.value(c[#c].post[axis],t)
 end
+local function applyLayer(out,layer,seconds,loop)
+  local t=loop and seconds%layer.seconds or math.min(seconds,layer.seconds)
+  for key,ch in pairs(layer.channels)do
+   local row=out[tonumber(key)]
+   for a=1,3 do
+    row[a]=row[a]+(ch[1] and evaluate(ch[1],t,a) or 0)
+    row[a+3]=row[a+3]+(ch[2] and evaluate(ch[2],t,a)*32768/180*(a==2 and 1 or -1) or 0)
+    row[a+6]=row[a+6]*(ch[3] and evaluate(ch[3],t,a) or 1)
+   end
+  end
+ end
 function M.sample(model,index,frame,wrap)
  local c=model.anims[index];if not c then return nil end
- local t=math.max(0,frame/30);t=wrap and t%c.seconds or math.min(t,c.seconds)
+ local seconds=math.max(0,frame/30)
  local out=model._sample
  if not out then out={};for i=1,model.boneCount do out[i]={0,0,0,0,0,0,1,1,1}end;model._sample=out end
  for i=1,model.boneCount do
-  local o=(i-1)*3;local row=out[i];local ch=c.channels[tostring(i)]
+  local o=(i-1)*3;local row=out[i]
+  for a=1,3 do row[a]=model.restT[o+a];row[a+3]=model.restR[o+a];row[a+6]=model.restS[o+a]end
+ end
+
+ if c.layers then
+  for _,layer in ipairs(c.layers)do applyLayer(out,layer,seconds,wrap and layer.loop)end
+ else applyLayer(out,c,seconds,wrap)end
+ for _,row in ipairs(out)do
   for a=1,3 do
-   row[a]=model.restT[o+a]+(ch and ch[1] and evaluate(ch[1],t,a) or 0)
-   row[a+3]=model.restR[o+a]+(ch and ch[2] and evaluate(ch[2],t,a)*32768/180*(a==2 and 1 or -1) or 0)
-   row[a+6]=model.restS[o+a]*(ch and ch[3] and evaluate(ch[3],t,a) or 1)
    assert(row[a]==row[a] and math.abs(row[a])<10000 and row[a+3]==row[a+3] and math.abs(row[a+3])<1e8 and row[a+6]==row[a+6] and math.abs(row[a+6])<100,'invalid animation sample')
   end
  end

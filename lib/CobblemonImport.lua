@@ -33,7 +33,7 @@ function M.compile(catalog,dex,aspects,read,decode)
   local walk=pick{'ground_walk','walk','air_fly','swim'}
   if idle then poser.poses.standing={poseTypes={'STAND'},animations={idle}}end
   if walk then poser.poses.walking={poseTypes={'WALK'},animations={walk}}end
-  poser.animations={physical=pick{'physical','attack'},special=pick{'special'},cry=pick{'cry'},recoil=pick{'recoil'},faint=pick{'faint'}}
+  poser.animations={physical=pick{'physical','attack'},special=pick{'special'},status=pick{'status'},cry=pick{'cry'},recoil=pick{'recoil'},faint=pick{'faint'}}
  end
  local model,names=G.build(decode(assert(read(modelPath))),dex)
  model.texture=texture;model.actions={};model.warnings={};model.layers={}
@@ -51,7 +51,9 @@ function M.compile(catalog,dex,aspects,read,decode)
   return cache[path]['animation.'..group..'.'..name]
  end
  local function expressions(pose)
-  for _,expr in ipairs(pose and pose.animations or {})do local raw=clip(expr);if raw then return raw end end
+  local out={}
+  for _,expr in ipairs(pose and pose.animations or {})do local raw=clip(expr);if raw then out[#out+1]=raw end end
+  if #out>0 then return out end
  end
  local poses=poser.poses or {};local chosen={}
  for _,name in ipairs{'standing','ground','idle','hover','flying','floating','swimming','walking','battle-standing','battle-hover','battle-flying'}do
@@ -75,13 +77,28 @@ function M.compile(catalog,dex,aspects,read,decode)
  end
  chosen.idle=chosen.idle or chosen.battle;chosen.battle=chosen.battle or chosen.idle
  local animations=poser.animations or {}
- chosen.attack_default=clip(animations.physical) or clip(animations.special)
- chosen.flinch=clip(animations.recoil);chosen.entrance=clip(animations.cry);chosen.faint=clip(animations.faint)
- for _,action in ipairs{'idle','battle','walk','attack_default','flinch','entrance','faint'}do
-  if chosen[action]then
-   local ok,c=pcall(G.clip,chosen[action],names)
-   if ok then model.anims[#model.anims+1]=c;model.actions[action]=#model.anims
-   else model.warnings[#model.warnings+1]=action..': '..tostring(c)end
+ -- Keep categories independent: a missing special clip must not silently
+ -- replay a physical attack. CobblemonMotion supplies the VASC default.
+ local function one(expr)local raw=clip(expr);return raw and {raw}end
+ chosen.attack_physical=one(animations.physical)
+ chosen.attack_special=one(animations.special)
+ chosen.attack_status=one(animations.status)
+ chosen.flinch=one(animations.recoil);chosen.entrance=one(animations.cry);chosen.faint=one(animations.faint)
+ model.actionSources={}
+ for _,action in ipairs{'idle','battle','walk','attack_physical','attack_special','attack_status','flinch','entrance','faint'}do
+  local layers={}
+  for _,raw in ipairs(chosen[action] or {})do
+   local ok,c=pcall(G.clip,raw,names)
+   if ok and next(c.channels)then layers[#layers+1]=c
+   else model.warnings[#model.warnings+1]=action..': '..tostring(ok and 'no supported bone channels' or c)end
+  end
+  if #layers>0 then
+   local c=layers[1]
+   if #layers>1 then
+    c={seconds=0,frames=1,channels={},layers=layers,loop=true}
+    for _,layer in ipairs(layers)do c.seconds=math.max(c.seconds,layer.seconds)end
+   end
+   model.anims[#model.anims+1]=c;model.actions[action]=#model.anims;model.actionSources[action]=catalog.authored and catalog.authored[tostring(dex)] and 'vasc' or 'cobblemon'
   end
  end
  V.require('CobblemonMotion').complete(model,names,G)

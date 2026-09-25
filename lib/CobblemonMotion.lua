@@ -11,6 +11,7 @@ function M.complete(model,names,G)
   if model.actions[action]then return end
   local clip=G.clip({animation_length=seconds,loop=loop~=false,bones=bones},names)
   model.anims[#model.anims+1]=clip;model.actions[action]=#model.anims
+  model.actionSources=model.actionSources or {};model.actionSources[action]='vasc'
   model.authoredActions=model.authoredActions or {};model.authoredActions[#model.authoredActions+1]=action
  end
  local idle={[root]={position={0,'math.sin(q.anim_time * 180) * 0.18',0}}}

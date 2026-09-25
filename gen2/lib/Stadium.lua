@@ -1202,7 +1202,7 @@ function Stadium.install()
       if mon and mon.rig then
         local okDef, def = pcall(self.moveDef, self, moveInst)
         local index = okDef and def and def.index or nil
-        if not (index and mon:attack(index)) then
+        if not mon:attack(index, okDef and def or nil) then
           -- a move the table has nothing for still swings: the generic
           -- attack is what the species' own reaction slot resolves to
           mon:request("attack")
