@@ -1,4 +1,4 @@
-## Unreleased — User Pokemon sprite colors
+## 3.0.48 — User Pokemon sprite colors
 
 - Preserve visible colors in local Pokemon PNG overrides in both generation importers. Grayscale art still uses the game palette; transparent padding does not affect detection.
 - Cache the color classification with PNG validation and refresh it after a file change or explicit rescan. Missing or invalid files preserve the upstream provider.

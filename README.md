@@ -1,6 +1,6 @@
-# VASC 3.0.47 — Public Test Release
+# VASC 3.0.48 — Public Test Release
 
-Corrects Cobblemon battle proportions, keeps battle trainers clear of hedges, and fixes overlapping Pallet window geometry. Includes all 3.0.46 content. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).
+Preserves the colors of local Pokemon PNGs, including imported Yellow sprites, in both generation importers. Grayscale art keeps the game palette. Includes all 3.0.47 content. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md). The separately reported 3D-to-2D fallback trigger remains unconfirmed.
 
 # VASC 3.0.43: Legacy Bank navigation
 
