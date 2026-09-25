@@ -272,6 +272,10 @@ BattleCam.pitch = 0
 BattleCam.pitchGoal = 0
 BattleCam.zoom = 1
 BattleCam.zoomGoal = 1
+-- Terrarium keeps its authored seat and owns only a separate optical lens.
+-- MAP/DISCS distance preferences must neither move it nor overwrite gestures.
+BattleCam.terrariumZoom = 1
+BattleCam.terrariumZoomGoal = 1
 
 -- A 1X lens is intentionally close, but a very large species or Mega must
 -- still remain a complete, readable combatant rather than becoming a crop at
@@ -438,6 +442,9 @@ end
 -- The distance actually used to compose this frame. ARENA starts from its 3X
 -- master but keeps the live lens after direct input.
 function BattleCam.presentationDistance(arena)
+  if arena and arena.terarrium then
+    return BattleCam.still and 1 or BattleCam.terrariumZoom
+  end
   if authoredArena(arena) then return BattleCam.zoom end
   BattleCam.applyDistanceSetting(false)
   return math.max(BattleCam.zoom, BattleCam.presentationFit)
@@ -623,6 +630,7 @@ function BattleCam.reset()
   pendingScreenProbe = nil
   pendingManualRollback = nil
   BattleCam.presentationFit = 1
+  BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal = 1, 1
   -- ARENA temporarily starts from 3X without changing BTL CAM. Re-entering a
   -- MAP/DISCS battle must therefore re-read that saved rung instead of keeping
   -- the previous arena's live lens merely because the option itself did not
@@ -769,6 +777,13 @@ end
 -- The zoom, in notches (positive pulls OUT, like every other zoom here).
 function BattleCam.stepZoom(notches, arena)
   if not BattleCam.steerable or not notches or notches == 0 then return false end
+  if arena and arena.terarrium then
+    if BattleCam.still then return false end
+    local was = BattleCam.terrariumZoomGoal
+    BattleCam.terrariumZoomGoal = math.max(BattleCam.ZOOM_MIN,
+      math.min(BattleCam.ZOOM_MAX, was * BattleCam.ZOOM_STEP ^ notches))
+    return BattleCam.terrariumZoomGoal ~= was
+  end
   BattleCam.applyDistanceSetting(false)
   -- Large cards may already display a wider lens than the stored 1X goal.
   -- Start gestures at that visible floor; otherwise several wheel/pinch
@@ -890,7 +905,9 @@ end
 -- the ground it shows -- which is why BattleScene asks this rather than
 -- multiplying for itself.
 function BattleCam.frameH(arena)
-  if arena and arena.terarrium then return 204 end
+  if arena and arena.terarrium then
+    return 204 * BattleCam.presentationDistance(arena)
+  end
   BattleCam.applyDistanceSetting(false)
   local base = BattleCam.rigFor(arena).frameH
   if BattleCam.still then return base end
@@ -2409,6 +2426,10 @@ function BattleCam.update(dt, arena, battle, groundY)
     and not (authoredArena(activeArena)
              or activeArena and activeArena.stadiumDirector)
   if not rawequal(activeArena, arena) or not rawequal(activeBattle, battle) then
+    if not rawequal(activeBattle, battle)
+        or not (activeArena and activeArena.terarrium) then
+      BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal = 1, 1
+    end
     -- A fixed court owns the opening shot, not the user's camera thereafter.
     -- Do this only for a new arena/battle pair; input survives menus/attacks.
     if arena and arena.trainerOffsets then
@@ -2462,7 +2483,9 @@ function BattleCam.update(dt, arena, battle, groundY)
   BattleCam.pitch = chase(BattleCam.pitch, BattleCam.pitchGoal, dt,
                           BattleCam.PITCH_TIME)
   BattleCam.zoom = chase(BattleCam.zoom, BattleCam.zoomGoal, dt,
-                         BattleCam.ZOOM_TIME)
+                          BattleCam.ZOOM_TIME)
+  BattleCam.terrariumZoom = chase(BattleCam.terrariumZoom,
+    BattleCam.terrariumZoomGoal, dt, BattleCam.ZOOM_TIME)
 
   local token = nil
   if battle and battle.animPlaying then
@@ -2661,7 +2684,17 @@ end
 -- to leave the last battle on would pick a different arena depending on
 -- where they had swung the camera an hour ago.
 function BattleCam.rig(arena, groundY, canonical)
-  if arena and arena.terarrium then return arena.terarriumService.camera(arena,groundY or 0) end
+  if arena and arena.terarrium then
+    local camera, pitch = arena.terarriumService.camera(arena, groundY or 0)
+    if canonical or BattleCam.still then return camera, pitch end
+    -- Copy the service's result: its fixed eye, focus, roll and pitch remain
+    -- authoritative, including idle animation. Only the optical field changes.
+    local zoomed = {}
+    for key, value in pairs(camera) do zoomed[key] = value end
+    zoomed.fov = 2 * math.atan(math.tan(camera.fov * .5)
+      * BattleCam.terrariumZoom)
+    return zoomed, pitch
+  end
   groundY = groundY or 0
   local R = BattleCam.rigFor(arena)
   local mx, mz = arena.mid[1], arena.mid[2]

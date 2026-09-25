@@ -4120,6 +4120,8 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     return false
   end
   local oldArena,oldPlan,oldProvider=active.arena,active.plan,active.rendererProvider
+  local keepTerrariumLens=oldArena.terarrium and arena.terarrium
+  local terrariumLens,terrariumGoal=BattleCam.terrariumZoom,BattleCam.terrariumZoomGoal
   local restoreCamera=BattleCam.checkpoint()
   local oldCamera=Voxel3D.camera
   local stadium=V.require("Stadium")
@@ -4141,6 +4143,9 @@ function OverworldBattle.applyPendingPresentation(active, dt, textures)
     BattleCam.setPresentationFit(BattleScene.presentationFitDistance(
       arena,textures,arena.map or active.state.map))
     BattleCam.update(0,arena,battle,newGround)
+    if keepTerrariumLens then
+      BattleCam.terrariumZoom,BattleCam.terrariumZoomGoal=terrariumLens,terrariumGoal
+    end
     active.token=(active.token or 0)+1
     return BattleScene.render(active.state,arena,textures,active.token)
   end)

@@ -18,3 +18,15 @@ The completed artwork is a reconstruction from the existing EN/DE sprite referen
 Validation: LuaJIT compilation in native LÖVE; configuration/viewport/reset/input regression checks; existing command camera bounds, Safari ownership and Gen 2 draw-only UI checks; native LÖVE rendering of original/completed/glass variants including Mega. Physical smartphone/tablet playtesting has not been performed.
 
 Since 3.0.20: **TEXTBOX X / Y** move the battle dialogue independently in 5% viewport steps (−60% to +60%, clamped to screen bounds). Negative Y moves up. Default is 0%. **RESET TEXTBOX TO DEFAULT** resets only these two settings; button and Card settings remain unchanged.
+
+## Terrarium optical zoom
+
+During a Terrarium battle, spread two fingers on the scene to zoom in and pinch
+them together to zoom out. Start the gesture away from the touch controls.
+Mouse wheel up / Q zoom in; wheel down / E zoom out. On a controller, click the
+right stick to zoom in and the left stick to zoom out.
+
+Only the field of view changes. The authored camera position, aim and orientation
+stay the same; existing optional idle rocking is preserved. Each new battle opens
+at the original framing. Zoom remains active through attacks and command menus,
+and is independent of the MAP/DISCS starting-distance setting.

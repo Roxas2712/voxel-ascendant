@@ -253,8 +253,8 @@ local SECTION_DEFS = {
     de="Kanto-Gebäude, Außenboden, regionale Bäume, Steine und Fensterlicht lassen sich einzeln schalten."},
     keys={palletBuildings=true,lavenderTowerStyle=true,palletSurrounds=true,palletWindowLights=true,localLights=true,outdoorGround=true,outdoorTrees=true,outdoorStone=true,outdoorSigns=true}},
   terarrium={title="TERRARIUM",help={
-    en="Built-in Terrarium battle stage. Select with 8 in battle; customize camera, shell, background and dome here.",
-    de="Integrierte Terrarium-Kampfkarte. Im Kampf mit 8 waehlen; hier Kamera, Schale, Hintergrund und Glaskuppel anpassen."},
+    en="Built-in Terrarium battle stage. Pinch, mouse wheel or Q/E zoom without moving the camera. Select with 8 in battle; customize orientation, shell, background and dome here.",
+    de="Integrierte Terrarium-Kampfkarte. Pinch, Mausrad oder Q/E zoomen bei fester Kamera. Im Kampf mit 8 waehlen; hier Ausrichtung, Schale, Hintergrund und Glaskuppel anpassen."},
     keys={terarriumLighting=true,terarriumBehindRed=true,terarriumIdleAnimation=true,terarriumIdleSound=true,
       terarriumBallStyle=true,terarriumBackground=true,terarriumDome=true}},
   wardrobe={title='WARDROBE',help={
