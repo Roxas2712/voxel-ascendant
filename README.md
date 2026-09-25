@@ -1,3 +1,9 @@
+# VASC 3.0.49 — Habitat, Hunting Club and Mira update
+
+Crystal-based Cobblemon battle sizes and dedicated HD/voxel artwork for Mira. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).
+
+---
+
 # VASC 3.0.48 — Public Test Release
 
 Preserves the colors of local Pokemon PNGs, including imported Yellow sprites, in both generation importers. Grayscale art keeps the game palette. Includes all 3.0.47 content. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md). The separately reported 3D-to-2D fallback trigger remains unconfirmed.

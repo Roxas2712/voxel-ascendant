@@ -1,3 +1,8 @@
+## 3.0.49 — Crystal battle sizes and Mira
+
+- Fit animated Cobblemon models to Crystal sprite dimensions.
+- Add Mira’s dedicated HD/voxel character assets and native style restoration.
+
 ## 3.0.48 — User Pokemon sprite colors
 
 - Preserve visible colors in local Pokemon PNG overrides in both generation importers. Grayscale art still uses the game palette; transparent padding does not affect detection.
