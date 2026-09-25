@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.5 — Menu, downloads and setup audit
+
+Preserves contextual HELP and selection while menu rows refresh. F3 returns to its originating group, tolerates unavailable optional status providers and uses readable key names. Download status distinguishes healthy verification from installation/restart. Setup validates resumed drafts, retains the screen on persistence failure and restores settings/callback effects after failed application. Adds seven regression suites; includes all rc.1–rc.4 changes. See MENU_FLOW_AUDIT_2026-09-25.md. Local candidate.
+
+---
+
 # Voxel Ascendant 3.0.46-rc.4 — Repository-wide runtime audit
 
 Fixes effective-setting labels, failed download-receipt mutations, malformed optional download diagnostics and non-finite saved clocks. Defers content planning until a usable scene and caches ordered event listeners. Restores 27 broader regression suites and adds eight boundary/failure suites. Includes all earlier location terrariums and runtime fixes. See FULL_CODE_AUDIT_2026-09-25.md. Local candidate.

@@ -31,6 +31,7 @@ function M.new(game,session,Text)
   local m=session.maintenance
   if m and(m.state=='checking'or m.state=='paused'or m.state=='error'or m.state=='restart_required'or m.state=='ready'and session.activeOperation=='maintenance')then
    return {state=m.state=='ready'and'ready'or m.state=='error'and'error'or m.state=='paused'and'cancelled'or'downloading',stage='checking',checkingInventory=true,maintenance=true,
+    healthy=m.state=='ready'and m.result=='healthy',restartRequired=m.state=='restart_required',
     totalBytes=m.job and #m.job.ids or 0,doneBytes=m.checked,total=m.job and #m.job.ids or 0,completed=m.checked,speed=0,elapsed=0,attempt=0,error=m.error}
   end
   if session.pendingDownloadIds then
@@ -50,6 +51,7 @@ function M.new(game,session,Text)
  function self:uiSize()return 320,288 end
  function self:sgbPalettes()return {require('src.render.PaletteFX').trueColorZone(0,0,39,35)}end
  function self:refresh()
+  local selected=self.items[self.index];local selectedAction=selected and selected.action
   self.progress=snapshot();local p=self.progress
   if self.ascendantContentRestart then
    local phase=session.restart.phase
@@ -67,11 +69,16 @@ function M.new(game,session,Text)
    if p.state~='ready'and(session.downloadIds or session.maintenance and session.maintenance:pending())then items[#items+1]={label=tr('RESUME MISSING DOWNLOADS','FEHLENDE DOWNLOADS FORTSETZEN'),action='retry'}end
    if p.state~='ready' and p.state~='idle'then
     items[#items+1]={label=tr('IMPORT DOWNLOADED FILE','GELADENE DATEI IMPORTIEREN'),action='import'}
-    items[#items+1]={label=tr('OPEN ALTERNATIVE DOWNLOAD LINKS','ALTERNATIVE DOWNLOAD-LINKS'),action='manual'}
+    if session.lastPackage then items[#items+1]={label=tr('OPEN ALTERNATIVE DOWNLOAD LINKS','ALTERNATIVE DOWNLOAD-LINKS'),action='manual'}end
    end
    items[#items+1]={label=tr('BACK','ZURUECK'),action='back'}
   end
   self.items=items;self.index=math.max(1,math.min(self.index,#items))
+  if selectedAction then
+   local found,back
+   for i,row in ipairs(items)do if row.action==selectedAction then found=i end;if row.action=='back'then back=i end end
+   self.index=found or back or 1
+  end
  end
  function self:update()
   self:refresh();local input=game.input
@@ -118,7 +125,7 @@ function M.new(game,session,Text)
   G.push('all');G.setShader();if inkShader then G.setColor(.035,.08,.15,1)else G.setColor(.85,.9,.95,1)end;G.rectangle('fill',0,0,320,288)
   G.setColor(.16,.5,.7,1);G.rectangle('line',4,4,312,280)
   text(tr('ASCENDANT DOWNLOADS','ASCENDANT DOWNLOADS'),12,12)
-  local stage=p.state=='idle'and tr('NO ACTIVE DOWNLOAD','KEIN LAUFENDER DOWNLOAD')or done and tr('INSTALLED - RESTART THE GAME','INSTALLIERT - SPIEL NEU STARTEN')
+  local stage=p.healthy and tr('SPRITES VERIFIED','SPRITES GEPRUEFT')or p.restartRequired and tr('RESTART REQUIRED','NEUSTART ERFORDERLICH')or p.state=='idle'and tr('NO ACTIVE DOWNLOAD','KEIN LAUFENDER DOWNLOAD')or done and tr('INSTALLED - RESTART THE GAME','INSTALLIERT - SPIEL NEU STARTEN')
     or failed and tr('DOWNLOAD STOPPED','DOWNLOAD ANGEHALTEN')
     or paused and tr('PAUSED - PROGRESS SAVED','PAUSIERT - FORTSCHRITT GESPEICHERT')
     or p.stage=='installing'and tr('CHECKING AND INSTALLING','PRUEFEN UND INSTALLIEREN')
@@ -145,7 +152,7 @@ function M.new(game,session,Text)
   G.rectangle('fill',px+1,91,2,2);G.rectangle('fill',px+5,95,2,2)
   for i=0,4 do G.rectangle('fill',px+5-i,91+i,1,1)end
   text(p.checkingInventory and (tr('Checked packages: ','Gepruefte Pakete: ')..p.doneBytes..' / '..p.totalBytes)or p.isImport and (tr('Verified parts: ','Gepruefte Teile: ')..p.doneBytes..' / '..p.totalBytes)or string.format('%.1f / %.1f MiB',p.doneBytes/1048576,p.totalBytes/1048576),12,110)
-  text(p.checkingInventory and tr('Download starts automatically.','Download startet automatisch.')or p.isImport and tr('Importing your local file','Lokale Datei wird importiert')or tr('Average: ','Durchschnitt: ')..(p.speed>0 and string.format('%.0f KiB/s',p.speed/1024)or (done and '0 KiB/s' or tr('waiting for data','warte auf Daten'))),12,126)
+  text(p.healthy and tr('No repair or restart needed.','Keine Reparatur, kein Neustart noetig.')or p.restartRequired and tr('Cleanup runs after restarting.','Bereinigung startet nach Neustart.')or p.checkingInventory and (paused and tr('Check paused. Resume when ready.','Pruefung pausiert. Bei Bedarf fortsetzen.')or failed and tr('Check stopped. See error below.','Pruefung gestoppt. Fehler siehe unten.')or tr('Download starts automatically.','Download startet automatisch.'))or p.isImport and tr('Importing your local file','Lokale Datei wird importiert')or tr('Average: ','Durchschnitt: ')..(p.speed>0 and string.format('%.0f KiB/s',p.speed/1024)or (done and '0 KiB/s' or tr('waiting for data','warte auf Daten'))),12,126)
   local detail=p.state=='idle'and tr('Choose a collection to download.','Eine Sammlung zum Laden auswaehlen.')or done and tr('All selected packages are installed.','Alle gewaehlten Pakete installiert.')
     or failed and Text.message(p.error,session.de)
     or paused and tr('Resume skips completed packages.','Fortsetzen behaelt fertige Pakete.')

@@ -10,6 +10,11 @@ function M.new(mod,game,guided,de,session)
     local job,err=session.removal:pending()
     return job~=nil or err~=nil or (session.maintenance and session.maintenance:pending()~=nil) or (session.busy and session:busy())
   end
+  local function rowKey(row)
+    if not row then return nil end
+    for _,kind in ipairs({'group','package','import'})do if row[kind]then return kind..':'..tostring(row[kind].id)end end
+    return row.action or row.value or row.generation or row.label
+  end
   local function make(key,title,rows,choose,help)
     local builder=type(rows)=='function' and rows or nil
     local menu=guided(mod,game,{key=key,title=title,rows=builder and builder() or rows,help=help or "",
@@ -20,10 +25,15 @@ function M.new(mod,game,guided,de,session)
       local update,epoch=menu.update,session.epoch
       function menu:update(...)
         if epoch~=session.epoch then
-          epoch=session.epoch;local helpRow
-          for _,r in ipairs(self.items)do if r.value=='__vasc_help' or r.value=='__kasc_help' then helpRow=r end end
+          epoch=session.epoch;local helpRow;local selected=rowKey(self.items[self.index or 1])
+          for _,r in ipairs(self.items)do if r.value=='__vasc_help' or r.value=='__kasc_help' or r.__kascFeatureHelp==true or (type(r.value)=='string'and r.value:match('^__kasc_help:')) then helpRow=r end end
           local fresh=builder();if helpRow then fresh[#fresh+1]=helpRow end
           self.items=fresh;self.index=math.max(1,math.min(self.index or 1,#fresh))
+          for i,row in ipairs(fresh)do if rowKey(row)==selected then self.index=i;break end end
+          local visible=type(self.rows)=='number'and math.max(1,self.rows)or 6
+          self.scroll=math.max(0,math.min(self.scroll or 0,math.max(0,#fresh-visible)))
+          if self.index<=self.scroll then self.scroll=self.index-1
+          elseif self.index>self.scroll+visible then self.scroll=self.index-visible end
         end
         if update then return update(self,...)end
       end

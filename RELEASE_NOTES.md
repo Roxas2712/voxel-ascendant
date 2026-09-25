@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.4 — Full-code audit and location terrariums
+# VASC 3.0.46-rc.5 — Menu audit and location terrariums
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -58,3 +58,12 @@ Repository-wide audit changes in rc.4:
 - The internal event bus reuses sorted listener snapshots until subscriptions change, preserving priority, recursive dispatch, teardown and failure isolation.
 
 Validation: 72 headless suites; 432 native animation cases / 2,656 checks; Gen1 setup preview/apply/reopen in portrait and landscape; Crystal MAP/ARENA/DISCS/TERRARIUM battles, exits and optional-effect recovery. The audit also inventories and syntax-checks the entire Lua tree and parses all Python tools. See FULL_CODE_AUDIT_2026-09-25.md for per-subsystem coverage and limits.
+
+Menu, download and setup corrections in rc.5:
+
+- Contextual HELP survives conditional-row refreshes in both generations and in the download manager. Download collection/action selection survives inventory changes.
+- Download status keeps the selected action when its state changes, hides unavailable manual-link actions and distinguishes successful verification from a required restart.
+- F3 Back retains the originating group. Empty groups and optional status failures are handled safely; keyboard instructions use readable key names instead of unsupported arrow glyphs.
+- Setup draft saves report failure and keep the screen open. Apply failures restore setting values and attempted callbacks, restore the options writer and allow retry. Resumed drafts reject invalid setting values/types and sanitize page indices.
+
+Validation: 79 headless suites, native Red and Crystal menus, F3 groups in portrait/landscape, all ten Gen1 setup pages, real setup apply/reopen and graphics-check cancellation. Transfer interruption/restart/corrupt-cache cases use deterministic transport fixtures. No live-CDN throughput or physical-phone claim is made. See MENU_FLOW_AUDIT_2026-09-25.md.

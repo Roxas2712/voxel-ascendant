@@ -17,7 +17,12 @@ function M.receipt(game)
 end
 local function persist(self,done)
  local d={version=M.VERSION,done=done==true,page=self.page,draft=self.draft,kasc=self.kasc,wilds=self.wilds}
- assert(V.mod.storage:write(self.game,storageName(self.game),d))
+ local ok,written,err=pcall(V.mod.storage.write,V.mod.storage,self.game,storageName(self.game),d)
+ if not ok or written~=true then
+  self.message=L('Could not save setup. Keep this screen open and retry: ','Einrichtung konnte nicht gespeichert werden. Hier bleiben und erneut versuchen: ')..tostring(ok and err or written)
+  return false
+ end
+ return true
 end
 local common=L("Change later: F3 opens VASC quick help. All options are available in the main VASC menu; KASC options are in the main KASC menu. You can reopen Your Look at any time.",'Später ändern: F3 öffnet die VASC-Schnellhilfe. Alle Optionen findest du im großen VASC-Menü; KASC-eigene Optionen im großen KASC-Menü. „Dein Look“ lässt sich erneut öffnen.')
 local sourceChoices={{L("Original / game",'Original / Spiel'),'classic'},{L("MMO sprites",'MMO-Sprites'),'pokemmo'},{'Full HD','full_hd'},{'Stadium 2','stadium2'},{'Cobblemon','cobblemon'}}
@@ -177,10 +182,17 @@ function M.new(game,settings,opts)
  local saved=M.receipt(game)
  local interrupted=V.mod.storage:read(game,'dein-look/light-test')
  if saved.version==M.VERSION and not saved.done and type(saved.draft)=='table' then
-  for k,v in pairs(saved.draft)do if self.draft[k]~=nil then self.draft[k]=v end end
-  self.page=math.max(1,math.min(#self.pages,tonumber(saved.page) or 1))
+  for k,v in pairs(saved.draft)do
+   local valid=type(v)==type(self.draft[k]) and (type(v)~='number' or (v==v and v~=math.huge and v~=-math.huge))
+   local setting=self.settings[k]
+   if setting then valid=false;for _,candidate in ipairs(setting.values)do if candidate==v then valid=true;break end end end
+   if valid then self.draft[k]=v end
+  end
+  local page=tonumber(saved.page)
+  if not page or page~=page or page==math.huge or page==-math.huge then page=1 end
+  self.page=math.max(1,math.min(#self.pages,math.floor(page)))
  end
- if interrupted and interrupted.pending then for _,e in ipairs(V.require('SetupEffects').rules.effects)do self.draft[e.key]=e.off end;self.message=L("The last graphics check was interrupted. Safe effect values are preselected; please test again.",'Der letzte Grafikcheck wurde unterbrochen. Sichere Effektwerte vorausgewählt; bitte erneut prüfen.')end
+ if type(interrupted)=='table' and interrupted.pending then for _,e in ipairs(V.require('SetupEffects').rules.effects)do self.draft[e.key]=e.off end;self.message=L("The last graphics check was interrupted. Safe effect values are preselected; please test again.",'Der letzte Grafikcheck wurde unterbrochen. Sichere Effektwerte vorausgewählt; bitte erneut prüfen.')end
  if saved.done and self.kasc and not saved.kasc then for i,p in ipairs(self.pages)do if p.id=='pokemon'then self.page=i end end;self.message=L("KASC is now active. Review the additional Wilds town area.",'KASC ist jetzt aktiv. Prüfe den zusätzlichen Wilds-Stadt-Bereich.')end
  self.effects=V.require('SetupEffects').new(game,self.draft);self.performance=self.effects.performance
  self:refreshPreview();return self
@@ -273,7 +285,8 @@ function Screen:acquisition(source)
 end
 function Screen:openAcquisition(r)
  if r.source=='cobblemon'then self.message=self:acquisition('cobblemon').help;return end
- persist(self,false);self.returnFromContent=true
+ if not persist(self,false) then return false end
+ self.returnFromContent=true
  if r.action=='rom' then
   local rom=M.rom
   if not rom or not rom.choose then self.message=L("The Stadium importer is unavailable on this host.",'Der Stadium-Import ist auf diesem Host nicht verfügbar.');return end
@@ -381,29 +394,47 @@ function Screen:apply()
   for i,x in ipairs(s.values)do if x==v then valid=not s.allows or s:allows(i) or v==self.initial[k] end end
   if not valid then self.message=L("Unavailable: ",'Nicht verfügbar: ')..k..L(". Please check your selection.",'. Bitte Auswahl prüfen.');return false end
  end
- local game=self.game;local oldWrite=game.writeOptions;local old={};local written={}
+ local game=self.game;local oldWrite=game.writeOptions;local old={};local written={};local callbacks={};local attemptedWrite=false
+ for k,s in pairs(self.settings)do old[k]=s:get()end
  game.writeOptions=function()end
  local ok,err=pcall(function()
   for k,s in pairs(self.settings)do if self.draft[k]~=s:get()then
-   old[k]=s:get();written[#written+1]=k
+   written[#written+1]=k
    local result=s:setValue(self.draft[k],game,true)
    assert(result==self.draft[k],L("Setting was not applied: ",'Einstellung nicht übernommen: ')..k)
   end end
-  for _,k in ipairs(written)do local setting=self.settings[k];if setting.change then setting.change(game,self.draft[k],setting.index)end end
+  for _,k in ipairs(written)do local setting=self.settings[k];if setting.change then callbacks[#callbacks+1]=k;setting.change(game,self.draft[k],setting.index)end end
+  if oldWrite then attemptedWrite=true;local yes,why=oldWrite(game);assert(yes~=false,why or 'options_write_failed')end
+  assert(persist(self,true),self.message)
  end)
- if not ok then for _,k in ipairs(written)do self.settings[k]:setValue(old[k],game,true)end end
+ local restored=true
+ if not ok then
+  -- Restore values before notifying owners, including changes made by a
+  -- callback. One failing rollback must never strand writeOptions disabled.
+  for k,s in pairs(self.settings)do
+   local yes=pcall(function()if s:get()~=old[k]then assert(s:setValue(old[k],game,true)==old[k])end end)
+   restored=restored and yes
+  end
+  for i=#callbacks,1,-1 do local k=callbacks[i];local s=self.settings[k]
+   local yes=pcall(s.change,game,old[k],s.index);restored=restored and yes
+  end
+ end
  game.writeOptions=oldWrite
- if not ok then self.message=L("Apply cancelled: ",'Übernehmen abgebrochen: ')..tostring(err);return false end
- if oldWrite then oldWrite(game)end
- persist(self,true);self.applied=true;game.stack:pop();return true
+ if not ok then
+  if attemptedWrite and oldWrite then local yes,result=pcall(oldWrite,game);restored=restored and yes and result~=false end
+  self.message=L("Apply cancelled: ",'Übernehmen abgebrochen: ')..tostring(err)
+  if not restored then self.message=self.message..L(' Restoration could not be fully confirmed.',' Wiederherstellung konnte nicht vollständig bestätigt werden.')end
+  return false
+ end
+ self.applied=true;game.stack:pop();return true
 end
 function Screen:choose()
  local r=self:rows()[self.index];if not r or r.disabled then return end
  self.message=nil
  if r.choices then self:step(1);return end
  if r.action=='next' then self:next()
- elseif r.action=='keep' then persist(self,true);self.game.stack:pop()
- elseif r.action=='later' then persist(self,false);self.game.stack:pop()
+ elseif r.action=='keep' then if persist(self,true)then self.game.stack:pop()end
+ elseif r.action=='later' then self:pause()
  elseif r.action=='controlsDefault' then
   for k,v in pairs({battle_controls_shape='auto',battle_controls_scale=1,battle_controls_x=0,battle_controls_y=0})do if self.settings[k]then self.draft[k]=v end end
   self:refreshPreview();persist(self,false)
@@ -556,10 +587,10 @@ function Screen:update(dt)
  elseif input:wasPressed('b')then
   if self.subpage then self.subpage=nil;self.index=1;self:refreshPreview()
   elseif self.page>1 then self.page=self.page-1;self.index=1;self:refreshPreview();persist(self,false)
-  else persist(self,false);self.game.stack:pop()end
+  else self:pause()end
  end
 end
-function Screen:pause()persist(self,false);self.game.stack:pop()end
+function Screen:pause()if not persist(self,false)then return false end;self.game.stack:pop();return true end
 function Screen:pointer(p)
  if p.phase~='pressed' then return true end
  if p.button and p.button~=1 then return true end
@@ -572,7 +603,7 @@ function Screen:pointer(p)
  end
  if y>=684 and y<=736 then
   if x>=38 and x<=188 then if self.subpage then self.subpage=nil else self.page=math.max(1,self.page-1)end;self.index=1;self:refreshPreview()
-  elseif x>=201 and x<=391 then persist(self,false);self.game.stack:pop()
+  elseif x>=201 and x<=391 then self:pause()
   elseif x>=879 and x<=1061 then if self.page==#self.pages then self:apply()else self:next()end end
  elseif x>=36 and x<=507 and y>=232 and y<610 then
   local start=math.max(1,self.index-5);local i=start+math.floor((y-232)/63)

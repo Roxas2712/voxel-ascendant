@@ -1276,7 +1276,8 @@ local function refreshConditionalRows(mod, menu, game, section, focusKey)
   if type(menu) ~= "table" or type(menu.items) ~= "table" then return false end
   local help
   for _, item in ipairs(menu.items) do
-    if item and (item.value == "__vasc_help" or item.value == "__kasc_help") then
+    if item and (item.value == "__vasc_help" or item.value == "__kasc_help"
+        or item.__kascFeatureHelp == true or (type(item.value) == "string" and item.value:match("^__kasc_help:"))) then
       help = item
       break
     end

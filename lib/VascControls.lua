@@ -205,14 +205,21 @@ function M.visibleRows(g,group)
 end
 function M.back(g)
  local p=M.current(g)
- if p and p.group then p.group=nil;p.selected=1;p.rows=M.visibleRows(g);M.paint=nil;return true end
+ if p and p.group then
+  local group=p.group;p.group=nil;p.selected=1;p.rows=M.visibleRows(g)
+  for i,row in ipairs(p.rows)do if row.submenu==group then p.selected=i;break end end
+  M.paint=nil;return true
+ end
  return M.close(g)
 end
 -- Read the same live owners the shortcuts change; never maintain a second
 -- set of booleans in the panel. Multi-state effects show their selected mode.
 function M.status(g,index)
   local p=M.current(g);local row=p and p.rows[index]or M.rows[index];if not row then return "" end
-  if row.status then return row.status(M.language()=="de")end
+  if row.status then
+    local ok,value=pcall(row.status,M.language()=="de")
+    return ok and type(value)=='string'and value or(M.language()=='de'and'Nicht verfügbar'or'Unavailable')
+  end
   local de=M.language()=="de"
   local function setting(s)
     if not s then return de and "Nicht verfügbar"or"Unavailable"end
@@ -279,7 +286,10 @@ end
 function M.activate(g,index)
   local panel=M.current(g);local row=panel and panel.rows[index]
   if not panel or not row then return false end
-  if row.submenu then panel.group=row.submenu;panel.selected=1;panel.rows=M.visibleRows(g,panel.group);M.paint=nil;return true end
+  if row.submenu then
+    local rows=M.visibleRows(g,row.submenu);if #rows==0 then return false end
+    panel.group=row.submenu;panel.selected=1;panel.rows=rows;M.paint=nil;return true
+  end
   local group=panel.group
   local previous=panel.previous
   M.close(g)
@@ -295,8 +305,8 @@ function M.panelKey(g,k)
   local p=M.current(g);if not p then return false end
   if k=="escape"then M.back(g)
   elseif k==M.HELP_KEY then M.close(g)
-  elseif k=="up"then p.selected=(p.selected-2)%#p.rows+1
-  elseif k=="down"then p.selected=p.selected%#p.rows+1
+  elseif k=="up"and #p.rows>0 then p.selected=(p.selected-2)%#p.rows+1
+  elseif k=="down"and #p.rows>0 then p.selected=p.selected%#p.rows+1
   elseif k=="left"or k=="pageup"then p.selected=math.max(1,p.selected-(p.perPage or 6))
   elseif k=="right"or k=="pagedown"then p.selected=math.min(#p.rows,p.selected+(p.perPage or 6))
   elseif k=="return"or k=="space"then M.activate(g,p.selected)
@@ -310,7 +320,7 @@ function M.open(g,selected,group)
   if not ready(g)or M.context(g)=="other"then return false end
   local p={_vascControls=true,previous=top(g),selected=selected or 1,group=group}
   p.rows=M.visibleRows(g,group);if #p.rows==0 then return false end
-  p.selected=math.min(p.selected,#p.rows)
+  p.selected=math.max(1,math.min(p.selected,#p.rows))
   p.onKeyPressed=function(_,k)M.panelKey(g,k)end
   p.onGamepadPressed=function(_,b)M.panelKey(g,padKeys[b])end
   if g.touchControls and g.touchControls.reset then g.touchControls:reset()end
@@ -397,7 +407,7 @@ function M.draw(g)
     box(t.panel);local px,py=t.panel[1],t.panel[2]
     label("VASC · "..(p.group and groupNames[p.group][de and 2 or 1]or(de and "Schnellmenü"or"Quick menu")),px+14,py+12)
     label(mobile and(de and "Zeile antippen zum Ändern · ×: schließen"or"Tap a row to change · ×: close")
-      or(de and "↑ / ↓: wählen · Enter / A: ändern · Esc / B: zurück"or"↑ / ↓: select · Enter / A: change · Esc / B: back"),px+14,py+38,M.small)
+      or(de and "Auf/Ab: wählen · Enter/A: ändern · Esc/B: zurück"or"Up/Down: select · Enter/A: change · Esc/B: back"),px+14,py+38,M.small)
     box(t.close);label("×",t.close[1]+21,t.close[2]+12)
     for _,entry in ipairs(t.rows)do
       local r,row=entry.rect,rows[entry.index];box(r,p.selected==entry.index)
