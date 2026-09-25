@@ -64,7 +64,7 @@ return function(api)
   elseif family=='mansion'then family='interior' end
   if not palettes[family]then family='grass'end
   local id=tostring(map and map.id or 'UNKNOWN');local design=api.gymDesign and api.gymDesign(id)
-  if design then family='gym' end
+  if design then family=design.family or 'gym' end
   local behind=(cameraMode or S.cameraMode())=='behind'
   return {gymDesign=design,ballStyle=api.ballStyle and api.ballStyle(map)or'poke',id=id,family=family,theme=gymThemes[id],orientation='horizontal',cameraMode=behind and 'behind' or 'side',seed=hash(id),
    radius=74,actors=behind and {player={0,0,20},enemy={0,0,-20}}or{player={-25,0,0},enemy={25,0,0}},

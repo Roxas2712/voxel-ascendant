@@ -23,3 +23,7 @@ Additional original compact designs by **Omega Dias / ΩDIAS**: Pokemon Tower (2
 ## Terrarium lighting
 
 VASC adds independent, optional Terrarium lighting: a cached 64×64 soft contact-shadow map, two local lights on mobile and three on desktop. Cinnabar has a slow, subtle lava-light variation. Other fills are steady. No per-light real-time shadow maps or world-light discovery runs in these stages. Original ODias module geometry and palettes remain unchanged.
+
+## Additional Kanto locations (September 2026)
+
+Fifteen original compact designs supplied by **Omega Dias / ΩDIAS**: S.S. Anne bow, Fighting Dojo, Power Plant, Viridian Forest, Rocket Hideout B1F–B3F, occupied Silph Company, Pokémon Mansion, Safari Zone, Mt. Moon, Diglett’s Cave, Cerulean Cave, Oak’s Lab, Victory Road (Champion Road), Route 17 and Seafoam Islands. Source bytes and SHA-256 receipts are preserved under `gyms/`. VASC adds exact Gen1 routing, live Silph story gating and location-family metadata in the host adapter. Supplied documentation and concept previews are reference material, not runtime modules. The Power Plant module includes decorative Voltorb and Electrode geometry adapted from the two model archives supplied to the author; no additional model authorship or license is asserted here.

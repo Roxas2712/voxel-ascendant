@@ -32,7 +32,7 @@ return function(mod)
   local dome=assert((loadstring or load)(assert(mod:read('Dome.lua')),'@TerarriumDome.lua'))()(api)
   api.drawDome=function(arena,y)local style=mod.options:get('dome');if style and style~='off'then dome.draw(arena,y,style)end end
   api.releaseDome=dome.release
-  api.gymDesign=assert((loadstring or load)(assert(mod:read('GymDesigns.lua')),'@GymDesigns.lua'))()(function(path)return mod:read(path)end)
+  api.gymDesign=assert((loadstring or load)(assert(mod:read('GymDesigns.lua')),'@GymDesigns.lua'))()(function(path)return mod:read(path)end,1,api.silphOccupied)
   local atmosphere=assert((loadstring or load)(assert(mod:read('GymAtmosphere.lua')),'@GymAtmosphere.lua'))()(api)
   api.drawAtmosphere=atmosphere.draw;api.releaseAtmosphere=atmosphere.release
   api.clock=function()return love.timer.getTime()end

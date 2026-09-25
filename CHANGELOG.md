@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.1 — Kanto location terrariums
+
+Adds 15 supplied Omega Dias designs across 43 exact Gen1 locations on the public 3.0.45 baseline. Preserves scene families, limits Silph occupation to live story state and excludes Gen2 substitutions. See RELEASE_NOTES_3.0.46-rc.1.md. Local review candidate.
+
+---
+
 # Voxel Ascendant 3.0.23 — Public diagnostics and retained performance evidence
 
 DIAGNOSTICS is directly available near the bottom of the VASC settings hub, after the settings sections and before Help/Factory Reset. VIEW + WORLD stays first. The four-digit maintainer unlock is no longer required to open diagnostics, inspect the device monitor or send a VASC support log. The separate eight-digit support code and manual send confirmation remain required. Both support senders use the VASC menu skin with the complete eight-digit code visible in one row; A edits a digit and Left/Right selects its position. KASC is optional; its send action appears only when its support service is available. The hub stays visible on opening unless automatic section resume is explicitly configured.

@@ -1,3 +1,7 @@
+# VASC 3.0.46-rc.1: Kanto location terrariums
+
+Local review candidate based on GitHub Latest 3.0.45. Adds all 15 supplied Omega Dias location designs with exact map routing and live Silph occupation checks. Select TERRARIUM in battle presentation. See [candidate release notes](RELEASE_NOTES_3.0.46-rc.1.md).
+
 # VASC 3.0.43: Legacy Bank navigation
 
 In the Legacy Bank, move UP from the top row to the box heading, use LEFT/RIGHT to switch boxes and DOWN to return. Works with the controller or touch D-pad. Tested with KASC 6.7.24. See [release notes](RELEASE_NOTES.md).
