@@ -127,7 +127,7 @@ local function text(value, x, y, c)
   else
     color(c)
   end
-  Font.draw(tostring(value or ""), math.floor(x), math.floor(y))
+  Font.draw(tostring(value or ""):gsub("É","é"), math.floor(x), math.floor(y))
   if shader then love.graphics.setShader() end
 end
 
@@ -198,7 +198,7 @@ end
 local function spriteMode()
   local options = mod and mod.options
   local value = options and options.get and options:get("sprite_source")
-  if value ~= "auto" and value ~= "game" and value ~= "hd" then return "kasc_crystal" end
+  if value ~= "auto" and value ~= "game" and value ~= "hd" and value ~= "cobblemon" then return "kasc_crystal" end
   return value
 end
 
@@ -256,7 +256,7 @@ local function spriteImage(game, species)
   end
   local path, trueColor, source = spritePath(game, species)
   if not path then return nil end
-  local key = path .. (trueColor and "#t" or "#p")
+  local key = path .. (trueColor and "#t" or "#p") .. "#" .. tostring(source)
   if imageCache[key] == nil then
     local ok, image = pcall(Assets.image, path)
     if ok and image and type(image.setFilter) == "function" then
@@ -269,14 +269,23 @@ local function spriteImage(game, species)
   return imageCache[key] or nil
 end
 
-local function drawSprite(game, species, x, y, w, h, seen)
+local function drawSprite(owner, species, x, y, w, h, seen)
+  local game=owner.game
   fill(C.black, x, y, w, h, 5)
   line(C.cyanDark, x, y, w, h, 5, 2)
   if not seen then
+    if mod.dexModels then mod.dexModels.release(owner) end
+    owner.__vascDexSource="unseen"
     text("?", x + math.floor(w / 2) - 4, y + math.floor(h / 2) - 4, C.soft)
     return
   end
+  if spriteMode()=="cobblemon" and mod.dexModels then
+    if mod.dexModels.draw(owner,species,x+4,y+4,w-8,h-8) then
+      owner.__vascDexSource="cobblemon";return
+    end
+  elseif mod.dexModels then mod.dexModels.release(owner) end
   local resolved = spriteImage(game, species)
+  owner.__vascDexSource=resolved and resolved.source or "unavailable"
   if not resolved then
     text("?", x + math.floor(w / 2) - 4, y + math.floor(h / 2) - 4, C.soft)
     return
@@ -732,7 +741,7 @@ function ListScreen:draw()
   end
 
   local current = self:current()
-  drawSprite(self.game, current and current.id,
+  drawSprite(self, current and current.id,
     RAIL_X + 9, RAIL_Y + 9, RAIL_W - 18, 68, current and current.seen)
   if current then
     text(current.dex and ("No.%03d"):format(current.dex) or "No.???",
@@ -802,7 +811,7 @@ function StarterPreview:update()
   end
 end
 function StarterPreview:draw()
-  drawSprite(self.game, self.species, 42, 30, 76, 84, true)
+  drawSprite(self, self.species, 42, 30, 76, 84, true)
   if type(PaletteFX.markTrueColor) == 'function' then
     PaletteFX.markTrueColor(42, 30, 76, 84)
   end
@@ -813,7 +822,7 @@ local function wrappedDescription(game, def, owned, lang)
   local entry = def.dexEntry or {}
   local raw = owned and entry.text and game.data.text[entry.text]
   if not raw or raw == "" then raw = tr(lang, "noData") end
-  raw = tostring(raw):gsub("\v", "\n"):gsub("\f", "\n")
+  raw = tostring(raw):gsub("É","é"):gsub("\v", "\n"):gsub("\f", "\n")
   local lines, current = {}, ""
   local function flush()
     if current ~= "" then lines[#lines + 1], current = current, "" end
@@ -944,7 +953,7 @@ function EntryScreen:draw()
   rightText(("%s %d/%d"):format(tr(self.lang, "page"), self.page, #self.pages),
     LEFT_X + 218, 258, 120, C.soft)
 
-  drawSprite(self.game, self.species,
+  drawSprite(self, self.species,
     RAIL_X + 9, RAIL_Y + 9, RAIL_W - 18, 94, self.seen)
   text(fit(def.name or self.species, RAIL_W - 20), RAIL_X + 10, 153, C.white)
   drawActionRail(self.lang)
@@ -1091,7 +1100,7 @@ function AreaScreen:draw()
   fill(C.bezel, 9, 45, 166, 234, 8)
   fill(C.panel, 12, 48, 160, 228, 7)
   line(C.black, 12, 48, 160, 228, 7, 2)
-  drawSprite(self.game, self.species, 24, 62, 136, 112, true)
+  drawSprite(self, self.species, 24, 62, 136, 112, true)
   text(("No.%03d"):format(def.dex or 0), 24, 188, C.cyan)
   text(fit(def.name or self.species, 136), 24, 202, C.white)
   text("START " .. tr(self.lang, "cry"), 24, 244, C.gold)
@@ -1156,4 +1165,12 @@ UI._regionIsUnlocked = regionIsUnlocked
 UI._spritePath = spritePath
 UI._externalArea = externalArea
 
+-- Each screen owns at most one model and releases its GPU objects on exit.
+for _,class in ipairs({ListScreen, EntryScreen, AreaScreen, StarterPreview})do
+  local exit=class.exit
+  function class:exit(...)
+    if mod.dexModels then mod.dexModels.release(self) end
+    if exit then return exit(self,...) end
+  end
+end
 return UI

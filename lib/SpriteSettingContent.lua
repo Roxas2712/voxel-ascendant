@@ -24,7 +24,8 @@ function M.required(key,value,get)
   return ({pokemmo='pokemon-overworld-mmo',followers='pokemon-overworld-pixel'})[value]
  elseif key=='modernDexSpriteSource' then
   return value=='hd' and 'pokemon-hd-3d'
-    or (value=='kasc_crystal' or value=='crystal') and 'pokemon-crystal' or nil
+    -- Gen2 'crystal' uses its packaged menu fronts, not KASC's pack.
+    or value=='kasc_crystal' and 'pokemon-crystal' or nil
  elseif key=='battleHdSprites' then return value==true and 'pokemon-hd-3d' or nil
  elseif key:match('^apo_.*sprite_source$') then
   return ({full_hd='pokemon-hd-3d',pokemmo='pokemon-overworld-mmo'})[value]

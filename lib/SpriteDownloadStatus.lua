@@ -53,12 +53,23 @@ function M.new(game,session,Text)
  function self:refresh()
   local selected=self.items[self.index];local selectedAction=selected and selected.action
   self.progress=snapshot();local p=self.progress
+  if p.current then session.lastPackage=p.current.id end
+  local phase=self.ascendantContentRestart and session.restart.phase
+  local needsRestart=session.maintenance and session.maintenance.state=='restart_required' or false
+  local retry=p.state~='ready' and (session.downloadIds~=nil or session.maintenance and session.maintenance:pending()~=nil) or false
+  local manual=session.lastPackage~=nil
+  -- Progress changes every frame; button structure changes only with state.
+  if self.actionsReady and self.actionPhase==phase and self.actionRestart==needsRestart
+    and self.actionState==p.state and self.actionChecking==p.checkingInventory
+    and self.actionRetry==retry and self.actionManual==manual and self.actionLanguage==session.de then return end
+  self.actionsReady=true;self.actionPhase=phase;self.actionRestart=needsRestart
+  self.actionState=p.state;self.actionChecking=p.checkingInventory
+  self.actionRetry=retry;self.actionManual=manual;self.actionLanguage=session.de
   if self.ascendantContentRestart then
    local phase=session.restart.phase
    self.items=(phase=='save_error'or phase=='restart_error')and{{label=tr('RETRY SAVE / RESTART','SPEICHERN / NEUSTART WIEDERHOLEN'),action='restart'}}or{}
    self.index=1;return
   end
-  if p.current then session.lastPackage=p.current.id end
   local items={}
   if session.maintenance and session.maintenance.state=='restart_required'then
    items={{label=tr('BACK - RESTART REQUIRED','ZURUECK - NEUSTART ERFORDERLICH'),action='back'}}

@@ -116,7 +116,7 @@ local SETTING_HELP_DE = {
   modernDexSpriteSource = "Bildquelle ausschließlich im ModernDex: KASC "
     .. "CRYSTAL (AUTO) nutzt KASCs öffentlichen Crystal-Provider mit sicherem "
     .. "Rückfall, ACTIVE folgt dem aktiven Sprite-Stil und GAME ORIGINAL dem "
-    .. "Cartridge-Bild. Kampf, Team, Box und Oberwelt werden nicht verändert.",
+    .. "Cartridge-Bild. COBBLEMON 3D zeigt enthaltene animierte Modelle mit Sprite-Ersatz bei fehlenden Arten. Kampf, Team, Box und Oberwelt werden nicht verändert.",
   ascBoxDensity = "Raster des VASC-eigenen ASC-BOX-Skins. 5 X 4 zeigt die "
     .. "echten zwanzig Gen-I-Plätze mit größeren Bildern; 6 X 5 zeigt das "
     .. "dichtere ORAS-Raster und sperrt Plätze oberhalb der Host-Kapazität.",

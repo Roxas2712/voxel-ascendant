@@ -80,7 +80,7 @@ function M.new(game,settings,opts)
   row('apo_atmospheric_sprite_shading',L("Character scene shading",'Figuren-Szenenlicht'),L("Adapts supported HD characters to the time of day and weather. Turn off if colours look wrong.",'Passt unterstützte HD-Figuren an Tageszeit und Wetter an. Bei verfälschten Farben ausschalten.'))},'pokemon')
  page('dex',L("Pokémon in the Pokédex",'Pokémon im Pokédex'),L("The Pokédex has its own image source. This does not change followers or battles. Applies to the modern VASC Pokédex.",'Der Pokédex erhält eine eigene Bildquelle. Diese Wahl verändert weder Begleiter noch Kampf. Die Bildquelle gilt für den modernen VASC-Pokédex.'),{
   row('pokedexStyle',L("Pokédex view",'Pokédex-Ansicht'),L("VASC: wide, modern Pokédex. Game default: the view provided by the game or KASC, using its own settings.",'VASC: breiter moderner Pokédex. Spielstandard: die vom Spiel oder KASC bereitgestellte Ansicht; deren eigene Einstellungen gelten.'),{{L("Modern VASC Pokédex",'Moderner VASC-Pokédex'),'modern'},{L("Game default / KASC",'Spielstandard / KASC'),'game'}}),
-  row('modernDexSpriteSource',L("Pokémon images in the VASC Dex",'Pokémon-Bilder im VASC-Dex'),L("Crystal: KASC Crystal graphics. Active style: existing sprite provider. Original: game graphics. HD: animated images from an installed HD pack. Missing images use an available fallback.",'Crystal: KASCs Crystal-Grafiken. Aktiver Stil: vorhandener Sprite-Anbieter. Original: Spielgrafik. HD: animierte HD-Bilder mit installiertem Paket. Fehlende Bilder nutzen den verfügbaren Ersatz.'),{{L("Crystal sprites (KASC)",'Crystal-Sprites (KASC)'),'kasc_crystal'},{L("Active sprite style",'Aktiver Sprite-Stil'),'active'},{L("Original game graphics",'Originale Spielgrafik'),'game'},{L("Animated HD",'HD animiert'),'hd'}})},'dex')
+  row('modernDexSpriteSource',L("Pokémon images in the VASC Dex",'Pokémon-Bilder im VASC-Dex'),L("Crystal: KASC Crystal graphics. Active style: existing sprite provider. Original: game graphics. HD: animated images from an installed HD pack. Cobblemon: bundled animated 3D models. Missing images use an available fallback.",'Crystal: KASCs Crystal-Grafiken. Aktiver Stil: vorhandener Sprite-Anbieter. Original: Spielgrafik. HD: animierte HD-Bilder mit installiertem Paket. Cobblemon: enthaltene animierte 3D-Modelle. Fehlende Bilder nutzen den verfügbaren Ersatz.'),{{L("Crystal sprites (KASC)",'Crystal-Sprites (KASC)'),'kasc_crystal'},{'Cobblemon 3D','cobblemon'},{L("Active sprite style",'Aktiver Sprite-Stil'),'active'},{L("Original game graphics",'Originale Spielgrafik'),'game'},{L("Animated HD",'HD animiert'),'hd'}})},'dex')
  local stage=V.require('OverworldBattle').setting.key
  page('battle',L("Which battle style do you prefer?",'Welchen Kampfstil bevorzugst du?'),L("The battle setting and Pokémon models are independent. Your overworld choice does not change this page.",'Kampfkulisse und Pokémon-Modelle sind unabhängig. Deine Oberwelt-Auswahl verändert diese Seite nicht.'),{
   row(stage,L("Battle setting",'Kampfkulisse'),L("MAP: battle on nearby world terrain. ARENA: a designed arena matching the location. DISCS: two platforms. TERRARIUM: a separate diorama. Classic: the original battle view.",'MAP: Kampf auf nahegelegenem Weltgelände. ARENA: gestaltete, ortsbezogene Arena. DISCS: zwei Plattformen. TERRARIUM: eigenständige Diorama-Kulisse. Klassisch: ursprüngliche Kampfansicht.'),{{L("MAP – in the game world",'MAP – in der Spielwelt'),true},{'Arena','arena'},{L("Discs – platforms",'Discs – Plattformen'),'flatB'},{'Terrarium','terarrium'},{L("Classic battle",'Klassischer Kampf'),false}}),
@@ -205,7 +205,7 @@ function Screen:current()return self.subpage or self.pages[self.page]end
 function Screen:rowVisible(r,p)
  local mode=self.draft[self.stageKey]
  if r.key=='modernDexSpriteSource' then return self.draft.pokedexStyle=='modern' end
- if p.id=='battle_art' then
+ if p.id=='battle_art' or p.id=='battle_detail' then
   if r.key=='terarriumBackground' or r.key=='terarriumDome' or r.key=='terarriumBehindRed' then return mode=='terarrium' end
   if r.key=='arenaCamera' then return mode==true or mode=='arena' end
   if r.key==V.require('OverworldBattle').arenaArtSetting.key then return mode=='arena' end
@@ -358,7 +358,7 @@ function Screen:refreshPreview()
  local p=self:current();if p.kind=='battle_controls'then return end;local source='cobblemon';local selected=self:rows()[self.index]
  if p.kind=='people' then source=self.draft.apo_hd_walking_sprites==false and 'classic' or self.draft.apo_human_art_style
  if source=='voxel' and self.draft.voxelCharacterCardEnabled==false then source='hd' end
- elseif p.kind=='dex' then source=({kasc_crystal='crystal',active='active',game='classic',hd='full_hd'})[self.draft.modernDexSpriteSource]
+ elseif p.kind=='dex' then source=self.draft.pokedexStyle~='modern' and 'active' or ({kasc_crystal='crystal',active='active',game='classic',hd='full_hd',cobblemon='cobblemon'})[self.draft.modernDexSpriteSource]
  elseif p.kind=='battle' then source=self.draft._battleGraphics or self.draft.pokemonModelSkin;if source=='hd'then source='full_hd' elseif source=='original'then source='classic' end;if source=='auto' or source=='current' or source=='stadium1' then source=self.draft.battleHdSprites and 'full_hd' or 'classic' end
  elseif p.id=='pokemon' and selected and selected.context then source=self.draft[selected.key]
  elseif selected and selected.source then source=selected.source
@@ -614,10 +614,14 @@ end
 function Screen:exit()self:stopBenchmark(true);self.preview:release()end
 local fonts={}
 local paintScale=1
+local function font(size)
+ local px=math.max(12,math.floor((size or 20)*paintScale+.5))
+ if not fonts[px]then fonts[px]=love.graphics.newFont(px)end
+ return fonts[px]
+end
 local function text(t,x,y,w,size,color)
- local G=love.graphics;local px=math.max(12,math.floor((size or 20)*paintScale+.5))
- if not fonts[px]then fonts[px]=G.newFont(px)end
- G.push('all');G.translate(x,y);G.scale(1/paintScale,1/paintScale);G.setFont(fonts[px]);G.setColor(color or {1,1,1,1});G.printf(t or '',0,0,w*paintScale,'left');G.pop()
+ local G=love.graphics;local face=font(size)
+ G.push('all');G.translate(x,y);G.scale(1/paintScale,1/paintScale);G.setFont(face);G.setColor(color or {1,1,1,1});G.printf(t or '',0,0,w*paintScale,'left');G.pop()
 end
 local function panel(x,y,w,h,fill,line)
  local G=love.graphics;G.setColor(fill);G.rectangle('fill',x,y,w,h,9)
@@ -722,7 +726,7 @@ function Screen:drawPhysical()
  elseif self.preview.error and not scene and (p.kind=='pokemon' or p.kind=='people' or p.kind=='dex' or p.kind=='battle') then help=help..'\n'..self.preview.error end
  panel(541,530,535,134,{.06,.12,.21,.92},accent)
  -- Explanation remains white and large; edition colour is for borders/focus.
- local n=19;local probe=G.newFont(math.floor(n*paintScale));local _,wrapped=probe:getWrap(help,493*paintScale);probe:release()
+ local n=19;local _,wrapped=font(n):getWrap(help,493*paintScale)
  if #wrapped*n>113 then n=17 end
  text(help,560,542,496,n,self.message and {1,.84,.5,1} or ink)
  panel(24,684,1052,52,{.045,.085,.145,1},accent)

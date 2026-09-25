@@ -313,6 +313,7 @@ function Gen2PublicExports.apply(exports)
   -- status function published by main.lua. Exposing the module would hand
   -- lifecycle mutation ownership across the segment boundary.
   exports.vascEnvironment = nil
+  exports.dexModelPreview = resolve("DexModelPreview")
   exports.lib = PublicFacade.new(publicModules)
   return exports
 end

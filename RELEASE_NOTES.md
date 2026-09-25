@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.5 — Menu audit and location terrariums
+# VASC 3.0.46-rc.6 — Cobblemon Dex and functional menu audit
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -67,3 +67,12 @@ Menu, download and setup corrections in rc.5:
 - Setup draft saves report failure and keep the screen open. Apply failures restore setting values and attempted callbacks, restore the options writer and allow retry. Resumed drafts reject invalid setting values/types and sanitize page indices.
 
 Validation: 79 headless suites, native Red and Crystal menus, F3 groups in portrait/landscape, all ten Gen1 setup pages, real setup apply/reopen and graphics-check cancellation. Transfer interruption/restart/corrupt-cache cases use deterministic transport fixtures. No live-CDN throughput or physical-phone claim is made. See MENU_FLOW_AUDIT_2026-09-25.md.
+
+Functional and visual audit in rc.6:
+
+- COBBLEMON 3D is an explicit Dex image option in Gen1, Gen2 and the Gen1 setup guide. Models animate independently of battle/overworld settings. Missing models and draw failures retain the sprite fallback; unseen entries remain hidden. Screen exit releases preview resources.
+- Gen2 now honors the Dex image source and its own layout switch. Native cartridge descriptions, both text pages and feet/inches height are adapted correctly. Crystal menu fronts use their existing packaged/fallback path without a KASC download prompt.
+- Setup battle details expose only controls applicable to MAP, Arena, Discs, Terrarium or classic battles. Choosing the native Dex also previews its active sprite provider.
+- Setup help uses the existing font cache; download buttons are retained while only progress changes. Model previews reuse their actor, shader and canvas until species/content changes or the screen exits.
+
+Validation: 82 headless suites, 881 native setting transitions across 228 generation-specific setting keys, 29 menu actions, 86 F3 actions, 211 setup choices across 23 page/context cases, and Dex source/model/layout checks in Red and Crystal. See FUNCTIONAL_VISUAL_AUDIT_2026-09-25.md for the exact scope, screenshots and remaining portrait-layout limitation.

@@ -17,3 +17,9 @@ menu:refresh();menu:draw();local text=table.concat(lines,'\n')
 assert(text:find('SPRITES VERIFIED',1,true)and text:find('No repair or restart needed.',1,true))
 assert(not text:find('RESTART THE GAME',1,true)and not text:find('Download starts automatically.',1,true),'healthy check requested unnecessary work')
 print('PASS successful maintenance is verification, with no fake restart/download instruction')
+
+local items=menu.items
+for _=1,120 do menu:refresh();assert(menu.items==items,'unchanged status rebuilt actions')end
+session.maintenance.checked=2;menu:refresh();assert(menu.progress.doneBytes==2 and menu.items==items,'action cache froze progress')
+session.maintenance.state='restart_required';menu:refresh();assert(menu.items~=items and menu.items[1].action=='back')
+print('PASS download actions reuse rows while progress remains live; transition invalidates cache')

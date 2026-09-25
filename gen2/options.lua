@@ -308,10 +308,11 @@ return {
     default = "crystal",
     choices = {
       { "CRYSTAL FRONTS", "crystal" },
-      { "ACTIVE 3D / SPRITE", "active" },
+      { "COBBLEMON 3D", "cobblemon" },
+      { "ACTIVE SPRITE STYLE", "active" },
       { "GAME ORIGINAL", "game" },
     },
-    description = "Image source only inside VASC WIDESCREEN Pokédex. CRYSTAL FRONTS uses VASC's bundled coloured Crystal menu fronts; ACTIVE may use the optional Stadium 2 preview and safely falls back to the game sprite; GAME ORIGINAL always uses the active cartridge front. Battles, team, boxes and overworld sprites are not changed.",
+    description = "Image source only inside VASC WIDESCREEN Pokédex. CRYSTAL FRONTS uses VASC's bundled coloured Crystal menu fronts; ACTIVE follows the active sprite provider; GAME ORIGINAL uses the cartridge front. COBBLEMON 3D uses bundled animated models, with a sprite fallback for unavailable species. Battles, team, boxes and overworld sprites are not changed.",
   },
   {
     key = "pokemonUiPcBox", type = "choice", label = "PC BOX UI",

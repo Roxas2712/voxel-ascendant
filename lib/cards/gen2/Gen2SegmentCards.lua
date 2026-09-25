@@ -117,7 +117,7 @@ local DEFINITIONS = {
     capability="ascendant.gen2.johto-first-dex/v1",
     runtimeOwner="gen2.ascendant-dex",
     files={
-      "lib/ModernDex.lua", "lib/Gen2ModernDexHost.lua",
+      "lib/ModernDex.lua", "lib/Gen2ModernDexHost.lua", "lib/DexModelPreview.lua",
       "lib/gen2_dex/AscendantDex.lua",
     },
     activationModules={ "Gen2ModernDexHost" },

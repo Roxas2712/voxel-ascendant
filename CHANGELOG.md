@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.6 — Functional menu audit and Cobblemon Dex
+
+Adds animated Cobblemon artwork to both modern Dex implementations and the Gen1 setup guide. Repairs Gen2 Dex source/layout selection and its text/height adapter; packaged Gen2 Crystal fronts no longer prompt for an unrelated download. Setup battle details follow the selected stage, and the native Dex preview follows the active game graphics. Reuses setup fonts and stable download action rows. Native coverage includes 881 setting transitions, 29 menu actions, 86 F3 actions and 211 setup choices. Includes all earlier candidates. See FUNCTIONAL_VISUAL_AUDIT_2026-09-25.md. Local candidate.
+
+---
+
 # Voxel Ascendant 3.0.46-rc.5 — Menu, downloads and setup audit
 
 Preserves contextual HELP and selection while menu rows refresh. F3 returns to its originating group, tolerates unavailable optional status providers and uses readable key names. Download status distinguishes healthy verification from installation/restart. Setup validates resumed drafts, retains the screen on persistence failure and restores settings/callback effects after failed application. Adds seven regression suites; includes all rc.1–rc.4 changes. See MENU_FLOW_AUDIT_2026-09-25.md. Local candidate.

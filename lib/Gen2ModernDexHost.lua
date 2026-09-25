@@ -29,10 +29,10 @@ end
 local function useModern()
   local options = mod.options
   if not (options and type(options.get) == "function") then return true end
-  local ok, value = pcall(options.get, options, "qol_ui_skin")
+  local ok, value = pcall(options.get, options, "pokedexStyle")
   if not ok or value == nil then return true end
   value = tostring(value):lower()
-  return value ~= "standard" and value ~= "native"
+  return value ~= "game" and value ~= "standard" and value ~= "native"
     and value ~= "game_default" and value ~= "off"
 end
 
@@ -115,7 +115,13 @@ local function gameProxy(game)
     local entry = dex and dex.entries and dex.entries[species]
     if entry then
       row.dex = row.dex or entry.dex
-      row.dexEntry = row.dexEntry or entry
+      row.dexEntry = copy(entry)
+      local height=tonumber(entry.height)
+      if height then row.dexEntry.heightFt=math.floor(height/100);row.dexEntry.heightIn=height%100 end
+      -- Gen2 stores literal text in two pages; Gen1 stores a text-table key.
+      row.dexEntry.inlineText=(tostring(entry.text or "").."\n"..tostring(entry.text2 or ""))
+        :gsub("%-<NEXT>",""):gsub("<NEXT>"," "):gsub("<LINE>","\n"):gsub("<PARA>","\n")
+        :gsub("<DONE>",""):gsub("<END>",""):gsub("<PKMN>","POKéMON")
     end
     pokemon[species] = row
   end
@@ -196,8 +202,13 @@ end
 local function featureMod()
   local feature = setmetatable({
     id=mod.id, path=mod.path, log=mod.log,
+    dexModels=mod.exports and mod.exports.dexModelPreview,
     options={ get=function(_, key)
-      if key == "sprite_source" then return "kasc_crystal" end
+      if key == "sprite_source" then
+        local value=mod.options and mod.options:get("modernDexSpriteSource")
+        return value=="active" and "auto" or value=="game" and "game"
+          or value=="cobblemon" and "cobblemon" or "kasc_crystal"
+      end
     end },
   }, { __index=mod })
   feature.find = function(first, second)
@@ -339,6 +350,10 @@ function M.install()
   screens:override("PokedexMenu", listFactory)
   screens:override("DexEntryMenu", {
     new=function(game, speciesOrOpts)
+      if not useModern() then
+        local species=type(speciesOrOpts)=="table" and (speciesOrOpts.species or speciesOrOpts[1]) or speciesOrOpts
+        return nativeNew(game,{entrySpecies=species})
+      end
       local ok, state = pcall(ui.EntryScreen.new, gameProxy(game), speciesOrOpts)
       if ok and type(state) == "table" then
         state.screenId = "DexEntryMenu"
