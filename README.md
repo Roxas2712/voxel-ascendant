@@ -1,3 +1,9 @@
+# VASC 3.0.51 — Errors / Diagnostics and support logs
+
+One menu for errors, device diagnostics and manually confirmed KASC/VASC support logs, including when no error is present. See [release notes](RELEASE_NOTES.md), [support reports](SUPPORT_REPORTS.md) and [validation](QA-REPORT.md).
+
+---
+
 # VASC 3.0.50 — Team and PC layouts
 
 Fixes ORAS GLASS text visibility, exposes layout choices in setup and shows KASC abilities and held items in full-screen Team/PC details. The full-screen default is clearly named ORAS FULLSCREEN. See [release notes](RELEASE_NOTES.md) and [validation](QA-REPORT.md).

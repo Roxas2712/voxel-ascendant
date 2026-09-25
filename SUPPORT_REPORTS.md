@@ -19,7 +19,7 @@ retried automatically. KASC and VASC upload sequentially to avoid temporary-file
 collisions in older engine POST workers.
 
 A manual send first obtains a server-signed ticket, valid for 120 seconds and
-bound to the report ID and source IP. The client solves an 14-bit SHA-256 proof
+bound to the report ID and source IP. The client solves a 14-bit SHA-256 proof
 in small frame-budgeted batches. Invalid, expired, or forged tickets are rejected.
 This is automated abuse protection, not verified player-account authentication.
 No account login or manually issued code is required for updated clients.

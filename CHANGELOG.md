@@ -1,3 +1,10 @@
+## 3.0.51 — Errors / Diagnostics and support logs
+
+- Merge root menu entries and allow confirmed support sending without an error.
+- Send available KASC/VASC reports with a shared ID and individual results.
+- Use short-lived tickets, bounded verification and sequential uploads.
+- Raise the client log limit to 500 KiB with an older-engine excerpt fallback.
+
 ## 3.0.50 — Team and PC layouts
 
 - Fix native text contrast outside ORAS GLASS panels.
