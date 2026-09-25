@@ -276,6 +276,17 @@ BattleCam.zoomGoal = 1
 -- MAP/DISCS distance preferences must neither move it nor overwrite gestures.
 BattleCam.terrariumZoom = 1
 BattleCam.terrariumZoomGoal = 1
+local terrariumProfile = V.require("TerrariumZoomProfile").new(
+  V.mod and V.mod.storage, BattleCam.ZOOM_MIN, BattleCam.ZOOM_MAX,
+  function(reason)
+    if V.mod and V.mod.log then
+      V.mod.log:warn("Terrarium zoom profile could not be saved: " .. reason)
+    end
+  end)
+function BattleCam.flushTerrariumZoom() return terrariumProfile.flush() end
+if V.mod and V.mod.events then
+  V.mod.events:on("save.writing", BattleCam.flushTerrariumZoom)
+end
 
 -- A 1X lens is intentionally close, but a very large species or Mega must
 -- still remain a complete, readable combatant rather than becoming a crop at
@@ -582,6 +593,7 @@ function BattleCam.checkpoint()
 end
 
 function BattleCam.reset()
+  terrariumProfile.flush()
   BattleCam.directorRecoveryNext = nil
   BattleCam.viewportW, BattleCam.viewportH = nil, nil
   BattleCam.viewportFovScale = 1
@@ -630,7 +642,8 @@ function BattleCam.reset()
   pendingScreenProbe = nil
   pendingManualRollback = nil
   BattleCam.presentationFit = 1
-  BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal = 1, 1
+  BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal =
+    terrariumProfile.value, terrariumProfile.value
   -- ARENA temporarily starts from 3X without changing BTL CAM. Re-entering a
   -- MAP/DISCS battle must therefore re-read that saved rung instead of keeping
   -- the previous arena's live lens merely because the option itself did not
@@ -782,6 +795,7 @@ function BattleCam.stepZoom(notches, arena)
     local was = BattleCam.terrariumZoomGoal
     BattleCam.terrariumZoomGoal = math.max(BattleCam.ZOOM_MIN,
       math.min(BattleCam.ZOOM_MAX, was * BattleCam.ZOOM_STEP ^ notches))
+    terrariumProfile.remember(BattleCam.terrariumZoomGoal)
     return BattleCam.terrariumZoomGoal ~= was
   end
   BattleCam.applyDistanceSetting(false)
@@ -2428,7 +2442,9 @@ function BattleCam.update(dt, arena, battle, groundY)
   if not rawequal(activeArena, arena) or not rawequal(activeBattle, battle) then
     if not rawequal(activeBattle, battle)
         or not (activeArena and activeArena.terarrium) then
-      BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal = 1, 1
+      local saved = arena and arena.terarrium
+        and terrariumProfile.load(battle and battle.game) or terrariumProfile.value
+      BattleCam.terrariumZoom, BattleCam.terrariumZoomGoal = saved, saved
     end
     -- A fixed court owns the opening shot, not the user's camera thereafter.
     -- Do this only for a new arena/battle pair; input survives menus/attacks.
@@ -2486,6 +2502,7 @@ function BattleCam.update(dt, arena, battle, groundY)
                           BattleCam.ZOOM_TIME)
   BattleCam.terrariumZoom = chase(BattleCam.terrariumZoom,
     BattleCam.terrariumZoomGoal, dt, BattleCam.ZOOM_TIME)
+  terrariumProfile.update(dt)
 
   local token = nil
   if battle and battle.animPlaying then

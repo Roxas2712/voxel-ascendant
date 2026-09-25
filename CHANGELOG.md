@@ -1,3 +1,10 @@
+## 3.0.52 — Terrarium zoom
+
+- Add optical Terrarium zoom with the existing pinch, wheel, Q/E and stick-click controls.
+- Remember the selected zoom in a small per-playthrough profile across battles and game restarts.
+- Preserve the authored camera pose, attack/menu continuity and zoom across arrangement changes.
+- Isolate the Terrarium lens from MAP/DISCS distance preferences and synchronize shadow framing.
+
 ## 3.0.51 — Errors / Diagnostics and support logs
 
 - Merge root menu entries and allow confirmed support sending without an error.

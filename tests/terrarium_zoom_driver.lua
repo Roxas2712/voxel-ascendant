@@ -4,7 +4,11 @@ return function(game)
  assert((os.getenv('POKEPORT_IDENTITY')or''):match('^vasc%-.*%-qa$'))
  local out=assert(os.getenv('TERRARIUM_QA'))
  love.window.hasFocus=function()return true end;love.window.isVisible=function()return true end
- local U=require('tests.drivers.util');game:startNewGame{intro=false}
+ local U=require('tests.drivers.util')
+ local restore=os.getenv('TERRARIUM_QA_RESTORE')=='1'
+ if restore then
+  local save=assert(require('src.core.SaveData').load());game:restoreSave(save,false,{freshBoot=true,continued=true})
+ else game:startNewGame{intro=false}end
  local e=assert(game.mods.exports.VOXEL_ASCENDANT)
  e.setupCard.suspended=true;e.ascendantContent.promptDisabled=true;e.ascendantContent.onboardingShown=true
  local function find(fn,name,seen)
@@ -39,6 +43,12 @@ return function(game)
  local ar=assert(B.arena());assert(ar.terarrium,'Terrarium fell back')
  local ground=BS.groundY(ar.map or game.overworld.map,ar)
  local base=C.rig(ar,ground)
+ if restore then
+  local f=assert(io.open(out..'/expected-zoom.txt'));local expected=assert(tonumber(f:read('*a')));f:close()
+  assert(math.abs(C.terrariumZoomGoal-expected)<1e-9,'zoom not restored after process restart')
+  assert(U.shot(game,out..'/restart-restored.png'))
+  print('TERRARIUM_ZOOM_RESTART_PASS',expected);love.event.quit();return
+ end
  assert(U.shot(game,out..'/landscape-default.png'))
  game:keypressed('q');U.wait(30)
  assert(C.rig(ar,ground).fov<base.fov,'Q did not zoom');same(base,C.rig(ar,ground))
@@ -74,5 +84,9 @@ return function(game)
  assert(renders>beforeRenders+20,'attack stopped rendering')
  assert(C.terrariumZoomGoal==zoom,'attack reset zoom')
  print('PASS_NATIVE_TERRARIUM_TOUCH_PORTRAIT_LAYOUT_ATTACK')
+ assert(C.flushTerrariumZoom(),'profile persistence failed')
+ local expected=C.terrariumZoomGoal
+ local f=assert(io.open(out..'/expected-zoom.txt','w'));f:write(string.format('%.17g',expected));f:close()
+ B.finish();game:writeSave();U.wait(5)
  print('TERRARIUM_ZOOM_NATIVE_PASS');love.event.quit()
 end

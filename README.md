@@ -1,3 +1,9 @@
+# VASC 3.0.52 — Terrarium zoom
+
+Zoom with pinch, mouse wheel, Q/E or stick clicks while the Terrarium camera keeps its authored position and angle. The selected zoom is remembered across battles and restarts for the current playthrough. See [release notes](RELEASE_NOTES.md), [controls](BATTLE_CONTROLS.md) and [validation](QA-REPORT.md).
+
+---
+
 # VASC 3.0.51 — Errors / Diagnostics and support logs
 
 One menu for errors, device diagnostics and manually confirmed KASC/VASC support logs, including when no error is present. See [release notes](RELEASE_NOTES.md), [support reports](SUPPORT_REPORTS.md) and [validation](QA-REPORT.md).

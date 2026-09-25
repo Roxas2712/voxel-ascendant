@@ -27,6 +27,7 @@ Mouse wheel up / Q zoom in; wheel down / E zoom out. On a controller, click the
 right stick to zoom in and the left stick to zoom out.
 
 Only the field of view changes. The authored camera position, aim and orientation
-stay the same; existing optional idle rocking is preserved. Each new battle opens
-at the original framing. Zoom remains active through attacks and command menus,
-and is independent of the MAP/DISCS starting-distance setting.
+stay the same; existing optional idle rocking is preserved. A small profile remembers the last zoom for the current playthrough, including
+after restarting the game. Writes are grouped after a short pause in the gesture.
+Zoom remains active through attacks and command menus, and is independent of the
+MAP/DISCS starting-distance setting.

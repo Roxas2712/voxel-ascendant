@@ -1,5 +1,6 @@
 local settings={}
 local V={require=function(name)
+  if name=='TerrariumZoomProfile' then return assert(loadfile('lib/TerrariumZoomProfile.lua'))()end
   assert(name=='ModSetting',name)
   return {new=function(key,label,values,labels,default)
     local s={value=default,get=function(self)return self.value end}
@@ -44,11 +45,11 @@ local shared=select(1,serviceCamera(arena,7));S.camera=function()return shared,p
 local result=C.rig(arena,7)
 assert(result~=shared and shared.fov==baseline.fov,'mutated service camera')
 S.camera=serviceCamera
--- Changing the layout of this battle retains zoom; a new battle resets it.
+-- Layout changes and new battles retain the remembered Terrarium zoom.
 arena={terarrium={},terarriumService=S,mid={20,30},discs=true};tick()
 assert(C.terrariumZoom==C.ZOOM_MIN)
-battle={phase='menu'};tick();assert(C.terrariumZoom==1 and C.terrariumZoomGoal==1)
-C.stepZoom(-1,arena);C.reset();assert(C.terrariumZoom==1 and C.terrariumZoomGoal==1)
+battle={phase='menu'};tick();assert(C.terrariumZoom==C.ZOOM_MIN and C.terrariumZoomGoal==C.ZOOM_MIN)
+C.stepZoom(3,arena);local remembered=C.terrariumZoomGoal;C.reset();assert(C.terrariumZoom==remembered and C.terrariumZoomGoal==remembered)
 -- Exercise the existing unified input routing with the actual camera module.
 local live=true
 local modules={BattleCam=C,OverworldBattle={shot=function()return live and {}end,arena=function()return arena end},
