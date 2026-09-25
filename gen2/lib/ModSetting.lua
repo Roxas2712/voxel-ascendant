@@ -209,7 +209,7 @@ function ModSetting:row()
     -- when that rung has been gated away (see get)
     value = function()
       local i = self_:read()
-      return self_.labels[self_:allows(i) and i or 1]
+      return self_.labels[self_:allows(i) and i or (self_.defaultIndex or 1)]
     end,
     step = function(game, dir)
       self_:cycle(game, dir)

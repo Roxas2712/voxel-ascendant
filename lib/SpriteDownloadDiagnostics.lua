@@ -11,16 +11,59 @@ local CODES={tls_error=true,dns_error=true,rate_limited=true,timeout=true,http_e
   no_published_mirrors=true,manifest_verification_failed=true,incomplete_package=true,activation_write_failed=true,
   manifest_write_failed=true,package_not_published=true,interrupted=true,unknown_error=true}
 local function token(s,max)return type(s)=="string" and #s<=(max or 160) and s:match("^[a-zA-Z0-9_.-]+$") and s or nil end
+local function number(n)return type(n)=="number" and n>=0 and n<9007199254740991 and n or nil end
+-- An interrupted/torn or older local journal is optional diagnostic data.
+-- Rebuild only the bounded, public fields we accept from live events too.
+local function cleanReport(row,active)
+  if type(row)~="table" or not token(row.id,80) or not number(row.startedAt)
+    or type(row.events)~="table" or type(row.counts)~="table" then return nil end
+  if not active and (not number(row.finishedAt) or
+    (row.outcome~="success" and row.outcome~="error" and row.outcome~="cancelled")) then return nil end
+  local result={id=row.id,startedAt=row.startedAt,events={},counts={},
+    version=token(row.version,80),platform=token(row.platform,40),
+    earlierEventsOmitted=row.earlierEventsOmitted==true or #row.events>512}
+  if not active then result.finishedAt=row.finishedAt;result.outcome=row.outcome end
+  result.attempts=math.min(math.floor(number(row.attempts) or 0),128)
+  for name in pairs(EVENTS) do
+    if number(row.counts[name]) then result.counts[name]=math.floor(row.counts[name]) end
+  end
+  for i=math.max(1,#row.events-511),#row.events do
+    local event=row.events[i]
+    if type(event)=="table" and EVENTS[event.name] and number(event.at) then
+      local copy={name=event.name,at=event.at}
+      for _,key in ipairs({"packageId","mirror"}) do copy[key]=token(event[key]) end
+      for _,key in ipairs({"attempt","bytes","doneBytes","httpStatus"}) do
+        if number(event[key]) then copy[key]=math.floor(event[key]) end
+      end
+      if type(event.code)=="string" then copy.code=CODES[event.code] and event.code or "unknown_error" end
+      result.events[#result.events+1]=copy
+    end
+  end
+  return result
+end
 function M.new(d)
   assert(d.cache and d.encode and d.decode and d.now and d.newId,"missing diagnostic dependency")
   local self={state={history={},outbox={}},warning=nil,nextTry=0}
   local ok,raw=pcall(d.cache.read,d.cache,M.KEY)
   if ok and type(raw)=="string" and #raw<=4194304 then
     local decoded,s=pcall(d.decode,raw)
-    if decoded and type(s)=="table" and type(s.history)=="table" and type(s.outbox)=="table" then self.state=s end
+    if decoded and type(s)=="table" then
+      if type(s.history)=="table" then
+        for i=math.max(1,#s.history-9),#s.history do
+          local row=cleanReport(s.history[i]);if row then self.state.history[#self.state.history+1]=row end
+        end
+      end
+      if type(s.outbox)=="table" then
+        for i=1,math.min(#s.outbox,32) do
+          local row=cleanReport(s.outbox[i]);if row then self.state.outbox[#self.state.outbox+1]=row end
+        end
+      end
+      self.state.active=cleanReport(s.active,true)
+    end
   end
   local function save()
-    local raw=d.encode(self.state)
+    local encoded,raw=pcall(d.encode,self.state)
+    if not encoded or type(raw)~="string" then self.warning="diagnostic_encode_failed";return false end
     if #raw>4194304 then self.warning="diagnostic_limit";return false end
     local ok,yes=pcall(d.cache.write,d.cache,M.KEY,raw)
     if not ok or yes~=true then self.warning="diagnostic_write_failed";return false end
@@ -75,8 +118,9 @@ function M.new(d)
     if not self.job then
       local payload={schema="vasc.download-report/v1",reportId=report.id,outcome=report.outcome,
         startedAt=report.startedAt,finishedAt=report.finishedAt,version=report.version,platform=report.platform,events=report.events,counts=report.counts,earlierEventsOmitted=report.earlierEventsOmitted}
-      local body=d.encode(payload)
-      if #body>262144 then self.warning="report_too_large";return end
+      local encoded,body=pcall(d.encode,payload)
+      if not encoded or type(body)~="string" then return retry() end
+      if #body>262144 then self.warning="report_too_large";self.nextTry=d.now()+3600;return end
       local ok,job=pcall(d.transport.post,d.transport,d.endpoint,body,{contentType="application/json",maxBytes=4096,maxSeconds=15})
       if not ok or not job then return retry() end
       self.job=job;self.deadline=d.now()+15

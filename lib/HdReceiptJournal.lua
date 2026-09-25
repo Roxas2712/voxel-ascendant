@@ -73,13 +73,18 @@ function M.new(d)
     local count=0;for _ in pairs(entries)do count=count+1 end
     if not entries[id]and count>=64 then return false end
     ttl=integer(ttl,1,86400)and ttl or 86400
+    local previous=entries[id]
     entries[id]={id=id,digest=digest,ticket=ticket,expires=time+ttl}
-    return save()
+    if save() then return true end
+    entries[id]=previous;return false
   end
   function self:remove(id,ticket)
     if not entries[id]then return true end
     if entries[id].ticket~=ticket then return false end
-    entries[id]=nil;return save()
+    local previous=entries[id]
+    entries[id]=nil
+    if save() then return true end
+    entries[id]=previous;return false
   end
   return self
 end

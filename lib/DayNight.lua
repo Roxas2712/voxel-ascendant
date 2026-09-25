@@ -558,7 +558,8 @@ function DayNight.restore()
     if ok then stored = got end
   end
   -- no time set: it is day (the requirement, verbatim)
-  DayNight.clock = type(stored) == "number"
+  DayNight.clock = type(stored) == "number" and stored == stored
+                    and stored ~= math.huge and stored ~= -math.huge
                    and stored % DayNight.CYCLE or DayNight.T.day
 end
 

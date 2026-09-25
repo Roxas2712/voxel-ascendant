@@ -63,6 +63,7 @@ function Hooks.new(options)
     nextToken=0,
     nextSequence=0,
     listeners={},
+    eventSnapshots={},
     owners={},
     failureCount=0,
     invalidPayloadCount=0,
@@ -90,6 +91,7 @@ function Hooks:subscribe(event, owner, callback, priority)
     active=true,
   }
   self.listeners[token] = listener
+  self.eventSnapshots[event] = nil
   self.owners[owner] = self.owners[owner] or {}
   self.owners[owner][token] = true
 
@@ -104,6 +106,7 @@ function Hooks:unsubscribe(token)
   if not listener then return false end
   listener.active = false
   self.listeners[token] = nil
+  self.eventSnapshots[listener.event] = nil
   local owned = self.owners[listener.owner]
   if owned then
     owned[token] = nil
@@ -137,13 +140,20 @@ function Hooks:emit(event, payload)
       errors={{ owner="emitter", error=tostring(boundaryPayload) }},
     }
   end
-  local snapshot = {}
-  for _, listener in pairs(self.listeners) do
-    if listener.event == event and listener.active then
-      snapshot[#snapshot + 1] = listener
+  local snapshot = self.eventSnapshots[event]
+  if not snapshot then
+    snapshot = {}
+    for _, listener in pairs(self.listeners) do
+      if listener.event == event and listener.active then
+        snapshot[#snapshot + 1] = listener
+      end
     end
+    table.sort(snapshot, listenerBefore)
+    -- Replace, never mutate: recursive emits and subscriptions made during a
+    -- callback must not change the snapshot already being dispatched.
+    -- Unsubscribed event names do not accumulate in the cache.
+    if #snapshot > 0 then self.eventSnapshots[event] = snapshot end
   end
-  table.sort(snapshot, listenerBefore)
 
   local report = { event=event, delivered=0, errors={} }
   for _, listener in ipairs(snapshot) do

@@ -1,4 +1,4 @@
-# VASC 3.0.46-rc.3 — Kanto location terrariums
+# VASC 3.0.46-rc.4 — Full-code audit and location terrariums
 
 Local review candidate built on the GitHub Latest release v3.0.45 (f3c663f308d44a020fbe8ae91e726d3366d7fc58), retrieved on 2026-09-25. This candidate has not been published.
 
@@ -47,3 +47,14 @@ Further performance work in rc.3:
 - Terrarium lamps reuse per-arena data while updating positions, colors and lava animation. Weak arena ownership and explicit release bound the cache lifetime.
 
 See PERFORMANCE_FOLLOWUP_2026-09-25.md for measured call/allocation reductions and validation.
+
+Repository-wide audit changes in rc.4:
+
+- Both generations show the actual default label when a saved setting becomes unavailable.
+- Failed download-receipt writes retain their previous in-memory state so insertion, replacement and deletion remain retryable.
+- Optional download diagnostics validate persisted reports, bound queues and fields, isolate encoder failures and back off oversized reports.
+- Invalid non-finite day/night and sky clocks reset on save restoration in both generations.
+- Content fulfillment waits for a safe, idle scene before resolving and hashing package plans; already-started downloads still finalize.
+- The internal event bus reuses sorted listener snapshots until subscriptions change, preserving priority, recursive dispatch, teardown and failure isolation.
+
+Validation: 72 headless suites; 432 native animation cases / 2,656 checks; Gen1 setup preview/apply/reopen in portrait and landscape; Crystal MAP/ARENA/DISCS/TERRARIUM battles, exits and optional-effect recovery. The audit also inventories and syntax-checks the entire Lua tree and parses all Python tools. See FULL_CODE_AUDIT_2026-09-25.md for per-subsystem coverage and limits.

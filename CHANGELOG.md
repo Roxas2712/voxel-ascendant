@@ -1,3 +1,9 @@
+# Voxel Ascendant 3.0.46-rc.4 — Repository-wide runtime audit
+
+Fixes effective-setting labels, failed download-receipt mutations, malformed optional download diagnostics and non-finite saved clocks. Defers content planning until a usable scene and caches ordered event listeners. Restores 27 broader regression suites and adds eight boundary/failure suites. Includes all earlier location terrariums and runtime fixes. See FULL_CODE_AUDIT_2026-09-25.md. Local candidate.
+
+---
+
 # Voxel Ascendant 3.0.46-rc.3 — Further runtime optimization
 
 Caches Crystal artwork presence, unifies Gen2 render policy with its existing platform receipt and reuses Terrarium light rigs per arena. Preserves fallback selection, mobile lamp budgets and animated lighting. Includes the rc.2 audit fixes and all 15 new location terrariums. See PERFORMANCE_FOLLOWUP_2026-09-25.md. Local candidate.

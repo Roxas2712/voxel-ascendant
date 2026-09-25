@@ -59,6 +59,10 @@ function M.new(d)
       if d.installer.state=="error" or d.installer.state=="cancelled" then self.state="waiting_retry";return end
       if d.installer.state~="ready" then return end
       self.state="idle"
+    elseif not d.safe or d.safe()~=true or (d.busy and d.busy()) then
+      -- Planning can read and hash cached chunks. Wait for a usable scene
+      -- before doing that work; completion of our own transfer still runs.
+      return
     end
     local p,err=plan(row)
     if not p then self.state="waiting_retry";self.lastError=err;return end

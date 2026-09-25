@@ -1029,7 +1029,8 @@ function SkyEvents.restore()
     local ok, got = pcall(saveApi.get, saveApi, SkyEvents.SAVE_KEY)
     if ok then stored = got end
   end
-  SkyEvents.clock = type(stored) == "number"
+  SkyEvents.clock = type(stored) == "number" and stored == stored
+                    and stored ~= math.huge and stored ~= -math.huge
                     and stored % 1000003 or SkyEvents.DEFAULT_CLOCK
   forcedRainbow, previewRainbowMap, pendingCry = nil, nil, nil
   lastWeatherCryOccurrence = {}
