@@ -452,9 +452,9 @@ local ink = {
  [718]={46,52},
  [1026]={52.5,54.25},
 }
--- Battle models use species dimensions, not the occupied pixels in a
--- 56x56 sprite. Fitting a broad bind pose into that square flattened the
--- visible size spread and made compact authored models disproportionately big.
+-- Fit the stable battle pose uniformly into its Crystal front-sprite bounds.
+-- Width/depth matters as well as height: a low, broad group such as Exeggcute
+-- must not be enlarged until its eggs reach the height of a standing trainer.
 local measured=setmetatable({}, {__mode='k'})
 local function positive(x)
  x=tonumber(x);return x and x==x and x>0 and x<1e6 and x or nil
@@ -493,13 +493,13 @@ function Size.targetHeight(meters)
  return math.max(6,math.min(32,14*math.sqrt(positive(meters)or 1)))
 end
 function Size.worldHeight(dex, model, meters)
- local size=measured[model]
+ local width,referenceHeight=Size.reference(dex)
  local height=positive(model and model.height)
- if not height then return Size.targetHeight(meters) end
- size=size or {height=height,span=2*(positive(model.radius)or height*.5)}
- local fit=math.min(Size.targetHeight(meters)/size.height,56/math.max(.001,size.span))
- -- StadiumMon.matrix applies this over bind height; calibration itself comes
- -- from the stable, visible battle pose rather than hidden/bind geometry.
+ if not height then return referenceHeight end
+ local size=measured[model] or {height=height,span=2*(positive(model.radius)or height*.5)}
+ local fit=math.min(referenceHeight/size.height,width/math.max(.001,size.span))
+ -- StadiumMon.matrix divides this by bind height and applies rootScale.
+ -- Keep one fit for all animation frames, cameras and battle sides.
  return height*fit
 end
 function Size.reference(dex)

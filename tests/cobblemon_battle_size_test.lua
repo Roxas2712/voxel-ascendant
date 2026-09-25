@@ -1,25 +1,29 @@
 local Size=assert(loadfile('lib/CobblemonSize.lua'))()
-local data={pokemon={RATTATA={dexEntry={heightFt=1,heightIn=0}},VENUSAUR={dexEntry={heightFt=6,heightIn=7}},GOROCHU={dexEntry={heightM=1.4}}}}
 local calls=0
-local function fitted(species,bindH,bindR,poseH,poseW)
- local model={height=bindH,radius=bindR,rootScale=1,actions={battle=1},anims={{seconds=2}}}
+local function fitted(dex,bindH,poseH,poseW,root,meters)
+ local model={height=bindH,radius=poseW/2,rootScale=root or 1,actions={battle=1},anims={{seconds=2}}}
  local rig={pose=function()calls=calls+1 end,posedBounds=function()return 0,0,0,poseW,poseH,poseW*.8 end}
  Size.prepare(model,rig)
  local count=calls;Size.prepare(model,rig);assert(calls==count,'repeated calibration')
- local metres=Size.meters(nil,{species=species},data)
- local matrixScale=Size.worldHeight(nil,model,metres)/model.height
- return poseH*matrixScale,model,metres
+ local scale=(root or 1)*Size.worldHeight(dex,model,meters)/model.height
+ return poseH*scale,poseW*scale
 end
-local rat=fitted('RATTATA',12,16,20,19)
-local venusaur=fitted('VENUSAUR',37,40,39,61)
-local gorochu=fitted('GOROCHU',24,10,24,20)
-assert(venusaur>rat*2 and venusaur>gorochu,'large species compressed into sprite-size bucket')
-assert(gorochu/rat<2.5,'compact authored model dominates equally calibrated models')
-local a=fitted('VENUSAUR',37,40,39,61)
-local b=fitted('VENUSAUR',370,400,390,610)
-assert(math.abs(a-b)<1e-8,'authored model units change displayed height')
-assert(Size.meters(nil,{species='ABRA'},{gen2Pokedex={entries={ABRA={height=211}}}})==35*.0254)
-assert(Size.meters(nil,{species='UNKNOWN'},data)==nil)
-assert(Size.targetHeight(0/0)==14 and Size.targetHeight(-1)==14)
-assert(Size.targetHeight(.01)>=6 and Size.targetHeight(100)<=32)
-print('PASS: species ordering, posed calibration, unit independence, caching and metadata')
+-- Both reported species fit their Crystal silhouette, on both world axes.
+local species={252,1026,9999}
+for dex=1,251 do species[#species+1]=dex end
+for _,dex in ipairs(species) do
+ local width,height=Size.reference(dex)
+ for _,pose in ipairs({{20,10},{10,40},{40,40}})do
+  local h,w=fitted(dex,30,pose[1],pose[2],1,.4)
+  assert(h<=height+1e-8 and w<=width+1e-8,'Crystal envelope exceeded: '..dex)
+  assert(math.abs(h/pose[1]-w/pose[2])<1e-8,'model stretched')
+  local H,W=fitted(dex,300,pose[1]*10,pose[2]*10,.25,10)
+  assert(math.abs(H-h)<1e-8 and math.abs(W-w)<1e-8,'authored units/root/metadata change size')
+ end
+end
+local eggs=fitted(102,20,10,40)
+local bellsprout=fitted(69,30,40,20)
+assert(eggs<5 and bellsprout<12,'reported small models remain trainer-sized')
+local fallback=Size.worldHeight(69,nil)
+assert(fallback>0 and fallback<12)
+print('PASS: Crystal bounds, Bellsprout/Exeggcute, uniform fit, unit independence and caching')

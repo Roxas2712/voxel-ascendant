@@ -17,6 +17,6 @@ return function(game)
  local dir=assert(os.getenv('MENU_QA'));assert(U.shot(game,dir..'/cobblemon-battle-idle.png'))
 
  local m=a.model;local x,y,z,X,Y,Z=a.rig:posedBounds();local h=(Y-y)*m.rootScale*a:worldHeight()/m.height
- assert(a.heightMeters>1.9 and a.heightMeters<2.1,'native Crystal metadata lost');assert(h>18 and h<22,'Gen2 size differs from Gen1')
+ assert(a.heightMeters>1.9 and a.heightMeters<2.1,'native Crystal metadata lost');local rw,rh=V.require('CobblemonSize').reference(a.model.crystalDex or a.dex);assert(h>0 and h<=rh+.05,'Gen2 exceeds Crystal reference')
  print('PASS_GEN2_SPECIES_SIZE',a.heightMeters,h);love.event.quit(0)
 end

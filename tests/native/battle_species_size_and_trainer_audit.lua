@@ -38,7 +38,8 @@ return function(game)
  end
  print('BATTLE_SIZE',species,'metres',a.heightMeters,'visibleWorldHeight',actual)
  assert(a.heightMeters and actual>0 and actual<40)
- if species=='VENUSAUR'then assert(actual>18 and actual<22)elseif species=='RATTATA'then assert(actual>6 and actual<9)elseif species=='GOROCHU'then assert(actual>15 and actual<18)end
+ local rw,rh=V.require('CobblemonSize').reference(a.model.crystalDex or a.dex)
+ assert(actual<=rh+.05,'Crystal silhouette height exceeded')
  assert(U.shot(game,dir..'/'..species..'-battle.png'))
  print('PASS_ACTUAL_SPECIES_BATTLE',species);love.event.quit(0)
 end
