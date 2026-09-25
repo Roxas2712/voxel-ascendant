@@ -457,6 +457,10 @@ end
 -- KASC resolves the story role without rewriting the static map sprite.
 -- Use that live identity before consulting the generic NPC atlas catalog.
 function WalkingSprites:_npcVisual(mapId,entity,kascActive)
+  -- Mira owns her identity; never replace the shared female trainer sprite.
+  local mira="assets/characters/npcs/mira-kasc-hd-4x3-walk-sheet-v1.png"
+  if self.generation==1 and normalize(self:_identity(entity))=="SPRITEKAMIRAWALK"
+      and self.runtimeByAtlas[mira] then return mira,"mira" end
   local selected=tostring(entity.ascendantCharacter or ""):lower()
   if kascActive and (selected=="red" or selected=="blue" or selected=="green")
       and self.atlasByRole[selected] then return self.atlasByRole[selected],selected end
