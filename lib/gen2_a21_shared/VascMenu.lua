@@ -387,11 +387,6 @@ local SECTION_DEFS = {
           de="Öffnet die vollständige Engine-Liste einschließlich Zeilen anderer aktiver Mods.",
         } },
       { label="START GUIDE", action="rootHelp" },
-      { label="DIAGNOSTICS", screen="VascDiagnostics",
-        help={
-          en="Inspect diagnostics and send a support report.",
-          de="Diagnose ansehen und Support-Bericht senden.",
-        } },
       { label="VERSION", action="version" },
     },
   },
@@ -1495,44 +1490,9 @@ local function newPerformanceDiagnostics(mod, game)
   return menu
 end
 
-local function supportSendRows(mod)
-  local rows = {
-    {label=languageCode(mod)=="de" and "VASC-LOG SENDEN" or "SEND VASC LOG", action="sendVascSupport",
-      help=languageCode(mod)=="de" and "VASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
-        or "Send VASC evidence including available download errors. Confirm before sending."},
-    {label=languageCode(mod)=="de" and "KASC-LOG SENDEN" or "SEND KASC LOG", action="sendKascSupport",
-      help=languageCode(mod)=="de" and "KASC-Bericht mit verfügbaren Download-Fehlern senden. Vor dem Versand bestätigen."
-        or "Send KASC evidence including available download errors. Confirm before sending."},
-  }
-  local ok, handle=pcall(function() return mod:find("kanto_ascendant") end)
-  if not (ok and handle and handle.exports and handle.exports.supportSessionLog) then table.remove(rows,2) end
-  return rows
-end
-local function openSupportSend(mod, game, item)
-  local diagnostics=config.diagnostics
-  local target=diagnostics
-  if item.action=="sendKascSupport" then
-    local ok,handle=pcall(function()return mod:find("kanto_ascendant")end)
-    target=ok and handle and handle.exports and handle.exports.supportSessionLog or nil
-  end
-  if target and type(target.openSupportSend)=="function" then
-    local opened=target.openSupportSend(game,languageCode(mod)=="de")
-    if opened and game.stack and type(game.stack.top)=="function" then
-      local ok,presentation=pcall(V.require,"SupportMenu")
-      if ok and presentation and type(presentation.decorate)=="function" then
-        presentation.decorate(game.stack:top(),menuUi(mod),languageCode(mod)=="de")
-      end
-    end
-    return opened
-  end
-  return showHelp(mod,game,item.label,languageCode(mod)=="de"
-    and "Der passende Mod mit Support-Versand ist nicht verfügbar."
-    or "The matching mod with support sending is unavailable.")
-end
-
 local function newDiagnostics(mod, game)
   local de = languageCode(mod) == "de"
-  local rows = supportSendRows(mod)
+  local rows = {}
   rows[#rows+1] = {label=de and "GERÄTE-MONITOR" or "DEVICE MONITOR",
     action="performanceDiagnostics", right="LIVE",
     help=de and "FPS, Framezeiten, Speicher und Renderdaten prüfen."
@@ -1553,8 +1513,8 @@ local function newDiagnostics(mod, game)
   return guidedMenu(mod, game, {
     key="vasc_diagnostics", title=de and "DIAGNOSE" or "DIAGNOSTICS",
     helpTitle=de and "DIAGNOSE HILFE" or "DIAGNOSTICS HELP",
-    help=de and "Die Diagnose läuft automatisch. Langsame Szenen bleiben im Bericht erhalten. Zum Senden wird nur der achtstellige Support-Code benötigt."
-      or "Diagnostics run automatically. Slow scenes are retained in the report. Sending only requires the eight-digit support code.",
+    help=de and "Die Diagnose läuft automatisch. Langsame Szenen bleiben im Bericht erhalten. Logs lassen sich unter Fehler / Diagnose senden."
+      or "Diagnostics run automatically. Slow scenes are retained in the report. Send logs from Errors / Diagnostics.",
     rows=rows, footer=de and "A:ÖFFNEN B:ZURÜCK" or "A:OPEN B:BACK",
     options={pageJump=false, wrap=true},
     onChoose=function(item)
@@ -1572,7 +1532,7 @@ local function newDiagnostics(mod, game)
         item.right=ok and done==true and "RESTART" or "FAILED"
         return ok and done==true
       end
-      return openSupportSend(mod, game, item)
+      return false
     end,
   })
 end
@@ -1638,10 +1598,7 @@ local function newHub(mod, game)
   if #rows == 0 then
     rows[1] = { label="NO SETTINGS", help="No VASC sections are available." }
   end
-  if errors then rows[#rows+1]={label="ERRORS",screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
-  rows[#rows+1] = {label=languageCode(mod)=="de" and "DIAGNOSE" or "DIAGNOSTICS",
-    screen="VascDiagnostics", help=languageCode(mod)=="de" and "Diagnose ansehen und Support-Log senden."
-      or "Inspect diagnostics and send a support log."}
+  if errors then rows[#rows+1]={label=errors.title(),screen="VascErrors",right=tostring(errors.count()),help=errors.description()} end
   rows[#rows + 1] = {
     label="Resets to Factory", factoryReset=true,
     help=languageCode(mod) == "de"
@@ -1769,7 +1726,7 @@ function VascMenu.install(mod, opts)
   if not screens or type(screens.register) ~= "function" then return false end
   local inbox=config.diagnostics and config.diagnostics.errorInbox and config.diagnostics.errorInbox()
   if inbox then
-    local errors=V.require("ErrorsMenu").install(mod,inbox,{Game=require("src.core.Game2"),language=function()return languageCode(mod)end,session=config.diagnostics.sessionId,notify=function(code)V.require("ShortcutToast").notify("ASCENDANT ERRORS",code.." - open Errors")end})
+    local errors=V.require("ErrorsMenu").install(mod,inbox,{Game=require("src.core.Game2"),language=function()return languageCode(mod)end,supportProvider=config.diagnostics,openDiagnostics=function(game)return game.stack:push(newDiagnostics(mod,game))end,session=config.diagnostics.sessionId,notify=function(code)V.require("ShortcutToast").notify("ASCENDANT ERRORS",code.." - open Errors")end})
     screens:register("VascErrors",{new=function(game) return setmetatable({game=game,index=1},errors.Screen) end})
   end
   screens:register("VascMenu", {

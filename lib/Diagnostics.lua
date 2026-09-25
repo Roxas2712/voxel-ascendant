@@ -1075,12 +1075,15 @@ function Diagnostics.supportPayload()
   return bytes
 end
 local supportSender
-function Diagnostics.openSupportSend(explicit, de)
+function Diagnostics.supportSender()
   if not supportSender then
     local source = assert(V.mod:read("lib/SupportSend.lua"))
     supportSender = assert((loadstring or load)(source, "@SupportSend"))().new(V.mod, Diagnostics.supportPayload)
   end
-  return supportSender.open(explicit, de)
+  return supportSender
+end
+function Diagnostics.openSupportSend(explicit, de)
+  return Diagnostics.supportSender().open(explicit,de)
 end
 
 function Diagnostics.sessionId()

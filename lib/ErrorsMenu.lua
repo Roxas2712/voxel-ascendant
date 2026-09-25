@@ -76,7 +76,18 @@ local explanations={
 }
 function M.install(mod,inbox,options)
  if mod.exports and mod.exports.errors then return mod.exports.errors end
- options=options or {};local Screen={isOpaque=true};Screen.__index=Screen
+ options=options or {}
+ mod.exports=mod.exports or {}
+ if options.supportProvider then mod.exports.supportLogsProvider=options.supportProvider end
+ local support
+ local function supportService()
+  if not support then
+   local source=assert(mod:read('lib/SupportLogs.lua'))
+   support=assert((loadstring or load)(source,'@SupportLogs'))().new(mod)
+  end
+  support.refresh();return support
+ end
+ local Screen={isOpaque=true};Screen.__index=Screen
  options.reportText=options.reportText or (inbox.report and function(r)return inbox:report(r)end)
  local latestGame
  if not options.session and not inbox.context.session then
@@ -120,9 +131,12 @@ function M.install(mod,inbox,options)
    errorCursor=last
   end
  end
- local function open(game)
+ local function open(game,showSupport)
   poll(game)
-  return game.stack:push(setmetatable({game=game,index=1,page=1,detail=false},Screen))
+  local screen=setmetatable({game=game,index=1,page=1,detail=false},Screen)
+  if showSupport then screen.support=supportService() end
+  game.stack:push(screen)
+  return screen
  end
  function Screen:uiSize()return 640,400 end
  function Screen:wantsFillScale()return true end
@@ -130,13 +144,37 @@ function M.install(mod,inbox,options)
  function Screen:sgbPalettes()return {{colors=false,x=0,y=0,w=640,h=400}}end
  function Screen:draw()end
  function Screen:choose(action)
+  if action=='diagnostics' then
+   self.page=1
+   if options.openDiagnostics then return options.openDiagnostics(self.game) end
+   self.diagnostics=true;return
+  end
+  if self.diagnostics then
+   if action=='back' then self.diagnostics=false;self.page=1
+   elseif action=='sendLogs' or action=='open' then self.diagnostics=false;self.support=supportService();self.page=1
+   elseif action=='previous' then self.page=math.max(1,(self.page or 1)-1)
+   elseif action=='next' then self.page=math.min(self.pageCount or 1,(self.page or 1)+1)end
+   return
+  end
+  if action=='sendLogs' then
+   self.support=supportService();self.page=1;return
+  end
+  if self.support then
+   if action=='back' then self.support.cancel();self.support=nil;self.page=1
+   elseif action=='confirm' or action=='open' then self.support.send()
+   elseif action=='previous' then self.page=math.max(1,(self.page or 1)-1)
+   elseif action=='next' then self.page=math.min(self.pageCount or 1,(self.page or 1)+1) end
+   return
+  end
   if action=='back' then
    if self.detail then self.detail=false;self.page=1 else self.game.stack:pop()end
   elseif action=='previous' or action=='next' then
    local delta=action=='previous' and -1 or 1
    if self.detail then self.page=math.max(1,math.min(self.pageCount or 1,(self.page or 1)+delta))
    else self.index=math.max(1,math.min(math.max(1,#inbox.items),self.index+delta));self.page=1 end
-  elseif not self.detail then self.detail=true;self.page=1
+  elseif not self.detail then
+   if not inbox.items[self.index] then return self:choose('sendLogs') end
+   self.detail=true;self.page=1
   elseif options.reportText and love.system and love.system.setClipboardText then
    local ok,body=pcall(options.reportText,inbox.items[self.index])
    if ok then
@@ -154,10 +192,13 @@ function M.install(mod,inbox,options)
   if self.detail then inbox:read(inbox.items[self.index])end
  end
  function Screen:update()
+  if self.support then self.support.poll() end
   local input=self.game.input;if not input then return end
   if input:wasPressed('b')then self:choose('back')
   elseif input:wasPressed('up') or input:wasPressed('left')then self:choose('previous')
   elseif input:wasPressed('down') or input:wasPressed('right')then self:choose('next')
+  elseif not self.support and input:wasPressed('start') then self:choose('diagnostics')
+  elseif input:wasPressed('select') then self:choose('sendLogs')
   elseif input:wasPressed('a')then self:choose('open')end
  end
  function Screen:pointer(p)
@@ -174,7 +215,7 @@ function M.install(mod,inbox,options)
   local width=right-left;local fs=math.max(12,math.min(19,math.floor(math.min(width/30,(bottom-top)/27))))
   if self.fontSize~=fs then self.font=g.newFont(fs);self.bold=g.newFont(fs+5);self.fontSize=fs end
   g.setColor(.025,.045,.075,1);g.rectangle('fill',0,0,w,h)
-  g.setFont(self.bold);g.setColor(.5,.9,1,1);g.print('ASCENDANT · ERRORS',left,top)
+  g.setFont(self.bold);g.setColor(.5,.9,1,1);g.print(tr('ERRORS / DIAGNOSTICS','FEHLER / DIAGNOSE'),left,top)
   local y=top+fs*2.3;g.setFont(self.font)
   local bh=math.max(38,fs*2.4);local by=bottom-bh;local bw=(width-18)/4
   -- Wrap first, then paginate complete lines above the controls. Keep the
@@ -188,7 +229,26 @@ function M.install(mod,inbox,options)
    end
   end
   local r=inbox.items[self.index]
-  if not r then
+  if self.support then
+   local stateNames={queued=tr('Queued','Wartet'),authorizing=tr('Preparing secure upload…','Sicherer Versand wird vorbereitet…'),idle=tr('Ready','Bereit'),pending=tr('Sending…','Sendet…'),saved=tr('Sent','Gesendet'),failed=tr('Failed','Fehlgeschlagen'),timeout=tr('Timed out — delivery unconfirmed','Zeitüberschreitung — Empfang unbestätigt'),cancelled=tr('Cancelled — delivery unconfirmed','Abgebrochen — Empfang unbestätigt'),cooldown=tr('Please wait 60 seconds','Bitte 60 Sekunden warten'),unavailable=tr('Unavailable — update this mod','Nicht verfügbar — Mod aktualisieren'),['not-configured']=tr('Sending unavailable','Versand nicht verfügbar')}
+   text(tr('Send support logs','Support-Logs senden'))
+   if not self.support.started then
+    text(tr('Send the available KASC / VASC logs and diagnostics to the developer? No save file is attached. Nothing is sent automatically.','Vorhandene KASC-/VASC-Logs und Diagnosedaten an den Entwickler senden? Kein Spielstand wird angehängt. Kein automatischer Versand.'))
+   end
+   for _,target in ipairs(self.support.targets)do text(target.label..': '..(stateNames[target.state] or tr('Failed','Fehlgeschlagen')))end
+   if #self.support.targets==0 then text(tr('No supported mod loaded.','Kein unterstützter Mod geladen.'))end
+   if self.support.reportId then
+    text(tr('Report ID: ','Bericht-ID: ')..self.support.reportId)
+    text(tr('Include this ID when describing the problem. Only mods marked Sent have confirmed delivery.','Diese ID bei der Problembeschreibung angeben. Nur bei „Gesendet“ ist der Empfang bestätigt.'))
+   end
+  elseif self.diagnostics then
+   M.captureContext(inbox.context,self.game,mod)
+   local c=inbox.context
+   text(tr('Current device diagnostics','Aktuelle Gerätediagnose'))
+   text((c.platform or '?')..' · '..(c.package or '?')..' '..(c.version or '?')..' · Engine '..(c.engine or '?'))
+   for _,row in ipairs(c.hardware or {})do text(row[1]..': '..row[2])end
+   text(c.performance or '');text(c.settings or '')
+  elseif not r then
    text(tr('No errors recorded this session.','In dieser Sitzung keine Fehler aufgezeichnet.'))
    text(tr('This does not rule out visual defects. If something looks wrong, send a gameplay screenshot and a log.','Das schließt sichtbare Grafikfehler nicht aus. Bei falscher Darstellung bitte Spielbild und Log schicken.'))
   elseif not self.detail then
@@ -216,25 +276,36 @@ function M.install(mod,inbox,options)
    text(tr('Send all report pages. Copy is available if the engine allows it. A log may still be needed for timing or visual-only faults.','Alle Berichtsseiten schicken. Kopieren ist möglich, wenn die Engine es erlaubt. Bei Ablauf- oder rein sichtbaren Fehlern kann weiterhin ein Log nötig sein.'),{.6,.78,.84,1})
   end
   local headerY=y;y=y+fs+10
-  local pages={{}};local used=0;local capacity=math.max(fs+8,by-y-10)
+  local pages={{}};local used=0;local controlsTop=by-(self.support and 1 or 2)*(bh+8)
+  local capacity=math.max(fs+8,controlsTop-y-10)
   for _,row in ipairs(rows)do
    if used+row.height>capacity and #pages[#pages]>0 then pages[#pages+1]={};used=0 end
    pages[#pages][#pages[#pages]+1]=row;used=used+row.height
   end
   self.pageCount=#pages;self.page=math.max(1,math.min(self.page or 1,#pages))
-  if r or #pages>1 then
+  if (r and not self.support and not self.diagnostics) or #pages>1 then
    g.setColor(.6,.78,.84,1)
-   g.print((r and (r.code..' #'..r.id..' · ') or '')..tr('Page ','Seite ')..self.page..' / '..#pages..(r and (' · '..r.session:sub(-12)) or ''), left,headerY)
+   g.print((r and not self.support and not self.diagnostics and (r.code..' #'..r.id..' · ') or '')..tr('Page ','Seite ')..self.page..' / '..#pages..(r and not self.support and not self.diagnostics and (' · '..r.session:sub(-12)) or ''), left,headerY)
   end
   for _,row in ipairs(pages[self.page])do
    g.setColor(unpack(row.color));g.print(row.text,left,y);y=y+row.height
   end
   self.buttons={}
-  for i,b in ipairs({{'back',tr('Back','Zurück')},{'previous','<'},{'next','>'},{'open',self.detail and options.reportText and tr('Copy','Kopieren') or tr('Report','Bericht')}})do
+  local sendY=by-bh-8
+  local sendLabel=self.support and (self.support.pending() and tr('Sending…','Sendet…') or (self.support.started and tr('Send again','Erneut senden') or tr('Confirm & send','Bestätigen & senden'))) or tr('Send logs · SELECT','Logs senden · SELECT')
+  g.setColor(.1,.32,.38,1);g.rectangle('fill',left,sendY,width,bh,5,5);g.setColor(1,1,1,1);g.printf(sendLabel,left,sendY+(bh-fs)/2,width,'center')
+  self.buttons[#self.buttons+1]={x=left,y=sendY,w=width,h=bh,action=self.support and 'confirm' or 'sendLogs'}
+  if not self.support then
+   local dy=sendY-bh-8
+   g.setColor(.09,.19,.25,1);g.rectangle('fill',left,dy,width,bh,5,5);g.setColor(1,1,1,1)
+   g.printf(tr('Device diagnostics · START','Gerätediagnose · START'),left,dy+(bh-fs)/2,width,'center')
+   self.buttons[#self.buttons+1]={x=left,y=dy,w=width,h=bh,action='diagnostics'}
+  end
+  for i,b in ipairs({{'back' ,tr('Back','Zurück')},{'previous','<'},{'next','>'},{'open',self.support and tr('Send','Senden') or (not r and tr('Logs','Logs') or (self.detail and options.reportText and tr('Copy','Kopieren') or tr('Report','Bericht')))}})do
    local x=left+(i-1)*(bw+6);g.setColor(.09,.19,.25,1);g.rectangle('fill',x,by,bw,bh,5,5);g.setColor(1,1,1,1);g.printf(b[2],x,by+(bh-fs)/2,bw,'center')
    self.buttons[#self.buttons+1]={x=x,y=by,w=bw,h=bh,action=b[1]}
   end
-  self.contentBottom=y;self.buttonsTop=by;g.pop()
+  self.contentBottom=y;self.buttonsTop=controlsTop;g.pop()
  end
  -- Gen2 passes its class owner: the Gen1 compatibility facade writes an
  -- instance method, which would hide later class-level menu wrappers.
@@ -260,8 +331,8 @@ function M.install(mod,inbox,options)
   end
   return result
  end,2000020)
- mod.exports=mod.exports or {};mod.exports.errors={open=open,inbox=inbox,title=function()return 'ERRORS' end,
-  description=function()return tr('Recorded errors and fallback reports for screenshots.','Aufgezeichnete Fehler und Rückfälle als Screenshot-Bericht.')end,
+ mod.exports=mod.exports or {};mod.exports.errors={open=open,openSupport=function(game)return open(game,true)end,inbox=inbox,title=function()return tr('ERRORS / DIAGNOSTICS','FEHLER / DIAGNOSE')end,
+  description=function()return tr('View errors and send KASC / VASC logs, even without a recorded error.','Fehler ansehen und KASC-/VASC-Logs senden, auch ohne aufgezeichneten Fehler.')end,
   count=function()return inbox.unread end,poll=poll,Screen=Screen,reportText=options.reportText}
  return mod.exports.errors
 end

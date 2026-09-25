@@ -259,6 +259,7 @@ local GEN2_A21_SHARED_UI = {
   ["lib/Diagnostics.lua"] = "lib/Diagnostics.lua",
   ["lib/ErrorInbox.lua"] = "lib/ErrorInbox.lua",
   ["lib/ErrorsMenu.lua"] = "lib/ErrorsMenu.lua",
+  ["lib/SupportLogs.lua"] = "lib/SupportLogs.lua",
   ["lib/SupportSend.lua"] = "lib/SupportSend.lua",
   ["lib/SupportMenu.lua"] = "lib/SupportMenu.lua",
   ["lib/PerformanceDiagnostics.lua"] = "lib/PerformanceDiagnostics.lua",
