@@ -42,6 +42,15 @@ paintings or DISCS. Large Pokemon can make the MAP/DISCS camera widen slightly
 at 1X so their complete silhouettes remain visible; this does not rewrite the
 saved camera setting.
 
+POKEMON COLORS
+--------------
+Local Pokemon PNGs with visible colored pixels retain their source colors in
+color modes that support full-color art. Grayscale PNGs continue to use the
+game palette, including when replacing a full-color provider. Fully transparent
+pixels do not affect this detection. Use RESCAN PNG FILES after replacing a
+file if its timestamp and size did not change. This does not remove opaque
+backgrounds, resize the source canvas, or change forced monochrome modes.
+
 POKEMON
 -------
 Battle, Dex, party icon, and overworld targets use uppercase canonical IDs:

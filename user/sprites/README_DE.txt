@@ -43,6 +43,16 @@ oder DISCS. Bei sehr grossen Pokemon darf die MAP-/DISCS-Kamera auf 1X fuer
 diesen Kampf etwas weiter werden, damit die komplette Silhouette sichtbar
 bleibt; die gespeicherte Kamerawahl wird nicht veraendert.
 
+POKEMON-FARBEN
+-------------
+Lokale Pokemon-PNGs mit sichtbaren farbigen Pixeln behalten ihre Quellfarben in
+Farbmodi, die Vollfarbgrafiken unterstuetzen. Graustufen-PNGs verwenden weiter
+die Spielpalette, auch beim Ersetzen einer Vollfarbgrafik. Vollstaendig
+transparente Pixel beeinflussen die Erkennung nicht. Nach einem Dateiaustausch
+mit unveraenderter Groesse und Zeitangabe RESCAN PNG FILES verwenden. Undurch-
+sichtige Hintergruende, Bildgroesse und erzwungene Monochrom-Modi bleiben wie
+bisher.
+
 POKEMON
 -------
 Kampf-, Dex-, Team-Icon- und Oberwelt-Ziele nutzen kanonische Grossbuchstaben:

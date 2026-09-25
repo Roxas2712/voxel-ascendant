@@ -1,3 +1,9 @@
+## Unreleased — User Pokemon sprite colors
+
+- Preserve visible colors in local Pokemon PNG overrides in both generation importers. Grayscale art still uses the game palette; transparent padding does not affect detection.
+- Cache the color classification with PNG validation and refresh it after a file change or explicit rescan. Missing or invalid files preserve the upstream provider.
+- This corrects the reproduced whitening of imported Yellow art. It does not claim to fix the independently reported 3D-to-2D fallback, whose original trigger remains unconfirmed.
+
 ## 3.0.47 — Battle scale, trainer clearance and windows
 
 - Calibrate Cobblemon battle size from species height and animated model bounds in both generations.

@@ -46,13 +46,27 @@ function LocalSprites.sourceKey(path)
   return (stem:lower() .. "_" .. ("%08x"):format(hash(tostring(path))))
 end
 
+-- Inspect the decoded PNG once per file signature. Hidden RGB values in
+-- transparent padding do not turn a palette sprite into full-color art.
+local function hasVisibleColor(image, width, height)
+  for y = 0, height - 1 do
+    for x = 0, width - 1 do
+      local r, g, b, a = image:getPixel(x, y)
+      if a > 0 and (r ~= g or g ~= b) then return true end
+    end
+  end
+  return false
+end
+
 local function validPng(path)
   local meta = info(path)
   if not meta then validation[path] = nil return false end
   local signature = tostring(meta.modtime or "") .. ":" .. tostring(meta.size or "")
   local held = validation[path]
-  if held and held.signature == signature then return held.valid end
-  local valid = true
+  if held and held.signature == signature then
+    return held.valid, held.trueColor
+  end
+  local valid, trueColor = true, nil
   if love and love.image and type(love.image.newImageData) == "function" then
     local assetPath = UserFiles.path(path)
     local ok, image = false, nil
@@ -63,16 +77,22 @@ local function validPng(path)
       local okDim, w, h = pcall(image.getDimensions, image)
       valid = okDim and type(w) == "number" and type(h) == "number"
               and w >= 1 and h >= 1 and w <= 4096 and h <= 4096
+      if valid and type(image.getPixel) == "function" then
+        local okColor, colored = pcall(hasVisibleColor, image, w, h)
+        valid = okColor
+        if okColor then trueColor = colored end
+      end
       if type(image.release) == "function" then pcall(image.release, image) end
     end
   end
-  validation[path] = { signature=signature, valid=valid }
-  return valid
+  validation[path] = { signature=signature, valid=valid, trueColor=trueColor }
+  return valid, trueColor
 end
 
 local function candidate(relative)
   local path = LocalSprites.ROOT .. "/" .. relative
-  return validPng(path) and UserFiles.path(path) or nil
+  local valid, trueColor = validPng(path)
+  if valid then return UserFiles.path(path), trueColor end
 end
 
 local function appendUnique(out, seen, value)
@@ -123,21 +143,24 @@ end
 
 local function pokemonCandidate(folder, ctx)
   for _, name in ipairs(pokemonIds(ctx)) do
-    local found = candidate("pokemon/" .. folder .. "/" .. name .. ".png")
-    if found then return found end
+    local found, trueColor = candidate("pokemon/" .. folder .. "/" .. name .. ".png")
+    if found then return found, trueColor end
   end
 end
 
 local function pokemon(current, ctx)
   local kind, side = ctx and ctx.kind, ctx and ctx.side or "front"
-  local found
-  if kind == "dex" then found = pokemonCandidate("dex", ctx) end
+  local found, trueColor
+  if kind == "dex" then found, trueColor = pokemonCandidate("dex", ctx) end
   if not found and kind == "overworld" then
-    found = pokemonCandidate("overworld", ctx)
+    found, trueColor = pokemonCandidate("overworld", ctx)
   end
   if not found then
-    found = pokemonCandidate(side == "back" and "back" or "front", ctx)
+    found, trueColor = pokemonCandidate(side == "back" and "back" or "front", ctx)
   end
+  -- The selected file owns its palette flag, including a grayscale override
+  -- of a full-color upstream provider. Missing files leave the provider alone.
+  if found and ctx and trueColor ~= nil then ctx.trueColor = trueColor end
   return found or current
 end
 
